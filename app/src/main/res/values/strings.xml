@@ -354,6 +354,11 @@ Tap to re-scout and refresh content</string>
     <string name="no_other_sources_found">No alternative sources found for this title</string>
     <string name="auto_healed_source">Auto-recovered %d alternative mirror(s)</string>
     <string name="added_multi_provider_alt_sources">Added multi-provider cross-search &amp; auto-healing: discover fresh mirrors from partner providers when mirrors expire or fail.</string>
+    <string name="changelog_v2_0_3">Changelog v2.0.3 Raven\'s Revenge</string>
+    <string name="v2_0_3_updates">v2.0.3 Updates:</string>
+    <string name="v2_0_3_highlight_1">Direct In-App 1-Click Update: Download and install new updates seamlessly directly within the app with live download progress, error retry, and automatic installer launch.</string>
+    <string name="v2_0_3_highlight_2">Search Results State Persistence: Back-navigation from video details now perfectly preserves active search queries, results grid, and remote focus position.</string>
+    <string name="v2_0_3_highlight_3">Enhanced Android TV D-Pad Experience: Smart auto-focus and high-contrast visual indicators for update dialogs and browsing grids.</string>
     <string name="changelog_v2_0_2">Changelog v2.0.2 Raven\'s Revenge</string>
     <string name="v2_0_2_updates">v2.0.2 Updates:</string>
     <string name="v2_0_2_highlight_1">High-Definition TV Posters &amp; Backdrops: Upgraded TMDB and CDN poster resolutions up to 780p and backdrops to 1080p widescreen for crystal-clear clarity on Android TV and 4K displays.</string>

@@ -18,8 +18,8 @@ android {
         applicationId = "com.duta.movie"
         minSdk = 24
         targetSdk = 34
-        versionCode = 29
-        versionName = "2.0.2 Raven's Revenge"
+        versionCode = 30
+        versionName = "2.0.3 Raven's Revenge"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }

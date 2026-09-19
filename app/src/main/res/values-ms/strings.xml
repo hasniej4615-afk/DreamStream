@@ -354,6 +354,11 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="no_other_sources_found">Tiada sumber alternatif ditemui untuk tajuk ini</string>
     <string name="auto_healed_source">Swapulih %d pelayan cermin alternatif</string>
     <string name="added_multi_provider_alt_sources">Menambah carian silang berbilang penyedia &amp; swapulih automatik: pulih pelayan cermin baharu secara automatik apabila pautan mati atau tamat tempoh.</string>
+    <string name="changelog_v2_0_3">Log Perubahan v2.0.3 Raven\'s Revenge</string>
+    <string name="v2_0_3_updates">Kemaskini v2.0.3:</string>
+    <string name="v2_0_3_highlight_1">Kemaskini 1-Klik Terus Dalam Aplikasi: Muat turun dan pasang versi baharu secara terus dari aplikasi dengan bar kemajuan masa nyata, cuba semula ralat dan pelancaran pemasang automatik.</string>
+    <string name="v2_0_3_highlight_2">Pengekalan Hasil Carian Merentas Navigasi: Navigasi kembali daripada butiran video kini mengekalkan carian aktif, grid hasil carian, dan kedudukan fokus kawalan jauh.</string>
+    <string name="v2_0_3_highlight_3">Pengalaman D-Pad Android TV Dipertingkat: Pengurusan fokus automatik pintar dan penunjuk kontras tinggi untuk dialog kemas kini dan grid media.</string>
     <string name="changelog_v2_0_2">Log Perubahan v2.0.2 Raven\'s Revenge</string>
     <string name="v2_0_2_updates">Kemaskini v2.0.2:</string>
     <string name="v2_0_2_highlight_1">Poster &amp; Latar Belakang TV Definisi Tinggi: Resolusi poster TMDB dan CDN ditingkatkan ke 780p dan latar belakang ke 1080p untuk paparan tajam di Android TV dan skrin 4K.</string>
