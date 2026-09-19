@@ -170,18 +170,10 @@ class TvChannelSyncWorker(
          * Guaranteed non-empty!
          */
         suspend fun fetchSyncMovies(context: Context): List<Video> = withContext(Dispatchers.IO) {
-            // Tier 1: Try network scraper
-            try {
-                val networkMovies = VideoExtractor.fetchVideosBySection("/movie/", 1, 15)
-                if (networkMovies.isNotEmpty()) {
-                    Log.d(TAG, "Fetched ${networkMovies.size} movies from network for TV channel")
-                    return@withContext networkMovies
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Network fetch failed for TV channel: ${e.message}")
-            }
+            val resultMovies = mutableListOf<Video>()
+            val seenIds = mutableSetOf<String>()
 
-            // Tier 2: Try Room database cache
+            // Step 1: Query recently watched videos from Room DB first
             try {
                 val db = Room.databaseBuilder(
                     context.applicationContext,
@@ -189,32 +181,76 @@ class TvChannelSyncWorker(
                     "movie_database"
                 ).fallbackToDestructiveMigration(true).build()
 
-                val cached = db.videoDao().getCachedVideosByCategory("/movie/")
-                    .ifEmpty { db.videoDao().getCachedVideosByCategory("/") }
-                    .ifEmpty { db.videoDao().getLatestVideos(15) }
-
+                val recentlyWatchedEntities = db.videoDao().getRecentlyWatchedSync(10)
                 db.close()
 
-                if (cached.isNotEmpty()) {
-                    Log.d(TAG, "Found ${cached.size} cached movies in Room DB for TV channel")
-                    return@withContext cached.map { it.toDomain() }
+                val recentlyWatched = recentlyWatchedEntities.map { it.toDomain() }
+                recentlyWatched.forEach { video ->
+                    if (video.id.isNotBlank() && seenIds.add(video.id)) {
+                        resultMovies.add(video)
+                    }
+                }
+                if (resultMovies.isNotEmpty()) {
+                    Log.d(TAG, "Added ${resultMovies.size} recently watched movies to TV channel")
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Room DB fetch failed for TV channel: ${e.message}")
+                Log.w(TAG, "Error fetching recently watched for TV channel: ${e.message}")
             }
 
-            // Tier 3: Guaranteed fallback classics
-            try {
-                val classics = VideoExtractor.fetchArchivePramleeVideos()
-                if (classics.isNotEmpty()) {
-                    Log.d(TAG, "Using ${classics.size} fallback classic movies for TV channel")
-                    return@withContext classics.take(15)
+            // Step 2: Supplement with network movies to reach 15-20 items
+            if (resultMovies.size < 15) {
+                try {
+                    val networkMovies = VideoExtractor.fetchVideosBySection("/movie/", 1, 15)
+                    networkMovies.forEach { video ->
+                        if (video.id.isNotBlank() && seenIds.add(video.id)) {
+                            resultMovies.add(video)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Network fetch failed for TV channel: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.e(TAG, "Classics fetch failed: ${e.message}")
             }
 
-            emptyList()
+            // Step 3: If still under 15, check Room database cache
+            if (resultMovies.size < 15) {
+                try {
+                    val db = Room.databaseBuilder(
+                        context.applicationContext,
+                        MovieDatabase::class.java,
+                        "movie_database"
+                    ).fallbackToDestructiveMigration(true).build()
+
+                    val cached = db.videoDao().getCachedVideosByCategory("/movie/")
+                        .ifEmpty { db.videoDao().getCachedVideosByCategory("/") }
+                        .ifEmpty { db.videoDao().getLatestVideos(15) }
+
+                    db.close()
+
+                    cached.map { it.toDomain() }.forEach { video ->
+                        if (video.id.isNotBlank() && seenIds.add(video.id)) {
+                            resultMovies.add(video)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "Room DB fetch failed for TV channel: ${e.message}")
+                }
+            }
+
+            // Step 4: Fallback classics if empty
+            if (resultMovies.isEmpty()) {
+                try {
+                    val classics = VideoExtractor.fetchArchivePramleeVideos()
+                    classics.take(15).forEach { video ->
+                        if (video.id.isNotBlank() && seenIds.add(video.id)) {
+                            resultMovies.add(video)
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Classics fetch failed: ${e.message}")
+                }
+            }
+
+            resultMovies.take(20)
         }
 
         /**

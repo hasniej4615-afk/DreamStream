@@ -96,6 +96,8 @@ class VideoRepository @Inject constructor(
 
     fun getCachedVideo(id: String): Video? = videoCache[id]
     
+    suspend fun getVideo(id: String): Video? = videoCache[id] ?: videoDao.getVideoById(id)?.toDomain()?.also { videoCache[id] = it }
+    
     suspend fun updateVideoInDb(video: Video) {
         // Smart RAM Guard: Prevent repository cache from bloating
         val memoryClass = com.duta.movie.util.VideoUtils.getMemoryClass(context)

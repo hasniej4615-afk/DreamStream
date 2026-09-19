@@ -90,6 +90,9 @@ interface VideoDao {
     @Query("SELECT * FROM videos WHERE lastWatched > 0 ORDER BY lastWatched DESC LIMIT 20")
     fun getRecentlyWatched(): Flow<List<VideoEntity>>
 
+    @Query("SELECT * FROM videos WHERE lastWatched > 0 ORDER BY lastWatched DESC LIMIT :limit")
+    suspend fun getRecentlyWatchedSync(limit: Int = 10): List<VideoEntity>
+
     @Transaction
     @Query("SELECT v.* FROM videos v INNER JOIN category_cache c ON v.id = c.videoId WHERE c.categoryPath = :categoryPath ORDER BY c.position ASC")
     suspend fun getCachedVideosByCategory(categoryPath: String): List<VideoEntity>

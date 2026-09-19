@@ -2946,6 +2946,12 @@ class VideoViewModel @Inject constructor(
     fun clearRecentlyWatched() {
         viewModelScope.launch {
             videoRepository.clearRecentlyWatched()
+            if (com.duta.movie.util.DeviceUtils.isTvDevice(context)) {
+                try {
+                    com.duta.movie.tv.TvWatchNextManager.clearAllWatchNext(context)
+                    com.duta.movie.tv.TvChannelSyncWorker.syncChannelDirectly(context)
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -2966,6 +2972,21 @@ class VideoViewModel @Inject constructor(
             }
             videoRepository.saveVideoProgress(progressId, position)
             videoRepository.saveVideoDuration(progressId, duration)
+
+            // Update Android TV Home Screen Watch Next & Recommendations
+            if (com.duta.movie.util.DeviceUtils.isTvDevice(context)) {
+                try {
+                    val video = videoRepository.getVideo(videoId)
+                    if (video != null) {
+                        com.duta.movie.tv.TvWatchNextManager.updateWatchNext(
+                            context = context,
+                            video = video,
+                            positionMs = position,
+                            durationMs = duration
+                        )
+                    }
+                } catch (_: Exception) {}
+            }
         }
     }
 
