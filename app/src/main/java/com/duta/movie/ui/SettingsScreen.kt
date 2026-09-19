@@ -1,5 +1,6 @@
 package com.duta.movie.ui
 
+import androidx.compose.animation.*
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
@@ -52,6 +53,7 @@ enum class SettingsSection(val label: String, val icon: ImageVector) {
     SUBTITLES("SUBTITLES", Icons.Default.ClosedCaption),
     CATEGORIES("MANAGE CATEGORIES", Icons.AutoMirrored.Filled.List),
     STORAGE("STORAGE", Icons.Default.Home),
+    HELP("HELP & TIPS", Icons.Default.Info),
     ABOUT("ABOUT", Icons.Default.Info),
     DEBUG("DEBUG", Icons.Default.Build)
 }
@@ -745,7 +747,90 @@ fun SettingsScreen(
                                 }
                             }
 
+                            SettingsSection.HELP -> {
+                                item {
+                                    Text(
+                                        text = stringResource(R.string.help_and_manual_desc),
+                                        color = Color.Gray,
+                                        fontSize = 13.sp,
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 6.dp)
+                                    )
+                                }
+                                item {
+                                    HelpTopicCard(
+                                        title = stringResource(R.string.help_topic_tips_title),
+                                        description = stringResource(R.string.help_topic_tips_desc),
+                                        content = stringResource(R.string.help_topic_tips_content),
+                                        tag = "[TIPS]"
+                                    )
+                                }
+                                item {
+                                    HelpTopicCard(
+                                        title = stringResource(R.string.help_topic_tv_title),
+                                        description = stringResource(R.string.help_topic_tv_desc),
+                                        content = stringResource(R.string.help_topic_tv_content),
+                                        tag = "[TV REMOTE]"
+                                    )
+                                }
+                                item {
+                                    HelpTopicCard(
+                                        title = stringResource(R.string.help_topic_mobile_title),
+                                        description = stringResource(R.string.help_topic_mobile_desc),
+                                        content = stringResource(R.string.help_topic_mobile_content),
+                                        tag = "[MOBILE]"
+                                    )
+                                }
+                                item {
+                                    HelpTopicCard(
+                                        title = stringResource(R.string.help_topic_mirrors_title),
+                                        description = stringResource(R.string.help_topic_mirrors_desc),
+                                        content = stringResource(R.string.help_topic_mirrors_content),
+                                        tag = "[STREAMING]"
+                                    )
+                                }
+                                item {
+                                    HelpTopicCard(
+                                        title = stringResource(R.string.help_topic_subtitles_title),
+                                        description = stringResource(R.string.help_topic_subtitles_desc),
+                                        content = stringResource(R.string.help_topic_subtitles_content),
+                                        tag = "[SUBTITLES]"
+                                    )
+                                }
+                                item {
+                                    HelpTopicCard(
+                                        title = stringResource(R.string.help_topic_series_title),
+                                        description = stringResource(R.string.help_topic_series_desc),
+                                        content = stringResource(R.string.help_topic_series_content),
+                                        tag = "[SERIES]"
+                                    )
+                                }
+                                item {
+                                    HelpTopicCard(
+                                        title = stringResource(R.string.help_topic_updates_title),
+                                        description = stringResource(R.string.help_topic_updates_desc),
+                                        content = stringResource(R.string.help_topic_updates_content),
+                                        tag = "[UPDATES]"
+                                    )
+                                }
+                                item {
+                                    HelpTopicCard(
+                                        title = stringResource(R.string.help_topic_troubleshoot_title),
+                                        description = stringResource(R.string.help_topic_troubleshoot_desc),
+                                        content = stringResource(R.string.help_topic_troubleshoot_content),
+                                        tag = "[REPAIR]"
+                                    )
+                                }
+                            }
+
                             SettingsSection.ABOUT -> {
+                                item {
+                                    SettingsActionCard(
+                                        title = stringResource(R.string.user_manual_guide),
+                                        description = stringResource(R.string.view_manual_and_tips),
+                                        icon = Icons.Default.Info,
+                                        onClick = { selectedSection = SettingsSection.HELP }
+                                    )
+                                }
                                 item {
                                     SettingsActionCard(
                                         title = stringResource(R.string.about_app),
@@ -1279,6 +1364,125 @@ fun SettingsActionCard(
 }
 
 @Composable
+fun HelpTopicCard(
+    title: String,
+    description: String,
+    content: String,
+    tag: String
+) {
+    var isExpanded by remember { mutableStateOf(false) }
+    var isFocused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (isFocused) 1.02f else 1f)
+    val context = LocalContext.current
+    val isRealTV = remember { com.duta.movie.util.DeviceUtils.isTvDevice(context) }
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer(scaleX = scale, scaleY = scale)
+            .onFocusChanged { isFocused = it.isFocused }
+            .background(Color(0xFF1E1E24), RoundedCornerShape(12.dp))
+            .border(
+                width = if (isFocused && isRealTV) 2.dp else if (isExpanded) 1.dp else 0.dp,
+                color = if (isFocused && isRealTV) Color.White else if (isExpanded) Color(0xFFE50914).copy(alpha = 0.6f) else Color.Transparent,
+                shape = RoundedCornerShape(12.dp)
+            )
+            .clickable { isExpanded = !isExpanded }
+            .focusable()
+            .padding(16.dp)
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Surface(
+                        color = Color(0xFFE50914).copy(alpha = 0.2f),
+                        shape = RoundedCornerShape(4.dp)
+                    ) {
+                        Text(
+                            text = tag,
+                            color = Color(0xFFFF5252),
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                        )
+                    }
+                    Text(
+                        text = title,
+                        color = Color.White,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = description,
+                    color = Color.LightGray,
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+            }
+
+            Surface(
+                color = if (isExpanded) Color(0xFFE50914) else Color(0xFF2E2E38),
+                shape = RoundedCornerShape(6.dp),
+                modifier = Modifier.padding(start = 12.dp)
+            ) {
+                Text(
+                    text = stringResource(if (isExpanded) R.string.help_action_hide else R.string.help_action_read),
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                )
+            }
+        }
+
+        AnimatedVisibility(
+            visible = isExpanded,
+            enter = expandVertically() + fadeIn(),
+            exit = shrinkVertically() + fadeOut()
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(top = 14.dp)
+                    .background(Color(0xFF141418), RoundedCornerShape(8.dp))
+                    .padding(14.dp)
+            ) {
+                val paragraphs = content.split("\n")
+                paragraphs.forEach { paragraph ->
+                    if (paragraph.startsWith("•") || paragraph.startsWith("  ")) {
+                        Text(
+                            text = paragraph,
+                            color = Color(0xFFDCDCE0),
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp,
+                            modifier = Modifier.padding(vertical = 3.dp)
+                        )
+                    } else if (paragraph.isNotBlank()) {
+                        Text(
+                            text = paragraph,
+                            color = Color.White,
+                            fontWeight = FontWeight.Medium,
+                            fontSize = 13.sp,
+                            lineHeight = 20.sp,
+                            modifier = Modifier.padding(vertical = 3.dp)
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun DisplayAdjustmentSlider(
     label: String,
     value: Float,
@@ -1397,6 +1601,7 @@ fun translateSettingsSection(label: String): String {
         "SUBTITLES" -> stringResource(R.string.subtitles)
         "MANAGE CATEGORIES" -> stringResource(R.string.manage_home_categories)
         "STORAGE" -> stringResource(R.string.storage)
+        "HELP & TIPS" -> stringResource(R.string.help_and_manual)
         "ABOUT" -> stringResource(R.string.about)
         "DEBUG" -> stringResource(R.string.debug)
         else -> label
