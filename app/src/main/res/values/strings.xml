@@ -1,0 +1,405 @@
+<?xml version="1.0" ?>
+
+<resources>
+
+    <string name="app_name">DMStreaM</string>
+
+    <string name="videos">Videos</string>
+
+    <string name="retry">Retry</string>
+
+    <string name="next">Next</string>
+
+    <string name="video_quality">Video Quality</string>
+
+    <string name="auto">Auto</string>
+
+    <string name="close">Close</string>
+
+    <string name="manual_base_url">Manual Base URL</string>
+
+    <string name="enter_a_new_domain_e_g_https_e">Enter a new domain (e.g. https://example.com). This will override the current Base URL.</string>
+
+    <string name="update">Update</string>
+
+    <string name="cancel">Cancel</string>
+
+    <string name="app_logcat">App Logcat</string>
+
+    <string name="logcat">Logcat</string>
+
+    <string name="copy">Copy</string>
+
+    <string name="fine_tune_the_interface_to_fit">Fine-tune the interface to fit your TV screen perfectly.</string>
+
+    <string name="default_language">Default Language</string>
+
+    <string name="manage_home_categories">Manage Home Categories</string>
+
+    <string name="choose_which_categories_to_dis">Choose which categories to display on the Home screen.</string>
+
+    <string name="changelog_v1_9">Changelog v1.9</string>
+
+    <string name="improved_auto_heal_engine_to_f">Improved Auto-Heal engine to flawlessly migrate URLs.</string>
+
+    <string name="fixed">Fixed</string>
+
+    <string name="v1_8_updates">v1.8 Updates:</string>
+
+    <string name="added_auto_heal_migration_for_">Added auto-heal migration for legacy video domains.</string>
+
+    <string name="fixed_a_ui_bug_where_tv_displa">Fixed a UI bug where TV display adjustments were showing on mobile devices.</string>
+
+    <string name="configured_secure_release_sign">Configured secure release signing.</string>
+
+    <string name="added_a_link_to_the_official_t">Added a link to the official Telegram channel in the About section.</string>
+
+    <string name="play">Play</string>
+
+    <string name="exit_app">Exit App</string>
+
+    <string name="are_you_sure_you_want_to_close">Are you sure you want to close DMStreaM?</string>
+
+    <string name="exit">Exit</string>
+
+    <string name="watch_now">Watch Now</string>
+
+    <string name="search_movies_actors">Search movies, actors...</string>
+
+    <string name="dmstream">DMStreaM</string>
+
+    <string name="resolution_log">Resolution Log</string>
+
+    <string name="resume_playback">Resume Playback?</string>
+
+    <string name="would_you_like_to_resume_from_">Would you like to resume from where you left off?</string>
+
+    <string name="resume">Resume</string>
+
+    <string name="start_over">Start Over</string>
+
+    <string name="subtitles">Subtitles</string>
+
+    <string name="none_embedded">None / Embedded</string>
+
+    <string name="subtitle_sync">Subtitle Sync</string>
+
+    <string name="adjust_subtitle_timing">Adjust subtitle timing</string>
+
+    <string name="minus_0_5s">-0.5s</string>
+
+    <string name="done">Done</string>
+
+    <string name="select_episode">Select Episode</string>
+
+    <string name="casting_to_device">Casting to Device...</string>
+
+    <string name="try_another_mirror">Try Another Mirror</string>
+
+    <string name="force_webview">Force WebView</string>
+
+    <string name="view_log">View Log</string>
+
+    <string name="player_error">Player Error</string>
+
+    <string name="use_webview">Use WebView</string>
+
+    <string name="switch_server">Switch Server</string>
+
+    <string name="log">Log</string>
+
+    <string name="select_server">Select Server</string>
+
+    <string name="settings">Settings</string>
+
+    <string name="language">Language / Bahasa</string>
+
+    <string name="home">Home</string>
+
+    <string name="movies">Movies</string>
+
+    <string name="tv_shows">TV Shows</string>
+
+    <string name="my_list">My List</string>
+
+    <string name="search">Search</string>
+
+    <string name="stream">Stream</string>
+
+    <string name="newly_updated">Newly Updated</string>
+
+    <string name="tv_series">TV Series</string>
+
+    <string name="action">Action</string>
+
+    <string name="anime">Anime</string>
+
+    <string name="apple_tv">Apple TV+</string>
+
+    <string name="disney_plus">Disney+</string>
+
+    <string name="hbo">HBO</string>
+
+    <string name="horror">Horror</string>
+
+    <string name="indonesia">Indonesia</string>
+
+    <string name="korea">Korea</string>
+
+    <string name="malaysia">Malaysia</string>
+
+    <string name="netflix">Netflix</string>
+
+    <string name="sci_fi">Sci-Fi</string>
+
+    <string name="thailand">Thailand</string>
+
+    <string name="vietnam">Viet Nam</string>
+
+    <string name="synopsis">Sinopsis</string>
+
+    <string name="cast">Cast</string>
+
+    <string name="episodes">Episodes</string>
+
+    <string name="season_1">Season 1</string>
+
+    <string name="servers">Servers</string>
+
+    <string name="trailer">Trailer</string>
+
+    <string name="no_trailer">No Trailer</string>
+
+    <string name="more">Selengkapnya</string>
+
+    <string name="hide">Sembunyikan</string>
+
+    <string name="no_synopsis">Belum ada sinopsis untuk film ini.</string>
+
+    <string name="about_app">About App</string>
+
+    <string name="auto_download_subtitles">Auto Download Subtitles</string>
+
+    <string name="changelog">Changelog</string>
+
+    <string name="check_discover_domain">Check / Discover Domain</string>
+
+    <string name="clear_cache">Clear Cache</string>
+
+    <string name="clear_watch_history">Clear Watch History</string>
+
+    <string name="enable_mobile_landscape">Enable Mobile Landscape</string>
+
+    <string name="join_telegram">Join our Telegram Channel</string>
+
+    <string name="manual_domain_update">Manual Domain Update</string>
+
+    <string name="restore_defaults">Restore Defaults</string>
+
+    <string name="show_calibration_border">Show Calibration Border</string>
+
+    <string name="version_info">Version Info</string>
+
+    <string name="view_app_logcat">View App Logcat</string>
+
+    <string name="add_to_list">Add to List</string>
+
+    <string name="allow_main_app_ui_rotate">Allow the main app UI to rotate on mobile devices</string>
+
+    <string name="auto_select_load_preferred_language">Automatically select and load preferred language</string>
+
+    <string name="back">Back</string>
+
+    <string name="decrease">Decrease</string>
+
+    <string name="displays_red_border_alignment">Displays a red border at the edges to help with alignment</string>
+
+    <string name="join_telegram_desc">Get the latest updates, announcements, and support. Tap here to join: t.me/DMXStream</string>
+
+    <string name="increase">Increase</string>
+
+    <string name="manually_specify_backend_url">Manually specify the primary backend URL</string>
+
+    <string name="picture_in_picture">Picture in Picture</string>
+
+    <string name="quality">Quality</string>
+
+    <string name="read_copy_logcat">Read and copy recent system logcat output</string>
+
+    <string name="remove_all_videos_continue_watching">Remove all videos from \'Continue Watching\'</string>
+
+    <string name="reset_display_adjustments">Reset all display adjustments to original values</string>
+
+    <string name="toggle_fullscreen">Toggle Fullscreen</string>
+
+    <string name="view_latest_updates">View the latest updates and improvements in this release.</string>
+
+    <string name="voice_search">Voice Search</string>
+
+    <string name="watched">Watched</string>
+
+    <string name="about_app_desc">Your premium portal to unlimited entertainment. Enjoy a massive catalog of high-quality movies and TV series across all your Android devices, including TV.</string>
+
+    <string name="base_url_updated">Base URL updated manually</string>
+
+    <string name="copied_to_clipboard">Copied to clipboard</string>
+
+    <string name="current_domain_up_to_date">Current domain is up to date</string>
+
+    <string name="failed_to_discover_domain">Failed to discover domain</string>
+
+    <string name="history_cleared">History cleared</string>
+
+    <string name="invalid_url_format">Invalid URL format</string>
+
+    <string name="no_app_can_open_link">No app can open this link.</string>
+
+    <string name="settings_caps">SETTINGS</string>
+
+    <string name="loading_logcat">Loading logcat...</string>
+
+    <string name="searching">Searching...</string>
+
+    <string name="screen_edge_margin">Screen Edge Margin (Safe Area)</string>
+
+    <string name="headliner_height_offset">Headliner (Hero) Height Offset</string>
+
+    <string name="overall_ui_scale">Overall UI Scale</string>
+
+    <string name="thumbnail_size">Thumbnail (Poster) Size</string>
+
+    <string name="display_adjustment_tv">DISPLAY ADJUSTMENT (TV)</string>
+
+    <string name="storage">STORAGE</string>
+
+    <string name="about">ABOUT</string>
+
+    <string name="debug">DEBUG</string>
+
+    <string name="calculating">Calculating...</string>
+
+    <string name="select_preferred_language_desc">Select your preferred language / Pilih bahasa pilihan anda</string>
+
+    <string name="fine_tune_interface_desc">Fine-tune the interface to fit your TV screen perfectly.</string>
+
+    <string name="choose_categories_desc">Choose which categories to display on the Home screen.</string>
+
+    <string name="currently_displayed">Currently Displayed</string>
+    <string name="category_hidden">Hidden</string>
+    <string name="locked">Locked</string>
+
+    <string name="current_usage">Current usage: %1$s</string>
+
+    <string name="error_reading_logcat">Error reading logcat: %1$s</string>
+
+    <string name="current_url_tap_refresh">Current: %1$s
+
+Tap to re-scout and refresh content</string>
+
+    <string name="video_details_not_loading">"Video Details Not Loading" issue for specific legacy titles.</string>
+
+    <string name="lang_english">English</string>
+
+    <string name="lang_indonesian">Indonesian</string>
+
+    <string name="lang_malay">Malay</string>
+
+    <string name="lang_japanese">Japanese</string>
+
+    <string name="lang_chinese">Chinese</string>
+
+    <string name="lang_thai">Thai</string>
+
+    <string name="lang_arabic">Arabic</string>
+
+
+    <string name="changelog_v1_9_1">Changelog v1.9.1</string>
+    <string name="added_malay_translation">Added full Malay localization.</string>
+    <string name="fixed_tv_scroll_barrier">Fixed TV mode scroll barrier on empty categories.</string>
+    <string name="fixed_tv_video_details_silent_fail">Fixed TV mode video details silent failure caused by RAM cache limit.</string>
+    <string name="v1_9_updates">v1.9 Updates:</string>
+
+    <string name="changelog_v1_9_2">Changelog v1.9.2</string>
+    <string name="added_dynamic_mobile_hero">Added dynamic 10-second random hero cycling in mobile mode.</string>
+    <string name="fixed_language_highlight_lag">Fixed delayed highlight when switching languages.</string>
+    <string name="fixed_language_btn_alignment">Fixed text alignment on language toggle buttons.</string>
+    <string name="v1_9_1_updates">v1.9.1 Updates:</string>
+    <string name="click_to_check_updates">Click to Check for Updates</string>
+    <string name="checking_for_updates">Checking for updates...</string>
+    <string name="changelog_v1_9_3">Changelog v1.9.3</string>
+    <string name="fixed_tv_dpad_seekbar">Fixed TV DPAD left/right seekbar navigation.</string>
+    <string name="v1_9_2_updates">v1.9.2 Updates:</string>
+    <string name="changelog_v1_9_4">Changelog v1.9.4</string>
+    <string name="changelog_v1_9_5">Changelog v1.9.5</string>
+    <string name="changelog_v1_9_6">Changelog v1.9.6</string>
+    <string name="v1_9_4_updates">v1.9.4 Updates:</string>
+    <string name="v1_9_5_updates">v1.9.5 Updates:</string>
+    <string name="fixed_locked_text_ui">Fixed misleading \"Locked\" text in Manage Home Categories.</string>
+    <string name="fixed_cast_7_bugs">Fixed 7 Chromecast bugs: progress saving, session resume, quality selection, and crash on non-GMS devices.</string>
+    <string name="improved_tv_buffering">Improved TV buffering: larger buffer (5 min) and auto 720p to prevent mid-playback stalls.</string>
+    <string name="added_tv_home_channel">Added Android TV Home Screen channel with featured movies.</string>
+    <string name="fixed_category_pagination">Fixed category pagination and paths to fetch more items.</string>
+    <string name="fixed_cast_state">Fixed Chromecast getting stuck on previous video when navigating.</string>
+    <string name="v1_9_3_updates">v1.9.3 Updates:</string>
+    <string name="changelog_v1_9_7">Changelog v1.9.7</string>
+    <string name="v1_9_6_updates">v1.9.6 Updates:</string>
+    <string name="added_pencuri_adaptive_domain">Added self-healing domain discovery for Malaysia catalog (auto-recovers when domains change).</string>
+    <string name="fixed_player_dead_stream_ui">Fixed black-screen player freeze: added sub-2s dead stream detection and dedicated error recovery screen.</string>
+    <string name="fixed_movie_state_bleed">Fixed stale server URL bleed-through and false rotation signals when switching movies.</string>
+    <string name="optimized_subtitle_loading">Optimized background subtitle extraction with fast-break on inactive provider keys.</string>
+    <string name="p_ramlee">P.Ramlee</string>
+    <string name="find_other_sources">Find Other Sources</string>
+    <string name="searching_other_sources">Searching alternative sources...</string>
+    <string name="sources_found">Found %d alternative source(s)</string>
+    <string name="no_other_sources_found">No alternative sources found for this title</string>
+    <string name="auto_healed_source">Auto-recovered %d alternative mirror(s)</string>
+    <string name="added_multi_provider_alt_sources">Added multi-provider cross-search &amp; auto-healing: discover fresh mirrors from partner providers when mirrors expire or fail.</string>
+    <string name="changelog_v2_0_2">Changelog v2.0.2 Raven\'s Revenge</string>
+    <string name="v2_0_2_updates">v2.0.2 Updates:</string>
+    <string name="v2_0_2_highlight_1">High-Definition TV Posters &amp; Backdrops: Upgraded TMDB and CDN poster resolutions up to 780p and backdrops to 1080p widescreen for crystal-clear clarity on Android TV and 4K displays.</string>
+    <string name="v2_0_2_highlight_2">Hardware-Adaptive Memory Protection: Dynamic resolution scaling ensures smooth navigation and prevents OutOfMemory stalls on budget Android TV boxes.</string>
+    <string name="v2_0_2_highlight_3">Enhanced Image Scraping Fidelity: Intelligent responsive srcset candidate extraction guarantees sharp, high-detail movie and series posters.</string>
+    <string name="changelog_v2_0_1">Changelog v2.0.1 Raven\'s Revenge</string>
+    <string name="v2_0_1_updates">v2.0.1 Updates:</string>
+    <string name="v2_0_1_highlight_1">Hardware-Accelerated Video: Restored GPU hardware decoders for smooth 1080p streaming without frame skips or CPU overheating.</string>
+    <string name="v2_0_1_highlight_2">Cinematic Audio Focus: Automatic pause/duck during phone calls and alarms, with clean Android 12+ audio routing.</string>
+    <string name="v2_0_1_highlight_3">Screen-Off Power Saving: Automatic playback pause when the device screen is locked outside PiP mode.</string>
+    <string name="v2_0_1_highlight_4">Cast Engine Stability: Fixed main-thread Google Cast SDK initialization on app startup.</string>
+    <string name="v2_0_1_highlight_5">Studio-Grade Categories UI: Premium interface for Manage Home Categories without emojis, featuring studio accent bars and bilingual localization.</string>
+    <string name="changelog_v2_0">Changelog v2.0 Raven\'s Revenge</string>
+    <string name="v2_0_updates">v2.0 Updates:</string>
+    <string name="v1_9_7_updates">v1.9.7 Updates:</string>
+    <string name="promo_highlight_1">Restored TV Series &amp; Anime Episodes: Full universal episode resolution and playback.</string>
+    <string name="promo_highlight_2">Multi-Season Grouping &amp; Auto-Sort: Automatic season classification and episode sequence sorting.</string>
+    <string name="promo_highlight_3">Universal Episode Extraction Engine: Deep extraction for modern layout structures (.gmr-listseries).</string>
+    <string name="promo_highlight_4">Multi-Provider Mirror Auto-Healing: Discover and resolve fresh video mirrors automatically.</string>
+    <string name="promo_highlight_5">Instant Dead Stream Failover: Sub-2s dead stream detection with rapid mirror recovery.</string>
+
+    <!-- Categories & Sorting -->
+    <string name="box_office">Box-Office</string>
+    <string name="comedy">Comedy</string>
+    <string name="drama">Drama</string>
+    <string name="romance">Romance</string>
+    <string name="thriller">Thriller</string>
+    <string name="adventure">Adventure</string>
+    <string name="crime">Crime</string>
+    <string name="fantasy">Fantasy</string>
+    <string name="mystery">Mystery</string>
+    <string name="japan">Japan</string>
+    <string name="china">China</string>
+    <string name="india">India</string>
+    <string name="usa">USA</string>
+    <string name="united_kingdom">United Kingdom</string>
+    <string name="sort_categorized">Categorized</string>
+    <string name="sort_active_first">Active First</string>
+    <string name="sort_alphabetical">A - Z</string>
+    <string name="cat_group_core">Core Catalogs</string>
+    <string name="cat_group_regional">Regional Cinema</string>
+    <string name="cat_group_streaming">Streaming Platforms</string>
+    <string name="cat_group_genres">Genres</string>
+    <string name="cat_group_years">Release Years</string>
+    <string name="cat_group_other">Other Categories</string>
+    <string name="enable_all">Enable All</string>
+    <string name="disable_all">Disable All</string>
+    <string name="reset_defaults">Reset Defaults</string>
+</resources>

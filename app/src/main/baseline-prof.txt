@@ -1,0 +1,13 @@
+Lcom/duta/movie/MainActivity;
+Lcom/duta/movie/MovieApplication;
+Lcom/duta/movie/ui/VideoViewModel;
+Lcom/duta/movie/ui/VideoListScreenKt;
+Lcom/duta/movie/ui/VideoDetailScreenKt;
+Lcom/duta/movie/util/VideoExtractor;
+Lcom/duta/movie/data/VideoRepository;
+Lcom/duta/movie/data/local/MovieDatabase;
+Lcom/duta/movie/data/local/VideoDao;
+Lcoil/ImageLoader;
+Landroidx/compose/ui/platform/AbstractComposeView;
+Landroidx/compose/runtime/Composer;
+Landroidx/navigation/compose/NavHostKt;

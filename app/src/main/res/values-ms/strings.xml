@@ -1,0 +1,405 @@
+<?xml version="1.0" ?>
+
+<resources>
+
+    <string name="app_name">DMStreaM</string>
+
+    <string name="videos">Video</string>
+
+    <string name="retry">Cuba Lagi</string>
+
+    <string name="next">Seterusnya</string>
+
+    <string name="video_quality">Kualiti Video</string>
+
+    <string name="auto">Auto</string>
+
+    <string name="close">Tutup</string>
+
+    <string name="manual_base_url">URL Asas Manual</string>
+
+    <string name="enter_a_new_domain_e_g_https_e">Masukkan domain baru (cth. https://example.com). Ini akan menggantikan URL Asas semasa.</string>
+
+    <string name="update">Kemas kini</string>
+
+    <string name="cancel">Batal</string>
+
+    <string name="app_logcat">Logcat Aplikasi</string>
+
+    <string name="logcat">Logcat</string>
+
+    <string name="copy">Salin</string>
+
+    <string name="fine_tune_the_interface_to_fit">Selaraskan antara muka agar sesuai dengan skrin TV anda dengan sempurna.</string>
+
+    <string name="default_language">Bahasa Lalai</string>
+
+    <string name="manage_home_categories">Urus Kategori Utama</string>
+
+    <string name="choose_which_categories_to_dis">Pilih kategori mana yang ingin dipaparkan di skrin Utama.</string>
+
+    <string name="changelog_v1_9">Log Perubahan v1.9</string>
+
+    <string name="improved_auto_heal_engine_to_f">Enjin Pemulihan Automatik yang dipertingkatkan untuk mengalihkan URL tanpa ralat.</string>
+
+    <string name="fixed">Dibaiki</string>
+
+    <string name="v1_8_updates">Kemas kini v1.8:</string>
+
+    <string name="added_auto_heal_migration_for_">Menambah pengalihan pemulihan automatik untuk domain video warisan.</string>
+
+    <string name="fixed_a_ui_bug_where_tv_displa">Membetulkan pepijat UI di mana tetapan paparan TV dipaparkan pada peranti mudah alih.</string>
+
+    <string name="configured_secure_release_sign">Telah mengkonfigurasi tandatangan keluaran yang selamat.</string>
+
+    <string name="added_a_link_to_the_official_t">Menambah pautan ke saluran Telegram rasmi di bahagian Tentang.</string>
+
+    <string name="play">Main</string>
+
+    <string name="exit_app">Keluar Aplikasi</string>
+
+    <string name="are_you_sure_you_want_to_close">Adakah anda pasti mahu menutup DMStreaM?</string>
+
+    <string name="exit">Keluar</string>
+
+    <string name="watch_now">Tonton Sekarang</string>
+
+    <string name="search_movies_actors">Cari filem, pelakon...</string>
+
+    <string name="dmstream">DMStreaM</string>
+
+    <string name="resolution_log">Log Resolusi</string>
+
+    <string name="resume_playback">Teruskan Main Semula?</string>
+
+    <string name="would_you_like_to_resume_from_">Adakah anda ingin meneruskan dari tempat anda berhenti?</string>
+
+    <string name="resume">Teruskan</string>
+
+    <string name="start_over">Mula Semula</string>
+
+    <string name="subtitles">Sarikata</string>
+
+    <string name="none_embedded">Tiada / Terbenam</string>
+
+    <string name="subtitle_sync">Penyegerakan Sarikata</string>
+
+    <string name="adjust_subtitle_timing">Laras pemasaan sarikata</string>
+
+    <string name="minus_0_5s">-0.5s</string>
+
+    <string name="done">Selesai</string>
+
+    <string name="select_episode">Pilih Episod</string>
+
+    <string name="casting_to_device">Menghantar ke Peranti...</string>
+
+    <string name="try_another_mirror">Cuba Pelayan Lain</string>
+
+    <string name="force_webview">Paksa WebView</string>
+
+    <string name="view_log">Lihat Log</string>
+
+    <string name="player_error">Ralat Pemain</string>
+
+    <string name="use_webview">Guna WebView</string>
+
+    <string name="switch_server">Tukar Pelayan</string>
+
+    <string name="log">Log</string>
+
+    <string name="select_server">Pilih Pelayan</string>
+
+    <string name="settings">Tetapan</string>
+
+    <string name="language">Language / Bahasa</string>
+
+    <string name="home">Utama</string>
+
+    <string name="movies">Filem</string>
+
+    <string name="tv_shows">Rancangan TV</string>
+
+    <string name="my_list">Senarai Saya</string>
+
+    <string name="search">Cari</string>
+
+    <string name="stream">Strim</string>
+
+    <string name="newly_updated">Terkini</string>
+
+    <string name="tv_series">Siri TV</string>
+
+    <string name="action">Aksi</string>
+
+    <string name="anime">Anime</string>
+
+    <string name="apple_tv">Apple TV+</string>
+
+    <string name="disney_plus">Disney+</string>
+
+    <string name="hbo">HBO</string>
+
+    <string name="horror">Seram</string>
+
+    <string name="indonesia">Indonesia</string>
+
+    <string name="korea">Korea</string>
+
+    <string name="malaysia">Malaysia</string>
+
+    <string name="netflix">Netflix</string>
+
+    <string name="sci_fi">Sains Fiksyen</string>
+
+    <string name="thailand">Thailand</string>
+ 
+    <string name="vietnam">Viet Nam</string>
+
+    <string name="synopsis">Sinopsis</string>
+
+    <string name="cast">Pelakon</string>
+
+    <string name="episodes">Episod</string>
+
+    <string name="season_1">Musim 1</string>
+
+    <string name="servers">Pelayan</string>
+
+    <string name="trailer">Treler</string>
+
+    <string name="no_trailer">Tiada Treler</string>
+
+    <string name="more">Selengkapnya</string>
+
+    <string name="hide">Sembunyikan</string>
+
+    <string name="no_synopsis">Belum ada sinopsis untuk filem ini.</string>
+
+    <string name="about_app">Mengenai Aplikasi</string>
+
+    <string name="auto_download_subtitles">Muat Turun Sarikata Automatik</string>
+
+    <string name="changelog">Log Perubahan</string>
+
+    <string name="check_discover_domain">Semak / Cari Domain</string>
+
+    <string name="clear_cache">Kosongkan Cache</string>
+
+    <string name="clear_watch_history">Kosongkan Sejarah Tontonan</string>
+
+    <string name="enable_mobile_landscape">Papar Melintang Mudah Alih</string>
+
+    <string name="join_telegram">Sertai Saluran Telegram Kami</string>
+
+    <string name="manual_domain_update">Kemas Kini Domain Manual</string>
+
+    <string name="restore_defaults">Pulihkan Tetapan Asal</string>
+
+    <string name="show_calibration_border">Papar Sempadan Kalibrasi</string>
+
+    <string name="version_info">Maklumat Versi</string>
+
+    <string name="view_app_logcat">Lihat Logcat Aplikasi</string>
+
+    <string name="add_to_list">Tambah ke Senarai</string>
+
+    <string name="allow_main_app_ui_rotate">Benarkan antara muka aplikasi berputar pada peranti mudah alih</string>
+
+    <string name="auto_select_load_preferred_language">Pilih dan muatkan bahasa pilihan secara automatik</string>
+
+    <string name="back">Kembali</string>
+
+    <string name="decrease">Kurangkan</string>
+
+    <string name="displays_red_border_alignment">Papar sempadan merah di tepi untuk membantu penjajaran</string>
+
+    <string name="join_telegram_desc">Dapatkan kemas kini dan sokongan terkini. Ketik di sini untuk menyertai: t.me/DMXStream</string>
+
+    <string name="increase">Tambahkan</string>
+
+    <string name="manually_specify_backend_url">Nyatakan URL bahagian pelayan utama secara manual</string>
+
+    <string name="picture_in_picture">Gambar dalam Gambar</string>
+
+    <string name="quality">Kualiti</string>
+
+    <string name="read_copy_logcat">Baca dan salin output logcat sistem terkini</string>
+
+    <string name="remove_all_videos_continue_watching">Buang semua video dari \'Teruskan Menonton\'</string>
+
+    <string name="reset_display_adjustments">Tetapkan semula semua pelarasan paparan ke nilai asal</string>
+
+    <string name="toggle_fullscreen">Togol Skrin Penuh</string>
+
+    <string name="view_latest_updates">Lihat kemas kini dan peningkatan terkini dalam keluaran ini.</string>
+
+    <string name="voice_search">Carian Suara</string>
+
+    <string name="watched">Ditonton</string>
+
+    <string name="about_app_desc">Portal premium anda ke hiburan tanpa had. Nikmati katalog besar filem dan siri TV berkualiti tinggi merentasi semua peranti Android anda, termasuk TV.</string>
+
+    <string name="base_url_updated">URL Utama dikemas kini secara manual</string>
+
+    <string name="copied_to_clipboard">Disalin ke papan keratan</string>
+
+    <string name="current_domain_up_to_date">Domain semasa adalah yang terkini</string>
+
+    <string name="failed_to_discover_domain">Gagal menemui domain</string>
+
+    <string name="history_cleared">Sejarah dipadam</string>
+
+    <string name="invalid_url_format">Format URL tidak sah</string>
+
+    <string name="no_app_can_open_link">Tiada aplikasi boleh membuka pautan ini.</string>
+
+    <string name="settings_caps">TETAPAN</string>
+
+    <string name="loading_logcat">Memuatkan logcat...</string>
+
+    <string name="searching">Mencari...</string>
+
+    <string name="screen_edge_margin">Margin Tepi Skrin (Kawasan Selamat)</string>
+
+    <string name="headliner_height_offset">Ketinggian Pengepala (Hero)</string>
+
+    <string name="overall_ui_scale">Skala UI Keseluruhan</string>
+
+    <string name="thumbnail_size">Saiz Lakaran Kenit (Poster)</string>
+
+    <string name="display_adjustment_tv">PELARASAN PAPARAN (TV)</string>
+
+    <string name="storage">STORAN</string>
+
+    <string name="about">MENGENAI</string>
+
+    <string name="debug">NYAHPEPIJAT</string>
+
+    <string name="calculating">Mengira...</string>
+
+    <string name="select_preferred_language_desc">Sila pilih bahasa pilihan anda</string>
+
+    <string name="fine_tune_interface_desc">Laraskan antara muka untuk muat dengan sempurna di skrin TV anda.</string>
+
+    <string name="choose_categories_desc">Pilih kategori yang ingin dipaparkan pada skrin Utama.</string>
+
+    <string name="currently_displayed">Sedang Dipaparkan</string>
+    <string name="category_hidden">Disembunyikan</string>
+    <string name="locked">Dikunci</string>
+
+    <string name="current_usage">Penggunaan semasa: %1$s</string>
+
+    <string name="error_reading_logcat">Ralat membaca logcat: %1$s</string>
+
+    <string name="current_url_tap_refresh">Semasa: %1$s
+
+Ketik untuk mencari semula dan muat semula kandungan</string>
+
+    <string name="video_details_not_loading">Isu "Butiran Video Tidak Dimuatkan" untuk tajuk-tajuk lama tertentu.</string>
+
+    <string name="lang_english">Inggeris</string>
+
+    <string name="lang_indonesian">Indonesia</string>
+
+    <string name="lang_malay">Melayu</string>
+
+    <string name="lang_japanese">Jepun</string>
+
+    <string name="lang_chinese">Cina</string>
+
+    <string name="lang_thai">Thai</string>
+
+    <string name="lang_arabic">Arab</string>
+
+
+    <string name="changelog_v1_9_1">Log Perubahan v1.9.1</string>
+    <string name="added_malay_translation">Menambah terjemahan bahasa Melayu sepenuhnya.</string>
+    <string name="fixed_tv_scroll_barrier">Membetulkan halangan tatal (scroll) Mod TV pada kategori kosong.</string>
+    <string name="fixed_tv_video_details_silent_fail">Membetulkan kegagalan butiran video dalam Mod TV akibat had cache RAM.</string>
+    <string name="v1_9_updates">Kemas kini v1.9:</string>
+
+    <string name="changelog_v1_9_2">Log Perubahan v1.9.2</string>
+    <string name="added_dynamic_mobile_hero">Menambah kitaran hero dinamik rawak 10 saat pada mod mudah alih.</string>
+    <string name="fixed_language_highlight_lag">Membetulkan serlahan (highlight) yang lewat apabila menukar bahasa.</string>
+    <string name="fixed_language_btn_alignment">Membetulkan penjajaran teks pada butang tukar bahasa.</string>
+    <string name="v1_9_1_updates">Kemas kini v1.9.1:</string>
+    <string name="click_to_check_updates">Klik untuk Semakan Kemaskini</string>
+    <string name="checking_for_updates">Menyemak kemaskini...</string>
+    <string name="changelog_v1_9_3">Log Perubahan v1.9.3</string>
+    <string name="fixed_tv_dpad_seekbar">Memperbaiki navigasi kiri/kanan DPAD TV pada bar carian pemain.</string>
+    <string name="v1_9_2_updates">Kemas kini v1.9.2:</string>
+    <string name="changelog_v1_9_4">Log Perubahan v1.9.4</string>
+    <string name="changelog_v1_9_5">Log Perubahan v1.9.5</string>
+    <string name="changelog_v1_9_6">Log Perubahan v1.9.6</string>
+    <string name="v1_9_4_updates">Kemaskini v1.9.4:</string>
+    <string name="v1_9_5_updates">Kemaskini v1.9.5:</string>
+    <string name="fixed_locked_text_ui">Diperbaiki teks \"Locked\" mengelirukan dalam Urus Kategori Halaman Utama.</string>
+    <string name="fixed_cast_7_bugs">Diperbaiki 7 pepijat Chromecast: simpanan kemajuan, sambung semula sesi, pemilihan kualiti, dan ranap pada peranti tanpa GMS.</string>
+    <string name="improved_tv_buffering">Penimbalan TV ditingkatkan: penimbal lebih besar (5 min) dan auto 720p untuk elak gangguan main balik.</string>
+    <string name="added_tv_home_channel">Ditambah saluran Skrin Utama Android TV dengan filem pilihan.</string>
+    <string name="fixed_category_pagination">Memperbaiki pepijat halaman kategori untuk memuatkan lebih banyak filem.</string>
+    <string name="fixed_cast_state">Memperbaiki isu Chromecast yang tersekat pada video sebelumnya.</string>
+    <string name="v1_9_3_updates">Kemas kini v1.9.3:</string>
+    <string name="changelog_v1_9_7">Log Perubahan v1.9.7</string>
+    <string name="v1_9_6_updates">Kemaskini v1.9.6:</string>
+    <string name="added_pencuri_adaptive_domain">Menambah penemuan domain swapulih bagi katalog Malaysia (pulih automatik jika domain bertukar).</string>
+    <string name="fixed_player_dead_stream_ui">Membetulkan skrin hitam pemain: pengesanan strim mati bawah 2s dan skrin pemulihan ralat disediakan.</string>
+    <string name="fixed_movie_state_bleed">Membetulkan limpahan URL pelayan lapuk dan isyarat putaran palsu apabila menukar filem.</string>
+    <string name="optimized_subtitle_loading">Mengoptimumkan pengekstrakan sarikata latar belakang dengan henti pantas kunci penyedia tidak aktif.</string>
+    <string name="p_ramlee">P.Ramlee</string>
+    <string name="find_other_sources">Cari Sumber Lain</string>
+    <string name="searching_other_sources">Mencari sumber alternatif...</string>
+    <string name="sources_found">Menemui %d sumber alternatif</string>
+    <string name="no_other_sources_found">Tiada sumber alternatif ditemui untuk tajuk ini</string>
+    <string name="auto_healed_source">Swapulih %d pelayan cermin alternatif</string>
+    <string name="added_multi_provider_alt_sources">Menambah carian silang berbilang penyedia &amp; swapulih automatik: pulih pelayan cermin baharu secara automatik apabila pautan mati atau tamat tempoh.</string>
+    <string name="changelog_v2_0_2">Log Perubahan v2.0.2 Raven\'s Revenge</string>
+    <string name="v2_0_2_updates">Kemaskini v2.0.2:</string>
+    <string name="v2_0_2_highlight_1">Poster &amp; Latar Belakang TV Definisi Tinggi: Resolusi poster TMDB dan CDN ditingkatkan ke 780p dan latar belakang ke 1080p untuk paparan tajam di Android TV dan skrin 4K.</string>
+    <string name="v2_0_2_highlight_2">Perlindungan Memori Adaptif Perkakasan: Skala resolusi dinamik memastikan tatalan lancar dan mengelakkan isu kehabisan memori pada kotak Android TV bajet.</string>
+    <string name="v2_0_2_highlight_3">Pengekstrakan Imej Berketepatan Tinggi: Pemilihan calon gambar beresolusi tinggi daripada srcset menjamin poster filem dan siri yang jelas.</string>
+    <string name="changelog_v2_0_1">Log Perubahan v2.0.1 Raven\'s Revenge</string>
+    <string name="v2_0_1_updates">Kemaskini v2.0.1:</string>
+    <string name="v2_0_1_highlight_1">Penyahkod Video Pecutan GPU: Mengutamakan penyahkod perkakasan untuk main balik 1080p lancar tanpa keguguran bingkai atau haba CPU berlebihan.</string>
+    <string name="v2_0_1_highlight_2">Fokus Audio Pawagam: Jeda/perlahan automatik semasa panggilan telefon dan penggera, dengan haluan audio bersih di Android 12+.</string>
+    <string name="v2_0_1_highlight_3">Penjimatan Kuasa Skrin Padam: Menjeda main balik secara automatik apabila skrin peranti dikunci di luar mod PiP.</string>
+    <string name="v2_0_1_highlight_4">Kestabilan Enjin Cast: Memperbaiki inisialisasi thread utama Google Cast SDK semasa pelancaran aplikasi.</string>
+    <string name="v2_0_1_highlight_5">Antara Muka Kategori Gred Studio: Antara muka premium tanpa emoji untuk Urus Kategori Laman Utama dengan bar aksen dan penyetempatan dwibahasa.</string>
+    <string name="changelog_v2_0">Log Perubahan v2.0 Raven\'s Revenge</string>
+    <string name="v2_0_updates">Kemaskini v2.0:</string>
+    <string name="v1_9_7_updates">Kemaskini v1.9.7:</string>
+    <string name="promo_highlight_1">Memulihkan Siri TV &amp; Episod Anime: Resolusi dan main balik episod universal sepenuhnya.</string>
+    <string name="promo_highlight_2">Pengelompokan Berbilang Musim &amp; Susun Auto: Pengelasan musim automatik dan susunan episod teratur.</string>
+    <string name="promo_highlight_3">Enjin Pengekstrakan Episod Universal: Pengekstrakan mendalam untuk susun atur moden (.gmr-listseries).</string>
+    <string name="promo_highlight_4">Swapulih Pelayan Berbilang Penyedia: Temui dan selesaikan pelayan video baharu secara automatik.</string>
+    <string name="promo_highlight_5">Pemulihan Pantas Strim Mati: Pengesanan strim mati bawah 2s dengan pemulihan pelayan cermin sepantas kilat.</string>
+
+    <!-- Categories & Sorting -->
+    <string name="box_office">Pecah Panggung</string>
+    <string name="comedy">Komedi</string>
+    <string name="drama">Drama</string>
+    <string name="romance">Romantik</string>
+    <string name="thriller">Saspens</string>
+    <string name="adventure">Pengembaraan</string>
+    <string name="crime">Jenayah</string>
+    <string name="fantasy">Fantasi</string>
+    <string name="mystery">Misteri</string>
+    <string name="japan">Jepun</string>
+    <string name="china">China</string>
+    <string name="india">India</string>
+    <string name="usa">Amerika Syarikat</string>
+    <string name="united_kingdom">United Kingdom</string>
+    <string name="sort_categorized">Teratur</string>
+    <string name="sort_active_first">Aktif Dahulu</string>
+    <string name="sort_alphabetical">A - Z</string>
+    <string name="cat_group_core">Katalog Utama</string>
+    <string name="cat_group_regional">Pawagam Serantau</string>
+    <string name="cat_group_streaming">Platform Penstriman</string>
+    <string name="cat_group_genres">Genre Filem</string>
+    <string name="cat_group_years">Tahun Keluaran</string>
+    <string name="cat_group_other">Kategori Lain</string>
+    <string name="enable_all">Pilih Semua</string>
+    <string name="disable_all">Nyahpilih Semua</string>
+    <string name="reset_defaults">Tetapkan Semula</string>
+</resources>
