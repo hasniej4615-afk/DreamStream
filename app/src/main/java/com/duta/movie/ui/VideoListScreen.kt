@@ -32,6 +32,7 @@ import androidx.compose.material3.*
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.border
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.runtime.*
 import androidx.compose.ui.res.stringResource
 import com.duta.movie.R
@@ -167,9 +168,11 @@ fun VideoListScreen(
     val searchSort by viewModel.searchSort.collectAsStateWithLifecycle()
     val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
     val firstItemFocusRequester = remember { FocusRequester() }
+    val firstCategoryFocusRequester = remember { FocusRequester() }
     val clickedItemFocusRequester = remember { FocusRequester() }
     var lastClickedVideoId by rememberSaveable { mutableStateOf<String?>(null) }
     val searchGridState = rememberLazyGridState()
+    val homeLazyListState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     
     LaunchedEffect(isLoading, videos, selectedCategory, isSearchActive) {
@@ -178,8 +181,10 @@ fun VideoListScreen(
             try {
                 if (isSearchActive && lastClickedVideoId != null && videos.any { it.id == lastClickedVideoId }) {
                     clickedItemFocusRequester.requestFocus()
-                } else {
+                } else if (isSearchActive) {
                     firstItemFocusRequester.requestFocus()
+                } else if (viewModel.lastFocusedHomeVideoId == null) {
+                    firstCategoryFocusRequester.requestFocus()
                 }
             } catch(_: Exception) {}
         }
@@ -192,6 +197,14 @@ fun VideoListScreen(
     LaunchedEffect(Unit) { 
         if (!isSearchActive && searchQuery.isBlank() && selectedCategory != null) {
             viewModel.selectCategory(null) 
+        }
+        if (isImmersiveMode && !isSearchActive && viewModel.lastFocusedHomeVideoId != null) {
+            val targetRow = viewModel.lastFocusedCategoryRowIndex
+            if (targetRow > 0) {
+                try {
+                    homeLazyListState.scrollToItem(targetRow)
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -254,9 +267,7 @@ fun VideoListScreen(
     }
     
     val errorPlaceholder = rememberVectorPainter(Icons.Default.Warning)
-    val homeLazyListState = rememberLazyListState()
     val pullState = rememberPullToRefreshState()
-    val firstCategoryFocusRequester = remember { FocusRequester() }
     
     val configuration = LocalConfiguration.current
     val density = LocalDensity.current
@@ -514,90 +525,88 @@ fun VideoListScreen(
                                             isRealTV = isImmersiveMode,
                                             isFocused = isRowFocused
                                         )
-                                        HorizontalVideoRow(
-                                            videos = recentlyWatchedVideos,
-                                            isLoading = false,
-                                            errorPlaceholder = errorPlaceholder,
-                                            onVideoClick = onVideoClick,
-                                            isTV = true,
-                                            isRealTV = isImmersiveMode,
-                                            viewModel = viewModel,
-                                            onVideoFocus = { video -> 
-                                                focusedVideo = video 
-                                                // Removed animateScrollToItem to prevent jumping on TV. 
-                                                // The native focus system will bring the constrained LazyColumn into view.
-                                            },
-                                            thumbnailScale = uiThumbnailScaleFactor,
-                                            firstItemFocusRequester = firstCategoryFocusRequester,
-                                            modifier = Modifier.graphicsLayer { alpha = rowAlpha }
-                                        )
-                                    }
-                                }
-                            }
+                                         HorizontalVideoRow(
+                                             videos = recentlyWatchedVideos,
+                                             isLoading = false,
+                                             errorPlaceholder = errorPlaceholder,
+                                             onVideoClick = onVideoClick,
+                                             isTV = true,
+                                             isRealTV = isImmersiveMode,
+                                             viewModel = viewModel,
+                                             rowIndex = 0,
+                                             onVideoFocus = { video -> 
+                                                 focusedVideo = video 
+                                             },
+                                             thumbnailScale = uiThumbnailScaleFactor,
+                                             firstItemFocusRequester = firstCategoryFocusRequester,
+                                             modifier = Modifier.graphicsLayer { alpha = rowAlpha }
+                                         )
+                                     }
+                                 }
+                             }
 
-                            itemsIndexed(categories, key = { _, cat -> cat["path"] ?: cat["name"] ?: "" }) { index, category ->
-                                val name = translateCategoryName(category["name"] ?: "")
-                                val path = category["path"] ?: ""
-                                if (name.isNotEmpty() && path.isNotEmpty()) {
-                                    val rowVideos = categoryVideos[path] ?: emptyList()
-                                    val isRowLoading = categoryLoading[path] ?: false
-                                    LaunchedEffect(path) { 
-                                        if (rowVideos.isEmpty()) {
-                                            viewModel.fetchVideosForCategoryRow(path)
-                                        }
-                                    }
+                             itemsIndexed(categories, key = { _, cat -> cat["path"] ?: cat["name"] ?: "" }) { index, category ->
+                                 val name = translateCategoryName(category["name"] ?: "")
+                                 val path = category["path"] ?: ""
+                                 if (name.isNotEmpty() && path.isNotEmpty()) {
+                                     val rowVideos = categoryVideos[path] ?: emptyList()
+                                     val isRowLoading = categoryLoading[path] ?: false
+                                     LaunchedEffect(path) { 
+                                         if (rowVideos.isEmpty()) {
+                                             viewModel.fetchVideosForCategoryRow(path)
+                                         }
+                                     }
 
-                                    if (rowVideos.isNotEmpty() || isRowLoading) {
-                                        val scope = rememberCoroutineScope()
-                                        var isRowFocused by remember { mutableStateOf(false) }
-                                        val rowAlpha by animateFloatAsState(if (isRowFocused) 1f else 0.65f)
-                                        val isFirstRow = index == 0 && recentlyWatchedVideos.isEmpty()
-                                        
-                                        Column(modifier = Modifier
-                                            .onFocusChanged { 
-                                                isRowFocused = it.hasFocus 
-                                                if (it.hasFocus) {
-                                                    scope.launch { 
-                                                        homeLazyListState.animateScrollToItem(index) 
-                                                    }
-                                                    if (rowVideos.isEmpty() && !isRowLoading) {
-                                                        viewModel.fetchVideosForCategoryRow(path)
-                                                    }
-                                                }
-                                            }
-                                        ) {
-                                            ListSectionHeader(
-                                                name, 
-                                                isLargeLayout = true, 
-                                                isRealTV = isImmersiveMode,
-                                                isFocused = isRowFocused
-                                            )
-                                            HorizontalVideoRow(
-                                                videos = rowVideos,
-                                                isLoading = isRowLoading || rowVideos.isEmpty(), // Show shimmer if empty
-                                                errorPlaceholder = errorPlaceholder,
-                                                onVideoClick = onVideoClick,
-                                                isTV = true,
-                                                isRealTV = isImmersiveMode,
-                                                viewModel = viewModel,
-                                                onVideoFocus = { video -> 
-                                                    focusedVideo = video 
-                                                    val nextIdx = index + 1
-                                                    if (nextIdx < categories.size) {
-                                                        categories[nextIdx]["path"]?.let { nextPath ->
-                                                            viewModel.fetchVideosForCategoryRow(nextPath)
-                                                        }
-                                                    }
-                                                },
-                                                thumbnailScale = uiThumbnailScaleFactor,
-                                                categoryPath = path,
-                                                firstItemFocusRequester = if (isFirstRow) firstCategoryFocusRequester else null,
-                                                modifier = Modifier.graphicsLayer { alpha = rowAlpha }
-                                            )
-                                        }
-                                    }
-                                }
-                            }
+                                     if (rowVideos.isNotEmpty() || isRowLoading) {
+                                         val scope = rememberCoroutineScope()
+                                         var isRowFocused by remember { mutableStateOf(false) }
+                                         val rowAlpha by animateFloatAsState(if (isRowFocused) 1f else 0.65f)
+                                         val actualRowIndex = if (recentlyWatchedVideos.isNotEmpty()) index + 1 else index
+                                         val isFirstRow = actualRowIndex == 0
+                                         
+                                         Column(modifier = Modifier
+                                             .onFocusChanged { 
+                                                 isRowFocused = it.hasFocus 
+                                                 if (it.hasFocus) {
+                                                     if (rowVideos.isEmpty() && !isRowLoading) {
+                                                         viewModel.fetchVideosForCategoryRow(path)
+                                                     }
+                                                 }
+                                             }
+                                         ) {
+                                             ListSectionHeader(
+                                                 name, 
+                                                 isLargeLayout = true, 
+                                                 isRealTV = isImmersiveMode,
+                                                 isFocused = isRowFocused
+                                             )
+                                             HorizontalVideoRow(
+                                                 videos = rowVideos,
+                                                 isLoading = isRowLoading || rowVideos.isEmpty(), // Show shimmer if empty
+                                                 errorPlaceholder = errorPlaceholder,
+                                                 onVideoClick = onVideoClick,
+                                                 isTV = true,
+                                                 isRealTV = isImmersiveMode,
+                                                 viewModel = viewModel,
+                                                 rowIndex = actualRowIndex,
+                                                 onVideoFocus = { video -> 
+                                                     focusedVideo = video 
+                                                     val nextIdx = index + 1
+                                                     if (nextIdx < categories.size) {
+                                                         categories[nextIdx]["path"]?.let { nextPath ->
+                                                             viewModel.fetchVideosForCategoryRow(nextPath)
+                                                         }
+                                                     }
+                                                 },
+                                                 thumbnailScale = uiThumbnailScaleFactor,
+                                                 categoryPath = path,
+                                                 firstItemFocusRequester = if (isFirstRow) firstCategoryFocusRequester else null,
+                                                 modifier = Modifier.graphicsLayer { alpha = rowAlpha }
+                                             )
+                                         }
+                                     }
+                                 }
+                             }
                         }
                     }
                 } else {
@@ -723,6 +732,7 @@ fun VideoListScreen(
     }
 }
 
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun HorizontalVideoRow(
     videos: List<Video>,
@@ -732,6 +742,7 @@ fun HorizontalVideoRow(
     isTV: Boolean = false,
     isRealTV: Boolean = false,
     viewModel: VideoViewModel? = null,
+    rowIndex: Int = 0,
     onVideoFocus: (Video) -> Unit = {},
     thumbnailScale: Float = 1.0f,
     categoryPath: String? = null,
@@ -762,6 +773,7 @@ fun HorizontalVideoRow(
         contentPadding = PaddingValues(horizontal = if (isRealTV) 48.dp else 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         modifier = modifier
+            .focusGroup()
             .fillMaxWidth()
             .height(((if (isRealTV) 240 else if (isTV) 260 else 340) * thumbnailScale).dp)
             .onFocusChanged { hasFocus = it.hasFocus }
@@ -785,13 +797,35 @@ fun HorizontalVideoRow(
                 )
             }
         } else {
-            itemsIndexed(videos) { index, video ->
+            itemsIndexed(videos, key = { _, video -> video.id }) { index, video ->
                 val progressFlow = remember(video.id) { viewModel?.getVideoProgress(video.id) ?: kotlinx.coroutines.flow.flowOf(0L) }
                 val durationFlow = remember(video.id) { viewModel?.getVideoDuration(video.id) ?: kotlinx.coroutines.flow.flowOf(0L) }
                 val progress by progressFlow.collectAsState(0L)
                 val duration by durationFlow.collectAsState(0L)
                 
                 var itemFocused by remember { mutableStateOf(false) }
+
+                val isTargetRestorationItem = isRealTV && viewModel != null && video.id == viewModel.lastFocusedHomeVideoId
+                val itemFocusRequester = remember { FocusRequester() }
+
+                LaunchedEffect(isTargetRestorationItem) {
+                    if (isTargetRestorationItem) {
+                        try {
+                            listState.scrollToItem(index)
+                        } catch (_: Exception) {}
+                        delay(100)
+                        try {
+                            itemFocusRequester.requestFocus()
+                            viewModel.lastFocusedHomeVideoId = null
+                        } catch (_: Exception) {}
+                    }
+                }
+
+                val effectiveFocusRequester = when {
+                    isTargetRestorationItem -> itemFocusRequester
+                    index == 0 && firstItemFocusRequester != null -> firstItemFocusRequester
+                    else -> null
+                }
 
                 NetflixThumbnail(
                     video = video,
@@ -805,6 +839,8 @@ fun HorizontalVideoRow(
                     isRealTV = isRealTV,
                     onFocus = { 
                         itemFocused = true
+                        viewModel?.lastFocusedHomeVideoId = video.id
+                        viewModel?.lastFocusedCategoryRowIndex = rowIndex
                         onVideoFocus(video)
                         if (isRealTV) {
                             scope.launch { listState.animateScrollToItem(index) }
@@ -813,8 +849,17 @@ fun HorizontalVideoRow(
                     modifier = Modifier
                         .zIndex(if (itemFocused) 10f else 1f)
                         .onFocusChanged { itemFocused = it.isFocused }
-                        .then(if (index == 0 && firstItemFocusRequester != null) Modifier.focusRequester(firstItemFocusRequester) else Modifier)
-                ) { onVideoClick(video.id) }
+                        .then(if (effectiveFocusRequester != null) Modifier.focusRequester(effectiveFocusRequester) else Modifier)
+                        .focusProperties {
+                            if (rowIndex == 0 && isRealTV) {
+                                up = FocusRequester.Cancel
+                            }
+                        }
+                ) {
+                    viewModel?.lastFocusedHomeVideoId = video.id
+                    viewModel?.lastFocusedCategoryRowIndex = rowIndex
+                    onVideoClick(video.id)
+                }
             }
             if (isLoading) {
                 item {

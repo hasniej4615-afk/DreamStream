@@ -89,6 +89,10 @@ class VideoViewModel @Inject constructor(
     private val _lastCompletedSearchQuery = MutableStateFlow<String?>(null)
     val lastCompletedSearchQuery: StateFlow<String?> = _lastCompletedSearchQuery.asStateFlow()
 
+    // TV D-Pad Focus Restoration across navigation
+    var lastFocusedCategoryRowIndex: Int = 0
+    var lastFocusedHomeVideoId: String? = null
+
     fun setSearchFilter(filter: SearchFilter) { _searchFilter.value = filter }
     fun setSearchSort(sort: SearchSort) { _searchSort.value = sort }
 
