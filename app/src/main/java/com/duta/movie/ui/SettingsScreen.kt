@@ -24,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
@@ -346,7 +347,7 @@ fun SettingsScreen(
                     LazyColumn(
                         modifier = Modifier.fillMaxSize(),
                         verticalArrangement = Arrangement.spacedBy(16.dp),
-                        contentPadding = PaddingValues(bottom = 32.dp)
+                        contentPadding = PaddingValues(bottom = 96.dp)
                     ) {
                         when (selectedSection) {
 
@@ -1396,28 +1397,60 @@ fun HelpTopicCard(
     tag: String
 ) {
     var isExpanded by remember { mutableStateOf(false) }
-    var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (isFocused) 1.02f else 1f)
+    var isHeaderFocused by remember { mutableStateOf(false) }
+    val headerScale by animateFloatAsState(if (isHeaderFocused) 1.02f else 1f)
     val context = LocalContext.current
     val isRealTV = remember { com.duta.movie.util.DeviceUtils.isTvDevice(context) }
+
+    if (isRealTV && isExpanded) {
+        androidx.activity.compose.BackHandler {
+            isExpanded = false
+        }
+    }
+
+    val blocks = remember(content) {
+        val result = mutableListOf<String>()
+        val lines = content.split("\n")
+        var currentBlock = StringBuilder()
+        for (line in lines) {
+            val trimmed = line.trim()
+            if (trimmed.startsWith("•") && currentBlock.isNotEmpty()) {
+                result.add(currentBlock.toString().trim())
+                currentBlock = StringBuilder()
+            }
+            if (currentBlock.isNotEmpty()) {
+                currentBlock.append("\n")
+            }
+            currentBlock.append(line)
+        }
+        if (currentBlock.isNotEmpty()) {
+            result.add(currentBlock.toString().trim())
+        }
+        if (result.isEmpty() && content.isNotBlank()) {
+            result.add(content.trim())
+        }
+        result
+    }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .graphicsLayer(scaleX = scale, scaleY = scale)
-            .onFocusChanged { isFocused = it.isFocused }
             .background(Color(0xFF1E1E24), RoundedCornerShape(12.dp))
             .border(
-                width = if (isFocused && isRealTV) 2.dp else if (isExpanded) 1.dp else 0.dp,
-                color = if (isFocused && isRealTV) Color.White else if (isExpanded) Color(0xFFE50914).copy(alpha = 0.6f) else Color.Transparent,
+                width = if (isHeaderFocused && isRealTV) 2.dp else if (isExpanded) 1.dp else 0.dp,
+                color = if (isHeaderFocused && isRealTV) Color.White else if (isExpanded) Color(0xFFE50914).copy(alpha = 0.6f) else Color.Transparent,
                 shape = RoundedCornerShape(12.dp)
             )
-            .clickable { isExpanded = !isExpanded }
-            .focusable()
             .padding(16.dp)
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier
+                .fillMaxWidth()
+                .graphicsLayer(scaleX = headerScale, scaleY = headerScale)
+                .onFocusChanged { isHeaderFocused = it.isFocused }
+                .clip(RoundedCornerShape(8.dp))
+                .clickable { isExpanded = !isExpanded }
+                .focusable(),
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
@@ -1455,13 +1488,13 @@ fun HelpTopicCard(
             }
 
             Surface(
-                color = if (isExpanded) Color(0xFFE50914) else Color(0xFF2E2E38),
+                color = if (isExpanded) Color(0xFFE50914) else if (isHeaderFocused && isRealTV) Color.White else Color(0xFF2E2E38),
                 shape = RoundedCornerShape(6.dp),
                 modifier = Modifier.padding(start = 12.dp)
             ) {
                 Text(
                     text = stringResource(if (isExpanded) R.string.help_action_hide else R.string.help_action_read),
-                    color = Color.White,
+                    color = if (!isExpanded && isHeaderFocused && isRealTV) Color.Black else Color.White,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
@@ -1477,31 +1510,105 @@ fun HelpTopicCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 14.dp)
-                    .background(Color(0xFF141418), RoundedCornerShape(8.dp))
-                    .padding(14.dp)
+                    .padding(top = 14.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                val paragraphs = content.split("\n")
-                paragraphs.forEach { paragraph ->
-                    if (paragraph.startsWith("•") || paragraph.startsWith("  ")) {
-                        Text(
-                            text = paragraph,
-                            color = Color(0xFFDCDCE0),
-                            fontSize = 13.sp,
-                            lineHeight = 20.sp,
-                            modifier = Modifier.padding(vertical = 3.dp)
-                        )
-                    } else if (paragraph.isNotBlank()) {
-                        Text(
-                            text = paragraph,
-                            color = Color.White,
-                            fontWeight = FontWeight.Medium,
-                            fontSize = 13.sp,
-                            lineHeight = 20.sp,
-                            modifier = Modifier.padding(vertical = 3.dp)
-                        )
+                blocks.forEach { block ->
+                    HelpBlockItem(block = block, isRealTV = isRealTV)
+                }
+
+                var isCloseBtnFocused by remember { mutableStateOf(false) }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.End
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .onFocusChanged { isCloseBtnFocused = it.isFocused }
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (isCloseBtnFocused && isRealTV) Color.White else Color(0xFFE50914).copy(alpha = 0.25f)
+                            )
+                            .border(
+                                width = if (isCloseBtnFocused && isRealTV) 2.dp else 1.dp,
+                                color = if (isCloseBtnFocused && isRealTV) Color.White else Color(0xFFE50914),
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .clickable { isExpanded = false }
+                            .focusable()
+                            .padding(horizontal = 16.dp, vertical = 10.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.KeyboardArrowUp,
+                                contentDescription = null,
+                                tint = if (isCloseBtnFocused && isRealTV) Color.Black else Color.White,
+                                modifier = Modifier.size(18.dp)
+                            )
+                            Text(
+                                text = stringResource(R.string.help_action_hide),
+                                color = if (isCloseBtnFocused && isRealTV) Color.Black else Color.White,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun HelpBlockItem(
+    block: String,
+    isRealTV: Boolean
+) {
+    var isBlockFocused by remember { mutableStateOf(false) }
+    val blockScale by animateFloatAsState(if (isBlockFocused && isRealTV) 1.01f else 1f)
+
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .graphicsLayer(scaleX = blockScale, scaleY = blockScale)
+            .onFocusChanged { isBlockFocused = it.isFocused }
+            .background(
+                color = if (isBlockFocused && isRealTV) Color(0xFF252530) else Color(0xFF141418),
+                shape = RoundedCornerShape(8.dp)
+            )
+            .border(
+                width = if (isBlockFocused && isRealTV) 2.dp else 1.dp,
+                color = if (isBlockFocused && isRealTV) Color.White else Color(0xFF222228),
+                shape = RoundedCornerShape(8.dp)
+            )
+            .focusable()
+            .padding(12.dp)
+    ) {
+        val lines = block.split("\n")
+        lines.forEachIndexed { lineIndex, line ->
+            val trimmed = line.trim()
+            if (trimmed.startsWith("•") || lineIndex == 0) {
+                Text(
+                    text = trimmed,
+                    color = if (isBlockFocused && isRealTV) Color.White else Color(0xFFF0F0F5),
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 13.5.sp,
+                    lineHeight = 20.sp,
+                    modifier = Modifier.padding(bottom = if (lines.size > 1) 4.dp else 0.dp)
+                )
+            } else {
+                Text(
+                    text = trimmed,
+                    color = if (isBlockFocused && isRealTV) Color(0xFFE0E0E8) else Color(0xFFC0C0C8),
+                    fontSize = 13.sp,
+                    lineHeight = 20.sp
+                )
             }
         }
     }
