@@ -71,9 +71,10 @@ fun SettingsScreen(
     viewModel: VideoViewModel
 ) {
     val context = LocalContext.current
+    val isTV = remember { com.duta.movie.util.DeviceUtils.isTvDevice(context) }
     var selectedSection by remember { 
         mutableStateOf(
-            if (com.duta.movie.util.DeviceUtils.isTvDevice(context)) 
+            if (isTV) 
                 SettingsSection.DISPLAY 
             else 
                 SettingsSection.SUBTITLES
@@ -235,8 +236,23 @@ fun SettingsScreen(
                     .padding(16.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                IconButton(onClick = onBackClick) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back), tint = Color.White)
+                var isBackFocused by remember { mutableStateOf(false) }
+                IconButton(
+                    onClick = onBackClick,
+                    modifier = Modifier
+                        .onFocusChanged { isBackFocused = it.isFocused }
+                        .scale(if (isBackFocused) 1.15f else 1f)
+                        .border(
+                            width = if (isBackFocused && isTV) 2.dp else 0.dp,
+                            color = if (isBackFocused && isTV) Color.White else Color.Transparent,
+                            shape = CircleShape
+                        )
+                ) {
+                    Icon(
+                        Icons.AutoMirrored.Filled.ArrowBack,
+                        contentDescription = stringResource(R.string.back),
+                        tint = if (isBackFocused) Color.Red else Color.White
+                    )
                 }
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
@@ -250,35 +266,43 @@ fun SettingsScreen(
 
             Row(modifier = Modifier.fillMaxSize()) {
                 // Sidebar
+                val sidebarScrollState = rememberScrollState()
                 Column(
                     modifier = Modifier
                         .width(90.dp)
                         .fillMaxHeight()
-                        .background(Color.Black),
+                        .background(Color.Black)
+                        .focusGroup()
+                        .verticalScroll(sidebarScrollState)
+                        .padding(vertical = 12.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     SettingsSection.entries.forEach { section ->
                         if (section == SettingsSection.DEBUG && !isDebugModeEnabled) return@forEach
-                        
-                        val isTV = com.duta.movie.util.DeviceUtils.isTvDevice(context)
                         if (section == SettingsSection.DISPLAY && !isTV) return@forEach
                         
                         val isSelected = selectedSection == section
-                        var isFocused by remember { mutableStateOf(false) }
+                        var isFocused by remember(section) { mutableStateOf(false) }
 
                         Box(
                             modifier = Modifier
                                 .size(70.dp, 60.dp)
-                                .onFocusChanged { isFocused = it.isFocused }
+                                .scale(if (isFocused) 1.08f else 1f)
+                                .onFocusChanged {
+                                    isFocused = it.isFocused
+                                    if (it.isFocused && isTV) {
+                                        selectedSection = section
+                                    }
+                                }
                                 .background(
                                     color = if (isSelected) Color.Red else Color.Transparent,
-                                    shape = RoundedCornerShape(4.dp)
+                                    shape = RoundedCornerShape(8.dp)
                                 )
                                 .border(
-                                    width = if (isFocused && !isSelected) 2.dp else 0.dp,
-                                    color = if (isFocused && !isSelected) Color.White else Color.Transparent,
-                                    shape = RoundedCornerShape(4.dp)
+                                    width = if (isFocused) 3.dp else 0.dp,
+                                    color = if (isFocused) Color.White else Color.Transparent,
+                                    shape = RoundedCornerShape(8.dp)
                                 )
                                 .clickable { selectedSection = section }
                                 .focusable(),
@@ -287,11 +311,12 @@ fun SettingsScreen(
                             Icon(
                                 imageVector = section.icon,
                                 contentDescription = section.label,
-                                tint = if (isSelected) Color.White else Color.Gray,
+                                tint = if (isSelected || isFocused) Color.White else Color.Gray,
                                 modifier = Modifier.size(28.dp)
                             )
                         }
                     }
+                    Spacer(modifier = Modifier.height(24.dp))
                 }
 
                 // Main Content
