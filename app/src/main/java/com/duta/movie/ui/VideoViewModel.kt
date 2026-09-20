@@ -757,23 +757,6 @@ class VideoViewModel @Inject constructor(
             _searchResultsVideos.value = emptyList()
             _isSearching.value = false
             _lastCompletedSearchQuery.value = null
-            return
-        }
-
-        if (query.trim().length < 2) {
-            _isSearching.value = false
-            _lastCompletedSearchQuery.value = null
-            return
-        }
-
-        // Immediately signal searching so UI does not prematurely show "No results found"
-        _isSearching.value = true
-        _lastCompletedSearchQuery.value = null
-
-        // Live Debounce Search: Automatically search after 500ms when query is at least 2 characters
-        searchDebounceJob = viewModelScope.launch {
-            delay(500)
-            searchVideos(query.trim())
         }
     }
 

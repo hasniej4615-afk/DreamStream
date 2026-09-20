@@ -58,6 +58,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -171,18 +173,24 @@ fun VideoListScreen(
     val firstCategoryFocusRequester = remember { FocusRequester() }
     val clickedItemFocusRequester = remember { FocusRequester() }
     var lastClickedVideoId by rememberSaveable { mutableStateOf<String?>(null) }
+    var lastFocusedSearchVideoId by rememberSaveable { mutableStateOf<String?>(null) }
+    var previousCompletedSearchQuery by rememberSaveable { mutableStateOf<String?>(null) }
     val searchGridState = rememberLazyGridState()
     val homeLazyListState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     
-    LaunchedEffect(isLoading, videos, selectedCategory, isSearchActive) {
+    LaunchedEffect(isLoading, lastCompletedSearchQuery, selectedCategory, isSearchActive) {
         if (isImmersiveMode && !isLoading && videos.isNotEmpty()) {
-            delay(800)
+            delay(500)
             try {
-                if (isSearchActive && lastClickedVideoId != null && videos.any { it.id == lastClickedVideoId }) {
-                    clickedItemFocusRequester.requestFocus()
-                } else if (isSearchActive) {
-                    firstItemFocusRequester.requestFocus()
+                if (isSearchActive) {
+                    if (lastClickedVideoId != null && videos.any { it.id == lastClickedVideoId }) {
+                        clickedItemFocusRequester.requestFocus()
+                    } else if (lastFocusedSearchVideoId != null && videos.any { it.id == lastFocusedSearchVideoId }) {
+                        // User is actively browsing or has already focused a video, do not jump back to index 0
+                    } else {
+                        firstItemFocusRequester.requestFocus()
+                    }
                 } else if (viewModel.lastFocusedHomeVideoId == null) {
                     firstCategoryFocusRequester.requestFocus()
                 }
@@ -190,8 +198,19 @@ fun VideoListScreen(
         }
     }
 
+    LaunchedEffect(lastCompletedSearchQuery) {
+        if (lastCompletedSearchQuery != previousCompletedSearchQuery) {
+            previousCompletedSearchQuery = lastCompletedSearchQuery
+            lastFocusedSearchVideoId = null
+            lastClickedVideoId = null
+        }
+    }
+
     LaunchedEffect(searchQuery) {
-        lastClickedVideoId = null
+        if (searchQuery.isBlank()) {
+            lastFocusedSearchVideoId = null
+            lastClickedVideoId = null
+        }
     }
 
     LaunchedEffect(Unit) { 
@@ -444,7 +463,12 @@ fun VideoListScreen(
                                         showTitle = !isImmersiveMode,
                                         isTV = isImmersiveMode,
                                         isRealTV = isImmersiveMode,
-                                        onFocus = { focusedVideo = video },
+                                        onFocus = { 
+                                            focusedVideo = video
+                                            if (isSearchActive) {
+                                                lastFocusedSearchVideoId = video.id
+                                            }
+                                        },
                                         onClick = { 
                                             lastClickedVideoId = video.id
                                             onVideoClick(video.id) 
@@ -1303,6 +1327,13 @@ fun NetflixTopBar(
         if (isSearchActive) {
             val searchFocusRequester = remember { FocusRequester() }
             LaunchedEffect(Unit) { try { searchFocusRequester.requestFocus() } catch(_: Exception) {} }
+            val keyboardController = LocalSoftwareKeyboardController.current
+            val focusManager = LocalFocusManager.current
+            val performSearch = {
+                keyboardController?.hide()
+                focusManager.clearFocus()
+                onSearchAction()
+            }
             
             Column(modifier = Modifier.fillMaxWidth()) {
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -1332,7 +1363,7 @@ fun NetflixTopBar(
                         ),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                        keyboardActions = KeyboardActions(onSearch = { onSearchAction() })
+                        keyboardActions = KeyboardActions(onSearch = { performSearch() })
                     )
                     if (searchQuery.isNotEmpty()) {
                         var isClearFocused by remember { mutableStateOf(false) }
@@ -1348,7 +1379,7 @@ fun NetflixTopBar(
                     }
                     var isSearchActionFocused by remember { mutableStateOf(false) }
                     IconButton(
-                        onClick = onSearchAction,
+                        onClick = performSearch,
                         modifier = Modifier
                             .onFocusChanged { isSearchActionFocused = it.isFocused }
                             .background(if (isSearchActionFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, CircleShape)
