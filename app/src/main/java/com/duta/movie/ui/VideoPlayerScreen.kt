@@ -76,7 +76,9 @@ import androidx.media3.ui.SubtitleView
 import com.duta.movie.model.Episode
 import com.duta.movie.model.Video
 import com.duta.movie.model.VideoServer
+import com.duta.movie.util.CastSubtitleServer
 import com.duta.movie.util.NetworkConfig
+import com.duta.movie.util.SubtitleParser
 import com.duta.movie.LocalPipMode
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -543,6 +545,7 @@ fun VideoPlayerScreen(
                 // Capture TV position before switching back to local playback
                 val castPos = try { castPlayer?.currentPosition ?: 0L } catch (_: Exception) { 0L }
                 isCasting = false
+                CastSubtitleServer.stop()
                 // Resume local playback from where the TV left off
                 if (castPos > 0) {
                     exoPlayer.seekTo(castPos)
@@ -819,7 +822,9 @@ fun VideoPlayerScreen(
         }
     }
 
-    LaunchedEffect(extractedUrl, selectedSubtitle, currentPlayer) {
+    var lastCastSubUrl by remember { mutableStateOf<String?>(null) }
+
+    LaunchedEffect(extractedUrl, selectedSubtitle, currentPlayer, subtitleCues, subtitleOffset, isCasting) {
         val url = extractedUrl ?: return@LaunchedEffect
         val sub = selectedSubtitle
         if (!useWebView || isCasting) {
@@ -829,6 +834,15 @@ fun VideoPlayerScreen(
             lastCookies?.let { NetworkConfig.injectCookies(url, it) }
             NetworkConfig.updateSessionReferer(url, effectiveReferer)
             
+            // For Google Cast: serve WebVTT subtitles via local LAN CastSubtitleServer
+            val castSubUrl = if (isCasting && sub != null && subtitleCues.isNotEmpty()) {
+                val vtt = SubtitleParser.toWebVtt(subtitleCues, subtitleOffset)
+                CastSubtitleServer.setSubtitle(vtt)
+            } else {
+                if (isCasting && sub == null) CastSubtitleServer.clear()
+                null
+            }
+
             val mediaItem = MediaItem.Builder()
                 .setUri(url)
                 .setMediaId(effectiveProgressId)
@@ -862,20 +876,33 @@ fun VideoPlayerScreen(
                     }
                 }
                 .setSubtitleConfigurations(
-                    sub?.let { s ->
-                        val effectiveSubUri = if (!isCasting && s.localUri != null) s.localUri else s.url
-                        val mimeType = if (effectiveSubUri.contains(".vtt")) MimeTypes.TEXT_VTT 
-                                      else if (effectiveSubUri.contains(".ass") || effectiveSubUri.contains(".ssa")) MimeTypes.TEXT_SSA 
-                                      else MimeTypes.APPLICATION_SUBRIP
-                        listOf(
-                            MediaItem.SubtitleConfiguration.Builder(effectiveSubUri.toUri())
-                                .setMimeType(mimeType)
-                                .setLanguage(currentPreferredLang.value)
-                                .setLabel(s.label)
-                                .setSelectionFlags(C.SELECTION_FLAG_DEFAULT or C.SELECTION_FLAG_FORCED)
-                                .build()
-                        )
-                    } ?: emptyList()
+                    if (isCasting) {
+                        if (castSubUrl != null && sub != null) {
+                            listOf(
+                                MediaItem.SubtitleConfiguration.Builder(castSubUrl.toUri())
+                                    .setMimeType(MimeTypes.TEXT_VTT)
+                                    .setLanguage(currentPreferredLang.value)
+                                    .setLabel(sub.label)
+                                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT or C.SELECTION_FLAG_FORCED)
+                                    .build()
+                            )
+                        } else emptyList()
+                    } else {
+                        sub?.let { s ->
+                            val effectiveSubUri = if (s.localUri != null) s.localUri else s.url
+                            val mimeType = if (effectiveSubUri.contains(".vtt")) MimeTypes.TEXT_VTT 
+                                          else if (effectiveSubUri.contains(".ass") || effectiveSubUri.contains(".ssa")) MimeTypes.TEXT_SSA 
+                                          else MimeTypes.APPLICATION_SUBRIP
+                            listOf(
+                                MediaItem.SubtitleConfiguration.Builder(effectiveSubUri.toUri())
+                                    .setMimeType(mimeType)
+                                    .setLanguage(currentPreferredLang.value)
+                                    .setLabel(s.label)
+                                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT or C.SELECTION_FLAG_FORCED)
+                                    .build()
+                            )
+                        } ?: emptyList()
+                    }
                 )
                 .build()
 
@@ -891,10 +918,11 @@ fun VideoPlayerScreen(
                 }
                 exoPlayer.pause()
                 
-                // Don't reload if castPlayer is already playing this exact media
-                if (castPlayer.currentMediaItem?.mediaId == effectiveProgressId && castCurrentPos > 0) {
+                // Don't reload if castPlayer is already playing this exact media and subtitle hasn't changed
+                if (castPlayer.currentMediaItem?.mediaId == effectiveProgressId && castCurrentPos > 0 && lastCastSubUrl == castSubUrl) {
                     Log.i("VideoPlayerScreen", "Cast: Already playing this media at ${castCurrentPos}ms, skipping reload")
                 } else {
+                    lastCastSubUrl = castSubUrl
                     castPlayer.setMediaItem(mediaItem, currentPos)
                     castPlayer.prepare()
                     castPlayer.play()
@@ -933,6 +961,7 @@ fun VideoPlayerScreen(
             viewModel.setPlayerActive(active = false)
             exoPlayer.release()
             castPlayer?.release()
+            CastSubtitleServer.stop()
         }
     }
 
@@ -2143,7 +2172,7 @@ fun VideoPlayerContent(
             }
         }
 
-        if (isVideoReady && !isInPip && currentCues.isNotEmpty()) {
+        if (isVideoReady && !isInPip && !isCasting && currentCues.isNotEmpty()) {
             val subtitleText = remember(currentCues) {
                 currentCues.mapNotNull { it.text?.toString() }
                     .filter { it.isNotBlank() }

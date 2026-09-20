@@ -118,4 +118,37 @@ class SubtitleParserTest {
         assertEquals(56542L, cues[0].endTimeMs)
         assertEquals("Ini pelik...", cues[0].text)
     }
+
+    @Test
+    fun testToWebVttConversion() {
+        val cues = listOf(
+            ParsedSubtitleCue(1000L, 3500L, "Hello world"),
+            ParsedSubtitleCue(4000L, 6200L, "Second line")
+        )
+        val vtt = SubtitleParser.toWebVtt(cues)
+        assertTrue(vtt.startsWith("WEBVTT\n\n"))
+        assertTrue(vtt.contains("1\n00:00:01.000 --> 00:00:03.500\nHello world"))
+        assertTrue(vtt.contains("2\n00:00:04.000 --> 00:00:06.200\nSecond line"))
+    }
+
+    @Test
+    fun testToWebVttWithOffset() {
+        val cues = listOf(
+            ParsedSubtitleCue(5000L, 8000L, "Offset test")
+        )
+        // Shift forward by 1000ms
+        val vttForward = SubtitleParser.toWebVtt(cues, offsetMs = 1000L)
+        assertTrue(vttForward.contains("00:00:06.000 --> 00:00:09.000"))
+
+        // Shift backward by 2000ms
+        val vttBackward = SubtitleParser.toWebVtt(cues, offsetMs = -2000L)
+        assertTrue(vttBackward.contains("00:00:03.000 --> 00:00:06.000"))
+    }
+
+    @Test
+    fun testFormatVttTimestamp() {
+        assertEquals("00:00:00.000", SubtitleParser.formatVttTimestamp(0L))
+        assertEquals("00:01:25.500", SubtitleParser.formatVttTimestamp(85500L))
+        assertEquals("01:30:15.123", SubtitleParser.formatVttTimestamp(5415123L))
+    }
 }

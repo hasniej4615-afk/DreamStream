@@ -207,4 +207,35 @@ object SubtitleParser {
             .replace("â€“", " - ")
             .trim()
     }
+
+    /**
+     * Serializes a list of [ParsedSubtitleCue]s into standard WebVTT format,
+     * optionally applying a time offset in milliseconds.
+     */
+    fun toWebVtt(cues: List<ParsedSubtitleCue>, offsetMs: Long = 0L): String {
+        val sb = StringBuilder("WEBVTT\n\n")
+        var validIndex = 1
+        for (cue in cues) {
+            val start = (cue.startTimeMs + offsetMs).coerceAtLeast(0L)
+            val end = (cue.endTimeMs + offsetMs).coerceAtLeast(start + 100L)
+            if (cue.text.isNotBlank()) {
+                sb.append(validIndex).append("\n")
+                sb.append(formatVttTimestamp(start)).append(" --> ").append(formatVttTimestamp(end)).append("\n")
+                sb.append(cue.text).append("\n\n")
+                validIndex++
+            }
+        }
+        return sb.toString()
+    }
+
+    /**
+     * Formats a millisecond duration into a WebVTT timestamp: HH:MM:SS.mmm
+     */
+    fun formatVttTimestamp(ms: Long): String {
+        val h = ms / 3600000L
+        val m = (ms % 3600000L) / 60000L
+        val s = (ms % 60000L) / 1000L
+        val millis = ms % 1000L
+        return String.format(java.util.Locale.US, "%02d:%02d:%02d.%03d", h, m, s, millis)
+    }
 }
