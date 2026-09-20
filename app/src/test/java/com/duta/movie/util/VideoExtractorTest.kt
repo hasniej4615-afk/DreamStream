@@ -421,6 +421,61 @@ class VideoExtractorTest {
     }
 
     @Test
+    fun testCleanEpisodeTitle_kudratAndLeakageGuards() {
+        val kudratTitle = "Kudrat 1968: High Council (2026)"
+        val kudratUrl = "https://ww44.pencurimovie.baby/series/kudrat-1968-high-council-2026/"
+
+        // 1. Episode 1 with leaked year 1968 from parent title
+        val ep1Clean = VideoExtractor.cleanEpisodeTitle("Episode 1 - 1968", kudratTitle, kudratUrl)
+        assert(ep1Clean == "Episode 1") { "Expected 'Episode 1', got '$ep1Clean'" }
+
+        // 2. Episode 1 without spaces around hyphen
+        val ep1CleanNoSpace = VideoExtractor.cleanEpisodeTitle("Episode 1- 1968", kudratTitle, kudratUrl)
+        assert(ep1CleanNoSpace == "Episode 1") { "Expected 'Episode 1', got '$ep1CleanNoSpace'" }
+
+        // 3. Episode 2 with genuine subtitle "Taat"
+        val ep2Clean = VideoExtractor.cleanEpisodeTitle("Episode 2 - Taat", kudratTitle, kudratUrl)
+        assert(ep2Clean == "Episode 2 - Taat") { "Expected 'Episode 2 - Taat', got '$ep2Clean'" }
+
+        // 4. Full parent title leakage after episode number
+        val epTitleLeak = VideoExtractor.cleanEpisodeTitle("Episode 1 - Kudrat 1968", kudratTitle, kudratUrl)
+        assert(epTitleLeak == "Episode 1") { "Expected 'Episode 1', got '$epTitleLeak'" }
+
+        // 5. Release year leakage
+        val epYearLeak = VideoExtractor.cleanEpisodeTitle("Episode 1 - 2026", kudratTitle, kudratUrl)
+        assert(epYearLeak == "Episode 1") { "Expected 'Episode 1', got '$epYearLeak'" }
+
+        // 6. Plain episode or number
+        assert(VideoExtractor.cleanEpisodeTitle("Episode 1", kudratTitle, kudratUrl) == "Episode 1")
+        assert(VideoExtractor.cleanEpisodeTitle("1", kudratTitle, kudratUrl) == "Episode 1")
+        assert(VideoExtractor.cleanEpisodeTitle("S3 Eps1", "The Walking Dead", "") == "S3 Eps1")
+
+        // 7. Test HTML parsing of Kudrat 1968 episode list from Pencuri Movie
+        val sampleKudratHtml = """
+            <html>
+            <body>
+                <div id="seasons">
+                    <div class="tvseason">
+                        <div class="les-title"><strong>Season 1</strong></div>
+                        <div class="les-content" style="display: block">
+                            <a href="/episode/kudrat-1968-high-council-season-1-episode-1">Episode 1 - 1968</a>
+                            <a href="/episode/kudrat-1968-high-council-season-1-episode-2">Episode 2 - Taat</a>
+                        </div>
+                    </div>
+                </div>
+            </body>
+            </html>
+        """.trimIndent()
+
+        val doc = org.jsoup.Jsoup.parse(sampleKudratHtml, kudratUrl)
+        val extracted = VideoExtractor.extractEpisodesFromDoc(doc, kudratUrl, kudratTitle)
+
+        assert(extracted.size == 2) { "Expected 2 episodes, got ${extracted.size}" }
+        assert(extracted[0].name == "Episode 1") { "Episode 1 should be sanitized to 'Episode 1', but was '${extracted[0].name}'" }
+        assert(extracted[1].name == "Episode 2 - Taat") { "Episode 2 should remain 'Episode 2 - Taat', but was '${extracted[1].name}'" }
+    }
+
+    @Test
     fun testRelevanceScoringAndNoiseFiltering() {
         val generalQuery = "Avatar"
         val parsedGeneral = VideoExtractor.parseSearchQuery(generalQuery)

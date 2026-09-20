@@ -4077,7 +4077,7 @@ object VideoExtractor {
                             val seasonMatches = targetSeasonNum == null || epSeason == null || epSeason == targetSeasonNum
                             if (matchesSlug && seasonMatches) {
                                 val epNum = Regex("""(?i)episode-(\d+)""").find(low)?.groupValues?.get(1)
-                                val epName = if (epNum != null) "Episode $epNum" else a.text().trim().ifEmpty { "Episode" }
+                                val epName = cleanEpisodeTitle(if (epNum != null) "Episode $epNum" else a.text().trim().ifEmpty { "Episode" }, title, videoUrl)
                                 val sLabel = if (targetSeasonNum != null) "Season $targetSeasonNum" else ""
                                 healedEpisodes.add(Episode(id = extractStableId(cleanEpUrl), name = epName, url = cleanEpUrl, season = sLabel))
                             }
@@ -4243,6 +4243,69 @@ object VideoExtractor {
         }
     }
 
+    fun cleanEpisodeTitle(rawName: String, parentTitle: String = "", parentUrl: String = ""): String {
+        val trimmed = rawName.trim()
+        if (trimmed.isEmpty()) return "Episode"
+
+        // Pure numeric strings e.g. "1", "01"
+        if (trimmed.length <= 4 && trimmed.all { it.isDigit() }) {
+            return "Episode ${trimmed.toIntOrNull() ?: trimmed}"
+        }
+
+        val epNum = Regex("""(?i)\b(?:episod[e]?|eps|ep)\s*(\d+)\b""").find(trimmed)?.groupValues?.get(1)
+
+        // Matches patterns like "Episode 1 - 1968", "Episode 1: Taat", "Episode 1 (1968)", "1 - Taat"
+        val match = Regex("""(?i)^\s*(?:episod[e]?|eps|ep)?\s*(\d+)\s*(?:[-–—:|]|\()\s*(.*?)\)?$""").find(trimmed)
+            ?: if (epNum != null) {
+                Regex("""(?i)^\s*(?:episod[e]?|eps|ep)\s*${epNum}\s*(?:[-–—:|]|\()\s*(.*?)\)?$""").find(trimmed)
+            } else null
+
+        if (match != null) {
+            val num = match.groupValues[1]
+            val rawSubtitle = match.groupValues[2].trim().removeSuffix(")").trim()
+
+            if (rawSubtitle.isEmpty()) {
+                return "Episode $num"
+            }
+
+            // Clean title leakage, year collision, or boilerplate noise
+            val cleanParent = parentTitle.replace(Regex("""\s*\((?:19|20)\d{2}\)"""), "").trim().lowercase()
+            val lowSub = rawSubtitle.lowercase()
+            val subDigits = rawSubtitle.filter { it.isDigit() }
+
+            // 1. Year or numeric sequence that appears in title, URL, or is a standard release year (1900..2099)
+            val isYearOrNumberInTitle = (subDigits.length == 4 || rawSubtitle.all { it.isDigit() }) &&
+                    (cleanParent.contains(subDigits) || parentUrl.contains(subDigits) || (subDigits.toIntOrNull() ?: 0) in 1900..2099)
+
+            // 2. Parent title leakage (e.g., "Episode 1 - Kudrat 1968", "Episode 1 - Kudrat")
+            val isParentTitleLeak = (cleanParent.isNotEmpty() && lowSub.length >= 3 && cleanParent.contains(lowSub)) ||
+                    (parentUrl.isNotEmpty() && lowSub.length >= 3 && parentUrl.lowercase().contains(lowSub.replace(" ", "-")))
+
+            // 3. Common site scraping junk
+            val isNoise = lowSub.contains("tonton") || lowSub.contains("drama video") ||
+                    lowSub.contains("kepala bergetar") || lowSub.contains("melayu") ||
+                    lowSub.contains("online") || lowSub.contains("full movie") ||
+                    lowSub.contains("web-dl") || lowSub.contains("hd") || lowSub.contains("pencuri")
+
+            if (isYearOrNumberInTitle || isParentTitleLeak || isNoise) {
+                return "Episode $num"
+            }
+
+            // If subtitle has trailing year in parentheses that matches parent, strip the year
+            val cleanedSub = rawSubtitle.replace(Regex("""\s*\((?:19|20)\d{2}\)$"""), "").trim()
+            return if (cleanedSub.isNotEmpty()) "Episode $num - $cleanedSub" else "Episode $num"
+        }
+
+        // Noise keyword fallback
+        if (epNum != null && (trimmed.contains("tonton", ignoreCase = true) || 
+                              trimmed.contains("drama video", ignoreCase = true) || 
+                              trimmed.contains("kepala", ignoreCase = true))) {
+            return "Episode $epNum"
+        }
+
+        return trimmed.ifEmpty { if (epNum != null) "Episode $epNum" else "Episode" }
+    }
+
     fun extractEpisodesFromDoc(doc: Document, videoUrl: String, title: String): List<Episode> {
         val episodes = mutableListOf<Episode>()
         // Prioritize dedicated episode containers; fall back to searching full document
@@ -4307,13 +4370,7 @@ object VideoExtractor {
                     ?: Regex("""(?i)\b(?:episod[e]?|eps|ep)\s*(\d+)\b""").find(epAria)?.groupValues?.get(1)
                     ?: Regex("""(?i)[-_](?:episod[e]?|eps|ep)[-_](\d+)""").find(lowUrl)?.groupValues?.get(1)
 
-                val cleanEpName = if (epName.length <= 4 && epName.all { it.isDigit() }) {
-                    "Episode $epName"
-                } else if (epNum != null && (epName.contains("tonton", ignoreCase = true) || epName.contains("drama video", ignoreCase = true) || epName.contains("kepala", ignoreCase = true))) {
-                    "Episode $epNum"
-                } else {
-                    epName.ifEmpty { if (epNum != null) "Episode $epNum" else "Episode" }
-                }
+                val cleanEpName = cleanEpisodeTitle(epName, title, videoUrl)
                 episodes.add(Episode(id = extractStableId(cleanUrl), name = cleanEpName, url = cleanUrl, season = resolvedSeason))
             }
         }
@@ -4328,7 +4385,7 @@ object VideoExtractor {
             if (episodes.none { it.url.substringBefore('?') == cleanCurr }) {
                 val currEpNum = Regex("""(?i)[-_](?:episod[e]?|eps|ep)[-_](\d+)""").find(currLow)?.groupValues?.get(1)
                     ?: Regex("""(?i)\b(?:episod[e]?|eps|ep)\s*(\d+)\b""").find(title)?.groupValues?.get(1)
-                val currName = if (currEpNum != null) "Episode $currEpNum" else "Episode"
+                val currName = cleanEpisodeTitle(if (currEpNum != null) "Episode $currEpNum" else "Episode", title, videoUrl)
                 episodes.add(Episode(id = extractStableId(cleanCurr), name = currName, url = cleanCurr, season = ""))
             }
         }

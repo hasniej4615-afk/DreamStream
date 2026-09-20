@@ -1707,10 +1707,13 @@ fun VideoPlayerScreen(
                     itemsIndexed(episodes) { index, ep ->
                         val isSelected = currentEpisode?.url == ep.url
                         var isFocused by remember { mutableStateOf(false) }
+                        val displayName = remember(ep.name, video?.title, video?.videoUrl) {
+                            com.duta.movie.util.VideoExtractor.cleanEpisodeTitle(ep.name, video?.title ?: "", video?.videoUrl ?: "")
+                        }
                         ListItem(
                             headlineContent = { 
                                 Text(
-                                    ep.name, 
+                                    displayName, 
                                     color = if (isSelected) Color.Red else Color.White,
                                     fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
                                 ) 

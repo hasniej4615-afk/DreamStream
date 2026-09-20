@@ -727,7 +727,10 @@ fun VideoDetailInfo(
         val isDetailLoading by viewModel.isDetailLoading.collectAsStateWithLifecycle()
         val isSearchingAlternatives by viewModel.isSearchingAlternatives.collectAsStateWithLifecycle()
         val localContext = LocalContext.current
-        val activeEpName = currentOrFirstEpisode?.name ?: "Episode 1"
+        val activeEpName = remember(currentOrFirstEpisode, video.title, video.videoUrl) {
+            val raw = currentOrFirstEpisode?.name ?: "Episode 1"
+            com.duta.movie.util.VideoExtractor.cleanEpisodeTitle(raw, video.title, video.videoUrl)
+        }
         val headerText = if (isLikelySeries) "Servers ($activeEpName)" else "Servers"
 
         Spacer(modifier = Modifier.height(32.dp))
@@ -914,9 +917,13 @@ fun VideoDetailInfo(
                     ?: ep.name.filter { c -> c.isDigit() }.toIntOrNull() ?: 0
             })?.forEachIndexed { index, episode ->
                 val progressId = viewModel.getEpisodeProgressId(video.id, episode.url)
+                val cleanEp = remember(episode, video.title, video.videoUrl) {
+                    val cleaned = com.duta.movie.util.VideoExtractor.cleanEpisodeTitle(episode.name, video.title, video.videoUrl)
+                    if (cleaned != episode.name) episode.copy(name = cleaned) else episode
+                }
                 EpisodeRow(
                     index = index + 1, 
-                    episode = episode, 
+                    episode = cleanEp, 
                     isWatched = watchedEpisodes.contains(progressId),
                     onClick = { onPlayClick(video.id, episode.url) }
                 )
