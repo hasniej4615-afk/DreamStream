@@ -48,7 +48,7 @@ object SubtitleParser {
      */
     fun parseContent(content: String): List<ParsedSubtitleCue> {
         if (content.isBlank()) return emptyList()
-        val normalized = content.replace("\r\n", "\n").replace('\r', '\n')
+        val normalized = content.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
         return when {
             normalized.contains("[Events]") || normalized.contains("Dialogue:") -> parseAss(normalized)
             normalized.contains("-->") -> parseSrtOrVtt(normalized)
@@ -198,6 +198,13 @@ object SubtitleParser {
             .replace("&#39;", "'")
             .replace("&apos;", "'")
             .replace("&nbsp;", " ")
+            .replace("â€¦", "...")
+            .replace("ā¦", "...")
+            .replace("â€™", "'")
+            .replace("â€œ", "\"")
+            .replace("â€", "\"")
+            .replace("â€”", " - ")
+            .replace("â€“", " - ")
             .trim()
     }
 }

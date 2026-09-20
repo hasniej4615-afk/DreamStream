@@ -42,9 +42,14 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shadow
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -317,24 +322,6 @@ fun VideoPlayerScreen(
         true // Default to WebView for anything else (security first)
     }
 
-    // Real-time subtitle synchronization for WebView playback (Dailymotion, Bilibili, etc.)
-    val effectiveWebPosSec = remember(webPlayerState.value.position, subtitleOffset) {
-        (webPlayerState.value.position + subtitleOffset) / 500L
-    }
-    LaunchedEffect(useWebView, effectiveWebPosSec, subtitleCues) {
-        if (useWebView && subtitleCues.isNotEmpty()) {
-            val effectivePos = webPlayerState.value.position + subtitleOffset
-            val activeCues = subtitleCues.filter { cue ->
-                cue.startTimeMs <= effectivePos && effectivePos <= cue.endTimeMs
-            }
-            val newCues = activeCues.map { it.toMedia3Cue() }
-            if (currentCues != newCues) {
-                currentCues = newCues
-            }
-        } else if (useWebView && subtitleCues.isEmpty()) {
-            if (currentCues.isNotEmpty()) currentCues = emptyList()
-        }
-    }
 
     val isPencuri = remember(videoId, video?.videoUrl, extractedUrl) {
         com.duta.movie.util.VideoExtractor.isPencuriMovie(videoId = videoId, videoUrl = video?.videoUrl, streamUrl = extractedUrl)
@@ -576,6 +563,34 @@ fun VideoPlayerScreen(
 
     val currentPlayer = remember(isCasting, useWebView) {
         if (isCasting && castPlayer != null) castPlayer else exoPlayer
+    }
+
+    // Real-time subtitle synchronization for all playback engines (ExoPlayer, WebView, Cast)
+    LaunchedEffect(subtitleCues, subtitleOffset, isVideoReady, useWebView, isCasting, currentPlayer) {
+        if (subtitleCues.isNotEmpty()) {
+            while (true) {
+                val basePos = if (useWebView && !isCasting) {
+                    webPlayerState.value.position
+                } else if (isCasting && castPlayer != null) {
+                    castPlayer.currentPosition
+                } else {
+                    currentPlayer.currentPosition
+                }
+                val effectivePos = basePos + subtitleOffset
+                val activeCues = subtitleCues.filter { cue ->
+                    cue.startTimeMs <= effectivePos && effectivePos <= cue.endTimeMs
+                }
+                val newCues = activeCues.map { it.toMedia3Cue() }
+                if (currentCues != newCues) {
+                    currentCues = newCues
+                }
+                delay(100L)
+            }
+        } else {
+            if (selectedSubtitle == null && currentCues.isNotEmpty()) {
+                currentCues = emptyList()
+            }
+        }
     }
 
     var userInitiatedPause by remember { mutableStateOf(false) }
@@ -885,33 +900,28 @@ fun VideoPlayerScreen(
                     castPlayer.play()
                 }
             } else {
-                // FOR LOCAL PLAYBACK: Use specialized HlsMediaSource to fix "Unrecognized format" errors
-                // Only match explicit HLS indicators — NOT gateway domains like abyss/bond
-                val isHls = url.lowercase().contains(".m3u8") || url.lowercase().contains(".txt") || 
-                            url.lowercase().contains("/hls/") || url.lowercase().contains("/stream/")
-                
-                if (isHls) {
-                    val hlsOkHttpFactory = OkHttpDataSource.Factory(NetworkConfig.permissiveOkHttpClient).setUserAgent(NetworkConfig.SHARED_USER_AGENT)
-                    val hlsCacheFactory = com.duta.movie.util.PlayerCacheManager.getCacheDataSourceFactory(context, hlsOkHttpFactory)
-                    val hlsMediaSource = HlsMediaSource.Factory(hlsCacheFactory).createMediaSource(mediaItem)
-                    
-                    exoPlayer.setMediaSource(hlsMediaSource, /* resetPosition = */ currentUrl.value != url)
-                } else {
-                    exoPlayer.setMediaItem(mediaItem, /* resetPosition = */ currentUrl.value != url)
-                }
-                
+                // FOR LOCAL PLAYBACK: Only load and prepare when stream URL actually changes
                 if (currentUrl.value != url) {
+                    val isHls = url.lowercase().contains(".m3u8") || url.lowercase().contains(".txt") || 
+                                url.lowercase().contains("/hls/") || url.lowercase().contains("/stream/")
+                    
+                    if (isHls) {
+                        val hlsOkHttpFactory = OkHttpDataSource.Factory(NetworkConfig.permissiveOkHttpClient).setUserAgent(NetworkConfig.SHARED_USER_AGENT)
+                        val hlsCacheFactory = com.duta.movie.util.PlayerCacheManager.getCacheDataSourceFactory(context, hlsOkHttpFactory)
+                        val hlsMediaSource = HlsMediaSource.Factory(hlsCacheFactory).createMediaSource(mediaItem)
+                        
+                        exoPlayer.setMediaSource(hlsMediaSource, /* resetPosition = */ true)
+                    } else {
+                        exoPlayer.setMediaItem(mediaItem, /* resetPosition = */ true)
+                    }
+                    
                     isVideoReady = false
                     currentUrl.value = url
                     currentSub.value = sub?.url
                     currentPlayer.prepare()
                     currentPlayer.playWhenReady = true
-                } else if (currentSub.value != sub?.url) {
+                } else {
                     currentSub.value = sub?.url
-                    currentPlayer.trackSelectionParameters = currentPlayer.trackSelectionParameters.buildUpon()
-                        .clearOverridesOfType(C.TRACK_TYPE_TEXT)
-                        .build()
-                    currentPlayer.prepare()
                 }
             }
         }
@@ -1182,7 +1192,7 @@ fun VideoPlayerScreen(
                     }
                 }
             }
-            override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) { currentCues = cueGroup.cues }
+            override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) { if (subtitleCues.isEmpty()) currentCues = cueGroup.cues }
             override fun onTracksChanged(tracks: Tracks) {
                 val textTracks = tracks.groups.filter { it.type == C.TRACK_TYPE_TEXT }
                 var targetGroup: Tracks.Group? = null
@@ -2133,15 +2143,48 @@ fun VideoPlayerContent(
             }
         }
 
-        if (isVideoReady && currentCues.isNotEmpty()) {
-            val bottomPadding = if (showControls) 110.dp else 48.dp
-            Box(modifier = Modifier.fillMaxSize().navigationBarsPadding().padding(bottom = bottomPadding).padding(horizontal = 32.dp), contentAlignment = Alignment.BottomCenter) {
-                AndroidView(factory = { ctx -> SubtitleView(ctx).apply { 
-                    val size = if (isTV) 34f else if (isLandscape) 28f else 22f
-                    setFixedTextSize(TypedValue.COMPLEX_UNIT_SP, size)
-                    setApplyEmbeddedStyles(true); isClickable = false; isFocusable = false 
-                } },
-                    update = { v -> v.setCues(currentCues) }, modifier = Modifier.fillMaxWidth().wrapContentHeight())
+        if (isVideoReady && !isInPip && currentCues.isNotEmpty()) {
+            val subtitleText = remember(currentCues) {
+                currentCues.mapNotNull { it.text?.toString() }
+                    .filter { it.isNotBlank() }
+                    .joinToString("\n")
+            }
+            if (subtitleText.isNotBlank()) {
+                val bottomPadding = if (showControls) 110.dp else 48.dp
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .navigationBarsPadding()
+                        .padding(bottom = bottomPadding, start = 24.dp, end = 24.dp),
+                    contentAlignment = Alignment.BottomCenter
+                ) {
+                    Surface(
+                        color = Color(0xCC000000), // High contrast 80% black pill backdrop
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier
+                            .padding(horizontal = 8.dp)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null
+                            ) { onVisibilityToggle() }
+                    ) {
+                        Text(
+                            text = subtitleText,
+                            color = Color.White,
+                            fontSize = if (isTV) 28.sp else if (isLandscape) 22.sp else 17.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center,
+                            style = TextStyle(
+                                shadow = Shadow(
+                                    color = Color.Black,
+                                    offset = Offset(2f, 2f),
+                                    blurRadius = 4f
+                                )
+                            ),
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                        )
+                    }
+                }
             }
         }
 

@@ -108,4 +108,14 @@ class SubtitleParserTest {
         assertEquals("English", SubtitleExtractor.normalizeLanguage("en"))
         assertEquals("English", SubtitleExtractor.normalizeLanguage("English"))
     }
+
+    @Test
+    fun testBomAndMojibakeSanitization() {
+        val srtWithBom = "\uFEFF1\n00:00:55,542 --> 00:00:56,542\nIni pelikā¦\n"
+        val cues = SubtitleParser.parseContent(srtWithBom)
+        assertEquals(1, cues.size)
+        assertEquals(55542L, cues[0].startTimeMs)
+        assertEquals(56542L, cues[0].endTimeMs)
+        assertEquals("Ini pelik...", cues[0].text)
+    }
 }
