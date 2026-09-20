@@ -135,6 +135,14 @@ object CastSubtitleServer {
             val out: OutputStream = client.getOutputStream()
 
             val requestLine = reader.readLine() ?: return
+            Log.i(TAG, "Incoming client request from ${client.inetAddress.hostAddress}: $requestLine")
+
+            // Drain remaining headers
+            while (true) {
+                val headerLine = reader.readLine() ?: break
+                if (headerLine.isEmpty()) break
+            }
+
             val parts = requestLine.split(" ")
             if (parts.size < 2) return
 
@@ -148,6 +156,7 @@ object CastSubtitleServer {
                         "Access-Control-Allow-Methods: GET, OPTIONS, HEAD\r\n" +
                         "Access-Control-Allow-Headers: *\r\n" +
                         "Access-Control-Max-Age: 86400\r\n" +
+                        "Content-Length: 0\r\n" +
                         "Connection: close\r\n\r\n"
                 out.write(response.toByteArray(Charsets.UTF_8))
                 out.flush()
@@ -155,7 +164,7 @@ object CastSubtitleServer {
             }
 
             // Handle GET / HEAD for WebVTT
-            if ((method == "GET" || method == "HEAD") && path.contains("sub") && path.endsWith(".vtt")) {
+            if ((method == "GET" || method == "HEAD") && path.contains(".vtt")) {
                 val currentVtt = vttContent
                 if (currentVtt.isNotBlank()) {
                     val bytes = currentVtt.toByteArray(Charsets.UTF_8)

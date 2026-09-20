@@ -77,6 +77,7 @@ import com.duta.movie.model.Episode
 import com.duta.movie.model.Video
 import com.duta.movie.model.VideoServer
 import com.duta.movie.util.CastSubtitleServer
+import com.duta.movie.util.DutaCastMediaItemConverter
 import com.duta.movie.util.NetworkConfig
 import com.duta.movie.util.SubtitleParser
 import com.duta.movie.LocalPipMode
@@ -508,7 +509,7 @@ fun VideoPlayerScreen(
     val castPlayer: CastPlayer? = remember {
         try {
             val castContext = CastContext.getSharedInstance(context)
-            CastPlayer(castContext)
+            CastPlayer(castContext, DutaCastMediaItemConverter())
         } catch (e: Exception) {
             Log.e("VideoPlayerScreen", "CastPlayer init error", e)
             null
@@ -516,6 +517,7 @@ fun VideoPlayerScreen(
     }
 
     var isCasting by remember { mutableStateOf(castPlayer?.isCastSessionAvailable ?: false) }
+    var currentCastSubUrl by remember { mutableStateOf<String?>(null) }
     
     LaunchedEffect(castPlayer) {
         castPlayer?.setSessionAvailabilityListener(object : SessionAvailabilityListener {
@@ -545,6 +547,7 @@ fun VideoPlayerScreen(
                 // Capture TV position before switching back to local playback
                 val castPos = try { castPlayer?.currentPosition ?: 0L } catch (_: Exception) { 0L }
                 isCasting = false
+                currentCastSubUrl = null
                 CastSubtitleServer.stop()
                 // Resume local playback from where the TV left off
                 if (castPos > 0) {
@@ -562,6 +565,57 @@ fun VideoPlayerScreen(
                 }
             }
         })
+    }
+
+    // Explicitly sync active subtitle track on Cast RemoteMediaClient
+    LaunchedEffect(isCasting, currentCastSubUrl) {
+        if (isCasting) {
+            try {
+                val castContext = CastContext.getSharedInstance(context)
+                val session = castContext.sessionManager.currentCastSession
+                val rmc = session?.remoteMediaClient
+                if (rmc != null) {
+                    if (currentCastSubUrl != null) {
+                        rmc.setActiveMediaTracks(longArrayOf(1L))
+                        Log.i("VideoPlayerScreen", "Cast: Explicitly set active media tracks to [1]")
+                    } else {
+                        rmc.setActiveMediaTracks(longArrayOf())
+                        Log.i("VideoPlayerScreen", "Cast: Deactivated all media tracks")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.d("VideoPlayerScreen", "Cast: Error setting active media tracks: ${e.message}")
+            }
+        }
+    }
+
+    // Auto-activate subtitle track on Google Cast status updates
+    DisposableEffect(castPlayer, isCasting, currentCastSubUrl) {
+        val session = try {
+            CastContext.getSharedInstance(context).sessionManager.currentCastSession
+        } catch (_: Exception) {
+            null
+        }
+        val rmc = session?.remoteMediaClient
+        val callback = object : com.google.android.gms.cast.framework.media.RemoteMediaClient.Callback() {
+            override fun onStatusUpdated() {
+                if (isCasting && currentCastSubUrl != null) {
+                    val status = rmc?.mediaStatus ?: return
+                    val tracks = status.mediaInfo?.mediaTracks
+                    if (!tracks.isNullOrEmpty()) {
+                        val active = status.activeTrackIds
+                        if (active == null || !active.contains(1L)) {
+                            Log.i("VideoPlayerScreen", "Cast: Auto-activating track 1 on status updated")
+                            rmc.setActiveMediaTracks(longArrayOf(1L))
+                        }
+                    }
+                }
+            }
+        }
+        rmc?.registerCallback(callback)
+        onDispose {
+            rmc?.unregisterCallback(callback)
+        }
     }
 
     val currentPlayer = remember(isCasting, useWebView) {
@@ -842,6 +896,7 @@ fun VideoPlayerScreen(
                 if (isCasting && sub == null) CastSubtitleServer.clear()
                 null
             }
+            currentCastSubUrl = castSubUrl
 
             val mediaItem = MediaItem.Builder()
                 .setUri(url)
@@ -873,6 +928,8 @@ fun VideoPlayerScreen(
                         setMimeType(MimeTypes.VIDEO_MATROSKA)
                     } else if (lowUrl.contains(".webm")) {
                         setMimeType(MimeTypes.VIDEO_WEBM)
+                    } else {
+                        setMimeType(MimeTypes.APPLICATION_M3U8)
                     }
                 }
                 .setSubtitleConfigurations(
