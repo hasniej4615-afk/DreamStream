@@ -215,8 +215,23 @@ fun VideoListScreen(
         }
     }
 
+    val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
+            if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                viewModel.fetchPakcikRekomenVideos(silent = true)
+                viewModel.startPakcikRekomenAutoSync()
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
     LaunchedEffect(Unit) { 
         viewModel.fetchPakcikRekomenVideos()
+        viewModel.startPakcikRekomenAutoSync()
         if (!isSearchActive && searchQuery.isBlank() && selectedCategory != null) {
             viewModel.selectCategory(null) 
         }

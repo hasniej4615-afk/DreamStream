@@ -93,15 +93,22 @@ class VideoViewModel @Inject constructor(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
     }
 
-    fun fetchPakcikRekomenVideos() {
+    private var pakcikSyncJob: Job? = null
+
+    fun fetchPakcikRekomenVideos(silent: Boolean = false) {
         viewModelScope.launch {
-            _isPakcikRekomenLoading.value = true
+            if (!silent && _pakcikRekomenVideos.value.isEmpty()) {
+                _isPakcikRekomenLoading.value = true
+            }
             try {
                 val res = recommendationService.getRecommendations()
                 res.onSuccess { recs ->
-                    _pakcikRekomenVideos.value = recs.map { it.toVideo() }
+                    val newVideos = recs.map { it.toVideo() }
                     val counts = recs.associate { it.videoId to it.recommendCount }
                     _recommendationCounts.update { current -> current + counts }
+                    if (_pakcikRekomenVideos.value != newVideos) {
+                        _pakcikRekomenVideos.value = newVideos
+                    }
                 }.onFailure { e ->
                     Log.e("VideoViewModel", "Failed to fetch Pakcik Rekomen videos", e)
                 }
@@ -109,6 +116,26 @@ class VideoViewModel @Inject constructor(
                 Log.e("VideoViewModel", "Error fetching Pakcik Rekomen videos", e)
             } finally {
                 _isPakcikRekomenLoading.value = false
+            }
+        }
+    }
+
+    fun startPakcikRekomenAutoSync() {
+        if (pakcikSyncJob?.isActive == true) return
+        pakcikSyncJob = viewModelScope.launch {
+            while (isActive) {
+                delay(20_000L) // Silent background auto-sync every 20 seconds
+                try {
+                    val res = recommendationService.getRecommendations()
+                    res.onSuccess { recs ->
+                        val newVideos = recs.map { it.toVideo() }
+                        val counts = recs.associate { it.videoId to it.recommendCount }
+                        _recommendationCounts.update { current -> current + counts }
+                        if (_pakcikRekomenVideos.value != newVideos) {
+                            _pakcikRekomenVideos.value = newVideos
+                        }
+                    }
+                } catch (_: Exception) {}
             }
         }
     }
@@ -3217,6 +3244,7 @@ class VideoViewModel @Inject constructor(
     private fun loadData() { 
         fetchHomeData()
         fetchPakcikRekomenVideos()
+        startPakcikRekomenAutoSync()
     }
 
     fun applyMetadata(video: Video): Video {

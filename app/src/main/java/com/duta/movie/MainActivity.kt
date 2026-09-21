@@ -257,6 +257,9 @@ class MainActivity : AppCompatActivity() {
                                         label = { Text(label, fontSize = 10.sp) },
                                         selected = selected,
                                         onClick = {
+                                            if (route == Destination.Home) {
+                                                videoViewModel.fetchPakcikRekomenVideos(silent = true)
+                                            }
                                             navController.navigate(route) {
                                                 popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                                                 launchSingleTop = true
@@ -377,6 +380,9 @@ class MainActivity : AppCompatActivity() {
                                                 onClick = {
                                                     videoViewModel.setSearchActive(false)
                                                     videoViewModel.onSearchQueryChange("")
+                                                    if (route == Destination.Home) {
+                                                        videoViewModel.fetchPakcikRekomenVideos(silent = true)
+                                                    }
                                                     navController.navigate(route) {
                                                         popUpTo(navController.graph.findStartDestination().id) { saveState = true }
                                                         launchSingleTop = true
