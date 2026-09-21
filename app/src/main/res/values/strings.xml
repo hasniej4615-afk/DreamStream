@@ -354,6 +354,13 @@ Tap to re-scout and refresh content</string>
     <string name="no_other_sources_found">No alternative sources found for this title</string>
     <string name="auto_healed_source">Auto-recovered %d alternative mirror(s)</string>
     <string name="added_multi_provider_alt_sources">Added multi-provider cross-search &amp; auto-healing: discover fresh mirrors from partner providers when mirrors expire or fail.</string>
+    <string name="changelog_v2_0_4">Changelog v2.0.4 Raven\'s Revenge</string>
+    <string name="v2_0_4_updates">v2.0.4 Updates:</string>
+    <string name="v2_0_4_highlight_1">Global Community Comments: Discuss movies and series with other users in real time, featuring persistent nicknames and colorful user avatars.</string>
+    <string name="v2_0_4_highlight_2">Comment Editing &amp; Deletion: Full author ownership protection allowing you to edit or delete your comments with safety confirmation dialogs.</string>
+    <string name="v2_0_4_highlight_3">Movie Rating Badges: Gold star IMDb rating badges displayed directly on poster thumbnails across browsing catalogs.</string>
+    <string name="v2_0_4_highlight_4">Android TV D-Pad Focus Optimization: Seamless remote focus chaining across comment inputs, dialog auto-focus, and high-contrast TV focus rings.</string>
+    <string name="v2_0_4_highlight_5">Hardened Application Security: Restricted FileProvider scoping to update paths and disabled local file/content access on WebViews.</string>
     <string name="changelog_v2_0_3">Changelog v2.0.3 Raven\'s Revenge</string>
     <string name="v2_0_3_updates">v2.0.3 Updates:</string>
     <string name="v2_0_3_highlight_1">Direct In-App 1-Click Update: Download and install new updates seamlessly directly within the app with live download progress, error retry, and automatic installer launch.</string>
@@ -447,4 +454,12 @@ Tap to re-scout and refresh content</string>
     <string name="help_topic_troubleshoot_title">Troubleshooting &amp; Maintenance</string>
     <string name="help_topic_troubleshoot_desc">Solutions for common streaming problems, sluggishness, and connectivity errors.</string>
     <string name="help_topic_troubleshoot_content">• Issue: Video is buffering or loading slowly.\n  Solution: Click the quality button in the player and switch to 720p or 480p, or switch to an alternative server tab at the bottom of the player.\n• Issue: Movie poster images are blurry or not loading.\n  Solution: Go to Settings &gt; Storage and click \'Clear Image &amp; Metadata Cache\', then restart the app. The app will fetch high-definition 780p/1080p posters.\n• Issue: Video player displays a black screen or \'Dead Stream\' message.\n  Solution: Click \'Find Other Sources\' to trigger an automated mirror crawl and recover an alternative active stream.\n• Issue: Audio is playing but no picture is visible.\n  Solution: Your device hardware decoder may need a reset. Exit the player, wait 2 seconds, and re-open the title. In Settings, verify that your display resolution matches your television.\n• Issue: No subtitles found for my language.\n  Solution: Some rare or newly released titles may only have English or Indonesian subtitles available initially. Fresh subtitles are populated as subtitle communities release them.</string>
+
+    <string name="help_topic_comments_title">Community Comments &amp; Discussions</string>
+    <string name="help_topic_comments_desc">How to join discussions, customize your nickname, edit or delete comments, and use TV remote navigation.</string>
+    <string name="help_topic_comments_content">• Post Comments: Scroll to the bottom of any movie or series detail page to view and post comments.\n• Nickname Memory: Enter your preferred display name once; the app remembers your nickname across sessions.\n• Edit &amp; Delete Your Comments: Comments you post are tagged with a red \'YOU\' badge. Click the pencil icon to edit your text or the trash icon to delete it.\n• Confirmation Dialogs: Editing and deletion require confirmation to prevent accidental modifications.\n• Android TV Navigation: Use the D-pad remote to navigate smoothly between the nickname field, comment box, and Post button.</string>
+
+    <string name="help_topic_ratings_title">Movie &amp; Series Rating Badges</string>
+    <string name="help_topic_ratings_desc">Understanding the gold star rating badges shown on poster thumbnails.</string>
+    <string name="help_topic_ratings_content">• IMDb Rating Badges: Gold star rating badges at the top-right corner of posters indicate the title\'s IMDb score.\n• Real-Time Extraction: Ratings are fetched live from movie databases and streaming catalogs.\n• Clean Catalog Display: If a movie is newly released or unrated, the badge is hidden automatically to preserve a clean poster view.</string>
 </resources>

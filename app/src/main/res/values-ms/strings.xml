@@ -354,6 +354,13 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="no_other_sources_found">Tiada sumber alternatif ditemui untuk tajuk ini</string>
     <string name="auto_healed_source">Swapulih %d pelayan cermin alternatif</string>
     <string name="added_multi_provider_alt_sources">Menambah carian silang berbilang penyedia &amp; swapulih automatik: pulih pelayan cermin baharu secara automatik apabila pautan mati atau tamat tempoh.</string>
+    <string name="changelog_v2_0_4">Log Perubahan v2.0.4 Raven\'s Revenge</string>
+    <string name="v2_0_4_updates">Kemaskini v2.0.4:</string>
+    <string name="v2_0_4_highlight_1">Komen Komuniti Global: Berbincang tentang filem dan siri bersama pengguna lain secara langsung dengan nama samaran kekal dan avatar berwarna.</string>
+    <string name="v2_0_4_highlight_2">Edit &amp; Padam Komen: Perlindungan pemilikan penulis membolehkan anda mengubah suai atau memadam komen sendiri dengan dialog pengesahan keselamatan.</string>
+    <string name="v2_0_4_highlight_3">Lencana Penilaian Filem: Lencana bintang emas IMDb dipaparkan terus pada gambar kecil poster merentas katalog.</string>
+    <string name="v2_0_4_highlight_4">Pengoptimuman Fokus D-Pad Android TV: Rantaian fokus kawalan jauh yang lancar antara medan komen, fokus automatik dialog dan bingkai kontras tinggi.</string>
+    <string name="v2_0_4_highlight_5">Peningkatan Keselamatan Aplikasi: Mengehadkan skop FileProvider kepada laluan kemas kini dan menyahaktifkan akses fail/kandungan tempatan pada WebView.</string>
     <string name="changelog_v2_0_3">Log Perubahan v2.0.3 Raven\'s Revenge</string>
     <string name="v2_0_3_updates">Kemaskini v2.0.3:</string>
     <string name="v2_0_3_highlight_1">Kemaskini 1-Klik Terus Dalam Aplikasi: Muat turun dan pasang versi baharu secara terus dari aplikasi dengan bar kemajuan masa nyata, cuba semula ralat dan pelancaran pemasang automatik.</string>
@@ -447,4 +454,12 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="help_topic_troubleshoot_title">Penyelesaian Masalah &amp; Penyelenggaraan</string>
     <string name="help_topic_troubleshoot_desc">Penyelesaian bagi masalah penstriman biasa, kelembapan aplikasi dan ralat sambungan.</string>
     <string name="help_topic_troubleshoot_content">• Masalah: Video mengalami penimbalan atau memuat dengan perlahan.\n  Penyelesaian: Klik butang kualiti dalam pemain dan tukar ke 720p atau 480p, atau beralih ke tab pelayan alternatif di bahagian bawah pemain.\n• Masalah: Imej poster filem kelihatan kabur atau tidak memuat.\n  Penyelesaian: Buka Tetapan &gt; Storan dan klik \'Kosongkan Cache Imej &amp; Metadata\', kemudian buka semula aplikasi. Aplikasi akan memuat turun poster definisi tinggi 780p/1080p yang baharu.\n• Masalah: Pemain video memaparkan skrin hitam atau mesej \'Strim Mati\'.\n  Penyelesaian: Klik \'Cari Sumber Lain\' untuk mencetuskan carian pelayan cermin automatik dan memulihkan pautan aktif alternatif.\n• Masalah: Bunyi audio kedengaran tetapi tiada gambar kelihatan.\n  Penyelesaian: Penyahkod perkakasan peranti anda mungkin perlu dimulakan semula. Keluar daripada pemain, tunggu 2 saat dan buka semula tajuk tersebut. Dalam Tetapan, pastikan resolusi paparan anda sepadan dengan televisyen anda.\n• Masalah: Tiada sarikata ditemui untuk bahasa saya.\n  Penyelesaian: Beberapa tajuk baharu atau jarang mungkin hanya mempunyai sarikata Bahasa Inggeris atau Bahasa Indonesia pada awalnya. Sarikata baharu akan ditambah secara automatik sebaik sahaja komuniti sarikata mengeluarkannya.</string>
+
+    <string name="help_topic_comments_title">Komen &amp; Perbincangan Komuniti</string>
+    <string name="help_topic_comments_desc">Cara menyertai perbincangan, menetapkan nama samaran, mengedit atau memadam komen, dan navigasi kawalan jauh TV.</string>
+    <string name="help_topic_comments_content">• Hantar Komen: Tatal ke bahagian bawah mana-mana halaman butiran filem atau siri untuk melihat dan menghantar komen.\n• Ingatan Nama Samaran: Masukkan nama paparan pilihan anda sekali sahaja; aplikasi akan mengingatinya merentas sesi.\n• Edit &amp; Padam Komen Anda: Komen yang anda hantar ditandai dengan lencana merah \'YOU\'. Klik ikon pensel untuk mengedit teks atau ikon tong sampah untuk memadamkannya.\n• Dialog Pengesahan: Penyuntingan dan pemadaman memerlukan pengesahan untuk mengelakkan perubahan tidak sengaja.\n• Navigasi Android TV: Gunakan alat kawalan jauh D-pad untuk beralih lancar antara ruangan nama samaran, kotak komen, dan butang Hantar.</string>
+
+    <string name="help_topic_ratings_title">Lencana Penilaian Filem &amp; Siri</string>
+    <string name="help_topic_ratings_desc">Memahami lencana bintang emas penilaian yang dipaparkan pada gambar kecil poster.</string>
+    <string name="help_topic_ratings_content">• Lencana Penilaian IMDb: Lencana bintang emas di sudut atas kanan poster menunjukkan skor penilaian IMDb bagi tajuk tersebut.\n• Pengekstrakan Masa Nyata: Penilaian diperoleh secara langsung daripada pangkalan data filem dan katalog penstriman.\n• Paparan Katalog Kemas: Jika filem baharu dikeluarkan atau belum dinilai, lencana disembunyikan secara automatik untuk mengekalkan paparan poster yang bersih.</string>
 </resources>

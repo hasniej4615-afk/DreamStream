@@ -21,7 +21,7 @@ class MovieApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         com.duta.movie.util.SubtitleExtractor.init(this)
-        Log.i("!!!APP_START!!!", "DMStreaM Version 2.0.3 - Raven's Revenge")
+        Log.i("!!!APP_START!!!", "DMStreaM Version 2.0.4 - Raven's Revenge")
         try {
             val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
             cm?.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
