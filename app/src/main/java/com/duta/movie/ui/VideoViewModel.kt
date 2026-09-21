@@ -123,6 +123,33 @@ class VideoViewModel @Inject constructor(
         val newCount = if (shouldRecommend) currentCount + 1 else (currentCount - 1).coerceAtLeast(0)
         _recommendationCounts.update { it + (video.id to newCount) }
 
+        // Instant optimistic update of the Pakcik Rekomen row for zero-delay UI response
+        val previousPakcikList = _pakcikRekomenVideos.value
+        _pakcikRekomenVideos.update { current ->
+            val existingIndex = current.indexOfFirst { it.id == video.id }
+            if (shouldRecommend) {
+                val updatedVideo = video.copy(views = newCount.toString())
+                if (existingIndex >= 0) {
+                    val mutable = current.toMutableList()
+                    mutable[existingIndex] = updatedVideo
+                    mutable
+                } else {
+                    listOf(updatedVideo) + current
+                }
+            } else {
+                if (newCount <= 0) {
+                    current.filterNot { it.id == video.id }
+                } else {
+                    val updatedVideo = video.copy(views = newCount.toString())
+                    if (existingIndex >= 0) {
+                        val mutable = current.toMutableList()
+                        mutable[existingIndex] = updatedVideo
+                        mutable
+                    } else current
+                }
+            }
+        }
+
         viewModelScope.launch {
             if (shouldRecommend) {
                 preferenceManager.addRecommendedVideoId(video.id)
@@ -130,13 +157,16 @@ class VideoViewModel @Inject constructor(
                 preferenceManager.removeRecommendedVideoId(video.id)
             }
 
-            val res = recommendationService.toggleRecommendation(video, shouldRecommend)
+            val res = recommendationService.toggleRecommendation(video, shouldRecommend, currentCount)
             res.onSuccess { updatedRec ->
                 _recommendationCounts.update { it + (video.id to updatedRec.recommendCount) }
+                // Silent background sync
                 fetchPakcikRekomenVideos()
             }.onFailure { e ->
                 Log.e("VideoViewModel", "Failed to sync recommendation for ${video.id}", e)
+                // Revert on network failure
                 _recommendationCounts.update { it + (video.id to currentCount) }
+                _pakcikRekomenVideos.value = previousPakcikList
                 if (shouldRecommend) {
                     preferenceManager.removeRecommendedVideoId(video.id)
                 } else {

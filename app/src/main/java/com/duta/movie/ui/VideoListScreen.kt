@@ -216,6 +216,7 @@ fun VideoListScreen(
     }
 
     LaunchedEffect(Unit) { 
+        viewModel.fetchPakcikRekomenVideos()
         if (!isSearchActive && searchQuery.isBlank() && selectedCategory != null) {
             viewModel.selectCategory(null) 
         }

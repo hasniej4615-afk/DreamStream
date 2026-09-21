@@ -138,15 +138,122 @@ class RecommendationService @Inject constructor(
         }
     }
 
-    suspend fun toggleRecommendation(video: Video, isRecommending: Boolean): Result<Recommendation> = withContext(Dispatchers.IO) {
+    suspend fun toggleRecommendation(
+        video: Video,
+        isRecommending: Boolean,
+        knownExistingCount: Int? = null
+    ): Result<Recommendation> = withContext(Dispatchers.IO) {
         if (!SupabaseConfig.isConfigured) {
             return@withContext Result.failure(Exception("Supabase is not configured"))
         }
 
         try {
-            val existing = getRecommendationForVideo(video.id).getOrNull()
             val encodedVideoId = URLEncoder.encode(video.id, "UTF-8")
             val nowIso = getCurrentIsoTimestamp()
+
+            // Fast-path: If count is already known, execute the write directly without prior GET
+            if (knownExistingCount != null) {
+                if (!isRecommending && knownExistingCount <= 1) {
+                    val deleteUrl = "${SupabaseConfig.PROJECT_URL.trimEnd('/')}/rest/v1/recommendations?video_id=eq.$encodedVideoId"
+                    val deleteRequest = Request.Builder()
+                        .url(deleteUrl)
+                        .addHeader("apikey", SupabaseConfig.ANON_KEY)
+                        .addHeader("Authorization", "Bearer ${SupabaseConfig.ANON_KEY}")
+                        .delete()
+                        .build()
+                    try {
+                        okHttpClient.newCall(deleteRequest).execute().close()
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Fast delete failed for ${video.id}", e)
+                    }
+                    return@withContext Result.success(
+                        Recommendation(
+                            videoId = video.id,
+                            title = video.title,
+                            thumbnailUrl = video.thumbnailUrl,
+                            videoUrl = video.videoUrl,
+                            quality = video.quality,
+                            recommendCount = 0
+                        )
+                    )
+                }
+
+                if (isRecommending && knownExistingCount == 0) {
+                    val url = "${SupabaseConfig.PROJECT_URL.trimEnd('/')}/rest/v1/recommendations"
+                    val jsonPayload = kotlinx.serialization.json.buildJsonObject {
+                        put("video_id", kotlinx.serialization.json.JsonPrimitive(video.id))
+                        put("title", kotlinx.serialization.json.JsonPrimitive(video.title))
+                        put("thumbnail_url", kotlinx.serialization.json.JsonPrimitive(video.thumbnailUrl))
+                        put("video_url", kotlinx.serialization.json.JsonPrimitive(video.videoUrl))
+                        put("quality", kotlinx.serialization.json.JsonPrimitive(video.quality))
+                        put("recommend_count", kotlinx.serialization.json.JsonPrimitive(1))
+                        put("updated_at", kotlinx.serialization.json.JsonPrimitive(nowIso))
+                    }
+                    val request = Request.Builder()
+                        .url(url)
+                        .addHeader("apikey", SupabaseConfig.ANON_KEY)
+                        .addHeader("Authorization", "Bearer ${SupabaseConfig.ANON_KEY}")
+                        .addHeader("Content-Type", "application/json")
+                        .addHeader("Prefer", "return=representation")
+                        .post(jsonPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+                        .build()
+
+                    val response = okHttpClient.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        val responseBody = response.body?.string() ?: "[]"
+                        response.close()
+                        val list = json.decodeFromString<List<Recommendation>>(responseBody)
+                        val inserted = list.firstOrNull() ?: Recommendation(
+                            videoId = video.id,
+                            title = video.title,
+                            thumbnailUrl = video.thumbnailUrl,
+                            videoUrl = video.videoUrl,
+                            quality = video.quality,
+                            recommendCount = 1
+                        )
+                        return@withContext Result.success(inserted)
+                    }
+                    response.close()
+                } else if (knownExistingCount > 0) {
+                    val newCount = if (isRecommending) knownExistingCount + 1 else (knownExistingCount - 1).coerceAtLeast(0)
+                    val url = "${SupabaseConfig.PROJECT_URL.trimEnd('/')}/rest/v1/recommendations?video_id=eq.$encodedVideoId"
+                    val jsonPayload = kotlinx.serialization.json.buildJsonObject {
+                        put("recommend_count", kotlinx.serialization.json.JsonPrimitive(newCount))
+                        put("updated_at", kotlinx.serialization.json.JsonPrimitive(nowIso))
+                        if (video.title.isNotBlank()) put("title", kotlinx.serialization.json.JsonPrimitive(video.title))
+                        if (video.thumbnailUrl.isNotBlank()) put("thumbnail_url", kotlinx.serialization.json.JsonPrimitive(video.thumbnailUrl))
+                        if (video.quality.isNotBlank()) put("quality", kotlinx.serialization.json.JsonPrimitive(video.quality))
+                    }
+                    val request = Request.Builder()
+                        .url(url)
+                        .addHeader("apikey", SupabaseConfig.ANON_KEY)
+                        .addHeader("Authorization", "Bearer ${SupabaseConfig.ANON_KEY}")
+                        .addHeader("Content-Type", "application/json")
+                        .addHeader("Prefer", "return=representation")
+                        .patch(jsonPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
+                        .build()
+
+                    val response = okHttpClient.newCall(request).execute()
+                    if (response.isSuccessful) {
+                        val responseBody = response.body?.string() ?: "[]"
+                        response.close()
+                        val list = json.decodeFromString<List<Recommendation>>(responseBody)
+                        val updated = list.firstOrNull() ?: Recommendation(
+                            videoId = video.id,
+                            title = video.title,
+                            thumbnailUrl = video.thumbnailUrl,
+                            videoUrl = video.videoUrl,
+                            quality = video.quality,
+                            recommendCount = newCount
+                        )
+                        return@withContext Result.success(updated)
+                    }
+                    response.close()
+                }
+            }
+
+            // Fallback: standard check and update if fast path was skipped or encountered conflict
+            val existing = getRecommendationForVideo(video.id).getOrNull()
 
             if (existing == null) {
                 if (!isRecommending) {
