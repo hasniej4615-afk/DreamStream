@@ -13,6 +13,8 @@ import com.duta.movie.model.Episode
 import com.duta.movie.model.Video
 import com.duta.movie.model.VideoServer
 import com.duta.movie.model.Subtitle
+import com.duta.movie.model.Comment
+import com.duta.movie.data.remote.CommentService
 import com.duta.movie.util.SubtitleExtractor
 import com.duta.movie.util.SubtitleParser
 import com.duta.movie.util.ParsedSubtitleCue
@@ -45,8 +47,21 @@ class VideoViewModel @Inject constructor(
     private val videoRepository: VideoRepository,
     private val imageLoader: ImageLoader,
     private val preferenceManager: PreferenceManager,
+    private val commentService: CommentService,
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
+
+    private val _comments = MutableStateFlow<List<Comment>>(emptyList())
+    val comments: StateFlow<List<Comment>> = _comments.asStateFlow()
+
+    private val _isCommentsLoading = MutableStateFlow(false)
+    val isCommentsLoading: StateFlow<Boolean> = _isCommentsLoading.asStateFlow()
+
+    private val _isSubmittingComment = MutableStateFlow(false)
+    val isSubmittingComment: StateFlow<Boolean> = _isSubmittingComment.asStateFlow()
+
+    val userNickname: StateFlow<String> = preferenceManager.userNickname
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
     private val _featuredVideos = MutableStateFlow<List<Video>>(emptyList())
     val featuredVideos: StateFlow<List<Video>> = _featuredVideos.asStateFlow()
@@ -986,10 +1001,48 @@ class VideoViewModel @Inject constructor(
         }
     }
 
+    fun loadComments(videoId: String) {
+        viewModelScope.launch {
+            _isCommentsLoading.value = true
+            val result = commentService.getComments(videoId)
+            result.onSuccess {
+                _comments.value = it
+            }.onFailure {
+                Log.e("VideoViewModel", "Failed to load comments", it)
+            }
+            _isCommentsLoading.value = false
+        }
+    }
+
+    fun submitComment(videoId: String, userName: String, commentText: String, onComplete: (Boolean, String?) -> Unit = { _, _ -> }) {
+        val trimmedComment = commentText.trim()
+        val trimmedUser = userName.trim()
+        if (trimmedComment.isEmpty() || trimmedUser.isEmpty()) {
+            onComplete(false, "Name and comment cannot be empty")
+            return
+        }
+        viewModelScope.launch {
+            _isSubmittingComment.value = true
+            preferenceManager.setUserNickname(trimmedUser)
+
+            val result = commentService.postComment(videoId, trimmedUser, trimmedComment)
+            result.onSuccess { newComment ->
+                _comments.value = listOf(newComment) + _comments.value
+                _isSubmittingComment.value = false
+                onComplete(true, null)
+            }.onFailure { e ->
+                _isSubmittingComment.value = false
+                onComplete(false, e.message)
+            }
+        }
+    }
+
     fun loadFullDetails(videoId: String) { 
         if (_videoMetadata.value?.id != videoId) {
             _videoMetadata.value = getVideo(videoId) 
         }
+
+        loadComments(videoId)
 
         viewModelScope.launch { 
             _isDetailLoading.value = true

@@ -8,7 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -27,6 +27,11 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
+import com.duta.movie.model.Comment
+import com.duta.movie.util.SupabaseConfig
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import com.duta.movie.util.VideoUtils
 
 import androidx.compose.ui.graphics.graphicsLayer
@@ -1044,7 +1049,376 @@ fun VideoDetailInfo(
                 }
             }
         }
+
+        val context = LocalContext.current
+        val isRealTV = remember { com.duta.movie.util.DeviceUtils.isTvDevice(context) }
+        CommentSection(
+            videoId = video.id,
+            viewModel = viewModel,
+            isRealTV = isRealTV
+        )
+
         Spacer(modifier = Modifier.height(100.dp))
+    }
+}
+
+@Composable
+fun CommentSection(
+    videoId: String,
+    viewModel: VideoViewModel,
+    isRealTV: Boolean
+) {
+    val comments by viewModel.comments.collectAsStateWithLifecycle()
+    val isCommentsLoading by viewModel.isCommentsLoading.collectAsStateWithLifecycle()
+    val isSubmitting by viewModel.isSubmittingComment.collectAsStateWithLifecycle()
+    val savedNickname by viewModel.userNickname.collectAsStateWithLifecycle()
+
+    var nickname by remember { mutableStateOf("") }
+    var commentText by remember { mutableStateOf("") }
+    val context = LocalContext.current
+
+    LaunchedEffect(savedNickname) {
+        if (nickname.isEmpty() && savedNickname.isNotEmpty()) {
+            nickname = savedNickname
+        }
+    }
+
+    DetailSectionHeader(
+        title = "Comments",
+        badge = if (comments.isNotEmpty()) "${comments.size}" else null
+    )
+
+    Surface(
+        color = Color(0xFF161616),
+        shape = RoundedCornerShape(12.dp),
+        border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 8.dp)
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp)
+        ) {
+            Text(
+                text = "Join the Discussion",
+                color = Color.White,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold
+            )
+            Spacer(modifier = Modifier.height(12.dp))
+
+            OutlinedTextField(
+                value = nickname,
+                onValueChange = { if (it.length <= 30) nickname = it },
+                label = { Text("Your Nickname", fontSize = 12.sp) },
+                placeholder = { Text("e.g. MovieBuff", color = Color.Gray, fontSize = 12.sp) },
+                singleLine = true,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = Color.Red,
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                    focusedLabelColor = Color.Red,
+                    unfocusedLabelColor = Color.Gray
+                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 8.dp)
+            )
+
+            OutlinedTextField(
+                value = commentText,
+                onValueChange = { if (it.length <= 500) commentText = it },
+                label = { Text("Write a comment...", fontSize = 12.sp) },
+                placeholder = { Text("What did you think of this title?", color = Color.Gray, fontSize = 12.sp) },
+                minLines = 2,
+                maxLines = 4,
+                colors = OutlinedTextFieldDefaults.colors(
+                    focusedTextColor = Color.White,
+                    unfocusedTextColor = Color.White,
+                    focusedBorderColor = Color.Red,
+                    unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                    focusedLabelColor = Color.Red,
+                    unfocusedLabelColor = Color.Gray
+                ),
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
+                keyboardActions = KeyboardActions(onDone = {
+                    if (commentText.isNotBlank() && nickname.isNotBlank() && !isSubmitting) {
+                        viewModel.submitComment(videoId, nickname, commentText) { success, err ->
+                            if (success) {
+                                commentText = ""
+                            } else {
+                                Toast.makeText(context, err ?: "Failed to post comment", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                    }
+                }),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp)
+            )
+
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "${commentText.length}/500",
+                    color = Color.Gray,
+                    fontSize = 11.sp
+                )
+
+                var isPostBtnFocused by remember { mutableStateOf(false) }
+                val canSubmit = commentText.isNotBlank() && nickname.isNotBlank() && !isSubmitting
+
+                Button(
+                    onClick = {
+                        if (canSubmit) {
+                            viewModel.submitComment(videoId, nickname, commentText) { success, err ->
+                                if (success) {
+                                    commentText = ""
+                                } else {
+                                    Toast.makeText(context, err ?: "Failed to post comment", Toast.LENGTH_SHORT).show()
+                                }
+                            }
+                        } else if (nickname.isBlank()) {
+                            Toast.makeText(context, "Please enter your nickname first", Toast.LENGTH_SHORT).show()
+                        } else if (commentText.isBlank()) {
+                            Toast.makeText(context, "Please type a comment before posting", Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    enabled = !isSubmitting,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = if (canSubmit) Color.Red else Color.Red.copy(alpha = 0.4f),
+                        contentColor = Color.White
+                    ),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .onFocusChanged { isPostBtnFocused = it.isFocused }
+                        .graphicsLayer {
+                            scaleX = if (isPostBtnFocused) 1.05f else 1f
+                            scaleY = if (isPostBtnFocused) 1.05f else 1f
+                        }
+                        .border(
+                            border = if (isPostBtnFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent),
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                ) {
+                    if (isSubmitting) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color.White,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text("Posting...", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    } else {
+                        Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Post Comment", fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+    }
+
+    Spacer(modifier = Modifier.height(8.dp))
+
+    if (!SupabaseConfig.isConfigured) {
+        Surface(
+            color = Color(0xFF1E1E1E),
+            shape = RoundedCornerShape(8.dp),
+            border = BorderStroke(1.dp, Color(0xFF333333)),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(vertical = 8.dp)
+        ) {
+            Row(
+                modifier = Modifier.padding(12.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(
+                    Icons.Default.CloudQueue,
+                    contentDescription = null,
+                    tint = Color.Gray,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Cloud Sync Ready",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Add your Supabase Project URL and Anon Key in SupabaseConfig.kt to connect comments across all users.",
+                        color = Color.Gray,
+                        fontSize = 11.sp
+                    )
+                }
+            }
+        }
+    }
+
+    if (isCommentsLoading && comments.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            CircularProgressIndicator(color = Color.Red, modifier = Modifier.size(28.dp))
+        }
+    } else if (comments.isEmpty()) {
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(24.dp),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(
+                    Icons.Default.ChatBubbleOutline,
+                    contentDescription = null,
+                    tint = Color.Gray.copy(alpha = 0.5f),
+                    modifier = Modifier.size(36.dp)
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Text(
+                    text = "No comments yet. Be the first to comment!",
+                    color = Color.Gray,
+                    fontSize = 13.sp
+                )
+            }
+        }
+    } else {
+        Column(
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            comments.forEach { comment ->
+                CommentItem(comment = comment, isRealTV = isRealTV)
+            }
+        }
+    }
+}
+
+@Composable
+fun CommentItem(comment: Comment, isRealTV: Boolean) {
+    var isFocused by remember { mutableStateOf(false) }
+    val avatarColor = remember(comment.userName) {
+        val colors = listOf(
+            Color(0xFFE50914), // Netflix Red
+            Color(0xFF1E88E5), // Blue
+            Color(0xFF43A047), // Green
+            Color(0xFFFB8C00), // Orange
+            Color(0xFF8E24AA), // Purple
+            Color(0xFF00ACC1), // Cyan
+            Color(0xFF3949AB)  // Indigo
+        )
+        val hash = kotlin.math.abs(comment.userName.hashCode())
+        colors[hash % colors.size]
+    }
+
+    val initial = remember(comment.userName) {
+        comment.userName.trim().take(1).uppercase().ifEmpty { "U" }
+    }
+
+    val timeFormatted = remember(comment.createdAt) {
+        formatCommentTime(comment.createdAt)
+    }
+
+    Surface(
+        color = if (isFocused) Color(0xFF222222) else Color(0xFF121212),
+        shape = RoundedCornerShape(10.dp),
+        border = BorderStroke(
+            1.dp,
+            if (isFocused) Color.White.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.06f)
+        ),
+        modifier = Modifier
+            .fillMaxWidth()
+            .onFocusChanged { isFocused = it.isFocused }
+            .then(if (isRealTV) Modifier.focusable() else Modifier)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            verticalAlignment = Alignment.Top
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(avatarColor),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(
+                    text = initial,
+                    color = Color.White,
+                    fontWeight = FontWeight.Black,
+                    fontSize = 14.sp
+                )
+            }
+
+            Spacer(modifier = Modifier.width(12.dp))
+
+            Column(modifier = Modifier.weight(1f)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = comment.userName,
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                    Text(
+                        text = timeFormatted,
+                        color = Color.Gray,
+                        fontSize = 11.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+
+                Text(
+                    text = comment.comment,
+                    color = Color.White.copy(alpha = 0.88f),
+                    fontSize = 13.sp,
+                    lineHeight = 18.sp
+                )
+            }
+        }
+    }
+}
+
+fun formatCommentTime(isoString: String): String {
+    if (isoString.isBlank()) return "Just now"
+    return try {
+        val clean = isoString.replace("Z", "+0000").replace(Regex("""\.\d+"""), "")
+        val format = java.text.SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ssZ", java.util.Locale.US)
+        val date = format.parse(clean) ?: return isoString.take(10)
+        val diffMs = System.currentTimeMillis() - date.time
+        val minutes = diffMs / (60 * 1000)
+        val hours = minutes / 60
+        val days = hours / 24
+        when {
+            minutes < 1 -> "Just now"
+            minutes < 60 -> "${minutes}m ago"
+            hours < 24 -> "${hours}h ago"
+            days < 30 -> "${days}d ago"
+            else -> "${days / 30}mo ago"
+        }
+    } catch (e: Exception) {
+        isoString.take(10)
     }
 }
 

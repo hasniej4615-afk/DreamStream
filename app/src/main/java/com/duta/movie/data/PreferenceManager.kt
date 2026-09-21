@@ -40,6 +40,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         private val MOBILE_LANDSCAPE_ENABLED_KEY = booleanPreferencesKey("mobile_landscape_enabled")
         private val IS_INSTALL_REGISTERED_KEY = booleanPreferencesKey("is_install_registered_v1")
         private val LAST_KNOWN_INSTALL_COUNT_KEY = intPreferencesKey("last_known_install_count")
+        private val USER_NICKNAME_KEY = stringPreferencesKey("user_nickname")
 
         val DEFAULT_ENABLED_CATEGORIES = setOf(
             "/",
@@ -456,4 +457,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
 
     val lastKnownInstallCount: Flow<Int> = context.dataStore.data.map { it[LAST_KNOWN_INSTALL_COUNT_KEY] ?: 0 }
     suspend fun setLastKnownInstallCount(count: Int) { context.dataStore.edit { it[LAST_KNOWN_INSTALL_COUNT_KEY] = count } }
+
+    val userNickname: Flow<String> = context.dataStore.data.map { it[USER_NICKNAME_KEY] ?: "" }
+    suspend fun setUserNickname(nickname: String) { context.dataStore.edit { it[USER_NICKNAME_KEY] = nickname.trim() } }
 }
