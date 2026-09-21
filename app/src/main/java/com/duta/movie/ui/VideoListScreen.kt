@@ -1110,17 +1110,23 @@ fun NetflixThumbnail(
                 }
 
                 if (isPakcikRekomen) {
+                    val isNarrowCard = (width != null && width < 120.dp) || (isRealTV && (width ?: 165.dp) < 120.dp)
                     Surface(
                         color = Color.Red,
                         shape = RoundedCornerShape(bottomEnd = 6.dp),
                         modifier = Modifier.align(Alignment.TopStart)
                     ) {
                         Text(
-                            text = stringResource(R.string.pakcik_rekomen),
+                            text = if (isNarrowCard) "Rekomen" else stringResource(R.string.pakcik_rekomen),
                             color = Color.White,
-                            fontSize = 11.sp,
+                            fontSize = if (isNarrowCard) 9.sp else 11.sp,
                             fontWeight = FontWeight.Black,
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(
+                                horizontal = if (isNarrowCard) 4.dp else 7.dp, 
+                                vertical = if (isNarrowCard) 2.dp else 3.dp
+                            )
                         )
                     }
                 } else if (video.quality.isNotEmpty()) {
@@ -1141,6 +1147,7 @@ fun NetflixThumbnail(
 
                 if (isPakcikRekomen) {
                     val recCount = (video.views.toIntOrNull() ?: 1).coerceAtLeast(1)
+                    val isNarrowCard = (width != null && width < 120.dp) || (isRealTV && (width ?: 165.dp) < 120.dp)
                     Surface(
                         color = Color.Black.copy(alpha = 0.85f),
                         shape = RoundedCornerShape(bottomStart = 4.dp),
@@ -1148,19 +1155,22 @@ fun NetflixThumbnail(
                     ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            modifier = Modifier.padding(
+                                horizontal = if (isNarrowCard) 4.dp else 6.dp, 
+                                vertical = if (isNarrowCard) 2.dp else 3.dp
+                            )
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ThumbUp,
                                 contentDescription = null,
                                 tint = Color.Red,
-                                modifier = Modifier.size(11.dp)
+                                modifier = Modifier.size(if (isNarrowCard) 9.dp else 11.dp)
                             )
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Spacer(modifier = Modifier.width(if (isNarrowCard) 2.dp else 4.dp))
                             Text(
                                 text = "$recCount",
                                 color = Color.White,
-                                fontSize = 11.sp,
+                                fontSize = if (isNarrowCard) 9.sp else 11.sp,
                                 fontWeight = FontWeight.Black
                             )
                         }

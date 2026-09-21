@@ -36,6 +36,7 @@ import androidx.compose.ui.text.input.ImeAction
 import com.duta.movie.util.VideoUtils
 
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 
@@ -692,7 +693,7 @@ fun VideoDetailInfo(
             Spacer(modifier = Modifier.height(12.dp))
 
             var isRecommendFocused by remember { mutableStateOf(false) }
-            val recommendScale by animateFloatAsState(if (isRecommendFocused) 1.05f else 1f)
+            val recommendScale by animateFloatAsState(if (isRecommendFocused) 1.08f else 1f)
             val isRecommended by viewModel.isRecommended(video.id).collectAsStateWithLifecycle(false)
             val recommendCount by viewModel.getRecommendCount(video.id).collectAsStateWithLifecycle(0)
 
@@ -700,26 +701,46 @@ fun VideoDetailInfo(
                 onClick = { viewModel.toggleRecommendation(video) },
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(50.dp)
+                    .height(52.dp)
                     .graphicsLayer(scaleX = recommendScale, scaleY = recommendScale)
                     .onFocusChanged { isRecommendFocused = it.isFocused }
-                    .shadow(if (isRecommendFocused) 15.dp else 0.dp, RoundedCornerShape(8.dp), spotColor = Color.Red)
+                    .onKeyEvent { keyEvent ->
+                        if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                            (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                            viewModel.toggleRecommendation(video)
+                            true
+                        } else false
+                    }
+                    .shadow(
+                        elevation = if (isRecommendFocused) 20.dp else 0.dp,
+                        shape = RoundedCornerShape(8.dp),
+                        spotColor = Color.Red,
+                        ambientColor = Color.White
+                    )
                     .border(
-                        if (isRecommendFocused) BorderStroke(3.dp, Color.White)
+                        if (isRecommendFocused) BorderStroke(3.5.dp, Color.White)
                         else if (isRecommended) BorderStroke(1.5.dp, Color.Red)
                         else BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
                         RoundedCornerShape(8.dp)
                     ),
                 colors = ButtonDefaults.outlinedButtonColors(
-                    containerColor = if (isRecommended) Color.Red.copy(alpha = 0.2f) else Color.Transparent,
-                    contentColor = if (isRecommended) Color.Red else Color.White
+                    containerColor = if (isRecommendFocused) {
+                        if (isRecommended) Color.Red.copy(alpha = 0.45f) else Color.White.copy(alpha = 0.18f)
+                    } else if (isRecommended) {
+                        Color.Red.copy(alpha = 0.22f)
+                    } else {
+                        Color.Transparent
+                    },
+                    contentColor = if (isRecommendFocused) Color.White else if (isRecommended) Color.Red else Color.White
                 ),
                 shape = RoundedCornerShape(8.dp)
             ) {
                 Icon(
                     imageVector = if (isRecommended) Icons.Default.ThumbUp else Icons.Outlined.ThumbUp,
                     contentDescription = null,
-                    tint = if (isRecommended) Color.Red else Color.White,
+                    tint = if (isRecommendFocused) Color.White else if (isRecommended) Color.Red else Color.White,
                     modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(10.dp))
@@ -732,7 +753,7 @@ fun VideoDetailInfo(
                     text = labelText,
                     fontWeight = FontWeight.Bold,
                     fontSize = 15.sp,
-                    color = if (isRecommended) Color.Red else Color.White
+                    color = if (isRecommendFocused) Color.White else if (isRecommended) Color.Red else Color.White
                 )
             }
 
