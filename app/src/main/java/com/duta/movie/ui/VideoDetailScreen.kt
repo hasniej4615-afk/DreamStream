@@ -1072,10 +1072,16 @@ fun CommentSection(
     val isCommentsLoading by viewModel.isCommentsLoading.collectAsStateWithLifecycle()
     val isSubmitting by viewModel.isSubmittingComment.collectAsStateWithLifecycle()
     val savedNickname by viewModel.userNickname.collectAsStateWithLifecycle()
+    val myCommentIds by viewModel.myCommentIds.collectAsStateWithLifecycle()
 
     var nickname by remember { mutableStateOf("") }
     var commentText by remember { mutableStateOf("") }
     val context = LocalContext.current
+
+    var editingComment by remember { mutableStateOf<Comment?>(null) }
+    var deletingComment by remember { mutableStateOf<Comment?>(null) }
+    var isEditSubmitting by remember { mutableStateOf(false) }
+    var isDeleteSubmitting by remember { mutableStateOf(false) }
 
     LaunchedEffect(savedNickname) {
         if (nickname.isEmpty() && savedNickname.isNotEmpty()) {
@@ -1302,14 +1308,148 @@ fun CommentSection(
             modifier = Modifier.fillMaxWidth()
         ) {
             comments.forEach { comment ->
-                CommentItem(comment = comment, isRealTV = isRealTV)
+                val isMyComment = comment.id.toString() in myCommentIds
+                CommentItem(
+                    comment = comment,
+                    isRealTV = isRealTV,
+                    isMyComment = isMyComment,
+                    onEditClick = { editingComment = comment },
+                    onDeleteClick = { deletingComment = comment }
+                )
             }
         }
+    }
+
+    // Edit Comment Dialog
+    editingComment?.let { target ->
+        var editedText by remember(target.id) { mutableStateOf(target.comment) }
+        AlertDialog(
+            onDismissRequest = { if (!isEditSubmitting) editingComment = null },
+            title = {
+                Text("Edit Comment", color = Color.White, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Column {
+                    OutlinedTextField(
+                        value = editedText,
+                        onValueChange = { if (it.length <= 500) editedText = it },
+                        placeholder = { Text("Edit your comment...", color = Color.Gray) },
+                        minLines = 3,
+                        maxLines = 5,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color.Red,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                            focusedLabelColor = Color.Red,
+                            unfocusedLabelColor = Color.Gray
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
+                    Text(
+                        text = "${editedText.length}/500",
+                        color = Color.Gray,
+                        fontSize = 11.sp,
+                        modifier = Modifier.align(Alignment.End)
+                    )
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (editedText.isNotBlank() && !isEditSubmitting) {
+                            isEditSubmitting = true
+                            viewModel.editComment(target.id, editedText) { success, err ->
+                                isEditSubmitting = false
+                                if (success) {
+                                    editingComment = null
+                                } else {
+                                    Toast.makeText(context, err ?: "Failed to edit comment. Please verify Supabase update policy.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    enabled = !isEditSubmitting && editedText.isNotBlank(),
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red, contentColor = Color.White)
+                ) {
+                    if (isEditSubmitting) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text("Save Changes")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { editingComment = null },
+                    enabled = !isEditSubmitting
+                ) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            },
+            containerColor = Color(0xFF1E1E1E),
+            shape = RoundedCornerShape(12.dp)
+        )
+    }
+
+    // Delete Confirmation Dialog
+    deletingComment?.let { target ->
+        AlertDialog(
+            onDismissRequest = { if (!isDeleteSubmitting) deletingComment = null },
+            title = {
+                Text("Delete Comment", color = Color.White, fontWeight = FontWeight.Bold)
+            },
+            text = {
+                Text("Are you sure you want to delete this comment? This action cannot be undone.", color = Color.White.copy(alpha = 0.85f))
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        if (!isDeleteSubmitting) {
+                            isDeleteSubmitting = true
+                            viewModel.deleteComment(target.id) { success, err ->
+                                isDeleteSubmitting = false
+                                if (success) {
+                                    deletingComment = null
+                                } else {
+                                    Toast.makeText(context, err ?: "Failed to delete comment. Please verify Supabase delete policy.", Toast.LENGTH_LONG).show()
+                                }
+                            }
+                        }
+                    },
+                    enabled = !isDeleteSubmitting,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red, contentColor = Color.White)
+                ) {
+                    if (isDeleteSubmitting) {
+                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
+                        Spacer(modifier = Modifier.width(6.dp))
+                    }
+                    Text("Delete")
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { deletingComment = null },
+                    enabled = !isDeleteSubmitting
+                ) {
+                    Text("Cancel", color = Color.Gray)
+                }
+            },
+            containerColor = Color(0xFF1E1E1E),
+            shape = RoundedCornerShape(12.dp)
+        )
     }
 }
 
 @Composable
-fun CommentItem(comment: Comment, isRealTV: Boolean) {
+fun CommentItem(
+    comment: Comment, 
+    isRealTV: Boolean,
+    isMyComment: Boolean = false,
+    onEditClick: () -> Unit = {},
+    onDeleteClick: () -> Unit = {}
+) {
     var isFocused by remember { mutableStateOf(false) }
     val avatarColor = remember(comment.userName) {
         val colors = listOf(
@@ -1374,17 +1514,82 @@ fun CommentItem(comment: Comment, isRealTV: Boolean) {
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text(
-                        text = comment.userName,
-                        color = Color.White,
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 13.sp
-                    )
-                    Text(
-                        text = timeFormatted,
-                        color = Color.Gray,
-                        fontSize = 11.sp
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = comment.userName,
+                            color = Color.White,
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 13.sp
+                        )
+                        if (isMyComment) {
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Surface(
+                                color = Color.Red.copy(alpha = 0.15f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.5f))
+                            ) {
+                                Text(
+                                    text = "YOU",
+                                    color = Color.Red,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Black,
+                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                )
+                            }
+                        }
+                    }
+
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            text = timeFormatted,
+                            color = Color.Gray,
+                            fontSize = 11.sp
+                        )
+
+                        if (isMyComment) {
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            var isEditFocused by remember { mutableStateOf(false) }
+                            IconButton(
+                                onClick = onEditClick,
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .onFocusChanged { isEditFocused = it.isFocused }
+                                    .border(
+                                        border = if (isEditFocused) BorderStroke(1.5.dp, Color.White) else BorderStroke(0.dp, Color.Transparent),
+                                        shape = CircleShape
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Edit,
+                                    contentDescription = "Edit Comment",
+                                    tint = if (isEditFocused) Color.White else Color.Gray,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(4.dp))
+
+                            var isDeleteFocused by remember { mutableStateOf(false) }
+                            IconButton(
+                                onClick = onDeleteClick,
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .onFocusChanged { isDeleteFocused = it.isFocused }
+                                    .border(
+                                        border = if (isDeleteFocused) BorderStroke(1.5.dp, Color.Red) else BorderStroke(0.dp, Color.Transparent),
+                                        shape = CircleShape
+                                    )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Delete,
+                                    contentDescription = "Delete Comment",
+                                    tint = if (isDeleteFocused) Color.Red else Color.Gray,
+                                    modifier = Modifier.size(14.dp)
+                                )
+                            }
+                        }
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))

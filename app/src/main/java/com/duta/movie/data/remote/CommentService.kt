@@ -108,4 +108,70 @@ class CommentService @Inject constructor(
             Result.failure(e)
         }
     }
+
+    suspend fun editComment(commentId: Long, newText: String): Result<Comment> = withContext(Dispatchers.IO) {
+        if (!SupabaseConfig.isConfigured) {
+            return@withContext Result.failure(Exception("Supabase is not configured"))
+        }
+
+        try {
+            val url = "${SupabaseConfig.PROJECT_URL.trimEnd('/')}/rest/v1/comments?id=eq.$commentId"
+            val payload = mapOf("comment" to newText.trim())
+            val jsonBody = json.encodeToString(payload)
+
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("apikey", SupabaseConfig.ANON_KEY)
+                .addHeader("Authorization", "Bearer ${SupabaseConfig.ANON_KEY}")
+                .addHeader("Content-Type", "application/json")
+                .addHeader("Prefer", "return=representation")
+                .patch(jsonBody.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string() ?: ""
+                    Log.e(TAG, "Failed to edit comment: HTTP ${response.code} $errorBody")
+                    return@withContext Result.failure(Exception("HTTP ${response.code}: $errorBody"))
+                }
+
+                val responseBody = response.body?.string() ?: "[]"
+                val list = json.decodeFromString<List<Comment>>(responseBody)
+                val updated = list.firstOrNull() ?: return@withContext Result.failure(Exception("Comment not found or update blocked"))
+                Result.success(updated)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error editing comment $commentId", e)
+            Result.failure(e)
+        }
+    }
+
+    suspend fun deleteComment(commentId: Long): Result<Boolean> = withContext(Dispatchers.IO) {
+        if (!SupabaseConfig.isConfigured) {
+            return@withContext Result.failure(Exception("Supabase is not configured"))
+        }
+
+        try {
+            val url = "${SupabaseConfig.PROJECT_URL.trimEnd('/')}/rest/v1/comments?id=eq.$commentId"
+
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("apikey", SupabaseConfig.ANON_KEY)
+                .addHeader("Authorization", "Bearer ${SupabaseConfig.ANON_KEY}")
+                .delete()
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string() ?: ""
+                    Log.e(TAG, "Failed to delete comment: HTTP ${response.code} $errorBody")
+                    return@withContext Result.failure(Exception("HTTP ${response.code}: $errorBody"))
+                }
+                Result.success(true)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error deleting comment $commentId", e)
+            Result.failure(e)
+        }
+    }
 }

@@ -41,6 +41,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         private val IS_INSTALL_REGISTERED_KEY = booleanPreferencesKey("is_install_registered_v1")
         private val LAST_KNOWN_INSTALL_COUNT_KEY = intPreferencesKey("last_known_install_count")
         private val USER_NICKNAME_KEY = stringPreferencesKey("user_nickname")
+        private val MY_COMMENT_IDS_KEY = stringSetPreferencesKey("my_comment_ids")
 
         val DEFAULT_ENABLED_CATEGORIES = setOf(
             "/",
@@ -460,4 +461,18 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
 
     val userNickname: Flow<String> = context.dataStore.data.map { it[USER_NICKNAME_KEY] ?: "" }
     suspend fun setUserNickname(nickname: String) { context.dataStore.edit { it[USER_NICKNAME_KEY] = nickname.trim() } }
+
+    val myCommentIds: Flow<Set<String>> = context.dataStore.data.map { it[MY_COMMENT_IDS_KEY] ?: emptySet() }
+    suspend fun addMyCommentId(id: Long) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[MY_COMMENT_IDS_KEY] ?: emptySet()
+            prefs[MY_COMMENT_IDS_KEY] = current + id.toString()
+        }
+    }
+    suspend fun removeMyCommentId(id: Long) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[MY_COMMENT_IDS_KEY] ?: emptySet()
+            prefs[MY_COMMENT_IDS_KEY] = current - id.toString()
+        }
+    }
 }

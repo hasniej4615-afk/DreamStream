@@ -63,6 +63,9 @@ class VideoViewModel @Inject constructor(
     val userNickname: StateFlow<String> = preferenceManager.userNickname
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
 
+    val myCommentIds: StateFlow<Set<String>> = preferenceManager.myCommentIds
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
     private val _featuredVideos = MutableStateFlow<List<Video>>(emptyList())
     val featuredVideos: StateFlow<List<Video>> = _featuredVideos.asStateFlow()
 
@@ -1028,10 +1031,41 @@ class VideoViewModel @Inject constructor(
             val result = commentService.postComment(videoId, trimmedUser, trimmedComment)
             result.onSuccess { newComment ->
                 _comments.value = listOf(newComment) + _comments.value
+                preferenceManager.addMyCommentId(newComment.id)
                 _isSubmittingComment.value = false
                 onComplete(true, null)
             }.onFailure { e ->
                 _isSubmittingComment.value = false
+                onComplete(false, e.message)
+            }
+        }
+    }
+
+    fun editComment(commentId: Long, newText: String, onComplete: (Boolean, String?) -> Unit = { _, _ -> }) {
+        val trimmed = newText.trim()
+        if (trimmed.isEmpty()) {
+            onComplete(false, "Comment cannot be empty")
+            return
+        }
+        viewModelScope.launch {
+            val result = commentService.editComment(commentId, trimmed)
+            result.onSuccess { updated ->
+                _comments.value = _comments.value.map { if (it.id == commentId) updated else it }
+                onComplete(true, null)
+            }.onFailure { e ->
+                onComplete(false, e.message)
+            }
+        }
+    }
+
+    fun deleteComment(commentId: Long, onComplete: (Boolean, String?) -> Unit = { _, _ -> }) {
+        viewModelScope.launch {
+            val result = commentService.deleteComment(commentId)
+            result.onSuccess {
+                _comments.value = _comments.value.filter { it.id != commentId }
+                preferenceManager.removeMyCommentId(commentId)
+                onComplete(true, null)
+            }.onFailure { e ->
                 onComplete(false, e.message)
             }
         }
