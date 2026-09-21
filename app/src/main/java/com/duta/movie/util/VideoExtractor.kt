@@ -3427,8 +3427,10 @@ object VideoExtractor {
                 
                 // OWL'S EYE: Extract quality tag (HD, HDCAM, etc) directly from list view
                 val quality = el.select(".quality, .gmr-quality-item, .res, .resolution, .status").text().trim()
+                val rawRating = el.select(".imdb-rating, .rating, .score, .gmr-rating-item, .post-ratings").text()
+                val rating = Regex("""\d+(?:\.\d+)?""").find(rawRating)?.value ?: ""
                 
-                Video(id = extractStableId(link), title = title, thumbnailUrl = img, videoUrl = link, duration = "", quality = quality)
+                Video(id = extractStableId(link), title = title, thumbnailUrl = img, videoUrl = link, duration = "", quality = quality, views = rating)
             } else null
         }.distinctBy { it.id }.toList()
     }
@@ -4138,7 +4140,8 @@ object VideoExtractor {
             }
         }
 
-        val rating = doc.select(".imdb-rating, .rating, .score, .gmr-rating-item, .post-ratings").firstOrNull()?.text()?.filter { it.isDigit() || it == '.' } ?: ""
+        val rawRating = doc.select(".imdb-rating, .rating, .score, .gmr-rating-item, .post-ratings").firstOrNull()?.text() ?: ""
+        val rating = Regex("""\d+(?:\.\d+)?""").find(rawRating)?.value ?: ""
         val quality = doc.select(".quality, .resolution, .res, .gmr-quality-item").firstOrNull()?.text() ?: ""
         val year = doc.select(".date, .release-date, .year").firstOrNull()?.text()?.filter { it.isDigit() }?.takeLast(4) ?: ""
         val parsedSeason = doc.select(".gmr-season, .season, meta[property='og:title']").firstOrNull()?.text()?.let {

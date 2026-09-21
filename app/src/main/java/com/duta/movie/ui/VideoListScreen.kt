@@ -1046,6 +1046,37 @@ fun NetflixThumbnail(
                         )
                     }
                 }
+
+                val cleanRating = remember(video.views) {
+                    val num = Regex("""\d+(?:\.\d+)?""").find(video.views)?.value
+                    if (num != null && (num.toDoubleOrNull() ?: 0.0) > 0.0) num else ""
+                }
+                if (cleanRating.isNotEmpty()) {
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(bottomStart = 4.dp),
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Star,
+                                contentDescription = null,
+                                tint = Color(0xFFFFC107),
+                                modifier = Modifier.size(11.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = cleanRating,
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                    }
+                }
             }
         }
         
