@@ -27,12 +27,12 @@ object SupabaseConfig {
     /**
      * Supabase Project URL (e.g. "https://xxxxxxxxxxxxxxxxxxxx.supabase.co")
      */
-    const val PROJECT_URL = ""
+    const val PROJECT_URL = "https://seyzzmivcppoadgwkjmh.supabase.co"
 
     /**
      * Supabase public anon key
      */
-    const val ANON_KEY = ""
+    const val ANON_KEY = "sb_publishable_iPBPTl_C2BvSq0tub3kQHA_wpEKDsFf"
 
     val isConfigured: Boolean
         get() = PROJECT_URL.isNotBlank() && ANON_KEY.isNotBlank() && !PROJECT_URL.contains("your-project")
