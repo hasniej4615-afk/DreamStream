@@ -462,4 +462,8 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="help_topic_ratings_title">Lencana Penilaian Filem &amp; Siri</string>
     <string name="help_topic_ratings_desc">Memahami lencana bintang emas penilaian yang dipaparkan pada gambar kecil poster.</string>
     <string name="help_topic_ratings_content">• Lencana Penilaian IMDb: Lencana bintang emas di sudut atas kanan poster menunjukkan skor penilaian IMDb bagi tajuk tersebut.\n• Pengekstrakan Masa Nyata: Penilaian diperoleh secara langsung daripada pangkalan data filem dan katalog penstriman.\n• Paparan Katalog Kemas: Jika filem baharu dikeluarkan atau belum dinilai, lencana disembunyikan secara automatik untuk mengekalkan paparan poster yang bersih.</string>
+
+    <string name="pakcik_rekomen">Pakcik Rekomen</string>
+    <string name="pakcik_rekomen_count">Pakcik Rekomen (%d)</string>
+    <string name="rekomen_count_badge">%d Rekomen</string>
 </resources>

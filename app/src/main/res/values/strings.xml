@@ -462,4 +462,8 @@ Tap to re-scout and refresh content</string>
     <string name="help_topic_ratings_title">Movie &amp; Series Rating Badges</string>
     <string name="help_topic_ratings_desc">Understanding the gold star rating badges shown on poster thumbnails.</string>
     <string name="help_topic_ratings_content">• IMDb Rating Badges: Gold star rating badges at the top-right corner of posters indicate the title\'s IMDb score.\n• Real-Time Extraction: Ratings are fetched live from movie databases and streaming catalogs.\n• Clean Catalog Display: If a movie is newly released or unrated, the badge is hidden automatically to preserve a clean poster view.</string>
+
+    <string name="pakcik_rekomen">Pakcik Rekomen</string>
+    <string name="pakcik_rekomen_count">Pakcik Rekomen (%d)</string>
+    <string name="rekomen_count_badge">%d Rekomen</string>
 </resources>

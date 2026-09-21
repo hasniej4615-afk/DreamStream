@@ -15,6 +15,9 @@ import com.duta.movie.model.VideoServer
 import com.duta.movie.model.Subtitle
 import com.duta.movie.model.Comment
 import com.duta.movie.data.remote.CommentService
+import com.duta.movie.data.remote.RecommendationService
+import com.duta.movie.model.Recommendation
+import com.duta.movie.model.toVideo
 import com.duta.movie.util.SubtitleExtractor
 import com.duta.movie.util.SubtitleParser
 import com.duta.movie.util.ParsedSubtitleCue
@@ -48,6 +51,7 @@ class VideoViewModel @Inject constructor(
     private val imageLoader: ImageLoader,
     private val preferenceManager: PreferenceManager,
     private val commentService: CommentService,
+    private val recommendationService: RecommendationService,
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -65,6 +69,82 @@ class VideoViewModel @Inject constructor(
 
     val myCommentIds: StateFlow<Set<String>> = preferenceManager.myCommentIds
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    private val _pakcikRekomenVideos = MutableStateFlow<List<Video>>(emptyList())
+    val pakcikRekomenVideos: StateFlow<List<Video>> = _pakcikRekomenVideos.asStateFlow()
+
+    private val _isPakcikRekomenLoading = MutableStateFlow(false)
+    val isPakcikRekomenLoading: StateFlow<Boolean> = _isPakcikRekomenLoading.asStateFlow()
+
+    val myRecommendedVideoIds: StateFlow<Set<String>> = preferenceManager.myRecommendedVideoIds
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+
+    private val _recommendationCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val recommendationCounts: StateFlow<Map<String, Int>> = _recommendationCounts.asStateFlow()
+
+    fun getRecommendCount(videoId: String): StateFlow<Int> {
+        return recommendationCounts.map { map ->
+            map[videoId] ?: (_pakcikRekomenVideos.value.find { it.id == videoId }?.views?.toIntOrNull() ?: 0)
+        }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    }
+
+    fun isRecommended(videoId: String): StateFlow<Boolean> {
+        return myRecommendedVideoIds.map { it.contains(videoId) }
+            .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), false)
+    }
+
+    fun fetchPakcikRekomenVideos() {
+        viewModelScope.launch {
+            _isPakcikRekomenLoading.value = true
+            try {
+                val res = recommendationService.getRecommendations()
+                res.onSuccess { recs ->
+                    _pakcikRekomenVideos.value = recs.map { it.toVideo() }
+                    val counts = recs.associate { it.videoId to it.recommendCount }
+                    _recommendationCounts.update { current -> current + counts }
+                }.onFailure { e ->
+                    Log.e("VideoViewModel", "Failed to fetch Pakcik Rekomen videos", e)
+                }
+            } catch (e: Exception) {
+                Log.e("VideoViewModel", "Error fetching Pakcik Rekomen videos", e)
+            } finally {
+                _isPakcikRekomenLoading.value = false
+            }
+        }
+    }
+
+    fun toggleRecommendation(video: Video) {
+        val currentSet = myRecommendedVideoIds.value
+        val isCurrentlyRecommended = currentSet.contains(video.id)
+        val shouldRecommend = !isCurrentlyRecommended
+
+        val currentCount = _recommendationCounts.value[video.id]
+            ?: (_pakcikRekomenVideos.value.find { it.id == video.id }?.views?.toIntOrNull() ?: 0)
+        val newCount = if (shouldRecommend) currentCount + 1 else (currentCount - 1).coerceAtLeast(0)
+        _recommendationCounts.update { it + (video.id to newCount) }
+
+        viewModelScope.launch {
+            if (shouldRecommend) {
+                preferenceManager.addRecommendedVideoId(video.id)
+            } else {
+                preferenceManager.removeRecommendedVideoId(video.id)
+            }
+
+            val res = recommendationService.toggleRecommendation(video, shouldRecommend)
+            res.onSuccess { updatedRec ->
+                _recommendationCounts.update { it + (video.id to updatedRec.recommendCount) }
+                fetchPakcikRekomenVideos()
+            }.onFailure { e ->
+                Log.e("VideoViewModel", "Failed to sync recommendation for ${video.id}", e)
+                _recommendationCounts.update { it + (video.id to currentCount) }
+                if (shouldRecommend) {
+                    preferenceManager.removeRecommendedVideoId(video.id)
+                } else {
+                    preferenceManager.addRecommendedVideoId(video.id)
+                }
+            }
+        }
+    }
 
     private val _featuredVideos = MutableStateFlow<List<Video>>(emptyList())
     val featuredVideos: StateFlow<List<Video>> = _featuredVideos.asStateFlow()
@@ -893,6 +973,7 @@ class VideoViewModel @Inject constructor(
         val category = _selectedCategory.value
         if (category == null) {
             fetchHomeData(force = true)
+            fetchPakcikRekomenVideos()
         } else {
             currentPage = 1
             _resultVideos.value = emptyList()
@@ -1071,12 +1152,25 @@ class VideoViewModel @Inject constructor(
         }
     }
 
+    fun loadRecommendation(videoId: String) {
+        viewModelScope.launch {
+            try {
+                recommendationService.getRecommendationForVideo(videoId).onSuccess { rec ->
+                    if (rec != null) {
+                        _recommendationCounts.update { it + (videoId to rec.recommendCount) }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+    }
+
     fun loadFullDetails(videoId: String) { 
         if (_videoMetadata.value?.id != videoId) {
             _videoMetadata.value = getVideo(videoId) 
         }
 
         loadComments(videoId)
+        loadRecommendation(videoId)
 
         viewModelScope.launch { 
             _isDetailLoading.value = true
@@ -3090,7 +3184,10 @@ class VideoViewModel @Inject constructor(
         }
     }
 
-    private fun loadData() { fetchHomeData() }
+    private fun loadData() { 
+        fetchHomeData()
+        fetchPakcikRekomenVideos()
+    }
 
     fun applyMetadata(video: Video): Video {
         val cached = metadataCache[video.id] ?: return video

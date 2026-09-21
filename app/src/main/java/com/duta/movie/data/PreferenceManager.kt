@@ -42,6 +42,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         private val LAST_KNOWN_INSTALL_COUNT_KEY = intPreferencesKey("last_known_install_count")
         private val USER_NICKNAME_KEY = stringPreferencesKey("user_nickname")
         private val MY_COMMENT_IDS_KEY = stringSetPreferencesKey("my_comment_ids")
+        private val MY_RECOMMENDED_VIDEO_IDS_KEY = stringSetPreferencesKey("my_recommended_video_ids")
 
         val DEFAULT_ENABLED_CATEGORIES = setOf(
             "/",
@@ -473,6 +474,20 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         context.dataStore.edit { prefs ->
             val current = prefs[MY_COMMENT_IDS_KEY] ?: emptySet()
             prefs[MY_COMMENT_IDS_KEY] = current - id.toString()
+        }
+    }
+
+    val myRecommendedVideoIds: Flow<Set<String>> = context.dataStore.data.map { it[MY_RECOMMENDED_VIDEO_IDS_KEY] ?: emptySet() }
+    suspend fun addRecommendedVideoId(videoId: String) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[MY_RECOMMENDED_VIDEO_IDS_KEY] ?: emptySet()
+            prefs[MY_RECOMMENDED_VIDEO_IDS_KEY] = current + videoId
+        }
+    }
+    suspend fun removeRecommendedVideoId(videoId: String) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[MY_RECOMMENDED_VIDEO_IDS_KEY] ?: emptySet()
+            prefs[MY_RECOMMENDED_VIDEO_IDS_KEY] = current - videoId
         }
     }
 }

@@ -141,6 +141,8 @@ fun VideoListScreen(
     val featuredVideos by viewModel.featuredVideos.collectAsStateWithLifecycle()
     val myList by viewModel.myList.collectAsStateWithLifecycle()
     val recentlyWatchedVideos by viewModel.recentlyWatchedVideos.collectAsStateWithLifecycle()
+    val pakcikRekomenVideos by viewModel.pakcikRekomenVideos.collectAsStateWithLifecycle()
+    val isPakcikRekomenLoading by viewModel.isPakcikRekomenLoading.collectAsStateWithLifecycle()
 
     val isExpanded = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded
     val isMedium = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Medium
@@ -569,35 +571,71 @@ fun VideoListScreen(
                                  }
                              }
 
-                             itemsIndexed(categories, key = { _, cat -> cat["path"] ?: cat["name"] ?: "" }) { index, category ->
-                                 val name = translateCategoryName(category["name"] ?: "")
-                                 val path = category["path"] ?: ""
-                                 if (name.isNotEmpty() && path.isNotEmpty()) {
-                                     val rowVideos = categoryVideos[path] ?: emptyList()
-                                     val isRowLoading = categoryLoading[path] ?: false
-                                     LaunchedEffect(path) { 
-                                         if (rowVideos.isEmpty()) {
-                                             viewModel.fetchVideosForCategoryRow(path)
-                                         }
-                                     }
+                              if (pakcikRekomenVideos.isNotEmpty()) {
+                                  item {
+                                      var isRowFocused by remember { mutableStateOf(false) }
+                                      val rowAlpha by animateFloatAsState(if (isRowFocused) 1f else 0.65f)
+                                      
+                                      Column(modifier = Modifier
+                                          .onFocusChanged { isRowFocused = it.hasFocus }
+                                      ) {
+                                          ListSectionHeader(
+                                              stringResource(R.string.pakcik_rekomen), 
+                                              isLargeLayout = true, 
+                                              isRealTV = isImmersiveMode,
+                                              isFocused = isRowFocused
+                                          )
+                                          HorizontalVideoRow(
+                                              videos = pakcikRekomenVideos,
+                                              isLoading = isPakcikRekomenLoading,
+                                              errorPlaceholder = errorPlaceholder,
+                                              onVideoClick = onVideoClick,
+                                              isTV = true,
+                                              isRealTV = isImmersiveMode,
+                                              viewModel = viewModel,
+                                              rowIndex = if (recentlyWatchedVideos.isNotEmpty()) 1 else 0,
+                                              isPakcikRekomen = true,
+                                              onVideoFocus = { video -> 
+                                                  focusedVideo = video 
+                                              },
+                                              thumbnailScale = uiThumbnailScaleFactor,
+                                              firstItemFocusRequester = if (recentlyWatchedVideos.isEmpty()) firstCategoryFocusRequester else null,
+                                              modifier = Modifier.graphicsLayer { alpha = rowAlpha }
+                                          )
+                                      }
+                                  }
+                              }
 
-                                     if (rowVideos.isNotEmpty() || isRowLoading) {
-                                         val scope = rememberCoroutineScope()
-                                         var isRowFocused by remember { mutableStateOf(false) }
-                                         val rowAlpha by animateFloatAsState(if (isRowFocused) 1f else 0.65f)
-                                         val actualRowIndex = if (recentlyWatchedVideos.isNotEmpty()) index + 1 else index
-                                         val isFirstRow = actualRowIndex == 0
-                                         
-                                         Column(modifier = Modifier
-                                             .onFocusChanged { 
-                                                 isRowFocused = it.hasFocus 
-                                                 if (it.hasFocus) {
-                                                     if (rowVideos.isEmpty() && !isRowLoading) {
-                                                         viewModel.fetchVideosForCategoryRow(path)
-                                                     }
-                                                 }
-                                             }
-                                         ) {
+                              itemsIndexed(categories, key = { _, cat -> cat["path"] ?: cat["name"] ?: "" }) { index, category ->
+                                  val name = translateCategoryName(category["name"] ?: "")
+                                  val path = category["path"] ?: ""
+                                  if (name.isNotEmpty() && path.isNotEmpty()) {
+                                      val rowVideos = categoryVideos[path] ?: emptyList()
+                                      val isRowLoading = categoryLoading[path] ?: false
+                                      LaunchedEffect(path) { 
+                                          if (rowVideos.isEmpty()) {
+                                              viewModel.fetchVideosForCategoryRow(path)
+                                          }
+                                      }
+
+                                      if (rowVideos.isNotEmpty() || isRowLoading) {
+                                          val scope = rememberCoroutineScope()
+                                          var isRowFocused by remember { mutableStateOf(false) }
+                                          val rowAlpha by animateFloatAsState(if (isRowFocused) 1f else 0.65f)
+                                          val baseRowIndex = (if (recentlyWatchedVideos.isNotEmpty()) 1 else 0) + (if (pakcikRekomenVideos.isNotEmpty()) 1 else 0)
+                                          val actualRowIndex = baseRowIndex + index
+                                          val isFirstRow = actualRowIndex == 0
+                                          
+                                          Column(modifier = Modifier
+                                              .onFocusChanged { 
+                                                  isRowFocused = it.hasFocus 
+                                                  if (it.hasFocus) {
+                                                      if (rowVideos.isEmpty() && !isRowLoading) {
+                                                          viewModel.fetchVideosForCategoryRow(path)
+                                                      }
+                                                  }
+                                              }
+                                          ) {
                                              ListSectionHeader(
                                                  name, 
                                                  isLargeLayout = true, 
@@ -689,6 +727,27 @@ fun VideoListScreen(
                                 }
                             }
 
+                            if (pakcikRekomenVideos.isNotEmpty()) {
+                                item {
+                                    Spacer(Modifier.height(12.dp))
+                                    ListSectionHeader(stringResource(R.string.pakcik_rekomen), isLargeLayout = false, isRealTV = false)
+                                }
+                                item {
+                                    HorizontalVideoRow(
+                                        videos = pakcikRekomenVideos,
+                                        isLoading = isPakcikRekomenLoading,
+                                        errorPlaceholder = errorPlaceholder,
+                                        onVideoClick = onVideoClick,
+                                        isTV = isLargeLayout,
+                                        isRealTV = false,
+                                        viewModel = viewModel,
+                                        isPakcikRekomen = true,
+                                        onVideoFocus = { video -> focusedVideo = video },
+                                        thumbnailScale = uiThumbnailScaleFactor
+                                    )
+                                }
+                            }
+
                             if (isLoading && categories.isEmpty()) {
                                 items(3) {
                                     ListSectionHeader("Loading...", isLargeLayout = false, isRealTV = false)
@@ -771,6 +830,7 @@ fun HorizontalVideoRow(
     thumbnailScale: Float = 1.0f,
     categoryPath: String? = null,
     firstItemFocusRequester: FocusRequester? = null,
+    isPakcikRekomen: Boolean = false,
     modifier: Modifier = Modifier
 ) {
     val listState = rememberLazyListState()
@@ -861,6 +921,7 @@ fun HorizontalVideoRow(
                     errorPlaceholder = errorPlaceholder,
                     isTV = isTV,
                     isRealTV = isRealTV,
+                    isPakcikRekomen = isPakcikRekomen,
                     onFocus = { 
                         itemFocused = true
                         viewModel?.lastFocusedHomeVideoId = video.id
@@ -908,6 +969,7 @@ fun NetflixThumbnail(
     duration: Long = 0L,
     isTV: Boolean = false,
     isRealTV: Boolean = false,
+    isPakcikRekomen: Boolean = false,
     onFocus: () -> Unit = {},
     onClick: () -> Unit
 ) {
@@ -1031,27 +1093,38 @@ fun NetflixThumbnail(
                     }
                 }
 
-                if (video.quality.isNotEmpty()) {
+                if (isPakcikRekomen) {
                     Surface(
-                        color = Color.Black.copy(alpha = 0.94f), // More solid as per photo
-                        shape = RoundedCornerShape(bottomEnd = 4.dp), // Sharper look
+                        color = Color.Red,
+                        shape = RoundedCornerShape(bottomEnd = 6.dp),
+                        modifier = Modifier.align(Alignment.TopStart)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.pakcik_rekomen),
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                        )
+                    }
+                } else if (video.quality.isNotEmpty()) {
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.94f),
+                        shape = RoundedCornerShape(bottomEnd = 4.dp),
                         modifier = Modifier.align(Alignment.TopStart)
                     ) {
                         Text(
                             text = video.quality.uppercase(),
                             color = Color.White,
-                            fontSize = 11.sp, // Slightly larger
-                            fontWeight = FontWeight.Black, // Extra Bold
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
                             modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                         )
                     }
                 }
 
-                val cleanRating = remember(video.views) {
-                    val num = Regex("""\d+(?:\.\d+)?""").find(video.views)?.value
-                    if (num != null && (num.toDoubleOrNull() ?: 0.0) > 0.0) num else ""
-                }
-                if (cleanRating.isNotEmpty()) {
+                if (isPakcikRekomen) {
+                    val recCount = (video.views.toIntOrNull() ?: 1).coerceAtLeast(1)
                     Surface(
                         color = Color.Black.copy(alpha = 0.85f),
                         shape = RoundedCornerShape(bottomStart = 4.dp),
@@ -1062,18 +1135,49 @@ fun NetflixThumbnail(
                             modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.Star,
+                                imageVector = Icons.Default.ThumbUp,
                                 contentDescription = null,
-                                tint = Color(0xFFFFC107),
+                                tint = Color.Red,
                                 modifier = Modifier.size(11.dp)
                             )
-                            Spacer(modifier = Modifier.width(3.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = cleanRating,
+                                text = "$recCount",
                                 color = Color.White,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Black
                             )
+                        }
+                    }
+                } else {
+                    val cleanRating = remember(video.views) {
+                        val num = Regex("""\d+(?:\.\d+)?""").find(video.views)?.value
+                        if (num != null && (num.toDoubleOrNull() ?: 0.0) > 0.0) num else ""
+                    }
+                    if (cleanRating.isNotEmpty()) {
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.85f),
+                            shape = RoundedCornerShape(bottomStart = 4.dp),
+                            modifier = Modifier.align(Alignment.TopEnd)
+                        ) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Star,
+                                    contentDescription = null,
+                                    tint = Color(0xFFFFC107),
+                                    modifier = Modifier.size(11.dp)
+                                )
+                                Spacer(modifier = Modifier.width(3.dp))
+                                Text(
+                                    text = cleanRating,
+                                    color = Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Black
+                                )
+                            }
                         }
                     }
                 }

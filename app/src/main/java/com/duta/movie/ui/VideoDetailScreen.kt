@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
@@ -686,6 +687,53 @@ fun VideoDetailInfo(
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(if (hasTrailer) "Trailer" else "No Trailer", fontWeight = FontWeight.Bold, fontSize = 16.sp)
                 }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            var isRecommendFocused by remember { mutableStateOf(false) }
+            val recommendScale by animateFloatAsState(if (isRecommendFocused) 1.05f else 1f)
+            val isRecommended by viewModel.isRecommended(video.id).collectAsStateWithLifecycle(false)
+            val recommendCount by viewModel.getRecommendCount(video.id).collectAsStateWithLifecycle(0)
+
+            OutlinedButton(
+                onClick = { viewModel.toggleRecommendation(video) },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(50.dp)
+                    .graphicsLayer(scaleX = recommendScale, scaleY = recommendScale)
+                    .onFocusChanged { isRecommendFocused = it.isFocused }
+                    .shadow(if (isRecommendFocused) 15.dp else 0.dp, RoundedCornerShape(8.dp), spotColor = Color.Red)
+                    .border(
+                        if (isRecommendFocused) BorderStroke(3.dp, Color.White)
+                        else if (isRecommended) BorderStroke(1.5.dp, Color.Red)
+                        else BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
+                        RoundedCornerShape(8.dp)
+                    ),
+                colors = ButtonDefaults.outlinedButtonColors(
+                    containerColor = if (isRecommended) Color.Red.copy(alpha = 0.2f) else Color.Transparent,
+                    contentColor = if (isRecommended) Color.Red else Color.White
+                ),
+                shape = RoundedCornerShape(8.dp)
+            ) {
+                Icon(
+                    imageVector = if (isRecommended) Icons.Default.ThumbUp else Icons.Outlined.ThumbUp,
+                    contentDescription = null,
+                    tint = if (isRecommended) Color.Red else Color.White,
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(10.dp))
+                val labelText = if (recommendCount > 0) {
+                    stringResource(R.string.pakcik_rekomen_count, recommendCount)
+                } else {
+                    stringResource(R.string.pakcik_rekomen)
+                }
+                Text(
+                    text = labelText,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 15.sp,
+                    color = if (isRecommended) Color.Red else Color.White
+                )
             }
 
         Spacer(modifier = Modifier.height(24.dp))
