@@ -138,6 +138,8 @@ fun TrailerPlayer(
                         )
                         setBackgroundColor(android.graphics.Color.BLACK)
                         settings.javaScriptEnabled = true
+                        settings.allowFileAccess = false
+                        settings.allowContentAccess = false
                         settings.mediaPlaybackRequiresUserGesture = false
                         settings.domStorageEnabled = true
                         settings.databaseEnabled = true
@@ -1078,6 +1080,13 @@ fun CommentSection(
     var commentText by remember { mutableStateOf("") }
     val context = LocalContext.current
 
+    val nicknameFocusRequester = remember { FocusRequester() }
+    val commentFocusRequester = remember { FocusRequester() }
+    val postBtnFocusRequester = remember { FocusRequester() }
+
+    var isNicknameFocused by remember { mutableStateOf(false) }
+    var isCommentFocused by remember { mutableStateOf(false) }
+
     var editingComment by remember { mutableStateOf<Comment?>(null) }
     var deletingComment by remember { mutableStateOf<Comment?>(null) }
     var isEditSubmitting by remember { mutableStateOf(false) }
@@ -1130,8 +1139,16 @@ fun CommentSection(
                     unfocusedLabelColor = Color.Gray
                 ),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Next),
+                keyboardActions = KeyboardActions(onNext = { commentFocusRequester.requestFocus() }),
                 modifier = Modifier
                     .fillMaxWidth()
+                    .focusRequester(nicknameFocusRequester)
+                    .onFocusChanged { isNicknameFocused = it.isFocused }
+                    .then(
+                        if (isRealTV && isNicknameFocused) {
+                            Modifier.border(2.dp, Color.White, RoundedCornerShape(4.dp))
+                        } else Modifier
+                    )
                     .padding(bottom = 8.dp)
             )
 
@@ -1164,6 +1181,13 @@ fun CommentSection(
                 }),
                 modifier = Modifier
                     .fillMaxWidth()
+                    .focusRequester(commentFocusRequester)
+                    .onFocusChanged { isCommentFocused = it.isFocused }
+                    .then(
+                        if (isRealTV && isCommentFocused) {
+                            Modifier.border(2.dp, Color.White, RoundedCornerShape(4.dp))
+                        } else Modifier
+                    )
                     .padding(bottom = 12.dp)
             )
 
@@ -1204,6 +1228,7 @@ fun CommentSection(
                     ),
                     shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
+                        .focusRequester(postBtnFocusRequester)
                         .onFocusChanged { isPostBtnFocused = it.isFocused }
                         .graphicsLayer {
                             scaleX = if (isPostBtnFocused) 1.05f else 1f
@@ -1323,6 +1348,20 @@ fun CommentSection(
     // Edit Comment Dialog
     editingComment?.let { target ->
         var editedText by remember(target.id) { mutableStateOf(target.comment) }
+        val editInputFocusRequester = remember { FocusRequester() }
+        val editSaveFocusRequester = remember { FocusRequester() }
+        val editCancelFocusRequester = remember { FocusRequester() }
+        var isEditInputFocused by remember { mutableStateOf(false) }
+        var isEditSaveFocused by remember { mutableStateOf(false) }
+        var isEditCancelFocused by remember { mutableStateOf(false) }
+
+        LaunchedEffect(Unit) {
+            delay(150)
+            try {
+                editInputFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+
         AlertDialog(
             onDismissRequest = { if (!isEditSubmitting) editingComment = null },
             title = {
@@ -1344,7 +1383,15 @@ fun CommentSection(
                             focusedLabelColor = Color.Red,
                             unfocusedLabelColor = Color.Gray
                         ),
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .focusRequester(editInputFocusRequester)
+                            .onFocusChanged { isEditInputFocused = it.isFocused }
+                            .then(
+                                if (isRealTV && isEditInputFocused) {
+                                    Modifier.border(2.dp, Color.White, RoundedCornerShape(4.dp))
+                                } else Modifier
+                            )
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
@@ -1371,7 +1418,19 @@ fun CommentSection(
                         }
                     },
                     enabled = !isEditSubmitting && editedText.isNotBlank(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red, contentColor = Color.White)
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red, contentColor = Color.White),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .focusRequester(editSaveFocusRequester)
+                        .onFocusChanged { isEditSaveFocused = it.isFocused }
+                        .graphicsLayer {
+                            scaleX = if (isEditSaveFocused) 1.05f else 1f
+                            scaleY = if (isEditSaveFocused) 1.05f else 1f
+                        }
+                        .border(
+                            border = if (isEditSaveFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent),
+                            shape = RoundedCornerShape(8.dp)
+                        )
                 ) {
                     if (isEditSubmitting) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
@@ -1383,9 +1442,21 @@ fun CommentSection(
             dismissButton = {
                 TextButton(
                     onClick = { editingComment = null },
-                    enabled = !isEditSubmitting
+                    enabled = !isEditSubmitting,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .focusRequester(editCancelFocusRequester)
+                        .onFocusChanged { isEditCancelFocused = it.isFocused }
+                        .graphicsLayer {
+                            scaleX = if (isEditCancelFocused) 1.05f else 1f
+                            scaleY = if (isEditCancelFocused) 1.05f else 1f
+                        }
+                        .border(
+                            border = if (isEditCancelFocused) BorderStroke(1.5.dp, Color.White.copy(alpha = 0.8f)) else BorderStroke(0.dp, Color.Transparent),
+                            shape = RoundedCornerShape(8.dp)
+                        )
                 ) {
-                    Text("Cancel", color = Color.Gray)
+                    Text("Cancel", color = if (isEditCancelFocused) Color.White else Color.Gray)
                 }
             },
             containerColor = Color(0xFF1E1E1E),
@@ -1395,6 +1466,18 @@ fun CommentSection(
 
     // Delete Confirmation Dialog
     deletingComment?.let { target ->
+        val deleteCancelFocusRequester = remember { FocusRequester() }
+        val deleteConfirmFocusRequester = remember { FocusRequester() }
+        var isDeleteCancelFocused by remember { mutableStateOf(false) }
+        var isDeleteConfirmFocused by remember { mutableStateOf(false) }
+
+        LaunchedEffect(Unit) {
+            delay(150)
+            try {
+                deleteCancelFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+
         AlertDialog(
             onDismissRequest = { if (!isDeleteSubmitting) deletingComment = null },
             title = {
@@ -1419,7 +1502,19 @@ fun CommentSection(
                         }
                     },
                     enabled = !isDeleteSubmitting,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red, contentColor = Color.White)
+                    colors = ButtonDefaults.buttonColors(containerColor = Color.Red, contentColor = Color.White),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .focusRequester(deleteConfirmFocusRequester)
+                        .onFocusChanged { isDeleteConfirmFocused = it.isFocused }
+                        .graphicsLayer {
+                            scaleX = if (isDeleteConfirmFocused) 1.05f else 1f
+                            scaleY = if (isDeleteConfirmFocused) 1.05f else 1f
+                        }
+                        .border(
+                            border = if (isDeleteConfirmFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent),
+                            shape = RoundedCornerShape(8.dp)
+                        )
                 ) {
                     if (isDeleteSubmitting) {
                         CircularProgressIndicator(modifier = Modifier.size(16.dp), color = Color.White, strokeWidth = 2.dp)
@@ -1431,9 +1526,21 @@ fun CommentSection(
             dismissButton = {
                 TextButton(
                     onClick = { deletingComment = null },
-                    enabled = !isDeleteSubmitting
+                    enabled = !isDeleteSubmitting,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier
+                        .focusRequester(deleteCancelFocusRequester)
+                        .onFocusChanged { isDeleteCancelFocused = it.isFocused }
+                        .graphicsLayer {
+                            scaleX = if (isDeleteCancelFocused) 1.05f else 1f
+                            scaleY = if (isDeleteCancelFocused) 1.05f else 1f
+                        }
+                        .border(
+                            border = if (isDeleteCancelFocused) BorderStroke(1.5.dp, Color.White.copy(alpha = 0.8f)) else BorderStroke(0.dp, Color.Transparent),
+                            shape = RoundedCornerShape(8.dp)
+                        )
                 ) {
-                    Text("Cancel", color = Color.Gray)
+                    Text("Cancel", color = if (isDeleteCancelFocused) Color.White else Color.Gray)
                 }
             },
             containerColor = Color(0xFF1E1E1E),
@@ -1477,12 +1584,16 @@ fun CommentItem(
         color = if (isFocused) Color(0xFF222222) else Color(0xFF121212),
         shape = RoundedCornerShape(10.dp),
         border = BorderStroke(
-            1.dp,
-            if (isFocused) Color.White.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.06f)
+            if (isRealTV && isFocused) 2.dp else 1.dp,
+            if (isRealTV && isFocused) Color.White else Color.White.copy(alpha = 0.06f)
         ),
         modifier = Modifier
             .fillMaxWidth()
             .onFocusChanged { isFocused = it.isFocused }
+            .graphicsLayer {
+                scaleX = if (isRealTV && isFocused) 1.01f else 1f
+                scaleY = if (isRealTV && isFocused) 1.01f else 1f
+            }
             .then(if (isRealTV) Modifier.focusable() else Modifier)
     ) {
         Row(
@@ -1553,7 +1664,7 @@ fun CommentItem(
                             IconButton(
                                 onClick = onEditClick,
                                 modifier = Modifier
-                                    .size(24.dp)
+                                    .size(28.dp)
                                     .onFocusChanged { isEditFocused = it.isFocused }
                                     .border(
                                         border = if (isEditFocused) BorderStroke(1.5.dp, Color.White) else BorderStroke(0.dp, Color.Transparent),
@@ -1564,17 +1675,17 @@ fun CommentItem(
                                     imageVector = Icons.Default.Edit,
                                     contentDescription = "Edit Comment",
                                     tint = if (isEditFocused) Color.White else Color.Gray,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(15.dp)
                                 )
                             }
 
-                            Spacer(modifier = Modifier.width(4.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
 
                             var isDeleteFocused by remember { mutableStateOf(false) }
                             IconButton(
                                 onClick = onDeleteClick,
                                 modifier = Modifier
-                                    .size(24.dp)
+                                    .size(28.dp)
                                     .onFocusChanged { isDeleteFocused = it.isFocused }
                                     .border(
                                         border = if (isDeleteFocused) BorderStroke(1.5.dp, Color.Red) else BorderStroke(0.dp, Color.Transparent),
@@ -1585,7 +1696,7 @@ fun CommentItem(
                                     imageVector = Icons.Default.Delete,
                                     contentDescription = "Delete Comment",
                                     tint = if (isDeleteFocused) Color.Red else Color.Gray,
-                                    modifier = Modifier.size(14.dp)
+                                    modifier = Modifier.size(15.dp)
                                 )
                             }
                         }

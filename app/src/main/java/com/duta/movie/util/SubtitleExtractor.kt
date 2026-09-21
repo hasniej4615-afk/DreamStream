@@ -692,6 +692,8 @@ object SubtitleExtractor {
             webView.apply {
                 @Suppress("SetJavaScriptEnabled")
                 settings.javaScriptEnabled = true
+                settings.allowFileAccess = false
+                settings.allowContentAccess = false
                 settings.userAgentString = NetworkConfig.SHARED_USER_AGENT
                 settings.domStorageEnabled = true
                 @Suppress("DEPRECATION")
@@ -946,8 +948,10 @@ object SubtitleExtractor {
 
                 webView.apply {
                     @Suppress("SetJavaScriptEnabled")
-                settings.javaScriptEnabled = true
-                settings.userAgentString = NetworkConfig.SHARED_USER_AGENT
+                    settings.javaScriptEnabled = true
+                    settings.allowFileAccess = false
+                    settings.allowContentAccess = false
+                    settings.userAgentString = NetworkConfig.SHARED_USER_AGENT
                     webViewClient = object : android.webkit.WebViewClient() {
                         override fun onPageFinished(view: WebView?, u: String?) {
                             view?.evaluateJavascript("(function(){ return JSON.stringify({html:document.documentElement.outerHTML, ready:document.documentElement.outerHTML.length>2000}); })();") { res ->

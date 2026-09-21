@@ -2610,6 +2610,7 @@ fun VideoPlayerWebView(
 
                 settings.apply {
                     javaScriptEnabled = true; domStorageEnabled = true; databaseEnabled = true
+                    allowFileAccess = false; allowContentAccess = false
                     mediaPlaybackRequiresUserGesture = false; mixedContentMode = android.webkit.WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
                     setSupportMultipleWindows(true) // Required to intercept and block window.open and target="_blank"
                     loadWithOverviewMode = true
