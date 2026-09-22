@@ -993,5 +993,15 @@ class VideoExtractorTest {
             "Expected ['Munafik'], got $munafik1Queries"
         }
     }
+
+    @Test
+    fun testConfirmedDeadMirrors() {
+        val testDeadUrl = "https://playstream.video/e/BcfBf6eYUTKd/"
+        assert(!VideoExtractor.isConfirmedDead(testDeadUrl))
+        VideoExtractor.markConfirmedDead(testDeadUrl)
+        assert(VideoExtractor.isConfirmedDead(testDeadUrl))
+        assert(VideoExtractor.isConfirmedDead("https://playstream.video/e/BcfBf6eYUTKd"))
+    }
 }
+
 

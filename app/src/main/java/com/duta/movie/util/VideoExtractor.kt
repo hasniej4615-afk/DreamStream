@@ -47,6 +47,19 @@ object VideoExtractor {
         onDomainLearned = listener
     }
 
+    private val confirmedDeadMirrors = ConcurrentHashMap.newKeySet<String>()
+
+    fun isConfirmedDead(url: String): Boolean {
+        val clean = url.trimEnd('/')
+        return confirmedDeadMirrors.contains(clean) || confirmedDeadMirrors.contains(url)
+    }
+
+    fun markConfirmedDead(url: String) {
+        val clean = url.trimEnd('/')
+        confirmedDeadMirrors.add(clean)
+        confirmedDeadMirrors.add(url)
+    }
+
     private var PENCURI_BASE_URL = "https://ww44.pencurimovie.baby"
     private var onPencuriDomainLearned: ((String) -> Unit)? = null
 
@@ -410,6 +423,7 @@ object VideoExtractor {
                     response.use { resp ->
                         if (resp.code == 404 || resp.code == 410) {
                             Log.w(TAG, "fetchHtml: Dead mirror ($url returned ${resp.code})")
+                            markConfirmedDead(url)
                             return@withPermit null
                         }
                         val finalUrl = resp.request.url.toString()
@@ -886,11 +900,14 @@ object VideoExtractor {
                     probeHtml.contains("file not found", ignoreCase = true)
                 )) {
                     Log.w(TAG, "Hgcloud/Hanerix video hoster confirmed file is unconverted/processing or deleted: $pageUrl")
+                    markConfirmedDead(pageUrl)
                     return@withContext null
                 }
             } else if (lowHost.contains("playstream") || lowHost.contains("embedpyrox") || lowHost.contains("pyrox") ||
                        lowHost.contains("upstream") || lowHost.contains("hexload") || lowHost.contains("vstream") ||
-                       lowHost.contains("faststream") || lowHost.contains("dstream") || lowHost.contains("streamwish")) {
+                       lowHost.contains("faststream") || lowHost.contains("dstream") || lowHost.contains("streamwish") ||
+                       lowHost.contains("wishonly") || lowHost.contains("dood") || lowHost.contains("voe") ||
+                       lowHost.contains("mixdrop") || lowHost.contains("filemoon")) {
                 // Fast-probe for 404/410/dead video URLs on dedicated file hosts
                 val probeHtml = fetchHtml(pageUrl, actualReferer)
                 if (probeHtml == null || probeHtml.contains("file not found", ignoreCase = true) ||
@@ -899,8 +916,10 @@ object VideoExtractor {
                     probeHtml.contains("deleted by the owner", ignoreCase = true) ||
                     probeHtml.contains("404 not found", ignoreCase = true) ||
                     probeHtml.contains("cant find the file", ignoreCase = true) ||
-                    probeHtml.contains("can't find the file", ignoreCase = true)) {
+                    probeHtml.contains("can't find the file", ignoreCase = true) ||
+                    probeHtml.contains("no_video", ignoreCase = true)) {
                     Log.w(TAG, "Video hoster confirmed file is 404/deleted/dead: $pageUrl")
+                    markConfirmedDead(pageUrl)
                     return@withContext null
                 }
             }
@@ -938,7 +957,10 @@ object VideoExtractor {
                 if (voeResult != null) return@withContext voeResult
             }
             if (isDirectVideoUrl(sanitized)) return@withContext ExtractionResult(sanitized)
-            if (isJsOnlyHost(sanitized)) return@withContext ExtractionResult(sanitized)
+            if (isJsOnlyHost(sanitized)) {
+                val sub = extractVideoUrl(sanitized, depth + 1, pageUrl, visited)
+                if (sub != null) return@withContext sub
+            }
         }
 
         // 2. Data Attributes scan (Common for Muvipro/DooPlay buttons)
@@ -956,7 +978,10 @@ object VideoExtractor {
                     if (luluResult != null) return@withContext luluResult
                 }
                 if (isDirectVideoUrl(sanitized)) return@withContext ExtractionResult(sanitized)
-                if (isJsOnlyHost(sanitized)) return@withContext ExtractionResult(sanitized)
+                if (isJsOnlyHost(sanitized)) {
+                    val sub = extractVideoUrl(sanitized, depth + 1, pageUrl, visited)
+                    if (sub != null) return@withContext sub
+                }
             }
         }
 
@@ -986,7 +1011,11 @@ object VideoExtractor {
                                 if (luluResult != null) return@async luluResult
                             }
                             if (isDirectVideoUrl(sanitized)) return@async ExtractionResult(sanitized)
-                            if (isJsOnlyHost(sanitized)) return@async ExtractionResult(sanitized)
+                            if (isJsOnlyHost(sanitized)) {
+                                val sub = extractVideoUrl(sanitized, depth + 1, pageUrl, visited)
+                                if (sub != null) return@async sub
+                                return@async null
+                            }
                             
                             return@async extractVideoUrl(sanitized, depth + 1, pageUrl, visited)
                         }
@@ -1036,8 +1065,15 @@ object VideoExtractor {
             val bestDirect = sorted.firstOrNull { isDirectVideoUrl(it) }
             if (bestDirect != null) return@withContext ExtractionResult(bestDirect)
             val bestJs = sorted.firstOrNull { isJsOnlyHost(it) }
-            if (bestJs != null) return@withContext ExtractionResult(bestJs)
-            return@withContext ExtractionResult(sorted.first())
+            if (bestJs != null) {
+                val sub = extractVideoUrl(bestJs, depth + 1, pageUrl, visited)
+                if (sub != null) return@withContext sub
+            }
+            for (cand in sorted) {
+                if (isDirectVideoUrl(cand)) return@withContext ExtractionResult(cand)
+                val sub = extractVideoUrl(cand, depth + 1, pageUrl, visited)
+                if (sub != null) return@withContext sub
+            }
         }
         
         // 6. Check for direct Video tag (Native Tier)
@@ -1568,10 +1604,10 @@ object VideoExtractor {
                                     details.servers
                                 }
 
-                                if (serversToExamine.isNotEmpty()) {
+                                 if (serversToExamine.isNotEmpty()) {
                                     val newServers = serversToExamine.filter { s ->
                                         val cleanUrl = s.url.trimEnd('/')
-                                        !existingUrls.contains(cleanUrl)
+                                        !existingUrls.contains(cleanUrl) && !isConfirmedDead(cleanUrl)
                                     }.map { s ->
                                         val cleanName = if (s.name.contains(partnerTag, ignoreCase = true)) s.name else "${s.name} ($partnerTag)"
                                         VideoServer(name = cleanName, url = s.url)
@@ -1614,42 +1650,36 @@ object VideoExtractor {
             }
 
             // Search YouTube Full Movie for modern Malaysian movies and titles whose filehosts are dead
-            if (altServers.isEmpty() || altServers.all { s -> video.servers.any { it.url == s.url } }) {
-                try {
-                    val ytServers = searchYouTubeFullMovie(video.title, video.date)
-                    if (ytServers.isNotEmpty()) {
-                        Log.i(TAG, "Discovered ${ytServers.size} YouTube Full Movie mirrors for '${video.title}'")
-                        altServers.addAll(ytServers)
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "YouTube full movie search error: ${e.message}")
+            try {
+                val ytServers = searchYouTubeFullMovie(video.title, video.date)
+                if (ytServers.isNotEmpty()) {
+                    Log.i(TAG, "Discovered ${ytServers.size} YouTube Full Movie mirrors for '${video.title}'")
+                    altServers.addAll(ytServers)
                 }
+            } catch (e: Exception) {
+                Log.w(TAG, "YouTube full movie search error: ${e.message}")
             }
 
             // Search Bilibili Full Movie for anime, asian films, and full movies (ad-free & globally accessible)
-            if (altServers.isEmpty() || altServers.all { s -> video.servers.any { it.url == s.url } }) {
-                try {
-                    val biliServers = searchBilibiliFullMovie(video.title, video.date)
-                    if (biliServers.isNotEmpty()) {
-                        Log.i(TAG, "Discovered ${biliServers.size} Bilibili Full Movie mirrors for '${video.title}'")
-                        altServers.addAll(biliServers)
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Bilibili full movie search error: ${e.message}")
+            try {
+                val biliServers = searchBilibiliFullMovie(video.title, video.date)
+                if (biliServers.isNotEmpty()) {
+                    Log.i(TAG, "Discovered ${biliServers.size} Bilibili Full Movie mirrors for '${video.title}'")
+                    altServers.addAll(biliServers)
                 }
+            } catch (e: Exception) {
+                Log.w(TAG, "Bilibili full movie search error: ${e.message}")
             }
 
             // Search Dailymotion Full Movie for user uploads, malay/indo films, and full movies
-            if (altServers.size < 5) {
-                try {
-                    val dmServers = searchDailymotionFullMovie(video.title, video.date)
-                    if (dmServers.isNotEmpty()) {
-                        Log.i(TAG, "Discovered ${dmServers.size} Dailymotion Full Movie mirrors for '${video.title}'")
-                        altServers.addAll(dmServers)
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Dailymotion full movie search error: ${e.message}")
+            try {
+                val dmServers = searchDailymotionFullMovie(video.title, video.date)
+                if (dmServers.isNotEmpty()) {
+                    Log.i(TAG, "Discovered ${dmServers.size} Dailymotion Full Movie mirrors for '${video.title}'")
+                    altServers.addAll(dmServers)
                 }
+            } catch (e: Exception) {
+                Log.w(TAG, "Dailymotion full movie search error: ${e.message}")
             }
         }
 
@@ -2012,11 +2042,12 @@ object VideoExtractor {
             val url = "https://api.bilibili.com/x/web-interface/search/type?search_type=video&keyword=$encoded"
 
             val buvid = java.util.UUID.randomUUID().toString() + "infoc"
+            val bNut = (System.currentTimeMillis() / 1000).toString()
             val request = Request.Builder()
                 .url(url)
                 .header("User-Agent", NetworkConfig.SHARED_USER_AGENT)
                 .header("Referer", "https://www.bilibili.com/")
-                .header("Cookie", "buvid3=$buvid; b_nut=1700000000; CURRENT_FNVAL=4048")
+                .header("Cookie", "buvid3=$buvid; b_nut=$bNut; CURRENT_FNVAL=4048")
                 .build()
 
             val jsonStr = NetworkConfig.okHttpClient.newCall(request).execute().use { response ->

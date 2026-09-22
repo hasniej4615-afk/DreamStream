@@ -1468,9 +1468,11 @@ class VideoViewModel @Inject constructor(
         blacklistHost(stuckHost, hard = false)
         exhaustedServerUrls.add(url)
         deadMirrors.add(url)
+        com.duta.movie.util.VideoExtractor.markConfirmedDead(url)
         _currentServerUrl.value?.let { parentMirror ->
             exhaustedServerUrls.add(parentMirror)
             deadMirrors.add(parentMirror)
+            com.duta.movie.util.VideoExtractor.markConfirmedDead(parentMirror)
             Log.i("VideoViewModel", "notifyMirrorDead: Marked parent mirror dead: $parentMirror (child was $url)")
         }
         
@@ -2364,11 +2366,42 @@ class VideoViewModel @Inject constructor(
                     }
                 } else {
                     val targetFallback = mirrorToResolve ?: topMirrors.firstOrNull()
-                    val isPlayableTarget = targetFallback != null && (
+                    val isConfirmedDead = targetFallback != null && (
+                        deadMirrors.contains(targetFallback) ||
+                        hardDeadMirrors.contains(targetFallback) ||
+                        com.duta.movie.util.VideoExtractor.isConfirmedDead(targetFallback)
+                    )
+                    val wasRaced = targetFallback != null && topMirrors.contains(targetFallback)
+                    val isDeadHost = targetFallback != null && (
+                        isConfirmedDead ||
+                        (wasRaced && com.duta.movie.util.VideoExtractor.isProbablyVideoHost(targetFallback))
+                    )
+                    
+                    if (isDeadHost || targetFallback == null) {
+                        addResolutionLog("Direct resolution confirmed mirror is dead/failed: ${targetFallback?.take(40)}. Fast-rotating...")
+                        if (targetFallback != null) {
+                            deadMirrors.add(targetFallback)
+                            exhaustedServerUrls.add(targetFallback)
+                            com.duta.movie.util.VideoExtractor.markConfirmedDead(targetFallback)
+                        }
+                        topMirrors.forEach { m ->
+                            deadMirrors.add(m)
+                            exhaustedServerUrls.add(m)
+                            com.duta.movie.util.VideoExtractor.markConfirmedDead(m)
+                        }
+                        withContext(Dispatchers.Main) {
+                            isRotationLocked = false
+                            resolveNextServer(videoId, mirrorToResolve, force = true)
+                        }
+                        return
+                    }
+
+                    val isPlayableTarget = (
                         com.duta.movie.util.VideoExtractor.isProbablyVideoHost(targetFallback) ||
                         isRotation || isExplicitServer
-                    ) && !deadMirrors.contains(targetFallback)
-                    if (isPlayableTarget && targetFallback != null) {
+                    ) && !isConfirmedDead
+                    
+                    if (isPlayableTarget) {
                         addResolutionLog("Falling back to WebView Shield for embed mirror: ${targetFallback.take(40)}...")
                         withContext(Dispatchers.Main) {
                             consecutiveAllBlacklistedCount = 0
@@ -2383,6 +2416,7 @@ class VideoViewModel @Inject constructor(
                         topMirrors.forEach { m ->
                             deadMirrors.add(m)
                             exhaustedServerUrls.add(m)
+                            com.duta.movie.util.VideoExtractor.markConfirmedDead(m)
                         }
                         withContext(Dispatchers.Main) {
                             isRotationLocked = false
@@ -2442,6 +2476,11 @@ class VideoViewModel @Inject constructor(
                             directWinnerChannel.trySend(enrichedResult)
                         } else {
                             jsWinnerChannel.trySend(enrichedResult)
+                        }
+                    } else {
+                        if (com.duta.movie.util.VideoExtractor.isConfirmedDead(url)) {
+                            deadMirrors.add(url)
+                            exhaustedServerUrls.add(url)
                         }
                     }
                 } catch (e: Exception) { 
@@ -2920,7 +2959,7 @@ class VideoViewModel @Inject constructor(
                         }
                     }
                     if (isYt && !lowUrl.contains("/embed/") && !s.name.contains("YouTube", ignoreCase = true)) return@filter false
-                    !deadMirrors.contains(host) && !deadMirrors.contains(s.url) && !exhaustedServerUrls.contains(s.url) && !com.duta.movie.util.VideoExtractor.isEphemeralOrExpiredStream(s.url)
+                    !deadMirrors.contains(host) && !deadMirrors.contains(s.url) && !exhaustedServerUrls.contains(s.url) && !com.duta.movie.util.VideoExtractor.isEphemeralOrExpiredStream(s.url) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(s.url)
                 }.sortedByDescending { s -> 
                     val host = try { android.net.Uri.parse(s.url).host?.lowercase() ?: "" } catch(_: Exception) { "" }
                     val weight = sourceWeights.value[host] ?: 0
@@ -2933,7 +2972,8 @@ class VideoViewModel @Inject constructor(
                         val host = try { android.net.Uri.parse(s.url).host?.lowercase() } catch(_: Exception) { null }
                         (host != null && (hardDeadMirrors.contains(host) || deadMirrors.contains(host))) || 
                         hardDeadMirrors.contains(s.url) || deadMirrors.contains(s.url) ||
-                        exhaustedServerUrls.contains(s.url)
+                        exhaustedServerUrls.contains(s.url) ||
+                        com.duta.movie.util.VideoExtractor.isConfirmedDead(s.url)
                     }
                     val isSingleServer = serversToUse.size <= 1
                     val maxTries = if (isSingleServer) 3 else serversToUse.size
