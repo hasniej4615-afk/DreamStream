@@ -787,10 +787,18 @@ fun SettingsScreen(
                                 }
                                 item {
                                     HelpTopicCard(
-                                        title = stringResource(R.string.help_topic_tips_title),
-                                        description = stringResource(R.string.help_topic_tips_desc),
-                                        content = stringResource(R.string.help_topic_tips_content),
-                                        tag = "[TIPS]"
+                                        title = stringResource(R.string.help_topic_pakcik_title),
+                                        description = stringResource(R.string.help_topic_pakcik_desc),
+                                        content = stringResource(R.string.help_topic_pakcik_content),
+                                        tag = "[REKOMEN]"
+                                    )
+                                }
+                                item {
+                                    HelpTopicCard(
+                                        title = stringResource(R.string.help_topic_cast_title),
+                                        description = stringResource(R.string.help_topic_cast_desc),
+                                        content = stringResource(R.string.help_topic_cast_content),
+                                        tag = "[CAST]"
                                     )
                                 }
                                 item {
@@ -819,6 +827,14 @@ fun SettingsScreen(
                                 }
                                 item {
                                     HelpTopicCard(
+                                        title = stringResource(R.string.help_topic_display_title),
+                                        description = stringResource(R.string.help_topic_display_desc),
+                                        content = stringResource(R.string.help_topic_display_content),
+                                        tag = "[DISPLAY]"
+                                    )
+                                }
+                                item {
+                                    HelpTopicCard(
                                         title = stringResource(R.string.help_topic_subtitles_title),
                                         description = stringResource(R.string.help_topic_subtitles_desc),
                                         content = stringResource(R.string.help_topic_subtitles_content),
@@ -827,18 +843,18 @@ fun SettingsScreen(
                                 }
                                 item {
                                     HelpTopicCard(
-                                        title = stringResource(R.string.help_topic_series_title),
-                                        description = stringResource(R.string.help_topic_series_desc),
-                                        content = stringResource(R.string.help_topic_series_content),
-                                        tag = "[SERIES]"
+                                        title = stringResource(R.string.help_topic_categories_title),
+                                        description = stringResource(R.string.help_topic_categories_desc),
+                                        content = stringResource(R.string.help_topic_categories_content),
+                                        tag = "[CATALOG]"
                                     )
                                 }
                                 item {
                                     HelpTopicCard(
-                                        title = stringResource(R.string.help_topic_updates_title),
-                                        description = stringResource(R.string.help_topic_updates_desc),
-                                        content = stringResource(R.string.help_topic_updates_content),
-                                        tag = "[UPDATES]"
+                                        title = stringResource(R.string.help_topic_series_title),
+                                        description = stringResource(R.string.help_topic_series_desc),
+                                        content = stringResource(R.string.help_topic_series_content),
+                                        tag = "[SERIES]"
                                     )
                                 }
                                 item {
@@ -855,6 +871,22 @@ fun SettingsScreen(
                                         description = stringResource(R.string.help_topic_ratings_desc),
                                         content = stringResource(R.string.help_topic_ratings_content),
                                         tag = "[RATINGS]"
+                                    )
+                                }
+                                item {
+                                    HelpTopicCard(
+                                        title = stringResource(R.string.help_topic_updates_title),
+                                        description = stringResource(R.string.help_topic_updates_desc),
+                                        content = stringResource(R.string.help_topic_updates_content),
+                                        tag = "[UPDATES]"
+                                    )
+                                }
+                                item {
+                                    HelpTopicCard(
+                                        title = stringResource(R.string.help_topic_tips_title),
+                                        description = stringResource(R.string.help_topic_tips_desc),
+                                        content = stringResource(R.string.help_topic_tips_content),
+                                        tag = "[TIPS]"
                                     )
                                 }
                                 item {
@@ -1618,11 +1650,12 @@ private fun HelpBlockItem(
 
     val colonIdx = block.indexOf(':')
     val hasLabel = colonIdx in 1..45
-    val label = if (hasLabel) block.substring(0, colonIdx).trim() else ""
+    val rawLabel = if (hasLabel) block.substring(0, colonIdx).trim() else ""
+    val cleanLabel = rawLabel.removePrefix("•").removePrefix("-").removePrefix("*").trim()
     val detail = if (hasLabel) block.substring(colonIdx + 1).trim() else block.trim()
 
-    val isIssue = label.equals("Issue", ignoreCase = true)
-    val isSolution = label.equals("Solution", ignoreCase = true)
+    val isIssue = cleanLabel.equals("Issue", ignoreCase = true) || cleanLabel.equals("Masalah", ignoreCase = true)
+    val isSolution = cleanLabel.equals("Solution", ignoreCase = true) || cleanLabel.equals("Penyelesaian", ignoreCase = true)
 
     Column(
         modifier = Modifier
@@ -1648,7 +1681,7 @@ private fun HelpBlockItem(
             ) {
                 Box(
                     modifier = Modifier
-                        .size(if (isIssue) 8.dp else 6.dp)
+                        .size(if (isIssue || isSolution) 8.dp else 6.dp)
                         .background(
                             color = when {
                                 isIssue -> Color(0xFFFF5252)
@@ -1660,7 +1693,7 @@ private fun HelpBlockItem(
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = label,
+                    text = cleanLabel.ifEmpty { rawLabel },
                     color = when {
                         isIssue -> Color(0xFFFF6B6B)
                         isSolution -> Color(0xFF81C784)
@@ -1679,7 +1712,7 @@ private fun HelpBlockItem(
             )
         } else {
             Text(
-                text = detail,
+                text = detail.removePrefix("•").removePrefix("-").removePrefix("*").trim(),
                 color = if (isBlockFocused && isRealTV) Color.White else Color(0xFFD4D4DC),
                 fontSize = if (isRealTV) 13.5.sp else 12.5.sp,
                 lineHeight = if (isRealTV) 20.sp else 18.sp
