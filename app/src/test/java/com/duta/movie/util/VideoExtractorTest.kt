@@ -171,13 +171,15 @@ class VideoExtractorTest {
         val hglinkScore = VideoExtractor.getProviderPriority("HGLink", "https://hglink.to/e/ij5agybkx3a9")
 
         assert(indoP2pScore == 125) { "IndoStream player=3 must have priority 125" }
-        assert(p2pDirectScore == 125) { "PlayerP2P direct must have priority 125" }
+        assert(p2pDirectScore == 35) { "PlayerP2P direct must be demoted to 35" }
         assert(upnsScore == 125) { "UPNS player=8 must have priority 125" }
         assert(veevScore == 55) { "Veev player=5 must be demoted to 55" }
         assert(hglinkScore == 20) { "HGLink ad-gate must be demoted to 20" }
 
         assert(indoScore > veevScore) { "IndoStream must beat Veev" }
         assert(indoP2pScore > veevScore) { "IndoStream PlayerP2P must beat Veev" }
+        assert(veevScore > p2pDirectScore) { "Veev must beat demoted PlayerP2P" }
+        assert(p2pDirectScore > abyssScore) { "PlayerP2P must beat Abyss" }
         assert(veevScore > archiveMirrorScore) { "Veev must beat slow Archive Mirror" }
         assert(archiveMirrorScore > abyssScore) { "Archive Mirror must beat Abyss" }
         assert(abyssScore > hglinkScore) { "Abyss must beat HGLink" }
@@ -1039,6 +1041,17 @@ class VideoExtractorTest {
         assert(video.title == "Panchhi (2021)")
         assert(video.videoUrl == "$base/panchhi-2021/")
         assert(video.views == "42")
+    }
+
+    @Test
+    fun testFakeSteganographicStreamRejection() {
+        val fakeTiktokStream = "https://dm21.embed4me.vip/hlsmod/p16-ad-site-sign-sg.tiktokcdn.com/P58b0vrb1Ge6zqH3YAGyug/kra/unjaonj6/ngilyb/tt/master.m3u8?v=1766826492"
+        val fakeIndexStream = "https://dm21.embed4me.vip/hlsmod/p16-ad-site-sign-sg.tiktokcdn.com/P58b0vrb1Ge6zqH3YAGyug/kra/unjaonj6/ngilyb/tt/index-f1-v1-a1.m3u8?v=1766826492"
+        val legitAcekStream = "https://h85MclLE5sxF9yF.acek-cdn.com/hls2/01/08612/4jgaxfltf2sp_n/master.m3u8"
+
+        assert(!VideoExtractor.isDirectVideoUrl(fakeTiktokStream)) { "Fake TikTok master.m3u8 must be rejected as direct video" }
+        assert(!VideoExtractor.isDirectVideoUrl(fakeIndexStream)) { "Fake TikTok index.m3u8 must be rejected as direct video" }
+        assert(VideoExtractor.isDirectVideoUrl(legitAcekStream)) { "Legitimate acek-cdn master.m3u8 must be accepted as direct video" }
     }
 }
 

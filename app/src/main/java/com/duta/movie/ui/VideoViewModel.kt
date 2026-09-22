@@ -2379,37 +2379,13 @@ class VideoViewModel @Inject constructor(
                         hardDeadMirrors.contains(targetFallback) ||
                         com.duta.movie.util.VideoExtractor.isConfirmedDead(targetFallback)
                     )
-                    val wasRaced = targetFallback != null && topMirrors.contains(targetFallback)
-                    val isDeadHost = targetFallback != null && (
-                        isConfirmedDead ||
-                        (wasRaced && com.duta.movie.util.VideoExtractor.isProbablyVideoHost(targetFallback))
-                    )
                     
-                    if (isDeadHost || targetFallback == null) {
-                        addResolutionLog("Direct resolution confirmed mirror is dead/failed: ${targetFallback?.take(40)}. Fast-rotating...")
-                        if (targetFallback != null) {
-                            deadMirrors.add(targetFallback)
-                            exhaustedServerUrls.add(targetFallback)
-                            com.duta.movie.util.VideoExtractor.markConfirmedDead(targetFallback)
-                        }
-                        topMirrors.forEach { m ->
-                            deadMirrors.add(m)
-                            exhaustedServerUrls.add(m)
-                            com.duta.movie.util.VideoExtractor.markConfirmedDead(m)
-                        }
-                        withContext(Dispatchers.Main) {
-                            isRotationLocked = false
-                            resolveNextServer(videoId, mirrorToResolve, force = true)
-                        }
-                        return
-                    }
-
-                    val isPlayableTarget = (
+                    val isPlayableTarget = targetFallback != null && (
                         com.duta.movie.util.VideoExtractor.isProbablyVideoHost(targetFallback) ||
                         isRotation || isExplicitServer
                     ) && !isConfirmedDead
                     
-                    if (isPlayableTarget) {
+                    if (isPlayableTarget && targetFallback != null) {
                         addResolutionLog("Falling back to WebView Shield for embed mirror: ${targetFallback.take(40)}...")
                         withContext(Dispatchers.Main) {
                             consecutiveAllBlacklistedCount = 0
@@ -2420,11 +2396,10 @@ class VideoViewModel @Inject constructor(
                             _isResolving.value = false
                         }
                     } else {
-                        addResolutionLog("Direct resolution produced no playable streams. Marking tested mirrors dead and rotating...")
-                        topMirrors.forEach { m ->
-                            deadMirrors.add(m)
-                            exhaustedServerUrls.add(m)
-                            com.duta.movie.util.VideoExtractor.markConfirmedDead(m)
+                        addResolutionLog("No direct stream and fallback is not viable. Rotating to next server...")
+                        if (targetFallback != null) {
+                            deadMirrors.add(targetFallback)
+                            exhaustedServerUrls.add(targetFallback)
                         }
                         withContext(Dispatchers.Main) {
                             isRotationLocked = false
@@ -2513,9 +2488,11 @@ class VideoViewModel @Inject constructor(
             low.contains("cloudwindow") || low.contains("tapecontent") || low.contains("player=") || 
             low.contains("mirror=") || low.contains("ajax:") || low.contains("hgcloud") || 
             low.contains("vibuxer") || low.contains("hanerix") || low.contains("hglink") ||
-            low.contains("playstream") || low.contains("embedpyrox") || low.contains("faststream")
+            low.contains("playstream") || low.contains("embedpyrox") || low.contains("faststream") ||
+            low.contains("morencius") || low.contains("vidhide") || low.contains("fujihide") ||
+            low.contains("lulustream") || low.contains("luluvdo") || low.contains("dood")
         }
-        val directTimeout = if (hasDirectCandidate) 4500L else if (trendingContent) 3000L else 3500L
+        val directTimeout = if (hasDirectCandidate) 6000L else if (trendingContent) 3000L else 4000L
 
         // Wait up to directTimeout for a direct winner
         val firstDirectWinner = kotlinx.coroutines.withTimeoutOrNull<com.duta.movie.util.VideoExtractor.ExtractionResult?>(directTimeout) {
@@ -2609,9 +2586,10 @@ class VideoViewModel @Inject constructor(
             val low = finalUrl.lowercase()
             
             // OWL'S EYE: Hard block known ad injection iframes/scripts or locked CDN manifests from becoming a stream
-            if (low.contains("imasdk") || low.contains("googleapis.com") || ((low.contains("youtube.com") || low.contains("youtu.be")) && !low.contains("/embed/")) || 
+            if (low.contains("tiktokcdn.com") || low.contains("ad-site") || low.contains("image?lk3s=") || low.contains("/hlsmod/") ||
+                low.contains("imasdk") || low.contains("googleapis.com") || ((low.contains("youtube.com") || low.contains("youtu.be")) && !low.contains("/embed/")) || 
                 low.contains("doubleclick") || low.contains("pagead") || low.contains("googleads") || low.contains("/aclk") || low.contains("google-analytics")) {
-                Log.w("VideoViewModel", "Owl's Eye: Blocked ad script/manifest from entering playback pipe: $finalUrl")
+                Log.w("VideoViewModel", "Owl's Eye: Blocked ad script/manifest/fake stream from entering playback pipe: $finalUrl")
                 return
             }
             

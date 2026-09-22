@@ -980,6 +980,7 @@ object VideoExtractor {
             if (isJsOnlyHost(sanitized)) {
                 val sub = extractVideoUrl(sanitized, depth + 1, pageUrl, visited)
                 if (sub != null) return@withContext sub
+                return@withContext ExtractionResult(sanitized)
             }
         }
 
@@ -1001,6 +1002,7 @@ object VideoExtractor {
                 if (isJsOnlyHost(sanitized)) {
                     val sub = extractVideoUrl(sanitized, depth + 1, pageUrl, visited)
                     if (sub != null) return@withContext sub
+                    return@withContext ExtractionResult(sanitized)
                 }
             }
         }
@@ -1034,7 +1036,7 @@ object VideoExtractor {
                             if (isJsOnlyHost(sanitized)) {
                                 val sub = extractVideoUrl(sanitized, depth + 1, pageUrl, visited)
                                 if (sub != null) return@async sub
-                                return@async null
+                                return@async ExtractionResult(sanitized)
                             }
                             
                             return@async extractVideoUrl(sanitized, depth + 1, pageUrl, visited)
@@ -1094,6 +1096,7 @@ object VideoExtractor {
                 val sub = extractVideoUrl(cand, depth + 1, pageUrl, visited)
                 if (sub != null) return@withContext sub
             }
+            if (bestJs != null) return@withContext ExtractionResult(bestJs)
         }
         
         // 6. Check for direct Video tag (Native Tier)
@@ -1127,11 +1130,10 @@ object VideoExtractor {
 
     fun isIndoStreamAmt(url: String): Boolean {
         val low = url.lowercase()
-        if (low.contains("streamtape")) return false
+        if (low.contains("streamtape") || low.contains("playerp2p") || low.contains("embed4me") || low.contains("upns")) return false
         return low.contains("indostream") || low.contains("amt1.pro") || low.contains("amt2.pro") || 
                low.contains("/amt/") || low.contains(".amt.") || low.contains(".amt/") || 
                low.contains("amtv") || low.contains("amfist") ||
-               low.contains("playerp2p") || low.contains("embed4me") || low.contains("upns") ||
                low.contains("pm21") || low.contains("dm21") ||
                (low.contains("amt") && !low.contains("stream"))
     }
@@ -1202,8 +1204,9 @@ object VideoExtractor {
                           !low.contains(".m3u8") && !low.contains(".mp4") && !low.contains(".mkv") && !low.contains(".webm") && !low.contains("cloudwindow")
         if (isEmbedPage) return false
 
-        // OWL'S EYE: Immediate rejection of junk files and known trackers
-        if (low.contains("analytics") || low.contains("pixel") || low.contains("test-videos.co.uk") || 
+        // OWL'S EYE: Immediate rejection of fake steganographic streams, junk files and known trackers
+        if (low.contains("tiktokcdn.com") || low.contains("ad-site") || low.contains("image?lk3s=") || low.contains("/hlsmod/") ||
+            low.contains("analytics") || low.contains("pixel") || low.contains("test-videos.co.uk") || 
             low.contains("yandex.ru") || low.contains("google.com/search") || 
             low.contains("/dmca") || low.contains("/upload") || low.contains("/contact") || 
             low.contains("/about") || low.contains("/privacy") || low.contains("/terms") || 
@@ -4282,7 +4285,6 @@ object VideoExtractor {
             lowUrl.contains("indostream") || isIndoStreamAmt(lowUrl) || lowUrl.contains("iplayer") || 
             lowUrl.contains("pm21") || lowUrl.contains("dm21") || lowUrl.contains("player=2") ||
             lowUrl.contains("player=3") || lowUrl.contains("player=6") || lowUrl.contains("player=8") ||
-            lowUrl.contains("playerp2p") || lowUrl.contains("p2p") || lowUrl.contains("embed4me") || lowUrl.contains("upns") ||
             lowName.contains("indostream") || lowName.contains("indovip") || (lowName.contains("amt") && !lowName.contains("stream")) -> 125
 
             // OWL'S EYE: Priority Tier 2b - YouTube Full Movie / High-speed Direct
@@ -4308,6 +4310,11 @@ object VideoExtractor {
             
             // OWL'S EYE: Demoted unreliable / heavily protected hosts
             lowUrl.contains("veev") || lowName.contains("veev") || lowUrl.contains("player=5") -> 55
+
+            // OWL'S EYE: Demoted Steganographic / Fake Chunk wrapper embeds
+            lowUrl.contains("embed4me") || lowUrl.contains("upns") || lowUrl.contains("playerp2p") ||
+            lowName.contains("embed4me") || lowName.contains("upns") || lowName.contains("playerp2p") -> 35
+
             lowUrl.contains("hglink") || lowName.contains("hglink") -> 20
             
             // OWL'S EYE: Demoted Trap / Ad-gate hosts (Abyss & Bond) to lowest tier

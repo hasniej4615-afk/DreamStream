@@ -799,9 +799,6 @@ fun VideoPlayerScreen(
                 webPlayerState.value = WebPlayerState()
                 isFinishing = false // CRITICAL: Allow error/timeout handlers to work on the new stream
                 playerErrorMessage = null
-                // OWL'S EYE: Stop any lingering audio immediately
-                exoPlayer.stop()
-                exoPlayer.clearMediaItems()
             }
         }
     }
@@ -1029,6 +1026,8 @@ fun VideoPlayerScreen(
             } else {
                 // FOR LOCAL PLAYBACK: Only load and prepare when stream URL actually changes
                 if (currentUrl.value != url) {
+                    exoPlayer.stop()
+                    exoPlayer.clearMediaItems()
                     val isHls = url.lowercase().contains(".m3u8") || url.lowercase().contains(".txt") || 
                                 url.lowercase().contains("/hls/") || url.lowercase().contains("/stream/")
                     
@@ -1098,6 +1097,7 @@ fun VideoPlayerScreen(
         var lastStutterTime = 0L
         var isUserSeeking = false
         var bufferJob: kotlinx.coroutines.Job? = null
+        var idleJob: kotlinx.coroutines.Job? = null
 
         val listener = object : Player.Listener {
             override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
@@ -1125,6 +1125,24 @@ fun VideoPlayerScreen(
                 if (state != Player.STATE_BUFFERING) {
                     bufferJob?.cancel()
                     bufferJob = null
+                }
+
+                if (state != Player.STATE_IDLE) {
+                    idleJob?.cancel()
+                    idleJob = null
+                }
+
+                if (state == Player.STATE_IDLE && !useWebView && !isCasting && extractedUrl != null && !isVideoReady && !isFinishing) {
+                    idleJob?.cancel()
+                    idleJob = scope.launch {
+                        delay(2500)
+                        if (currentPlayer.playbackState == Player.STATE_IDLE && !useWebView && !isCasting && !isVideoReady && !isFinishing) {
+                            Log.w("VideoPlayerScreen", "ExoPlayer stranded in STATE_IDLE for 2.5s. Media failed to load. Rotating to next server...")
+                            isFinishing = true
+                            extractedUrl?.let { viewModel.notifyPlaybackFailure(it) }
+                            viewModel.resolveNextServer(videoId, viewModel.currentServerUrl.value, force = true)
+                        }
+                    }
                 }
 
                 if (state == Player.STATE_BUFFERING) {
@@ -1501,10 +1519,12 @@ fun VideoPlayerScreen(
                 it.contains("bilibili.com") || it.contains("bilibili.tv") ||
                 it.contains("dailymotion.com") || it.contains("dai.ly")
             }
-            if (isCurrentDirectEmbed || low.contains("analytics") || low.contains("google-analytics") || low.contains("collect") || low.contains("pixel") ||
+            val isFakeStream = low.contains("tiktokcdn.com") || low.contains("ad-site") || 
+                               low.contains("image?lk3s=") || low.contains("/hlsmod/")
+            if (isCurrentDirectEmbed || isFakeStream || low.contains("analytics") || low.contains("google-analytics") || low.contains("collect") || low.contains("pixel") ||
                 low.contains("notification") || low.contains("bonus-stars") || low.contains("bakestubborn") || low.contains("gambling") || low.contains("promo") ||
                 low.contains("pagead") || low.contains("googleads") || low.contains("doubleclick") || low.contains("/aclk") || low.contains("imasdk")) {
-                Log.w("VideoPlayer", "Blocked ad/tracking/DirectEmbed URL from onStreamFound: $url")
+                Log.w("VideoPlayer", "Blocked ad/tracking/DirectEmbed/FakeStream URL from onStreamFound: $url")
             } else {
                 viewModel.updateExtractedUrl(videoId, url, ref, cookies)
             }
@@ -2641,7 +2661,7 @@ fun VideoPlayerWebView(
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT
                     )
                     webViewRef.value = this
-                    setBackgroundColor(android.graphics.Color.BLACK)
+                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
                 
                 // TV FOCUS FIX: Prevent WebView from stealing DPAD focus from Compose controls
                 val isTVDevice = isTV || com.duta.movie.util.DeviceUtils.isTvDevice(ctx)
@@ -2709,8 +2729,9 @@ fun VideoPlayerWebView(
                                             url.contains("bilibili.com") || url.contains("bilibili.tv")
                         if (isDirectEmbed) return
                         val low = u.lowercase()
-                        // OWL'S EYE: Improved Tracker Suppression
-                        if (low.contains("analytics") || low.contains("/collect") || low.contains("pixel") || 
+                        // OWL'S EYE: Improved Tracker and Fake Stream Suppression
+                        if (low.contains("tiktokcdn.com") || low.contains("ad-site") || low.contains("image?lk3s=") || low.contains("/hlsmod/") ||
+                            low.contains("analytics") || low.contains("/collect") || low.contains("pixel") || 
                             low.contains("yandex") || low.contains("metrika") || low.contains("google-analytics") ||
                             low.contains("doubleclick") || low.contains("histats") || low.contains("imasdk") || low.contains("googleapis") ||
                             low.contains("notification") || low.contains("bonus-stars") || low.contains("bakestubborn") || low.contains("gambling") ||
@@ -2792,7 +2813,8 @@ fun VideoPlayerWebView(
                             Log.d("VideoPlayerWebView", "JS Console: ${msg.take(200)}")
                         }
                         val lowMsg = msg.lowercase()
-                        if (lowMsg.contains("pagead") || lowMsg.contains("googleads") || lowMsg.contains("doubleclick") || lowMsg.contains("/aclk") || lowMsg.contains("analytics")) {
+                        if (lowMsg.contains("tiktokcdn.com") || lowMsg.contains("ad-site") || lowMsg.contains("image?lk3s=") || lowMsg.contains("/hlsmod/") ||
+                            lowMsg.contains("pagead") || lowMsg.contains("googleads") || lowMsg.contains("doubleclick") || lowMsg.contains("/aclk") || lowMsg.contains("analytics")) {
                             return true
                         }
                         if (msg.contains("https://") && (msg.contains(".m3u8") || msg.contains(".mp4") || msg.contains(".mkv") || msg.contains(".webm") || msg.contains(".txt") || msg.contains("/amt/") || msg.contains(".amt") || msg.contains("amt1.pro") || msg.contains("amt2.pro"))) {
@@ -2802,7 +2824,8 @@ fun VideoPlayerWebView(
                                 if (m.find()) {
                                     val u = m.group()
                                     val lowU = u.lowercase()
-                                    if (lowU.contains("pagead") || lowU.contains("googleads") || lowU.contains("doubleclick") || lowU.contains("/aclk")) return true
+                                    if (lowU.contains("tiktokcdn.com") || lowU.contains("ad-site") || lowU.contains("image?lk3s=") || lowU.contains("/hlsmod/") ||
+                                        lowU.contains("pagead") || lowU.contains("googleads") || lowU.contains("doubleclick") || lowU.contains("/aclk")) return true
                                     val isProtected = (lowU.contains("playmogo") || 
                                                       lowU.contains("digitalidentity") || lowU.contains("sunrisevalleycreative") ||
                                                       lowU.contains("johnfullwonder") || lowU.contains("voe") ||
@@ -3076,6 +3099,14 @@ fun VideoPlayerWebView(
                              Log.d("VideoPlayerInterception", "Candidate: $u")
                         }
 
+                        // Block fake steganographic streams (e.g. TikTok CDN PNG chunks disguised as m3u8)
+                        val isFakeTiktokStream = low.contains("tiktokcdn.com") || low.contains("ad-site") || 
+                                                 low.contains("image?lk3s=") || low.contains("/hlsmod/")
+                        if (isFakeTiktokStream) {
+                            Log.d("VideoPlayerTurbo", "Blocked Fake/Steganographic TikTok Stream: $u")
+                            return android.webkit.WebResourceResponse("text/plain", "UTF-8", java.io.ByteArrayInputStream(ByteArray(0)))
+                        }
+
                         // TURBO SPEED: Block known ad domains, trackers, fake captchas and bot scams instantly at network level
                         val isScamOrFakeCaptcha = (low.contains("robot") && !low.contains("robots.txt") && !low.contains("roboto")) || 
                                                   low.contains("human-verification") || low.contains("verify-you") || 
@@ -3117,7 +3148,7 @@ fun VideoPlayerWebView(
 
                         val isDirectEmbed = url.contains("youtube") || url.contains("youtu.be") || 
                                             url.contains("bilibili.com") || url.contains("bilibili.tv")
-                        val isStream = !isDirectEmbed && (low.contains(".m3u8") || low.contains(".mp4") || low.contains(".mkv") || low.contains(".webm") || low.contains(".txt") || 
+                        val isStream = !isDirectEmbed && !isFakeTiktokStream && (low.contains(".m3u8") || low.contains(".mp4") || low.contains(".mkv") || low.contains(".webm") || low.contains(".txt") || 
                                        low.contains(".m3u") || low.contains("master.json") || low.contains("playlist") ||
                                        low.contains("abysscdn") || low.contains("bond-stream") || low.contains("upvideo.link") ||
                                        low.contains("/stream/") || low.contains("manifest") || low.contains("/hl/")) && 
