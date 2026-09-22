@@ -82,10 +82,7 @@ import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusProperties
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRestorer
 import android.util.Log
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -180,12 +177,13 @@ fun VideoListScreen(
     val searchGridState = rememberLazyGridState()
     val homeLazyListState = rememberLazyListState()
     val scope = rememberCoroutineScope()
+    var initialHomeFocusRequested by rememberSaveable { mutableStateOf(false) }
     
     LaunchedEffect(isLoading, lastCompletedSearchQuery, selectedCategory, isSearchActive) {
-        if (isImmersiveMode && !isLoading && videos.isNotEmpty()) {
-            delay(500)
+        if (isImmersiveMode) {
             try {
-                if (isSearchActive) {
+                if (isSearchActive && !isLoading && videos.isNotEmpty()) {
+                    delay(300)
                     if (lastClickedVideoId != null && videos.any { it.id == lastClickedVideoId }) {
                         clickedItemFocusRequester.requestFocus()
                     } else if (lastFocusedSearchVideoId != null && videos.any { it.id == lastFocusedSearchVideoId }) {
@@ -193,8 +191,12 @@ fun VideoListScreen(
                     } else {
                         firstItemFocusRequester.requestFocus()
                     }
-                } else if (viewModel.lastFocusedHomeVideoId == null) {
-                    firstCategoryFocusRequester.requestFocus()
+                } else if (!isSearchActive && !initialHomeFocusRequested && viewModel.lastFocusedHomeVideoId == null && !isLoading && videos.isNotEmpty()) {
+                    delay(300)
+                    if (viewModel.lastFocusedHomeVideoId == null) {
+                        firstCategoryFocusRequester.requestFocus()
+                        initialHomeFocusRequested = true
+                    }
                 }
             } catch(_: Exception) {}
         }
@@ -235,7 +237,7 @@ fun VideoListScreen(
         if (!isSearchActive && searchQuery.isBlank() && selectedCategory != null) {
             viewModel.selectCategory(null) 
         }
-        if (isImmersiveMode && !isSearchActive && viewModel.lastFocusedHomeVideoId != null) {
+        if (isImmersiveMode && !isSearchActive && (viewModel.pendingRestoreVideoId != null || viewModel.lastFocusedHomeVideoId != null)) {
             val targetRow = viewModel.lastFocusedCategoryRowIndex
             if (targetRow > 0) {
                 try {
@@ -553,42 +555,42 @@ fun VideoListScreen(
                                 verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
                                 if (recentlyWatchedVideos.isNotEmpty()) {
-                                item {
-                                    val scope = rememberCoroutineScope()
-                                    var isRowFocused by remember { mutableStateOf(false) }
-                                    val rowAlpha by animateFloatAsState(if (isRowFocused) 1f else 0.65f)
-                                    
-                                    Column(modifier = Modifier
-                                        .onFocusChanged { isRowFocused = it.hasFocus }
-                                    ) {
-                                        ListSectionHeader(
-                                            "Continue Watching", 
-                                            isLargeLayout = true, 
-                                            isRealTV = isImmersiveMode,
-                                            isFocused = isRowFocused
-                                        )
-                                         HorizontalVideoRow(
-                                             videos = recentlyWatchedVideos,
-                                             isLoading = false,
-                                             errorPlaceholder = errorPlaceholder,
-                                             onVideoClick = onVideoClick,
-                                             isTV = true,
-                                             isRealTV = isImmersiveMode,
-                                             viewModel = viewModel,
-                                             rowIndex = 0,
-                                             onVideoFocus = { video -> 
-                                                 focusedVideo = video 
-                                             },
-                                             thumbnailScale = uiThumbnailScaleFactor,
-                                             firstItemFocusRequester = firstCategoryFocusRequester,
-                                             modifier = Modifier.graphicsLayer { alpha = rowAlpha }
-                                         )
+                                    item(key = "section_continue_watching") {
+                                        val scope = rememberCoroutineScope()
+                                        var isRowFocused by remember { mutableStateOf(false) }
+                                        val rowAlpha by animateFloatAsState(if (isRowFocused) 1f else 0.65f)
+                                        
+                                        Column(modifier = Modifier
+                                            .onFocusChanged { isRowFocused = it.hasFocus }
+                                        ) {
+                                            ListSectionHeader(
+                                                "Continue Watching", 
+                                                isLargeLayout = true, 
+                                                isRealTV = isImmersiveMode,
+                                                isFocused = isRowFocused
+                                            )
+                                             HorizontalVideoRow(
+                                                 videos = recentlyWatchedVideos,
+                                                 isLoading = false,
+                                                 errorPlaceholder = errorPlaceholder,
+                                                 onVideoClick = onVideoClick,
+                                                 isTV = true,
+                                                 isRealTV = isImmersiveMode,
+                                                 viewModel = viewModel,
+                                                 rowIndex = 0,
+                                                 onVideoFocus = { video -> 
+                                                     focusedVideo = video 
+                                                 },
+                                                 thumbnailScale = uiThumbnailScaleFactor,
+                                                 firstItemFocusRequester = firstCategoryFocusRequester,
+                                                 modifier = Modifier.graphicsLayer { alpha = rowAlpha }
+                                             )
+                                         }
                                      }
                                  }
-                             }
 
-                              if (pakcikRekomenVideos.isNotEmpty()) {
-                                  item {
+                                 if (pakcikRekomenVideos.isNotEmpty()) {
+                                     item(key = "section_pakcik_rekomen") {
                                       var isRowFocused by remember { mutableStateOf(false) }
                                       val rowAlpha by animateFloatAsState(if (isRowFocused) 1f else 0.65f)
                                       
@@ -852,6 +854,8 @@ fun HorizontalVideoRow(
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
     var hasFocus by remember { mutableStateOf(false) }
+    val rowFirstItemFocusRequester = remember { FocusRequester() }
+    var shimmerHadFocus by remember { mutableStateOf(false) }
 
     val shouldLoadMore by remember(videos, isLoading) {
         derivedStateOf {
@@ -868,11 +872,22 @@ fun HorizontalVideoRow(
         }
     }
 
+    LaunchedEffect(videos.isNotEmpty()) {
+        if (videos.isNotEmpty() && shimmerHadFocus) {
+            shimmerHadFocus = false
+            delay(50)
+            try {
+                rowFirstItemFocusRequester.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
+
     LazyRow(
         state = listState,
         contentPadding = PaddingValues(horizontal = if (isRealTV) 48.dp else 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         modifier = modifier
+            .focusRestorer { rowFirstItemFocusRequester }
             .focusGroup()
             .fillMaxWidth()
             .height(((if (isRealTV) 240 else if (isTV) 260 else 340) * thumbnailScale).dp)
@@ -885,7 +900,10 @@ fun HorizontalVideoRow(
                     modifier = Modifier
                         .width((if (isRealTV) 140 * thumbnailScale else if (isTV) 130 * thumbnailScale else 165f).dp)
                         .height((if (isRealTV) 210 * thumbnailScale else if (isTV) 195 * thumbnailScale else 245f).dp)
-                        .onFocusChanged { isShimmerFocused = it.isFocused }
+                        .onFocusChanged { 
+                            isShimmerFocused = it.isFocused 
+                            if (it.isFocused) shimmerHadFocus = true
+                        }
                         .then(
                             if (isShimmerFocused && (isRealTV || isTV))
                                 Modifier.border(2.dp, Color.White, RoundedCornerShape(12.dp)).scale(1.05f)
@@ -905,7 +923,7 @@ fun HorizontalVideoRow(
                 
                 var itemFocused by remember { mutableStateOf(false) }
 
-                val isTargetRestorationItem = isRealTV && viewModel != null && video.id == viewModel.lastFocusedHomeVideoId
+                val isTargetRestorationItem = isRealTV && viewModel != null && video.id == viewModel.pendingRestoreVideoId
                 val itemFocusRequester = remember { FocusRequester() }
 
                 LaunchedEffect(isTargetRestorationItem) {
@@ -916,14 +934,14 @@ fun HorizontalVideoRow(
                         delay(100)
                         try {
                             itemFocusRequester.requestFocus()
-                            viewModel.lastFocusedHomeVideoId = null
                         } catch (_: Exception) {}
+                        viewModel.pendingRestoreVideoId = null
                     }
                 }
 
                 val effectiveFocusRequester = when {
                     isTargetRestorationItem -> itemFocusRequester
-                    index == 0 && firstItemFocusRequester != null -> firstItemFocusRequester
+                    index == 0 -> firstItemFocusRequester ?: rowFirstItemFocusRequester
                     else -> null
                 }
 
@@ -959,6 +977,7 @@ fun HorizontalVideoRow(
                 ) {
                     viewModel?.lastFocusedHomeVideoId = video.id
                     viewModel?.lastFocusedCategoryRowIndex = rowIndex
+                    viewModel?.pendingRestoreVideoId = video.id
                     onVideoClick(video.id)
                 }
             }
@@ -1012,7 +1031,6 @@ fun NetflixThumbnail(
                 isFocused = it.isFocused 
                 if (it.isFocused) onFocus()
             }
-            .focusable()
             .graphicsLayer { 
                 scaleX = scale
                 scaleY = scale

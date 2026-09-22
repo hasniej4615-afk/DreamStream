@@ -411,6 +411,7 @@ class MainActivity : AppCompatActivity() {
                                 startDestination = Destination.Home,
                                 modifier = Modifier
                                     .weight(1f)
+                                    .focusGroup()
                                     .padding(
                                         bottom = if (isInPip || isTVLayout) 0.dp else padding.calculateBottomPadding()
                                     ),

@@ -247,6 +247,7 @@ class VideoViewModel @Inject constructor(
     // TV D-Pad Focus Restoration across navigation
     var lastFocusedCategoryRowIndex: Int = 0
     var lastFocusedHomeVideoId: String? = null
+    var pendingRestoreVideoId: String? = null
 
     fun setSearchFilter(filter: SearchFilter) { _searchFilter.value = filter }
     fun setSearchSort(sort: SearchSort) { _searchSort.value = sort }
