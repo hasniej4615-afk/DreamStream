@@ -738,6 +738,7 @@ object SubtitleExtractor {
                 }
                 
                 webChromeClient = object : android.webkit.WebChromeClient() {
+                    override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean = true
                     override fun onProgressChanged(view: android.webkit.WebView?, newProgress: Int) {
                         if (!done && newProgress > 30) {
                             try { view?.evaluateJavascript(injectionJs, null) } catch (_: Exception) {}
@@ -975,6 +976,9 @@ object SubtitleExtractor {
                     settings.allowFileAccess = false
                     settings.allowContentAccess = false
                     settings.userAgentString = NetworkConfig.SHARED_USER_AGENT
+                    webChromeClient = object : android.webkit.WebChromeClient() {
+                        override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean = true
+                    }
                     webViewClient = object : android.webkit.WebViewClient() {
                         override fun onPageFinished(view: WebView?, u: String?) {
                             if (done) return
