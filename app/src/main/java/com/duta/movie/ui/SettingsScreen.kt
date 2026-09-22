@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.Help
 import androidx.compose.material.icons.automirrored.filled.List
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.filled.Translate
@@ -43,8 +44,10 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.duta.movie.util.CacheManager
 
@@ -54,7 +57,7 @@ enum class SettingsSection(val label: String, val icon: ImageVector) {
     SUBTITLES("SUBTITLES", Icons.Default.ClosedCaption),
     CATEGORIES("MANAGE CATEGORIES", Icons.AutoMirrored.Filled.List),
     STORAGE("STORAGE", Icons.Default.Home),
-    HELP("HELP & TIPS", Icons.Default.Info),
+    HELP("HELP & TIPS", Icons.AutoMirrored.Filled.Help),
     ABOUT("ABOUT", Icons.Default.Info),
     DEBUG("DEBUG", Icons.Default.Build)
 }
@@ -325,7 +328,7 @@ fun SettingsScreen(
                     modifier = Modifier
                         .weight(1f)
                         .fillMaxHeight()
-                        .padding(horizontal = 24.dp)
+                        .padding(horizontal = if (isTV) 24.dp else 14.dp)
                 ) {
                     // Section Title with Red Accent
                     Column(modifier = Modifier.padding(bottom = 32.dp)) {
@@ -869,7 +872,7 @@ fun SettingsScreen(
                                     SettingsActionCard(
                                         title = stringResource(R.string.user_manual_guide),
                                         description = stringResource(R.string.view_manual_and_tips),
-                                        icon = Icons.Default.Info,
+                                        icon = Icons.AutoMirrored.Filled.Help,
                                         onClick = { selectedSection = SettingsSection.HELP }
                                     )
                                 }
@@ -1422,9 +1425,9 @@ fun HelpTopicCard(
 ) {
     var isExpanded by remember { mutableStateOf(false) }
     var isHeaderFocused by remember { mutableStateOf(false) }
-    val headerScale by animateFloatAsState(if (isHeaderFocused) 1.02f else 1f)
     val context = LocalContext.current
     val isRealTV = remember { com.duta.movie.util.DeviceUtils.isTvDevice(context) }
+    val headerScale by animateFloatAsState(if (isHeaderFocused && isRealTV) 1.02f else 1f)
 
     if (isRealTV && isExpanded) {
         androidx.activity.compose.BackHandler {
@@ -1433,97 +1436,104 @@ fun HelpTopicCard(
     }
 
     val blocks = remember(content) {
-        val result = mutableListOf<String>()
-        val lines = content.split("\n")
-        var currentBlock = StringBuilder()
-        for (line in lines) {
-            val trimmed = line.trim()
-            if (trimmed.startsWith("•") && currentBlock.isNotEmpty()) {
-                result.add(currentBlock.toString().trim())
-                currentBlock = StringBuilder()
-            }
-            if (currentBlock.isNotEmpty()) {
-                currentBlock.append("\n")
-            }
-            currentBlock.append(line)
-        }
-        if (currentBlock.isNotEmpty()) {
-            result.add(currentBlock.toString().trim())
-        }
-        if (result.isEmpty() && content.isNotBlank()) {
-            result.add(content.trim())
-        }
-        result
+        content.split("\n")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
     }
 
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .background(Color(0xFF1E1E24), RoundedCornerShape(12.dp))
-            .border(
-                width = if (isHeaderFocused && isRealTV) 2.dp else if (isExpanded) 1.dp else 0.dp,
-                color = if (isHeaderFocused && isRealTV) Color.White else if (isExpanded) Color(0xFFE50914).copy(alpha = 0.6f) else Color.Transparent,
+            .graphicsLayer(scaleX = headerScale, scaleY = headerScale)
+            .background(
+                color = if (isHeaderFocused && isRealTV) Color(0xFF282836) else Color(0xFF1E1E24),
                 shape = RoundedCornerShape(12.dp)
             )
-            .padding(16.dp)
+            .border(
+                width = if (isHeaderFocused && isRealTV) 3.dp else if (isExpanded) 1.5.dp else 1.dp,
+                color = if (isHeaderFocused && isRealTV) Color.White else if (isExpanded) Color.Red.copy(alpha = 0.6f) else Color.White.copy(alpha = 0.08f),
+                shape = RoundedCornerShape(12.dp)
+            )
+            .clip(RoundedCornerShape(12.dp))
+            .padding(if (isRealTV) 16.dp else 14.dp)
     ) {
-        Row(
+        Column(
             modifier = Modifier
                 .fillMaxWidth()
-                .graphicsLayer(scaleX = headerScale, scaleY = headerScale)
                 .onFocusChanged { isHeaderFocused = it.isFocused }
-                .clip(RoundedCornerShape(8.dp))
+                .onKeyEvent { keyEvent ->
+                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                        isExpanded = !isExpanded
+                        true
+                    } else false
+                }
                 .clickable { isExpanded = !isExpanded }
-                .focusable(),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
+                .focusable()
         ) {
-            Column(modifier = Modifier.weight(1f)) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Surface(
+                    color = Color.Red.copy(alpha = 0.2f),
+                    shape = RoundedCornerShape(4.dp)
                 ) {
-                    Surface(
-                        color = Color(0xFFE50914).copy(alpha = 0.2f),
-                        shape = RoundedCornerShape(4.dp)
-                    ) {
-                        Text(
-                            text = tag,
-                            color = Color(0xFFFF5252),
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
                     Text(
-                        text = title,
-                        color = Color.White,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.Bold
+                        text = tag,
+                        color = Color(0xFFFF5252),
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                     )
                 }
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = description,
-                    color = Color.LightGray,
-                    fontSize = 13.sp,
-                    lineHeight = 18.sp
-                )
+
+                Surface(
+                    color = if (isExpanded) Color.Red else if (isHeaderFocused && isRealTV) Color.White else Color(0xFF2E2E38),
+                    shape = RoundedCornerShape(6.dp)
+                ) {
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+                    ) {
+                        Icon(
+                            imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                            contentDescription = null,
+                            tint = if (!isExpanded && isHeaderFocused && isRealTV) Color.Black else Color.White,
+                            modifier = Modifier.size(16.dp)
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = stringResource(if (isExpanded) R.string.help_action_hide else R.string.help_action_read),
+                            color = if (!isExpanded && isHeaderFocused && isRealTV) Color.Black else Color.White,
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
             }
 
-            Surface(
-                color = if (isExpanded) Color(0xFFE50914) else if (isHeaderFocused && isRealTV) Color.White else Color(0xFF2E2E38),
-                shape = RoundedCornerShape(6.dp),
-                modifier = Modifier.padding(start = 12.dp)
-            ) {
-                Text(
-                    text = stringResource(if (isExpanded) R.string.help_action_hide else R.string.help_action_read),
-                    color = if (!isExpanded && isHeaderFocused && isRealTV) Color.Black else Color.White,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                )
-            }
+            Spacer(modifier = Modifier.height(10.dp))
+
+            Text(
+                text = title,
+                color = Color.White,
+                fontSize = if (isRealTV) 18.sp else 16.sp,
+                fontWeight = FontWeight.Bold,
+                lineHeight = if (isRealTV) 24.sp else 21.sp
+            )
+
+            Spacer(modifier = Modifier.height(4.dp))
+
+            Text(
+                text = description,
+                color = Color(0xFFB0B0B8),
+                fontSize = if (isRealTV) 13.5.sp else 12.5.sp,
+                lineHeight = if (isRealTV) 19.sp else 17.5.sp
+            )
         }
 
         AnimatedVisibility(
@@ -1553,13 +1563,22 @@ fun HelpTopicCard(
                             .onFocusChanged { isCloseBtnFocused = it.isFocused }
                             .clip(RoundedCornerShape(8.dp))
                             .background(
-                                if (isCloseBtnFocused && isRealTV) Color.White else Color(0xFFE50914).copy(alpha = 0.25f)
+                                if (isCloseBtnFocused && isRealTV) Color.White else Color.Red.copy(alpha = 0.2f)
                             )
                             .border(
                                 width = if (isCloseBtnFocused && isRealTV) 2.dp else 1.dp,
-                                color = if (isCloseBtnFocused && isRealTV) Color.White else Color(0xFFE50914),
+                                color = if (isCloseBtnFocused && isRealTV) Color.White else Color.Red,
                                 shape = RoundedCornerShape(8.dp)
                             )
+                            .onKeyEvent { keyEvent ->
+                                if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                    (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                    isExpanded = false
+                                    true
+                                } else false
+                            }
                             .clickable { isExpanded = false }
                             .focusable()
                             .padding(horizontal = 16.dp, vertical = 10.dp),
@@ -1595,7 +1614,15 @@ private fun HelpBlockItem(
     isRealTV: Boolean
 ) {
     var isBlockFocused by remember { mutableStateOf(false) }
-    val blockScale by animateFloatAsState(if (isBlockFocused && isRealTV) 1.01f else 1f)
+    val blockScale by animateFloatAsState(if (isBlockFocused && isRealTV) 1.02f else 1f)
+
+    val colonIdx = block.indexOf(':')
+    val hasLabel = colonIdx in 1..45
+    val label = if (hasLabel) block.substring(0, colonIdx).trim() else ""
+    val detail = if (hasLabel) block.substring(colonIdx + 1).trim() else block.trim()
+
+    val isIssue = label.equals("Issue", ignoreCase = true)
+    val isSolution = label.equals("Solution", ignoreCase = true)
 
     Column(
         modifier = Modifier
@@ -1603,37 +1630,60 @@ private fun HelpBlockItem(
             .graphicsLayer(scaleX = blockScale, scaleY = blockScale)
             .onFocusChanged { isBlockFocused = it.isFocused }
             .background(
-                color = if (isBlockFocused && isRealTV) Color(0xFF252530) else Color(0xFF141418),
+                color = if (isBlockFocused && isRealTV) Color(0xFF282838) else Color(0xFF141418),
                 shape = RoundedCornerShape(8.dp)
             )
             .border(
-                width = if (isBlockFocused && isRealTV) 2.dp else 1.dp,
-                color = if (isBlockFocused && isRealTV) Color.White else Color(0xFF222228),
+                width = if (isBlockFocused && isRealTV) 2.5.dp else 1.dp,
+                color = if (isBlockFocused && isRealTV) Color.White else Color(0xFF24242E),
                 shape = RoundedCornerShape(8.dp)
             )
             .focusable()
-            .padding(12.dp)
+            .padding(horizontal = 14.dp, vertical = 10.dp)
     ) {
-        val lines = block.split("\n")
-        lines.forEachIndexed { lineIndex, line ->
-            val trimmed = line.trim()
-            if (trimmed.startsWith("•") || lineIndex == 0) {
-                Text(
-                    text = trimmed,
-                    color = if (isBlockFocused && isRealTV) Color.White else Color(0xFFF0F0F5),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.5.sp,
-                    lineHeight = 20.sp,
-                    modifier = Modifier.padding(bottom = if (lines.size > 1) 4.dp else 0.dp)
+        if (hasLabel) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.padding(bottom = 4.dp)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(if (isIssue) 8.dp else 6.dp)
+                        .background(
+                            color = when {
+                                isIssue -> Color(0xFFFF5252)
+                                isSolution -> Color(0xFF4CAF50)
+                                else -> Color.Red
+                            },
+                            shape = CircleShape
+                        )
                 )
-            } else {
+                Spacer(modifier = Modifier.width(8.dp))
                 Text(
-                    text = trimmed,
-                    color = if (isBlockFocused && isRealTV) Color(0xFFE0E0E8) else Color(0xFFC0C0C8),
-                    fontSize = 13.sp,
-                    lineHeight = 20.sp
+                    text = label,
+                    color = when {
+                        isIssue -> Color(0xFFFF6B6B)
+                        isSolution -> Color(0xFF81C784)
+                        else -> if (isBlockFocused && isRealTV) Color.White else Color(0xFFF0F0F5)
+                    },
+                    fontWeight = FontWeight.Bold,
+                    fontSize = if (isRealTV) 14.5.sp else 13.5.sp
                 )
             }
+            Text(
+                text = detail,
+                color = if (isBlockFocused && isRealTV) Color.White else Color(0xFFC4C4CC),
+                fontSize = if (isRealTV) 13.5.sp else 12.5.sp,
+                lineHeight = if (isRealTV) 20.sp else 18.sp,
+                modifier = Modifier.padding(start = 14.dp)
+            )
+        } else {
+            Text(
+                text = detail,
+                color = if (isBlockFocused && isRealTV) Color.White else Color(0xFFD4D4DC),
+                fontSize = if (isRealTV) 13.5.sp else 12.5.sp,
+                lineHeight = if (isRealTV) 20.sp else 18.sp
+            )
         }
     }
 }
