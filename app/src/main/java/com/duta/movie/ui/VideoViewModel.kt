@@ -1375,7 +1375,7 @@ class VideoViewModel @Inject constructor(
             host.contains("dutamovie") || host.contains("algarvebuzz") || host.contains("actors-pictures") ||
             host.contains("youtube") || host.contains("googlevideo") || host.contains("bilibili") ||
             host.contains("dailymotion") || host.contains("dmcdn") ||
-            host.contains("streamtape") || host.contains("dood") || host.contains("embedo") ||
+            host.contains("streamtape") || host.contains("dood") ||
             host.contains("mixdrop") || host.contains("filemoon") || host.contains("uptostream") ||
             host.contains("indostream") || host.contains("playstream") ||
             host.contains("voe") || host.contains("johnfullwonder") || host.contains("cloudwindow") ||

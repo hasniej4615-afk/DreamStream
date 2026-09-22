@@ -2599,7 +2599,7 @@ fun VideoPlayerWebView(
 ) {
     val scope = rememberCoroutineScope()
     // OWL'S EYE: Total Blackout Handshake
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(modifier = modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
         AndroidView(
             factory = { ctx ->
                 android.webkit.WebView(ctx).apply {
@@ -2608,7 +2608,7 @@ fun VideoPlayerWebView(
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT
                     )
                     webViewRef.value = this
-                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    setBackgroundColor(android.graphics.Color.BLACK)
                 
                 // TV FOCUS FIX: Prevent WebView from stealing DPAD focus from Compose controls
                 val isTVDevice = isTV || com.duta.movie.util.DeviceUtils.isTvDevice(ctx)
@@ -2905,7 +2905,7 @@ fun VideoPlayerWebView(
                                     low.contains("upns.live") || low.contains("upvideo") ||
                                     low.contains("abyssplayer") || low.contains("bondplayer") ||
                                     low.contains("pandalur") || low.contains("dood") ||
-                                    low.contains("playmogo") || low.contains("embedo") ||
+                                    low.contains("playmogo") ||
                                     low.contains("iamcdn") || low.contains("bondcdn") ||
                                     low.contains("abysscdn") || low.contains("johnfullwonder") ||
                                     low.contains("streamtape") || low.contains("dsvplay") ||

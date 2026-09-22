@@ -3660,7 +3660,7 @@ object VideoExtractor {
         val adDomains = listOf(
             "zeus", "klik", "vingaming", "pingaming", "chiptaylor", "ketik.live",
             "poker", "slot", "bet", "jud", "bola", "win", "88", "138", "jackpot",
-            "qpon", "butynejutes"
+            "qpon", "butynejutes", "parklogic", "embedo"
         )
         val host = try { android.net.Uri.parse(url).host?.lowercase() ?: "" } catch(_: Exception) { "" }
         if (adDomains.any { host.contains(it) || lowName.contains(it) }) return false
@@ -3669,7 +3669,10 @@ object VideoExtractor {
             lowUrl.contains("google.com") || lowUrl.contains("googleapis.com") || lowUrl.contains("imasdk")) return false
         
         if (lowName.contains("server") || lowName.contains("mirror") || lowName.contains("vip") || 
-            lowName.contains("s1") || lowName.contains("s2") || lowName.contains("s3") || lowName.contains("s4")) return true
+            lowName.contains("s1") || lowName.contains("s2") || lowName.contains("s3") || lowName.contains("s4")) {
+            if (host.contains("parklogic") || host.contains("embedo")) return false
+            return true
+        }
 
         return lowName.contains("hgcloud") || 
                lowName.contains("indostream") ||
@@ -3682,7 +3685,7 @@ object VideoExtractor {
                lowName.contains("acefile") || lowName.contains("racaty") ||
                lowName.contains("bilibili") || lowUrl.contains("bilibili.com") ||
                lowName.contains("dailymotion") || lowUrl.contains("dailymotion.com") || lowUrl.contains("dai.ly") ||
-               lowName.contains("streamwish") || lowUrl.contains("streamwish") || lowUrl.contains("embedwish") || lowUrl.contains("embedo") || lowUrl.contains("streamsilk") ||
+               lowName.contains("streamwish") || lowUrl.contains("streamwish") || lowUrl.contains("embedwish") || lowUrl.contains("streamsilk") ||
                lowUrl.contains("player=") || lowUrl.startsWith("ajax:") ||
                lowUrl.contains("m3u8") || lowUrl.contains("mp4") || lowUrl.contains("/e/") || lowUrl.contains("/v/") ||
                lowUrl.contains("/amt/") || lowUrl.contains(".amt")
