@@ -2326,7 +2326,7 @@ class VideoViewModel @Inject constructor(
                 if (winner == null) {
                     winner = if (skipDirectRace) null else executeGodModeRace(topMirrors, primaryUrl, trendingContent)
                 } else {
-                    addResolutionLog("âš¡ Using pre-fetched stream for instant start!")
+                    addResolutionLog("Fast Direct: Using pre-fetched stream for instant start!")
                 }
 
                 if (winner != null) {
@@ -2465,7 +2465,8 @@ class VideoViewModel @Inject constructor(
             low.contains("voe") || low.contains("johnfullwonder") || low.contains("streamtape") || 
             low.contains("cloudwindow") || low.contains("tapecontent") || low.contains("player=") || 
             low.contains("mirror=") || low.contains("ajax:") || low.contains("hgcloud") || 
-            low.contains("vibuxer") || low.contains("hanerix") || low.contains("hglink")
+            low.contains("vibuxer") || low.contains("hanerix") || low.contains("hglink") ||
+            low.contains("playstream") || low.contains("embedpyrox") || low.contains("faststream")
         }
         val directTimeout = if (hasDirectCandidate) 4500L else if (trendingContent) 3000L else 3500L
 

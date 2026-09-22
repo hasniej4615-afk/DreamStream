@@ -888,6 +888,21 @@ object VideoExtractor {
                     Log.w(TAG, "Hgcloud/Hanerix video hoster confirmed file is unconverted/processing or deleted: $pageUrl")
                     return@withContext null
                 }
+            } else if (lowHost.contains("playstream") || lowHost.contains("embedpyrox") || lowHost.contains("pyrox") ||
+                       lowHost.contains("upstream") || lowHost.contains("hexload") || lowHost.contains("vstream") ||
+                       lowHost.contains("faststream") || lowHost.contains("dstream") || lowHost.contains("streamwish")) {
+                // Fast-probe for 404/410/dead video URLs on dedicated file hosts
+                val probeHtml = fetchHtml(pageUrl, actualReferer)
+                if (probeHtml == null || probeHtml.contains("file not found", ignoreCase = true) ||
+                    probeHtml.contains("file was deleted", ignoreCase = true) ||
+                    probeHtml.contains("video was removed", ignoreCase = true) ||
+                    probeHtml.contains("deleted by the owner", ignoreCase = true) ||
+                    probeHtml.contains("404 not found", ignoreCase = true) ||
+                    probeHtml.contains("cant find the file", ignoreCase = true) ||
+                    probeHtml.contains("can't find the file", ignoreCase = true)) {
+                    Log.w(TAG, "Video hoster confirmed file is 404/deleted/dead: $pageUrl")
+                    return@withContext null
+                }
             }
             Log.d(TAG, "Extraction: Host is JS-Only, returning as-is: $pageUrl")
             return@withContext ExtractionResult(pageUrl)
@@ -2002,8 +2017,6 @@ object VideoExtractor {
                 .header("User-Agent", NetworkConfig.SHARED_USER_AGENT)
                 .header("Referer", "https://www.bilibili.com/")
                 .header("Cookie", "buvid3=$buvid; b_nut=1700000000; CURRENT_FNVAL=4048")
-                .header("X-Forwarded-For", "220.181.38.148")
-                .header("Client-IP", "220.181.38.148")
                 .build()
 
             val jsonStr = NetworkConfig.okHttpClient.newCall(request).execute().use { response ->
@@ -2272,8 +2285,6 @@ object VideoExtractor {
                 .header("User-Agent", NetworkConfig.SHARED_USER_AGENT)
                 .header("Referer", "https://www.bilibili.com/")
                 .header("Cookie", "buvid3=$buvid; b_nut=1700000000; CURRENT_FNVAL=4048")
-                .header("X-Forwarded-For", "220.181.38.148")
-                .header("Client-IP", "220.181.38.148")
                 .build()
 
             val jsonStr = NetworkConfig.okHttpClient.newCall(request).execute().use { response ->
@@ -4223,10 +4234,14 @@ object VideoExtractor {
             lowUrl.contains("playerp2p") || lowUrl.contains("p2p") || lowUrl.contains("embed4me") || lowUrl.contains("upns") ||
             lowName.contains("indostream") || lowName.contains("indovip") || (lowName.contains("amt") && !lowName.contains("stream")) -> 125
 
-            // OWL'S EYE: Priority Tier 2b - YouTube / Dailymotion / Bilibili Full Movie / Alternative Partner Mirror
+            // OWL'S EYE: Priority Tier 2b - YouTube Full Movie / High-speed Direct
             lowUrl.contains("youtube") || lowUrl.contains("youtu.be") || lowName.contains("youtube") -> 110
-            lowUrl.contains("dailymotion") || lowUrl.contains("dai.ly") || lowName.contains("dailymotion") -> 105
-            lowUrl.contains("bilibili") || lowName.contains("bilibili") -> 100
+
+            // OWL'S EYE: Priority Tier 2c - Dedicated Streaming Video Hosts (Playstream, EmbedPyrox, Faststream, Upstream, etc.)
+            lowUrl.contains("playstream") || lowName.contains("playstream") ||
+            lowUrl.contains("embedpyrox") || lowUrl.contains("pyrox") ||
+            lowUrl.contains("faststream") || lowUrl.contains("upstream") ||
+            lowUrl.contains("vstream") || lowUrl.contains("hexload") -> 95
 
             lowName.contains("vip") || lowUrl.contains("vip") -> 90
             lowUrl.contains("archive.org/download") -> 45
@@ -4235,6 +4250,10 @@ object VideoExtractor {
             lowUrl.contains("swishsrv") || lowUrl.contains("swish") || lowName.contains("swish") -> 85
             lowUrl.contains("vidhide") || lowUrl.contains("vidsrc") -> 75
             lowUrl.contains("dood") -> 70
+
+            // OWL'S EYE: External Alternative Partner Mirrors (Dailymotion / Bilibili Fallbacks)
+            lowUrl.contains("dailymotion") || lowUrl.contains("dai.ly") || lowName.contains("dailymotion") -> 65
+            lowUrl.contains("bilibili") || lowName.contains("bilibili") -> 45
             
             // OWL'S EYE: Demoted unreliable / heavily protected hosts
             lowUrl.contains("veev") || lowName.contains("veev") || lowUrl.contains("player=5") -> 55

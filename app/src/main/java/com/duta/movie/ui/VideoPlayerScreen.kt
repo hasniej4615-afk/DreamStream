@@ -885,6 +885,39 @@ fun VideoPlayerScreen(
         }
     }
 
+    // OWL'S EYE: Active Playback Stall Watchdog (WebView Embeds Only)
+    // Detects when playback was running, but subsequent decode or CDN starvation freezes playback for > 5s
+    LaunchedEffect(useWebView, isVideoReady, extractedUrl) {
+        if (useWebView && isVideoReady && extractedUrl != null) {
+            var lastPos = -1L
+            var stallSeconds = 0
+            while (isVideoReady && !isFinishing) {
+                delay(1000)
+                if (webPlayerState.value.isPlaying && !userInitiatedPause) {
+                    val currentPos = webPlayerState.value.position
+                    if (currentPos > 0L && currentPos == lastPos) {
+                        stallSeconds++
+                        if (stallSeconds >= 6) {
+                            Log.w("VideoPlayerScreen", "Owl's Eye: WebView playback stall detected (frozen at ${currentPos}ms for ${stallSeconds}s). Failing over...")
+                            val failingUrl = extractedUrl ?: currentServerUrlFromVm ?: ""
+                            if (failingUrl.isNotEmpty()) {
+                                viewModel.notifyMirrorDead(failingUrl)
+                                viewModel.notifyPlaybackFailure(failingUrl)
+                            }
+                            viewModel.resolveNextServer(videoId, failingUrl, force = true)
+                            break
+                        }
+                    } else {
+                        lastPos = currentPos
+                        stallSeconds = 0
+                    }
+                } else {
+                    stallSeconds = 0
+                }
+            }
+        }
+    }
+
     var lastCastSubUrl by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(extractedUrl, selectedSubtitle, currentPlayer, subtitleCues, subtitleOffset, isCasting) {
@@ -2643,7 +2676,7 @@ fun VideoPlayerWebView(
                         low.contains("swhoi") || low.contains("bestcdn") ||
                         forceWebViewHosts.any { low.contains(it) }
                     )
-                    userAgentString = if (isStrict || (isDailymotion && isTVDevice)) NetworkConfig.MOBILE_USER_AGENT else NetworkConfig.SHARED_USER_AGENT
+                    userAgentString = if (isStrict || isBilibili || (isDailymotion && isTVDevice)) NetworkConfig.MOBILE_USER_AGENT else NetworkConfig.SHARED_USER_AGENT
                 }
                 
                 // Native hardware compositor direct to window surface
@@ -3141,9 +3174,7 @@ fun VideoPlayerWebView(
                       view.setTag(R.id.active_url, url)
                       val embedUrl = if (url.contains("player.bilibili.com")) url else "https://player.bilibili.com/player.html?bvid=$bvid&page=1&as_wide=1&high_quality=1&danmaku=0"
                       view.loadUrl(embedUrl, mutableMapOf(
-                          "Referer" to "https://www.bilibili.com/",
-                          "X-Forwarded-For" to "220.181.38.148",
-                          "Client-IP" to "220.181.38.148"
+                          "Referer" to "https://www.bilibili.com/"
                       ))
                   }
               } else if (dmId != null || url.contains("dailymotion.com") || url.contains("dai.ly")) {

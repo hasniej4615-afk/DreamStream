@@ -1625,14 +1625,30 @@ object Nuker {
                                 v.addEventListener('seeking', reportState);
                                 v.addEventListener('seeked', reportState);
                             }
-                            // Auto-click play button if paused initially
-                            var playBtn = document.querySelector('.bpx-player-ctrl-play, .bilibili-player-video-btn-start');
+                            // Auto-click play button if paused initially (supports desktop & mobile player UI)
+                            var playBtn = document.querySelector('.bpx-player-ctrl-play, .bilibili-player-video-btn-start, .m-video-player-btn-play, .btn-play, .play-icon, .icon-play, .video-play-btn');
                             if (playBtn && v && v.paused && !window.initialAutoplayDone) {
                                 try { playBtn.click(); window.initialAutoplayDone = true; } catch(e) {}
                             }
                             if (v && v.paused && !window.initialAutoplayDone && (window.biliAttempts || 0) < 10) {
                                 window.biliAttempts = (window.biliAttempts || 0) + 1;
                                 v.play().then(function() { window.initialAutoplayDone = true; }).catch(function(){});
+                            }
+
+                            // Active playback stall detector (5s without position advancement while playing)
+                            if (v && !v.paused && v.currentTime > 0.5) {
+                                if (v.currentTime === window.biliLastObservedTime) {
+                                    window.biliStallDuration = (window.biliStallDuration || 0) + 300;
+                                    if (window.biliStallDuration > 5000 && !window.biliStallNotified) {
+                                        window.biliStallNotified = true;
+                                        if (window.AndroidPlayer && window.AndroidPlayer.notifyMirrorDead) {
+                                            window.AndroidPlayer.notifyMirrorDead();
+                                        }
+                                    }
+                                } else {
+                                    window.biliLastObservedTime = v.currentTime;
+                                    window.biliStallDuration = 0;
+                                }
                             }
 
                             // Playback success handshake

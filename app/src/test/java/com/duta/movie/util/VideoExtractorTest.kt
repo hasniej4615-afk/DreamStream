@@ -179,6 +179,19 @@ class VideoExtractorTest {
         assert(veevScore > archiveMirrorScore) { "Veev must beat slow Archive Mirror" }
         assert(archiveMirrorScore > abyssScore) { "Archive Mirror must beat Abyss" }
         assert(abyssScore > hglinkScore) { "Abyss must beat HGLink" }
+
+        val playstreamScore = VideoExtractor.getProviderPriority("Playstream", "https://playstream.video/v/noMHvPqwxqC3/")
+        val embedpyroxScore = VideoExtractor.getProviderPriority("EmbedPyrox", "https://embedpyrox.xyz/video/35925d9ed5219fe76f27b74b862fd34b")
+        val dailymotionScore = VideoExtractor.getProviderPriority("Dailymotion", "https://www.dailymotion.com/video/x990bio")
+        val bilibiliScore = VideoExtractor.getProviderPriority("Bilibili", "https://player.bilibili.com/player.html?bvid=BV1ypDRBXESt")
+
+        assert(playstreamScore == 95) { "Playstream must have priority 95" }
+        assert(embedpyroxScore == 95) { "EmbedPyrox must have priority 95" }
+        assert(dailymotionScore == 65) { "Dailymotion fallback must have priority 65" }
+        assert(bilibiliScore == 45) { "Bilibili fallback must have priority 45" }
+        assert(playstreamScore > bilibiliScore) { "Dedicated Playstream must beat fallback Bilibili" }
+        assert(embedpyroxScore > bilibiliScore) { "Dedicated EmbedPyrox must beat fallback Bilibili" }
+        assert(dailymotionScore > bilibiliScore) { "Dailymotion must beat Bilibili" }
     }
 
     @Test
