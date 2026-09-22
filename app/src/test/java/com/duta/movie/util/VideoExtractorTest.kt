@@ -2,6 +2,8 @@ package com.duta.movie.util
 
 import com.duta.movie.model.Video
 import com.duta.movie.model.VideoServer
+import com.duta.movie.model.Recommendation
+import com.duta.movie.model.toVideo
 import kotlinx.coroutines.runBlocking
 import org.junit.Test
 
@@ -1001,6 +1003,42 @@ class VideoExtractorTest {
         VideoExtractor.markConfirmedDead(testDeadUrl)
         assert(VideoExtractor.isConfirmedDead(testDeadUrl))
         assert(VideoExtractor.isConfirmedDead("https://playstream.video/e/BcfBf6eYUTKd"))
+    }
+
+    @Test
+    fun testResolveVideoUrl() {
+        val base = VideoExtractor.getBaseUrl()
+        val pencuri = VideoExtractor.getPencuriBaseUrl()
+
+        // 1. Slug without videoUrl defaults to base URL with trailing slash
+        assert(VideoExtractor.resolveVideoUrl("panchhi-2021") == "$base/panchhi-2021/")
+        assert(VideoExtractor.resolveVideoUrl("/manjummel-boys-2024/") == "$base/manjummel-boys-2024/")
+
+        // 2. PencuriMovie slug formats to pencuri base
+        assert(VideoExtractor.resolveVideoUrl("pm_munafik-2") == "$pencuri/munafik-2/")
+
+        // 3. Raw URL provided is migrated
+        val oldDutaUrl = "https://dutamovie21.now/panchhi-2021/"
+        val resolvedOld = VideoExtractor.resolveVideoUrl("panchhi-2021", oldDutaUrl)
+        assert(resolvedOld == "$base/panchhi-2021/")
+    }
+
+    @Test
+    fun testRecommendationToVideo() {
+        val base = VideoExtractor.getBaseUrl()
+        val rec = Recommendation(
+            videoId = "panchhi-2021",
+            title = "Panchhi (2021)",
+            thumbnailUrl = "https://image.tmdb.org/t/p/w500/test.jpg",
+            videoUrl = "",
+            quality = "HD",
+            recommendCount = 42
+        )
+        val video = rec.toVideo()
+        assert(video.id == "panchhi-2021")
+        assert(video.title == "Panchhi (2021)")
+        assert(video.videoUrl == "$base/panchhi-2021/")
+        assert(video.views == "42")
     }
 }
 

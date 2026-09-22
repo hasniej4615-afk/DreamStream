@@ -132,6 +132,12 @@ class VideoRepository @Inject constructor(
         videos
     }
 
+    suspend fun insertOrUpdateVideos(videos: List<Video>) = withContext(Dispatchers.IO) {
+        if (videos.isEmpty()) return@withContext
+        videos.forEach { videoCache[it.id] = it }
+        videoDao.insertOrUpdateVideos(videos.map { it.toEntity() })
+    }
+
     suspend fun getCachedOrDbVideo(videoId: String): Video? = withContext(Dispatchers.IO) {
         videoCache[videoId] ?: videoDao.getVideoById(videoId)?.toDomain()
     }
@@ -139,7 +145,32 @@ class VideoRepository @Inject constructor(
     suspend fun fetchVideoDetails(videoId: String): Video? = withContext(Dispatchers.IO) {
         try {
             val video = videoCache[videoId] ?: videoDao.getVideoById(videoId)?.toDomain()
-            if (video == null) return@withContext null
+            if (video == null) {
+                if (videoId.startsWith("yt_") || videoId.startsWith("bili_") || videoId.startsWith("dm_")) {
+                    return@withContext null
+                }
+                if (videoId.startsWith("ia_pramlee")) {
+                    val classic = VideoExtractor.fetchArchivePramleeVideos().find { it.id == videoId }
+                    if (classic != null) {
+                        videoDao.insertOrUpdateVideos(listOf(classic.toEntity()))
+                        videoCache[videoId] = classic
+                        return@withContext classic
+                    }
+                    return@withContext null
+                }
+
+                val fallbackUrl = VideoExtractor.resolveVideoUrl(videoId)
+                if (fallbackUrl.isNotBlank()) {
+                    val fetched = VideoExtractor.fetchVideoDetails(fallbackUrl)
+                    if (fetched != null) {
+                        val toSave = fetched.copy(id = videoId)
+                        videoDao.insertOrUpdateVideos(listOf(toSave.toEntity()))
+                        videoCache[videoId] = toSave
+                        return@withContext toSave
+                    }
+                }
+                return@withContext null
+            }
             
             if (videoId.startsWith("yt_") || videoId.startsWith("bili_") || videoId.startsWith("dm_")) {
                 videoCache[videoId] = video
@@ -156,7 +187,8 @@ class VideoRepository @Inject constructor(
                 }
             }
             
-            val updated = VideoExtractor.fetchVideoDetails(VideoExtractor.migrateUrlToBase(video.videoUrl))
+            val targetUrl = VideoExtractor.resolveVideoUrl(videoId, video.videoUrl)
+            val updated = if (targetUrl.isNotBlank()) VideoExtractor.fetchVideoDetails(targetUrl) else null
             if (updated != null) {
                 val merged = mergeVideos(updated, video)
                 videoDao.insertOrUpdateVideos(listOf(merged.toEntity()))

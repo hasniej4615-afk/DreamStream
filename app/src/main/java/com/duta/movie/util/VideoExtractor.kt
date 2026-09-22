@@ -209,8 +209,9 @@ object VideoExtractor {
 
     fun migrateUrlToBase(url: String): String {
         if (!url.startsWith("http")) return url
-        val uri = try { android.net.Uri.parse(url) } catch(_: Exception) { null } ?: return url
-        val host = uri.host?.lowercase() ?: return url
+        val host = try { android.net.Uri.parse(url).host?.lowercase() } catch(_: Throwable) { null }
+            ?: try { java.net.URI(url).host?.lowercase() } catch(_: Throwable) { null }
+            ?: return url
         
         if (host.contains("archive.org")) return url
         if (host.contains("kepalabergetar")) return url
@@ -218,8 +219,9 @@ object VideoExtractor {
         // Auto-heal for PencuriMovie standalone catalog
         if (host.contains("pencurimovie") || host.contains("pencurifilm") || host.contains("pencurivideo")) {
             val currentPencuri = getPencuriBaseUrl()
-            val pencuriUri = try { android.net.Uri.parse(currentPencuri) } catch(_: Exception) { null }
-            if (pencuriUri != null && pencuriUri.host != null && !host.equals(pencuriUri.host, ignoreCase = true)) {
+            val pencuriHost = try { android.net.Uri.parse(currentPencuri).host?.lowercase() } catch(_: Throwable) { null }
+                ?: try { java.net.URI(currentPencuri).host?.lowercase() } catch(_: Throwable) { null }
+            if (pencuriHost != null && !host.equals(pencuriHost, ignoreCase = true)) {
                 val pathWithQuery = url.substringAfter(host)
                 val migrated = "$currentPencuri$pathWithQuery"
                 Log.d(TAG, "PENCURI AUTO-HEAL MIGRATION: $url -> $migrated")
@@ -234,14 +236,32 @@ object VideoExtractor {
             currentBase = "https://algarvebuzz.com"
             setBaseUrl(currentBase)
         }
-        val currentBaseUri = try { android.net.Uri.parse(currentBase) } catch(_: Exception) { null }
-        if (currentBaseUri != null && currentBaseUri.host != host) {
+        val currentBaseHost = try { android.net.Uri.parse(currentBase).host?.lowercase() } catch(_: Throwable) { null }
+            ?: try { java.net.URI(currentBase).host?.lowercase() } catch(_: Throwable) { null }
+        if (currentBaseHost != null && currentBaseHost != host) {
             val pathWithQuery = url.substringAfter(host)
             val migrated = "$currentBase$pathWithQuery"
             Log.d(TAG, "AUTO-HEAL MIGRATION: $url -> $migrated")
             return migrated
         }
         return url
+    }
+
+    fun resolveVideoUrl(videoId: String, rawUrl: String? = null): String {
+        if (!rawUrl.isNullOrBlank() && rawUrl.startsWith("http")) {
+            return migrateUrlToBase(rawUrl)
+        }
+        val cleanId = videoId.trim().trim('/')
+        if (cleanId.isEmpty()) return ""
+        if (cleanId.startsWith("http")) {
+            return migrateUrlToBase(cleanId)
+        }
+        return when {
+            cleanId.startsWith("pm_") -> "${getPencuriBaseUrl()}/${cleanId.removePrefix("pm_").trim('/')}/"
+            cleanId.startsWith("kb_") || cleanId.startsWith("ia_pramlee") ||
+            cleanId.startsWith("yt_") || cleanId.startsWith("bili_") || cleanId.startsWith("dm_") -> ""
+            else -> "${getBaseUrl()}/$cleanId/"
+        }
     }
 
     /**

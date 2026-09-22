@@ -109,6 +109,10 @@ class VideoViewModel @Inject constructor(
                     if (_pakcikRekomenVideos.value != newVideos) {
                         _pakcikRekomenVideos.value = newVideos
                     }
+                    updateMetadataCache(newVideos, triggerBackground = false)
+                    viewModelScope.launch(Dispatchers.IO) {
+                        videoRepository.insertOrUpdateVideos(newVideos)
+                    }
                 }.onFailure { e ->
                     Log.e("VideoViewModel", "Failed to fetch Pakcik Rekomen videos", e)
                 }
@@ -133,6 +137,10 @@ class VideoViewModel @Inject constructor(
                         _recommendationCounts.update { current -> current + counts }
                         if (_pakcikRekomenVideos.value != newVideos) {
                             _pakcikRekomenVideos.value = newVideos
+                        }
+                        updateMetadataCache(newVideos, triggerBackground = false)
+                        viewModelScope.launch(Dispatchers.IO) {
+                            videoRepository.insertOrUpdateVideos(newVideos)
                         }
                     }
                 } catch (_: Exception) {}
@@ -3315,6 +3323,9 @@ class VideoViewModel @Inject constructor(
 
         val resolvedEpisodes = if (video.episodes.isNotEmpty()) video.episodes else cached.episodes
         return video.copy(
+            thumbnailUrl = if (video.thumbnailUrl.isNotEmpty()) video.thumbnailUrl else cached.thumbnailUrl,
+            backdropUrl = if (video.backdropUrl.isNotEmpty()) video.backdropUrl else cached.backdropUrl,
+            previewUrl = if (video.previewUrl.isNotEmpty()) video.previewUrl else cached.previewUrl,
             description = if (cached.description.length > video.description.length) cached.description else video.description,
             servers = validServers,
             episodes = resolvedEpisodes,
@@ -3375,7 +3386,27 @@ class VideoViewModel @Inject constructor(
                                 break
                             }
                         }
-                        found
+                        if (found != null) {
+                            found
+                        } else {
+                            val fromPakcik = _pakcikRekomenVideos.value.find { it.id == id }
+                            if (fromPakcik != null) {
+                                metadataCache[id] = fromPakcik
+                                fromPakcik
+                            } else {
+                                val fromMyList = myListVideos.value.find { it.id == id }
+                                if (fromMyList != null) {
+                                    metadataCache[id] = fromMyList
+                                    fromMyList
+                                } else {
+                                    val fromHistory = recentlyWatchedVideos.value.find { it.id == id }
+                                    if (fromHistory != null) {
+                                        metadataCache[id] = fromHistory
+                                        fromHistory
+                                    } else null
+                                }
+                            }
+                        }
                     }
                 }
             }
