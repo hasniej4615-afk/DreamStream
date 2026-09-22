@@ -69,6 +69,9 @@ object Nuker {
                                 bodyText.indexOf("copyright violation") !== -1 ||
                                 bodyText.indexOf("cant give you what you looking for") !== -1 ||
                                 bodyText.indexOf("can't give you what you looking for") !== -1 ||
+                                bodyText.indexOf("this video is not available") !== -1 ||
+                                bodyText.indexOf("video not found or deleted") !== -1 ||
+                                bodyText.indexOf("video is not ready yet") !== -1 ||
                                 bodyText.indexOf("cookieindex is not defined") !== -1 ||
                                 bodyText.indexOf('video not found') !== -1 ||
                                 bodyText.indexOf('video was deleted') !== -1 ||
@@ -499,6 +502,9 @@ object Nuker {
                                               bodyText.indexOf("copyright violation") !== -1 ||
                                               bodyText.indexOf("cant give you what you looking for") !== -1 ||
                                               bodyText.indexOf("can't give you what you looking for") !== -1 ||
+                                              bodyText.indexOf("this video is not available") !== -1 ||
+                                              bodyText.indexOf("video not found or deleted") !== -1 ||
+                                              bodyText.indexOf("video is not ready yet") !== -1 ||
                                               bodyText.indexOf("video is processing") !== -1 ||
                                               bodyText.indexOf("conversion stage") !== -1 ||
                                               bodyText.indexOf("pending in queue") !== -1 ||
@@ -1151,6 +1157,9 @@ object Nuker {
                                              bodyText.indexOf('pending in queue') !== -1 ||
                                              bodyText.indexOf('is being converted') !== -1 ||
                                              bodyText.indexOf('video is converting') !== -1 ||
+                                             bodyText.indexOf('this video is not available') !== -1 ||
+                                             bodyText.indexOf('video not found or deleted') !== -1 ||
+                                             bodyText.indexOf('video is not ready yet') !== -1 ||
                                              bodyText.indexOf('no longer available') !== -1;
                             if ((isDeadInside || isDeadText) && !window.gateNotified) {
                                 window.gateNotified = true;

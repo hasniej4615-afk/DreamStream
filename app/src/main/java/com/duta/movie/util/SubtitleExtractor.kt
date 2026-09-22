@@ -324,11 +324,16 @@ object SubtitleExtractor {
         if (wv == null) return
         try {
             wv.stopLoading()
+            wv.loadUrl("about:blank")
             wv.webChromeClient = null
             wv.webViewClient = object : android.webkit.WebViewClient() {}
             wv.removeJavascriptInterface("Bridge")
             (wv.parent as? android.view.ViewGroup)?.removeView(wv)
-            wv.destroy()
+            wv.post {
+                try {
+                    wv.destroy()
+                } catch (_: Throwable) {}
+            }
         } catch (_: Exception) {}
     }
 

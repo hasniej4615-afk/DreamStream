@@ -2901,7 +2901,9 @@ fun VideoPlayerWebView(
                             val isTargetEmbed = request?.isForMainFrame == true || 
                                                 host.contains("dood") || host.contains("voe") ||
                                                 host.contains("indostream") || host.contains("embedo") ||
+                                                host.contains("embed4me") || host.contains("playerp2p") || host.contains("upns") ||
                                                 host.contains("dutamovie21.xyz") ||
+                                                path.contains("/api/v1/video") || path.contains("/api/") ||
                                                 path.contains("/e/") || path.contains("/embed/")
                             if (isTargetEmbed) {
                                 val activeUrl = view?.getTag(R.id.active_url) as? String ?: url
@@ -2959,6 +2961,7 @@ fun VideoPlayerWebView(
                                     low.contains("ladyriders") || low.contains("viatrix") ||
                                     low.contains("ohionewsnow") || low.contains("restaurantesabadell") ||
                                     low.contains("upns.live") || low.contains("upvideo") ||
+                                    low.contains("embed4me") || low.contains("playerp2p") ||
                                     low.contains("abyssplayer") || low.contains("bondplayer") ||
                                     low.contains("pandalur") || low.contains("dood") ||
                                     low.contains("playmogo") ||
@@ -3099,13 +3102,10 @@ fun VideoPlayerWebView(
                              Log.d("VideoPlayerInterception", "Candidate: $u")
                         }
 
-                        // Block fake steganographic streams (e.g. TikTok CDN PNG chunks disguised as m3u8)
+                        // Steganographic / fake chunks (e.g. TikTok CDN PNG chunks disguised as m3u8)
+                        // Do not return 0-byte response so WebView players can fetch chunks, but guard ExoPlayer via !isFakeTiktokStream
                         val isFakeTiktokStream = low.contains("tiktokcdn.com") || low.contains("ad-site") || 
                                                  low.contains("image?lk3s=") || low.contains("/hlsmod/")
-                        if (isFakeTiktokStream) {
-                            Log.d("VideoPlayerTurbo", "Blocked Fake/Steganographic TikTok Stream: $u")
-                            return android.webkit.WebResourceResponse("text/plain", "UTF-8", java.io.ByteArrayInputStream(ByteArray(0)))
-                        }
 
                         // TURBO SPEED: Block known ad domains, trackers, fake captchas and bot scams instantly at network level
                         val isScamOrFakeCaptcha = (low.contains("robot") && !low.contains("robots.txt") && !low.contains("roboto")) || 
@@ -3259,10 +3259,17 @@ fun VideoPlayerWebView(
             try {
                 view.setTag(R.id.is_destroyed, true)
                 view.stopLoading()
+                view.loadUrl("about:blank")
                 view.webChromeClient = null
                 view.webViewClient = android.webkit.WebViewClient()
                 (view.parent as? android.view.ViewGroup)?.removeView(view)
-                view.destroy()
+                view.post {
+                    try {
+                        view.destroy()
+                    } catch (e: Throwable) {
+                        Log.w("VideoPlayerWebView", "Deferred WebView destroy: ${e.message}")
+                    }
+                }
             } catch (e: Exception) {
                 Log.w("VideoPlayerWebView", "Safe WebView teardown: ${e.message}")
             }

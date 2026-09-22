@@ -942,6 +942,23 @@ object VideoExtractor {
                     markConfirmedDead(pageUrl)
                     return@withContext null
                 }
+            } else if (lowHost.contains("embed4me") || lowHost.contains("playerp2p") || lowHost.contains("upns")) {
+                // Fast-probe for 404/deleted videos on P2P/Vite single-page wrappers
+                val hashId = pageUrl.substringAfter("#", "").substringBefore("&").substringBefore("?").trim()
+                if (hashId.isNotEmpty()) {
+                    val host = try { android.net.Uri.parse(pageUrl).host ?: "" } catch(_: Exception) { "" }
+                    if (host.isNotEmpty()) {
+                        val probeUrl = "https://$host/api/v1/video?id=$hashId"
+                        val probeResp = fetchHtml(probeUrl, pageUrl)
+                        if (probeResp == null || probeResp.contains("not found", ignoreCase = true) ||
+                            probeResp.contains("deleted", ignoreCase = true) ||
+                            probeResp.contains("error", ignoreCase = true)) {
+                            Log.w(TAG, "P2P video hoster ($host) confirmed file is 404/deleted: $pageUrl")
+                            markConfirmedDead(pageUrl)
+                            return@withContext null
+                        }
+                    }
+                }
             }
             Log.d(TAG, "Extraction: Host is JS-Only, returning as-is: $pageUrl")
             return@withContext ExtractionResult(pageUrl)
@@ -980,6 +997,10 @@ object VideoExtractor {
             if (isJsOnlyHost(sanitized)) {
                 val sub = extractVideoUrl(sanitized, depth + 1, pageUrl, visited)
                 if (sub != null) return@withContext sub
+                if (isConfirmedDead(sanitized)) {
+                    markConfirmedDead(pageUrl)
+                    return@withContext null
+                }
                 return@withContext ExtractionResult(sanitized)
             }
         }
@@ -1002,6 +1023,10 @@ object VideoExtractor {
                 if (isJsOnlyHost(sanitized)) {
                     val sub = extractVideoUrl(sanitized, depth + 1, pageUrl, visited)
                     if (sub != null) return@withContext sub
+                    if (isConfirmedDead(sanitized)) {
+                        markConfirmedDead(pageUrl)
+                        return@withContext null
+                    }
                     return@withContext ExtractionResult(sanitized)
                 }
             }
@@ -1036,6 +1061,10 @@ object VideoExtractor {
                             if (isJsOnlyHost(sanitized)) {
                                 val sub = extractVideoUrl(sanitized, depth + 1, pageUrl, visited)
                                 if (sub != null) return@async sub
+                                if (isConfirmedDead(sanitized)) {
+                                    markConfirmedDead(pageUrl)
+                                    return@async null
+                                }
                                 return@async ExtractionResult(sanitized)
                             }
                             
@@ -1084,19 +1113,23 @@ object VideoExtractor {
         
         if (scriptCandidates.isNotEmpty()) {
             val sorted = scriptCandidates.distinct().sortedByDescending { it.length }
-            val bestDirect = sorted.firstOrNull { isDirectVideoUrl(it) }
+            val bestDirect = sorted.firstOrNull { isDirectVideoUrl(it) && !isConfirmedDead(it) }
             if (bestDirect != null) return@withContext ExtractionResult(bestDirect)
-            val bestJs = sorted.firstOrNull { isJsOnlyHost(it) }
+            val bestJs = sorted.firstOrNull { isJsOnlyHost(it) && !isConfirmedDead(it) }
             if (bestJs != null) {
                 val sub = extractVideoUrl(bestJs, depth + 1, pageUrl, visited)
                 if (sub != null) return@withContext sub
+                if (isConfirmedDead(bestJs)) {
+                    markConfirmedDead(pageUrl)
+                }
             }
             for (cand in sorted) {
+                if (isConfirmedDead(cand)) continue
                 if (isDirectVideoUrl(cand)) return@withContext ExtractionResult(cand)
                 val sub = extractVideoUrl(cand, depth + 1, pageUrl, visited)
                 if (sub != null) return@withContext sub
             }
-            if (bestJs != null) return@withContext ExtractionResult(bestJs)
+            if (bestJs != null && !isConfirmedDead(bestJs)) return@withContext ExtractionResult(bestJs)
         }
         
         // 6. Check for direct Video tag (Native Tier)
