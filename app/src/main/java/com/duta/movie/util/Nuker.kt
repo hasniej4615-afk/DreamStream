@@ -111,26 +111,29 @@ object Nuker {
                                 if (window.AndroidPlayer) {
                                     var v = this.findVideo();
                                     var status = v ? (v.isProxy ? "Proxy Active" : ("Video Found (" + v.readyState + ")")) : "Video NOT Found";
-                                var gateInfo = "No Gate";
-                                if (window.isGateActive()) {
-                                    var bodyText = ((document.body && document.body.innerText) || "").toLowerCase();
-                                    var inputs = document.querySelectorAll('input[type="password"], input[type="email"]').length;
-                                    gateInfo = "Gate Found (Inputs=" + inputs + ", Text=" + (bodyText.length > 20 ? bodyText.substring(0, 20) : bodyText) + ")";
-                                }
-                                log("Heartbeat: " + status + " | " + gateInfo + " | At: " + window.nukerAttempts);
+                                    var gateInfo = "No Gate";
+                                    if (!window.successNotified && window.isGateActive && window.isGateActive()) {
+                                        var bodyText = ((document.body && (document.body.innerText || document.body.textContent)) || "").toLowerCase();
+                                        var inputs = document.querySelectorAll('input[type="password"], input[type="email"]').length;
+                                        gateInfo = "Gate Found (Inputs=" + inputs + ", Text=" + (bodyText.length > 20 ? bodyText.substring(0, 20) : bodyText) + ")";
+                                    }
+                                    log("Heartbeat: " + status + " | " + gateInfo + " | At: " + window.nukerAttempts);
                                 }
                             },
                             findVideo: function() {
+                                if (window._cachedVideo && window._cachedVideo.isConnected && !window._cachedVideo.isProxy) {
+                                    return window._cachedVideo;
+                                }
                                 var find = function(root) {
                                     if (!root) return null;
                                     try {
                                         var v = root.querySelector('video');
-                                        if (v) return v;
+                                        if (v) { window._cachedVideo = v; return v; }
                                         var iframes = root.querySelectorAll('iframe, embed, object');
                                         for (var i = 0; i < iframes.length; i++) {
                                             try {
                                                 var d = iframes[i].contentDocument || iframes[i].contentWindow.document;
-                                                if (d) { var found = find(d); if (found) return found; }
+                                                if (d) { var found = find(d); if (found) { window._cachedVideo = found; return found; } }
                                             } catch(e) {
                                                 var src = (iframes[i].src || "").toLowerCase();
                                                 log("Checking iframe: " + src);
@@ -227,7 +230,7 @@ object Nuker {
                                 try {
                                     var v = this.findVideo();
                                     if(v && window.AndroidPlayer) {
-                                        var hasGate = isLandingPageGate();
+                                        var hasGate = window.successNotified ? false : isLandingPageGate();
                                         var timeActive = Date.now() - window.nukerStartTime;
                                         
                                         if (!v.isProxy) {
@@ -466,6 +469,7 @@ object Nuker {
                     })();
 
                     var runNuker = function() {
+                        if (window.successNotified) return;
                         window.nukerAttempts++; 
                         var elapsedMs = Date.now() - window.nukerStartTime;
 
@@ -774,6 +778,7 @@ object Nuker {
                     };
 
                     var killPopups = function() {
+                        if (window.successNotified) return;
                         try {
                             var rogueFrames = document.querySelectorAll('iframe:not(.nuker-active-frame)');
                             for (var rf = 0; rf < rogueFrames.length; rf++) {
@@ -829,16 +834,19 @@ object Nuker {
                                 }
                             },
                             findVideo: function() {
+                                if (window._cachedVideo && window._cachedVideo.isConnected && !window._cachedVideo.isProxy) {
+                                    return window._cachedVideo;
+                                }
                                 var find = function(root) {
                                     if (!root) return null;
                                     try {
                                         var v = root.querySelector('video');
-                                        if (v) return v;
+                                        if (v) { window._cachedVideo = v; return v; }
                                         var iframes = root.querySelectorAll('iframe, embed, object');
                                         for (var i = 0; i < iframes.length; i++) {
                                             try {
                                                 var d = iframes[i].contentDocument || iframes[i].contentWindow.document;
-                                                if (d) { var found = find(d); if (found) return found; }
+                                                if (d) { var found = find(d); if (found) { window._cachedVideo = found; return found; } }
                                             } catch(e) {
                                                 var src = (iframes[i].src || "").toLowerCase();
                                                 if (src.indexOf('player') !== -1 || src.indexOf('embed') !== -1 || src.indexOf('voe') !== -1 || 
@@ -987,9 +995,14 @@ object Nuker {
 
                                         // 2. Direct HTML5 Video element hook
                                         if (!v.isProxy) {
-                                            var isDead = checkDeadInside(document) || isLandingPageGate();
-                                            var hasDeadImage = !!document.querySelector('img[src*="no_video"], img[src*="deleted"], svg.no-video, .no-video');
-                                            var isShortClip = (v.duration > 0 && v.duration < 45) || (window.jwplayer && typeof window.jwplayer === 'function' && window.jwplayer().getDuration && window.jwplayer().getDuration() > 0 && window.jwplayer().getDuration() < 45);
+                                            var isDead = false;
+                                            if (!window.successNotified) {
+                                                isDead = checkDeadInside(document) || isLandingPageGate();
+                                            } else if (v.error) {
+                                                isDead = true;
+                                            }
+                                            var hasDeadImage = !window.successNotified && !!document.querySelector('img[src*="no_video"], img[src*="deleted"], svg.no-video, .no-video');
+                                            var isShortClip = !window.successNotified && ((v.duration > 0 && v.duration < 45) || (window.jwplayer && typeof window.jwplayer === 'function' && window.jwplayer().getDuration && window.jwplayer().getDuration() > 0 && window.jwplayer().getDuration() < 45));
                                             
                                             if ((isDead || hasDeadImage || isShortClip) && !window.gateNotified) {
                                                 window.gateNotified = true;
@@ -1110,6 +1123,7 @@ object Nuker {
                     })();
 
                     var runPmNuker = function() {
+                        if (window.successNotified) return;
                         window.nukerAttempts++;
                         var elapsedMs = Date.now() - window.nukerStartTime;
 

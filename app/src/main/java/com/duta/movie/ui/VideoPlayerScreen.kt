@@ -140,6 +140,15 @@ fun parseDurationToMillis(raw: String?): Long {
 
 enum class GestureType { BRIGHTNESS, VOLUME }
 
+private fun safeEvaluateJavascript(view: android.webkit.WebView?, script: String) {
+    if (view == null || view.getTag(R.id.is_destroyed) == true) return
+    try {
+        view.evaluateJavascript(script, null)
+    } catch (e: Throwable) {
+        Log.w("VideoPlayerWebView", "Safe evaluateJavascript caught: ${e.message}")
+    }
+}
+
 @OptIn(UnstableApi::class)
 @Composable
 fun VideoPlayerScreen(
@@ -353,7 +362,7 @@ fun VideoPlayerScreen(
     }
 
     fun injectNuker(view: android.webkit.WebView?) {
-        view?.evaluateJavascript(nukerScript, null)
+        safeEvaluateJavascript(view, nukerScript)
     }
 
     LaunchedEffect(subtitleError) {
@@ -1587,7 +1596,7 @@ fun VideoPlayerScreen(
                     onClick = { 
                         if (useWebView) {
                             val seekScript = "(function(){ var t = ${savedProgress / 1000.0}; if(window.playerBridge && typeof window.playerBridge.seek==='function'){ try{window.playerBridge.seek(t); return;}catch(e){} } var v=document.querySelector('video'); if(v){ v.currentTime=t; } var ifrs=document.querySelectorAll('iframe'); for(var i=0;i<ifrs.length;i++){ try{ ifrs[i].contentWindow.postMessage(JSON.stringify({event:'command',func:'seekTo',args:[t,true]}),'*'); ifrs[i].contentWindow.postMessage(JSON.stringify({method:'seek',value:t}),'*'); ifrs[i].contentWindow.postMessage(JSON.stringify({type:'seek',value:t}),'*'); }catch(e){} } })();"
-                            webViewRef.value?.evaluateJavascript(seekScript, null)
+                            safeEvaluateJavascript(webViewRef.value, seekScript)
                             pendingRotationResumePosition = savedProgress
                             pendingRotationContentKey = activeContentKey
                         } else {
@@ -1957,7 +1966,7 @@ fun VideoPlayerContent(
                         }
                     })();
                 """.trimIndent()
-                webViewRef.value?.evaluateJavascript(script, null)
+                safeEvaluateJavascript(webViewRef.value, script)
             }
             override fun pause() {
                 onUserPauseChange(true)
@@ -1978,7 +1987,7 @@ fun VideoPlayerContent(
                         }
                     })();
                 """.trimIndent()
-                webViewRef.value?.evaluateJavascript(script, null)
+                safeEvaluateJavascript(webViewRef.value, script)
             }
             override fun seekTo(positionMs: Long) {
                 val time = positionMs / 1000.0
@@ -2001,7 +2010,7 @@ fun VideoPlayerContent(
                         }
                     })();
                 """.trimIndent()
-                webViewRef.value?.evaluateJavascript(script, null)
+                safeEvaluateJavascript(webViewRef.value, script)
                 webListeners.forEach { it.onPositionDiscontinuity(Player.DISCONTINUITY_REASON_SEEK) }
             }
             override fun seekTo(mediaItemIndex: Int, positionMs: Long) {
@@ -2717,8 +2726,9 @@ fun VideoPlayerWebView(
                         return false // Destroys the popup immediately
                     }
                     override fun onProgressChanged(v: android.webkit.WebView?, p: Int) { 
+                        if (v?.getTag(R.id.is_destroyed) == true) return
                         if (p > 10) {
-                            v?.evaluateJavascript(nukerScript, null)
+                            safeEvaluateJavascript(v, nukerScript)
                         }
                     }
                     override fun onJsAlert(v: android.webkit.WebView?, u: String?, m: String?, r: android.webkit.JsResult?): Boolean { r?.confirm(); return true }
@@ -2726,11 +2736,28 @@ fun VideoPlayerWebView(
                     override fun onJsPrompt(v: android.webkit.WebView?, u: String?, m: String?, d: String?, r: android.webkit.JsPromptResult?): Boolean { r?.confirm(); return true }
                     override fun onConsoleMessage(consoleMessage: android.webkit.ConsoleMessage?): Boolean {
                         val msg = consoleMessage?.message() ?: ""
-                        Log.d("VideoPlayerWebView", "JS Console: $msg")
                         val isDirectEmbed = url.contains("youtube") || url.contains("youtu.be") || 
                                             url.contains("bilibili.com") || url.contains("bilibili.tv") ||
                                             url.contains("dailymotion.com") || url.contains("dai.ly")
                         if (isDirectEmbed) return true
+
+                        // Filter spam objects and non-essential logs from flooding Android IPC / logcat
+                        val isSpam = msg.isEmpty() || 
+                                     msg.startsWith("[object ") || 
+                                     msg.startsWith("{\"event\":") ||
+                                     msg == "null" || 
+                                     msg == "undefined"
+                        if (!isSpam && (msg.contains("Nuker", ignoreCase = true) || 
+                                        msg.contains("PM", ignoreCase = true) || 
+                                        msg.contains("player", ignoreCase = true) || 
+                                        msg.contains("video", ignoreCase = true) || 
+                                        msg.contains("gate", ignoreCase = true) || 
+                                        msg.contains("error", ignoreCase = true) || 
+                                        msg.contains("fail", ignoreCase = true) ||
+                                        msg.contains("stream", ignoreCase = true) ||
+                                        msg.contains("http", ignoreCase = true))) {
+                            Log.d("VideoPlayerWebView", "JS Console: ${msg.take(200)}")
+                        }
                         val lowMsg = msg.lowercase()
                         if (lowMsg.contains("pagead") || lowMsg.contains("googleads") || lowMsg.contains("doubleclick") || lowMsg.contains("/aclk") || lowMsg.contains("analytics")) {
                             return true
@@ -2916,8 +2943,9 @@ fun VideoPlayerWebView(
                         return !isSafe
                     }
                     override fun onPageFinished(v: android.webkit.WebView?, u: String?) {
+                        if (v?.getTag(R.id.is_destroyed) == true) return
                         Log.d("VideoPlayerSniffer", "Injecting Nuker SCRIPT via onPageFinished")
-                        v?.evaluateJavascript(nukerScript, null)
+                        safeEvaluateJavascript(v, nukerScript)
                     }
                     override fun shouldInterceptRequest(view: android.webkit.WebView, r: android.webkit.WebResourceRequest): android.webkit.WebResourceResponse? {
                         val u = r.url.toString()
@@ -3095,6 +3123,7 @@ fun VideoPlayerWebView(
                 }
             }
         }, modifier = Modifier.fillMaxSize(), update = { view ->
+             if (view.getTag(R.id.is_destroyed) == true) return@AndroidView
              val isNewEpisode = view.getTag(R.id.active_content_key) != activeContentKey
               val ytId = com.duta.movie.util.VideoExtractor.extractYouTubeId(url)
               val bvid = com.duta.movie.util.VideoExtractor.extractBilibiliBvid(url)
@@ -3166,6 +3195,7 @@ fun VideoPlayerWebView(
         }, onRelease = { view -> 
             webViewRef.value = null
             try {
+                view.setTag(R.id.is_destroyed, true)
                 view.stopLoading()
                 view.webChromeClient = null
                 view.webViewClient = android.webkit.WebViewClient()

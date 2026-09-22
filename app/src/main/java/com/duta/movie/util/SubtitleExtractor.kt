@@ -320,6 +320,18 @@ object SubtitleExtractor {
         }
     }
 
+    private fun safeDestroyWebView(wv: WebView?) {
+        if (wv == null) return
+        try {
+            wv.stopLoading()
+            wv.webChromeClient = null
+            wv.webViewClient = object : android.webkit.WebViewClient() {}
+            wv.removeJavascriptInterface("Bridge")
+            (wv.parent as? android.view.ViewGroup)?.removeView(wv)
+            wv.destroy()
+        } catch (_: Exception) {}
+    }
+
     /**
      * Orchestrates a "Deep-Context Bridge" using a hidden WebView to resolve subtitles.
      * This is used for sites with heavy JavaScript, dynamic download links, or
@@ -342,7 +354,7 @@ object SubtitleExtractor {
                 if (!done) { 
                     Log.w(TAG, "Deep-Context Bridge timeout for $url")
                     done = true; cont.resume(null)
-                    try { webView.destroy() } catch(e: Exception) {} 
+                    safeDestroyWebView(webView) 
                 } 
             }
             handler.postDelayed(timer, 45000)
@@ -352,7 +364,7 @@ object SubtitleExtractor {
                     if (!done) {
                         done = true
                         handler.removeCallbacks(timer)
-                        try { webView.destroy() } catch(e: Exception) {}
+                        safeDestroyWebView(webView)
                     }
                 }
             }
@@ -369,7 +381,7 @@ object SubtitleExtractor {
                         done = true; handler.removeCallbacks(timer)
                         withContext(Dispatchers.Main) { 
                             cont.resume(result)
-                            try { webView.destroy() } catch(e: Exception) {} 
+                            safeDestroyWebView(webView) 
                         }
                     }
                 }
@@ -400,7 +412,7 @@ object SubtitleExtractor {
                                         Log.i(TAG, "Subtitle Resolved and Saved: $path")
                                         done = true; handler.removeCallbacks(timer)
                                         cont.resume(path)
-                                        try { webView.destroy() } catch(e: Exception) {} 
+                                        safeDestroyWebView(webView) 
                                     } 
                                 }
                                 return@launch
@@ -415,6 +427,7 @@ object SubtitleExtractor {
                     if (done) return
                     Log.i(TAG, "JS Bridge: Triggering download navigation: $target")
                     handler.post { 
+                        if (done) return@post
                         try {
                             val headers = mutableMapOf("Referer" to currentUrl)
                             webView.loadUrl(target, headers) 
@@ -704,12 +717,20 @@ object SubtitleExtractor {
                 
                 webViewClient = object : android.webkit.WebViewClient() {
                     override fun onPageStarted(view: android.webkit.WebView?, url: String?, favicon: android.graphics.Bitmap?) {
-                        evaluateJavascript(injectionJs, null)
+                        if (!done) {
+                            try { view?.evaluateJavascript(injectionJs, null) } catch (_: Exception) {}
+                        }
                     }
                     override fun onPageFinished(view: android.webkit.WebView?, u: String?) {
-                        evaluateJavascript(injectionJs, null)
-                        // Trigger checkContent again after a short delay for Cloudflare redirects
-                        handler.postDelayed({ evaluateJavascript("if(window.checkContent) checkContent();", null) }, 5000)
+                        if (!done) {
+                            try { view?.evaluateJavascript(injectionJs, null) } catch (_: Exception) {}
+                            // Trigger checkContent again after a short delay for Cloudflare redirects
+                            handler.postDelayed({ 
+                                if (!done) {
+                                    try { view?.evaluateJavascript("if(window.checkContent) checkContent();", null) } catch (_: Exception) {}
+                                }
+                            }, 5000)
+                        }
                     }
                     override fun shouldOverrideUrlLoading(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?): Boolean {
                         return false // Let WebView handle redirects (important for Cloudflare)
@@ -718,7 +739,9 @@ object SubtitleExtractor {
                 
                 webChromeClient = object : android.webkit.WebChromeClient() {
                     override fun onProgressChanged(view: android.webkit.WebView?, newProgress: Int) {
-                        if (newProgress > 30) evaluateJavascript(injectionJs, null)
+                        if (!done && newProgress > 30) {
+                            try { view?.evaluateJavascript(injectionJs, null) } catch (_: Exception) {}
+                        }
                     }
                     override fun onCreateWindow(view: android.webkit.WebView?, isDialog: Boolean, isUserGesture: Boolean, resultMsg: android.os.Message?): Boolean {
                         val newWebView = WebView(context)
@@ -933,7 +956,7 @@ object SubtitleExtractor {
             val startTime = System.currentTimeMillis()
             suspendCancellableCoroutine { cont ->
                 var done = false; val handler = android.os.Handler(android.os.Looper.getMainLooper())
-                val timer = Runnable { if (!done) { done = true; cont.resume(Pair(null, url)); try { webView.destroy() } catch(e: Exception) {} } }
+                val timer = Runnable { if (!done) { done = true; cont.resume(Pair(null, url)); safeDestroyWebView(webView) } }
                 handler.postDelayed(timer, 30000)
                 
                 cont.invokeOnCancellation {
@@ -941,7 +964,7 @@ object SubtitleExtractor {
                         if (!done) {
                             done = true
                             handler.removeCallbacks(timer)
-                            try { webView.destroy() } catch(e: Exception) {}
+                            safeDestroyWebView(webView)
                         }
                     }
                 }
@@ -954,19 +977,22 @@ object SubtitleExtractor {
                     settings.userAgentString = NetworkConfig.SHARED_USER_AGENT
                     webViewClient = object : android.webkit.WebViewClient() {
                         override fun onPageFinished(view: WebView?, u: String?) {
-                            view?.evaluateJavascript("(function(){ return JSON.stringify({html:document.documentElement.outerHTML, ready:document.documentElement.outerHTML.length>2000}); })();") { res ->
-                                try {
-                                    val json = org.json.JSONObject(res.removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\"))
-                                    if (json.optBoolean("ready") || System.currentTimeMillis() - startTime > 25000) {
-                                        if (!done) { 
-                                            val cookies = CookieManager.getInstance().getCookie(url)
-                                            done = true; handler.removeCallbacks(timer)
-                                            NetworkConfig.injectCookies(url, cookies)
-                                            cont.resume(Pair(json.optString("html"), url)); try { webView.destroy() } catch(e: Exception) {}
-                                        }
-                                    } else handler.postDelayed({ onPageFinished(view, u) }, 2000)
-                                } catch(e: Exception) {}
-                            }
+                            if (done) return
+                            try {
+                                view?.evaluateJavascript("(function(){ return JSON.stringify({html:document.documentElement.outerHTML, ready:document.documentElement.outerHTML.length>2000}); })();") { res ->
+                                    try {
+                                        val json = org.json.JSONObject(res.removeSurrounding("\"").replace("\\\"", "\"").replace("\\\\", "\\"))
+                                        if (json.optBoolean("ready") || System.currentTimeMillis() - startTime > 25000) {
+                                            if (!done) { 
+                                                val cookies = CookieManager.getInstance().getCookie(url)
+                                                done = true; handler.removeCallbacks(timer)
+                                                NetworkConfig.injectCookies(url, cookies)
+                                                cont.resume(Pair(json.optString("html"), url)); safeDestroyWebView(webView)
+                                            }
+                                        } else if (!done) handler.postDelayed({ if (!done) onPageFinished(view, u) }, 2000)
+                                    } catch(e: Exception) {}
+                                }
+                            } catch (_: Exception) {}
                         }
                     }
                     loadUrl(url, if (referer != null) mutableMapOf("Referer" to referer) else mutableMapOf())
