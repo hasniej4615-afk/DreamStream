@@ -473,6 +473,10 @@ object Nuker {
 
                     var runNuker = function() {
                         if (window.successNotified) return;
+                        if (window.AndroidPlayer && window.AndroidPlayer.isVideoReady && window.AndroidPlayer.isVideoReady()) {
+                            window.successNotified = true;
+                            return;
+                        }
                         window.nukerAttempts++; 
                         var elapsedMs = Date.now() - window.nukerStartTime;
 
@@ -536,12 +540,17 @@ object Nuker {
                         }
 
                         // v7.1 Gate Stuck & Dead Air Watchdog (8s for confirmed gates, 12s for dead air)
+                        if (window.AndroidPlayer && window.AndroidPlayer.isVideoReady && window.AndroidPlayer.isVideoReady()) {
+                            window.successNotified = true;
+                            return;
+                        }
                         var hasGate = isLandingPageGate();
                         var gateTimeoutReached = (hasGate && elapsedMs > 8000) || (elapsedMs > 12000);
                         if (gateTimeoutReached && !window.successNotified) {
                              var v = window.playerBridge ? window.playerBridge.findVideo() : null;
                              var hasRealVideo = window.videoFound && v && !v.isProxy;
-                             var isDeadAir = !hasRealVideo;
+                             var hasEmbedFrames = document.querySelectorAll('iframe[src*="player"], iframe[src*="embed"], iframe[src*="abyss"], iframe[src*="sobat"], iframe[src*="mogo"], iframe[src*="stream"]').length > 0;
+                             var isDeadAir = !hasRealVideo && !hasEmbedFrames;
                              var isStuckVideo = hasRealVideo && v.readyState === 0 && v.currentTime === 0 && !v.seeking;
                              
                              if (hasGate || isDeadAir || isStuckVideo) {
@@ -831,6 +840,10 @@ object Nuker {
                                     var isBlank = window.location.href === "about:blank" || !document.body || document.body.children.length === 0;
                                     var maxAttempts = isBlank ? 6 : 20;
                                     if (status === "Video NOT Found" && window.nukerAttempts >= maxAttempts && !window.gateNotified && !window.successNotified) {
+                                        if (window.AndroidPlayer && window.AndroidPlayer.isVideoReady && window.AndroidPlayer.isVideoReady()) {
+                                            window.successNotified = true;
+                                            return;
+                                        }
                                         log("PM Heartbeat Watchdog: Video NOT Found after " + window.nukerAttempts + " attempts (isBlank=" + isBlank + "). Triggering rotation.");
                                         window.gateNotified = true;
                                         if (window.AndroidPlayer.notifyGateStuck) {
@@ -1173,6 +1186,10 @@ object Nuker {
 
                         // Dead Air Watchdog: If no video is found or playing after 8 seconds, auto-rotate!
                         if (!window.videoFound && !window.successNotified && elapsedMs > 8000 && !window.gateNotified) {
+                            if (window.AndroidPlayer && window.AndroidPlayer.isVideoReady && window.AndroidPlayer.isVideoReady()) {
+                                window.successNotified = true;
+                                return;
+                            }
                             window.gateNotified = true;
                             log("Dead Air Watchdog (8s) fired: Video NOT found/playing. Triggering gate stuck auto-rotation.");
                             if (window.AndroidPlayer && window.AndroidPlayer.notifyGateStuck) {

@@ -1572,11 +1572,11 @@ fun VideoPlayerScreen(
             }
         },
         onGateStuck = { currentUrl, originalUrl ->
-            if (!isVideoReady || useWebView) {
+            if (!isVideoReady) {
                 Log.w("VideoPlayer", "Gate Stuck callback triggered for $currentUrl (original: $originalUrl)")
                 viewModel.notifyGateStuck(currentUrl, originalUrl, videoId)
             } else {
-                Log.d("VideoPlayer", "Ignored Gate Stuck callback because native player is already active")
+                Log.d("VideoPlayer", "Ignored Gate Stuck callback because video is already ready and playing (isVideoReady=true)")
             }
         },
         onMirrorDead = { url -> viewModel.notifyMirrorDead(url); viewModel.resolveNextServer(videoId, url, force = true) },
@@ -2713,11 +2713,20 @@ fun VideoPlayerWebView(
                     @android.webkit.JavascriptInterface
                     fun isWebViewActive(): Boolean = true
                     @android.webkit.JavascriptInterface
+                    fun isVideoReady(): Boolean = isVideoReady
+                    @android.webkit.JavascriptInterface
                     fun notifyVideoPlaying() {
                         onPlaybackSuccess(url)
+                        this@apply.post {
+                            safeEvaluateJavascript(this@apply, "try { window.successNotified = true; window.videoFound = true; } catch(e){}")
+                        }
                     }
                     @android.webkit.JavascriptInterface
                     fun notifyGateStuck(currentUrl: String) {
+                        if (isVideoReady) {
+                            Log.d("VideoPlayerNuker", "Ignored notifyGateStuck for $currentUrl because isVideoReady is true")
+                            return
+                        }
                         val activeUrl = this@apply.getTag(R.id.active_url) as? String ?: url
                         Log.e("VideoPlayerNuker", "Gate Stuck callback triggered for $currentUrl (original: $activeUrl)")
                         onGateStuck(currentUrl, activeUrl)

@@ -309,6 +309,8 @@ class VideoViewModel @Inject constructor(
 
     private val _isResolving = MutableStateFlow(false)
     val isResolving: StateFlow<Boolean> = _isResolving.asStateFlow()
+    var isPlaybackActive: Boolean = false
+        private set
 
     private val _resolutionProgress = MutableStateFlow<String?>(null)
     val resolutionProgress: StateFlow<String?> = _resolutionProgress.asStateFlow()
@@ -1401,6 +1403,10 @@ class VideoViewModel @Inject constructor(
     }
 
     fun notifyGateStuck(currentUrl: String, originalUrl: String? = null, targetVideoId: String? = null) {
+        if (isPlaybackActive) {
+            Log.w("VideoViewModel", "Ignored notifyGateStuck for $currentUrl because playback is currently active")
+            return
+        }
         isRotationLocked = false
 
         val effectiveVideoId = targetVideoId ?: activeVideoId ?: _videoMetadata.value?.id ?: ""
@@ -1459,6 +1465,7 @@ class VideoViewModel @Inject constructor(
     }
 
     fun notifyMirrorDead(url: String) {
+        isPlaybackActive = false
         isRotationLocked = false
         val stuckHost = try { android.net.Uri.parse(url).host?.lowercase() ?: java.net.URI(url).host?.lowercase() } catch(_: Throwable) { null }
         if (!com.duta.movie.util.VideoExtractor.isWhitelistedHost(stuckHost) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(url)) {
@@ -1563,9 +1570,13 @@ class VideoViewModel @Inject constructor(
 
     fun playMovie(videoId: String, serverUrl: String? = null, forceReset: Boolean = false, isRotation: Boolean = false, clearBlacklist: Boolean = forceReset) {
         Log.i("VideoViewModel", "playMovie called for $videoId | force: $forceReset | rotation: $isRotation")
+        isPlaybackActive = false
         activeVideoId = videoId
         cleanDeadMirrors()
         if (forceReset || isRotation) {
+            if (isRotation) {
+                _shouldSuppressResume.value = true
+            }
             if (forceReset) { 
                 rotationCount = 0
                 exhaustedServerUrls.clear()
@@ -1590,9 +1601,13 @@ class VideoViewModel @Inject constructor(
 
     fun playTVSeries(videoId: String, episodeUrl: String? = null, forceReset: Boolean = false, targetEpisode: Episode? = null, isRotation: Boolean = false, clearBlacklist: Boolean = forceReset) {
         Log.i("VideoViewModel", "playTVSeries called for $videoId | force: $forceReset | ep: ${targetEpisode?.name} | rotation: $isRotation")
+        isPlaybackActive = false
         activeVideoId = videoId
         cleanDeadMirrors()
         if (forceReset || isRotation) {
+            if (isRotation) {
+                _shouldSuppressResume.value = true
+            }
             if (forceReset) { 
                 rotationCount = 0
                 exhaustedServerUrls.clear()
@@ -3275,6 +3290,7 @@ class VideoViewModel @Inject constructor(
 
     fun notifyPlaybackSuccess(url: String) {
         Log.d("VideoViewModel", "Playback Success: $url")
+        isPlaybackActive = true
         _isResolving.value = false
         _error.value = null
         rotationCount = 0
