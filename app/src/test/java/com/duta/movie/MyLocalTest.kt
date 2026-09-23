@@ -234,5 +234,46 @@ class MyLocalTest {
         org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost(""))
         org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost(null))
     }
+
+    @Test
+    fun testDutaFilmIntegration() {
+        // 1. Whitelisting & Helpers
+        assertTrue(VideoExtractor.isWhitelistedHost("159.89.249.45"))
+        assertTrue(VideoExtractor.isWhitelistedHost("http://159.89.249.45/avatar-the-way-of-water-2022/"))
+        assertTrue(VideoExtractor.isDutaFilm(videoId = "df_avatar-2022"))
+        assertTrue(VideoExtractor.isDutaFilm(videoUrl = "http://159.89.249.45/avatar-the-way-of-water-2022/"))
+        assertEquals("df_avatar-the-way-of-water-2022", VideoExtractor.extractStableId("http://159.89.249.45/avatar-the-way-of-water-2022/"))
+        assertEquals("http://159.89.249.45/avatar-the-way-of-water-2022/", VideoExtractor.resolveVideoUrl("df_avatar-the-way-of-water-2022"))
+
+        kotlinx.coroutines.runBlocking {
+            // 2. Search
+            val searchResults = VideoExtractor.searchDutaFilm("avatar", 1, 10)
+            println("DutaFilm search results: ${searchResults.size}")
+            searchResults.forEach { println(" - DF item: ${it.id} | ${it.title} | ${it.videoUrl}") }
+            assertTrue("DutaFilm search should return results", searchResults.isNotEmpty())
+            assertTrue("DF item id should start with df_", searchResults.first().id.startsWith("df_"))
+
+            // 3. Video Details & Server parsing
+            val dfVideo = VideoExtractor.fetchVideoDetails("http://159.89.249.45/avatar-the-way-of-water-2022/")
+            println("DF details: title=${dfVideo?.title}, servers=${dfVideo?.servers?.size}")
+            dfVideo?.servers?.forEach { println(" - DF Server: ${it.name} | ${it.url}") }
+            assertTrue("DF details should not be null", dfVideo != null)
+            assertTrue("DF servers should contain VidHide mirror", dfVideo?.servers?.any { it.url.contains("vidhide") } == true)
+
+            // 4. Alternative sources cross-lookup
+            val mockPencuriVideo = com.duta.movie.model.Video(
+                id = "pm_avatar-the-way-of-water-2022",
+                title = "Avatar: The Way of Water",
+                thumbnailUrl = "",
+                videoUrl = "https://ww44.pencurimovie.baby/movie/avatar-the-way-of-water-2022/",
+                duration = "",
+                date = "2022"
+            )
+            val altServers = VideoExtractor.findAlternativeSources(mockPencuriVideo)
+            println("Alternative servers found for Avatar: ${altServers.size}")
+            altServers.forEach { println(" - Alt Server: ${it.name} | ${it.url}") }
+            assertTrue("Should discover alternative mirrors from DutaFilm", altServers.any { it.name.contains("DutaFilm") || it.url.contains("vidhide") })
+        }
+    }
 }
 

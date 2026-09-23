@@ -61,6 +61,7 @@ object VideoExtractor {
     }
 
     private var PENCURI_BASE_URL = "https://ww44.pencurimovie.baby"
+    const val DUTAFILM_BASE_URL = "http://159.89.249.45"
     private var onPencuriDomainLearned: ((String) -> Unit)? = null
 
     val PENCURI_FALLBACKS = listOf(
@@ -151,6 +152,7 @@ object VideoExtractor {
                     host.contains("ketik.live") || host.contains("klikzeus") || host.contains("vingaming") ||
                     host.contains("zeus88") || host.contains("klik.top") || host.contains("googletagmanager") ||
                     host.contains("archive.org") || host.contains("kepalabergetar") ||
+                    host.contains("159.89.249.45") || host.contains("dutafilm") ||
                     host.contains("youtube") || host.contains("youtu.be") || host.contains("bilibili") || host.contains("dailymotion") ||
                     host.contains("google") || host.contains("player") || 
                     host.contains("stream") || host.contains("mirror") || host.contains("cdn") ||
@@ -249,6 +251,7 @@ object VideoExtractor {
         
         if (host.contains("archive.org")) return url
         if (host.contains("kepalabergetar")) return url
+        if (host.contains("159.89.249.45") || host.contains("dutafilm")) return url
         
         // Auto-heal for PencuriMovie standalone catalog
         if (host.contains("pencurimovie") || host.contains("pencurifilm") || host.contains("pencurivideo")) {
@@ -300,6 +303,7 @@ object VideoExtractor {
         }
         return when {
             cleanId.startsWith("pm_") -> "${getPencuriBaseUrl()}/${cleanId.removePrefix("pm_").trim('/')}/"
+            cleanId.startsWith("df_") -> "$DUTAFILM_BASE_URL/${cleanId.removePrefix("df_").trim('/')}/"
             cleanId.startsWith("kb_") || cleanId.startsWith("ia_pramlee") ||
             cleanId.startsWith("yt_") || cleanId.startsWith("bili_") || cleanId.startsWith("dm_") -> ""
             else -> "${getBaseUrl()}/$cleanId/"
@@ -323,6 +327,17 @@ object VideoExtractor {
         if (videoId?.startsWith("kb_") == true) return true
         if (videoUrl?.contains("kepalabergetar", ignoreCase = true) == true) return true
         if (streamUrl?.contains("kepalabergetar", ignoreCase = true) == true) return true
+        return false
+    }
+
+    /**
+     * Identifies if a video or server belongs to DutaFilm (159.89.249.45) source.
+     */
+    fun isDutaFilm(videoId: String? = null, videoUrl: String? = null, streamUrl: String? = null): Boolean {
+        if (videoId?.startsWith("df_") == true) return true
+        if (videoUrl?.contains("159.89.249.45", ignoreCase = true) == true) return true
+        if (videoUrl?.contains("dutafilm", ignoreCase = true) == true) return true
+        if (streamUrl?.contains("159.89.249.45", ignoreCase = true) == true) return true
         return false
     }
 
@@ -468,7 +483,8 @@ object VideoExtractor {
                             }
                         } else if (finalHost.contains("kepalabergetar") || finalHost.contains("archive.org") || 
                                    finalHost.contains("youtube") || finalHost.contains("youtu.be") || 
-                                   finalHost.contains("bilibili") || finalHost.contains("dailymotion")) {
+                                   finalHost.contains("bilibili") || finalHost.contains("dailymotion") ||
+                                   finalHost.contains("159.89.249.45") || finalHost.contains("dutafilm")) {
                             // Dedicated external providers - never learn as DutaMovie BASE_URL
                         } else {
                             // OWL'S EYE: Active learning from the current response (never force-hijack from random fetches)
@@ -1379,6 +1395,7 @@ object VideoExtractor {
         if (activeBaseHost != null && (low == activeBaseHost || low.contains(activeBaseHost))) return true
         if (pencuriHost != null && (low == pencuriHost || low.contains(pencuriHost))) return true
         return low.contains("archive.org") || low.contains("pencurimovie") || low.contains("pencurifilm") ||
+            low.contains("159.89.249.45") || low.contains("dutafilm") ||
             low.contains("dutamovie") ||
             low.contains("algarvebuzz") || low.contains("actors-pictures") ||
             low.contains("playsobat") || low.contains("asiastream") || low.contains("asiatik") || low.contains("streamsobat") ||
@@ -1644,11 +1661,13 @@ object VideoExtractor {
 
         val isPm = isPencuriMovie(videoId = video.id, videoUrl = video.videoUrl)
         val isKb = isKepalaBergetar(videoId = video.id, videoUrl = video.videoUrl)
-        val partners = if (isPm) listOf(getBaseUrl() to "Duta")
-                       else if (isKb) listOf(getPencuriBaseUrl() to "Pencuri", getBaseUrl() to "Duta")
-                       else listOf(getPencuriBaseUrl() to "Pencuri")
+        val isDf = isDutaFilm(videoId = video.id, videoUrl = video.videoUrl)
+        val partners = if (isPm) listOf(DUTAFILM_BASE_URL to "DutaFilm")
+                       else if (isDf) listOf(getPencuriBaseUrl() to "Pencuri")
+                       else if (isKb) listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm")
+                       else listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm")
 
-        Log.i(TAG, "Finding alternative sources for '${video.title}' (isPm=$isPm, isKb=$isKb)...")
+        Log.i(TAG, "Finding alternative sources for '${video.title}' (isPm=$isPm, isDf=$isDf, isKb=$isKb)...")
 
         val distinctQueries = buildAlternativeSearchQueries(video.title)
         val altServers = mutableListOf<VideoServer>()
@@ -1779,11 +1798,13 @@ object VideoExtractor {
 
         val isPm = isPencuriMovie(videoId = video.id, videoUrl = video.videoUrl)
         val isKb = isKepalaBergetar(videoId = video.id, videoUrl = video.videoUrl)
-        val partners = if (isPm) listOf(getBaseUrl() to "Duta")
-                       else if (isKb) listOf(getPencuriBaseUrl() to "Pencuri", getBaseUrl() to "Duta")
-                       else listOf(getPencuriBaseUrl() to "Pencuri")
+        val isDf = isDutaFilm(videoId = video.id, videoUrl = video.videoUrl)
+        val partners = if (isPm) listOf(DUTAFILM_BASE_URL to "DutaFilm")
+                       else if (isDf) listOf(getPencuriBaseUrl() to "Pencuri")
+                       else if (isKb) listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm")
+                       else listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm")
 
-        Log.i(TAG, "Healing video '${video.title}' from alternative partners (isPm=$isPm, isKb=$isKb)...")
+        Log.i(TAG, "Healing video '${video.title}' from alternative partners (isPm=$isPm, isDf=$isDf, isKb=$isKb)...")
 
         val distinctQueries = buildAlternativeSearchQueries(video.title)
         var healedVideo: Video? = null
@@ -3440,6 +3461,50 @@ object VideoExtractor {
         }
     }
 
+    suspend fun searchDutaFilm(query: String, page: Int = 1, count: Int = 20): List<Video> = withContext(Dispatchers.IO) {
+        val encoded = encodeQuery(query)
+        val url = if (page > 1) "$DUTAFILM_BASE_URL/page/$page/?s=$encoded" else "$DUTAFILM_BASE_URL/?s=$encoded"
+        try {
+            val html = fetchHtml(url) ?: return@withContext emptyList()
+            val doc = Jsoup.parse(html, url)
+            val mainContent = doc.selectFirst("#archive-content, .items, .movies-list, #main-content, .post-listing, #gmr-main-load, .archive-container, main, #primary, #content") ?: doc
+            val items = mainContent.select("article.item, article.item-infinite, .item-infinite, .gmr-item, [id^='post-']")
+            if (items.isEmpty()) return@withContext emptyList()
+
+            items.asSequence().mapNotNull { el ->
+                val titleEl = el.selectFirst(".entry-title a, h2.entry-title a, h2 a, h3 a, .content-thumbnail a") ?: return@mapNotNull null
+                val rawTitle = titleEl.text().trim().ifEmpty {
+                    titleEl.attr("title").replace("Permalink ke:", "", ignoreCase = true).trim()
+                }
+                val title = cleanTitle(rawTitle)
+                val link = titleEl.attr("abs:href")
+                if (title.length < 2 || link.isEmpty() || !link.startsWith("http")) return@mapNotNull null
+
+                val rawImg = el.selectFirst("img")?.let { imgTag ->
+                    imgTag.attr("abs:data-src").ifEmpty { imgTag.attr("abs:src") }.ifEmpty { imgTag.attr("src") }
+                } ?: ""
+                val duration = el.select(".gmr-duration-item").text().trim()
+                val quality = el.select(".gmr-quality-item, .quality").text().trim()
+                val rating = el.select(".gmr-rating-item, .rating").text().trim()
+                val slug = link.trimEnd('/').substringAfterLast('/')
+
+                Video(
+                    id = "df_$slug",
+                    title = title,
+                    thumbnailUrl = rawImg,
+                    videoUrl = link,
+                    duration = duration,
+                    quality = quality.ifEmpty { "HD" },
+                    views = rating,
+                    isSeries = link.contains("/series/") || link.contains("/episode/") || title.contains("Season", ignoreCase = true)
+                )
+            }.distinctBy { it.id }.take(count).toList()
+        } catch (e: Exception) {
+            Log.w(TAG, "DutaFilm search error for '$query': ${e.message}")
+            emptyList()
+        }
+    }
+
     suspend fun searchVideos(query: String, page: Int, count: Int, categoryPath: String? = null): List<Video> = withContext(Dispatchers.IO) {
         if (categoryPath != null) {
             if (categoryPath.contains("country/malaysia", ignoreCase = true)) {
@@ -3503,9 +3568,10 @@ object VideoExtractor {
             return@withContext filterAndSortByRelevance(results, query).take(count)
         }
 
-        // GLOBAL SEARCH: Concurrently query all 5 platforms simultaneously:
-        // PencuriMovie, KepalaBergetar, P.Ramlee Archive, YouTube, Bilibili, and Dailymotion
+        // GLOBAL SEARCH: Concurrently query all 6 platforms simultaneously:
+        // PencuriMovie, DutaFilm (159.89.249.45), KepalaBergetar, P.Ramlee Archive, YouTube, Bilibili, and Dailymotion
         val pencuriDeferred = async { searchDomain(getPencuriBaseUrl(), query, page, count) }
+        val dutafilmDeferred = async { searchDutaFilm(query, page, count) }
         val kepalaDeferred = async { searchKepalaBergetar(query, page, count) }
         val pramleeDeferred = async {
             try {
@@ -3521,6 +3587,7 @@ object VideoExtractor {
         val dmDeferred = async { if (page == 1) searchDailymotionAsVideos(query) else emptyList() }
 
         var pencuriResults = pencuriDeferred.await()
+        val dutafilmResults = dutafilmDeferred.await()
         val kepalaResults = kepalaDeferred.await()
         val pramleeResults = pramleeDeferred.await()
         val ytResults = ytDeferred.await()
@@ -3539,9 +3606,9 @@ object VideoExtractor {
             }
         }
 
-        Log.i(TAG, "Simultaneous search completed: Pencuri=${pencuriResults.size}, Kepala=${kepalaResults.size}, PRamlee=${pramleeResults.size}, YT=${ytResults.size}, Bili=${biliResults.size}, DM=${dmResults.size}")
+        Log.i(TAG, "Simultaneous search completed: Pencuri=${pencuriResults.size}, DutaFilm=${dutafilmResults.size}, Kepala=${kepalaResults.size}, PRamlee=${pramleeResults.size}, YT=${ytResults.size}, Bili=${biliResults.size}, DM=${dmResults.size}")
 
-        val allMerged = (pencuriResults + kepalaResults + pramleeResults + ytResults + biliResults + dmResults)
+        val allMerged = (pencuriResults + dutafilmResults + kepalaResults + pramleeResults + ytResults + biliResults + dmResults)
             .distinctBy { it.id }
 
         val relevantResults = filterAndSortByRelevance(allMerged, query)
@@ -3550,7 +3617,11 @@ object VideoExtractor {
 
     fun extractStableId(url: String): String {
         val slug = url.substringBefore('?').trimEnd('/').substringAfterLast('/')
-        return if (url.contains("pencurimovie", ignoreCase = true)) "pm_$slug" else slug
+        return when {
+            url.contains("pencurimovie", ignoreCase = true) || url.contains("pencurifilm", ignoreCase = true) -> "pm_$slug"
+            url.contains("159.89.249.45") || url.contains("dutafilm", ignoreCase = true) -> "df_$slug"
+            else -> slug
+        }
     }
 
     fun cleanTitle(title: String): String {
@@ -3811,6 +3882,7 @@ object VideoExtractor {
 
         val provider = when {
             lowUrl.contains("voe") || lowUrl.contains("johnfullwonder") -> "VOE"
+            lowUrl.contains("vidhide") || lowUrl.contains("fujihide") -> "VidHide"
             lowUrl.contains("hglink") -> "HGLink"
             hgHosts.any { lowUrl.contains(it) } -> "Hgcloud-VIP"
             indoHosts.any { lowUrl.contains(it) } -> "IndoStream-VIP"
@@ -4173,7 +4245,7 @@ object VideoExtractor {
         }
 
         // 3. Iframe/Object Scan (Real mirrors often auto-load in an iframe below the video area)
-        val videoArea = doc.select(".gmr-pagi-player, .player-wrap, .video-player, #player, #player2, .movieplay, .embed-responsive, .muvipro-player-wrap")
+        val videoArea = doc.select(".gmr-pagi-player, .player-wrap, .video-player, #player, #player2, .movieplay, .embed-responsive, .muvipro-player-wrap, .gmr-embed-responsive")
         val iframesToScan = if (videoArea.isNotEmpty() && videoArea.select("iframe, embed").isNotEmpty()) videoArea.select("iframe, embed") else doc.select("iframe, embed")
 
         iframesToScan.forEach { iframe ->

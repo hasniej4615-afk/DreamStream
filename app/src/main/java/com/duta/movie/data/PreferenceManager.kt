@@ -81,6 +81,8 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
                 low.contains("godaddy") ||
                 low.contains("kepalabergetar") ||
                 low.contains("archive.org") ||
+                low.contains("159.89.249.45") ||
+                low.contains("dutafilm") ||
                 !low.startsWith("http")
         if (isPoisoned) "https://ww44.pencurimovie.baby" else {
             try {
@@ -94,6 +96,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         val low = url.lowercase()
         if (low.contains("katherineschoolphone") || low.contains("voe") || low.contains("kepalabergetar") ||
             low.contains("archive.org") ||
+            low.contains("159.89.249.45") || low.contains("dutafilm") ||
             low.contains("dutamovie.com") || low.contains("dutamovie21.xyz") ||
             low.contains("algarvebuzz.com") || low.contains("digitalpapercuts.com") ||
             low.contains("204.3.234.75") || low.contains("rebahin") || low.contains("rebahinxxi") ||

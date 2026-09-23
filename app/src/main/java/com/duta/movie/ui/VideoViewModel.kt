@@ -1294,6 +1294,32 @@ class VideoViewModel @Inject constructor(
                 if (detailed != null) { 
                     _videoMetadata.value = applyMetadata(detailed)
                     updateMetadataCache(listOf(detailed), triggerBackground = false) 
+                    
+                    // Asynchronously discover alternative mirrors from partner source (e.g. DutaFilm <-> PencuriMovie)
+                    viewModelScope.launch(Dispatchers.IO) {
+                        try {
+                            val altServers = com.duta.movie.util.VideoExtractor.findAlternativeSources(detailed)
+                            if (altServers.isNotEmpty()) {
+                                val current = _videoMetadata.value
+                                if (current != null && (current.id == detailed.id || current.title.equals(detailed.title, ignoreCase = true))) {
+                                    val existingServerUrls = current.servers.map { it.url.trimEnd('/') }.toSet()
+                                    val newUnique = altServers.filter { !existingServerUrls.contains(it.url.trimEnd('/')) }
+                                    if (newUnique.isNotEmpty()) {
+                                        val combined = current.servers + newUnique
+                                        val updated = current.copy(servers = combined)
+                                        withContext(Dispatchers.Main) {
+                                            _videoMetadata.value = applyMetadata(updated)
+                                        }
+                                        videoRepository.updateVideoInDb(updated)
+                                        updateMetadataCache(listOf(updated), triggerBackground = false)
+                                        Log.i("VideoViewModel", "Appended ${newUnique.size} alternative mirror(s) to server list for '${current.title}'")
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.w("VideoViewModel", "Background alternative source discovery error: ${e.message}")
+                        }
+                    }
                 } else if (video != null) {
                     _videoMetadata.value = applyMetadata(video)
                 }
@@ -1978,11 +2004,13 @@ class VideoViewModel @Inject constructor(
                             }
                             return
                         } else {
-                            deadMirrors.add(candidate)
-                            hardDeadMirrors.add(candidate)
-                            val cHost = try { android.net.Uri.parse(candidate).host?.lowercase() ?: java.net.URI(candidate).host?.lowercase() } catch(_: Throwable) { null }
-                            if (cHost != null && !com.duta.movie.util.VideoExtractor.isDirectVideoUrl(candidate) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(cHost)) {
-                                blacklistHost(cHost, hard = false)
+                            if (!com.duta.movie.util.VideoExtractor.isJsOnlyHost(candidate)) {
+                                deadMirrors.add(candidate)
+                                hardDeadMirrors.add(candidate)
+                                val cHost = try { android.net.Uri.parse(candidate).host?.lowercase() ?: java.net.URI(candidate).host?.lowercase() } catch(_: Throwable) { null }
+                                if (cHost != null && !com.duta.movie.util.VideoExtractor.isDirectVideoUrl(candidate) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(cHost)) {
+                                    blacklistHost(cHost, hard = false)
+                                }
                             }
                         }
                     }
