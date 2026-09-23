@@ -71,38 +71,41 @@ class MyLocalTest {
     }
 
     @Test
-    fun testDutaMovieDomains() {
-        kotlinx.coroutines.runBlocking {
-            VideoExtractor.setBaseUrl("https://204.3.234.75")
+    fun testPencuriMovieLiveEndpointsAndBlockedDomains() {
+        val initialBase = VideoExtractor.getBaseUrl()
+        VideoExtractor.updateBaseUrl("https://204.3.234.75", force = true)
+        assertEquals("204.3.234.75 must be blocked", initialBase, VideoExtractor.getBaseUrl())
 
+        VideoExtractor.updateBaseUrl("https://tv5.rebahinxxi.auction", force = true)
+        assertEquals("rebahinxxi must be blocked", initialBase, VideoExtractor.getBaseUrl())
+
+        kotlinx.coroutines.runBlocking {
             println("1. Fetching Section '/'...")
             val homeVideos = VideoExtractor.fetchVideosBySection("/", 1, 10)
             println("Home count: ${homeVideos.size}")
+            assertTrue("Home count should not be empty", homeVideos.isNotEmpty())
             homeVideos.take(3).forEach { println(" - Home item: ${it.title} | ${it.videoUrl}") }
 
-            println("2. Fetching Section '/movie/'...")
-            val movies = VideoExtractor.fetchVideosBySection("/movie/", 1, 10)
+            println("2. Fetching Section '/movies/'...")
+            val movies = VideoExtractor.fetchVideosBySection("/movies/", 1, 10)
             println("Movies count: ${movies.size}")
+            assertTrue("Movies count should not be empty", movies.isNotEmpty())
             movies.take(3).forEach { println(" - Movie item: ${it.title} | ${it.videoUrl}") }
 
-            println("3. Fetching Section '/serial-tv-terbaru/'...")
-            val series = VideoExtractor.fetchVideosBySection("/serial-tv-terbaru/", 1, 10)
+            println("3. Fetching Section '/series/'...")
+            val series = VideoExtractor.fetchVideosBySection("/series/", 1, 10)
             println("Series count: ${series.size}")
+            assertTrue("Series count should not be empty", series.isNotEmpty())
             series.take(3).forEach { println(" - Series item: ${it.title} | ${it.videoUrl}") }
 
-            println("4. Fetching Movie Details for Love Me 2024...")
-            val loveMeUrl = "https://tv5.rebahinxxi.auction/love-me-2024/"
-            val loveMeHtml = VideoExtractor.fetchHtml(loveMeUrl)
-            println("Love Me HTML length: ${loveMeHtml?.length}")
-            val loveMeDoc = loveMeHtml?.let { org.jsoup.Jsoup.parse(it, loveMeUrl) }
-            val iframes = loveMeDoc?.select("iframe")?.map { it.attr("src") }
-            val tabButtons = loveMeDoc?.select(".muvipro-player-tabs li a, .player_nav li a, ul#playeroptionsul li")?.map { "${it.text()} -> ${it.attr("href")} | data-post=${it.attr("data-post")} | data-nume=${it.attr("data-nume")}" }
-            println("Love Me Iframes: $iframes")
-            println("Love Me Tabs: $tabButtons")
-
-            val loveMeDetail = VideoExtractor.fetchVideoDetails(loveMeUrl)
-            println("Love Me Detail: title=${loveMeDetail?.title}, servers=${loveMeDetail?.servers?.size}")
-            loveMeDetail?.servers?.forEach { println("   Server: ${it.name} -> ${it.url}") }
+            if (movies.isNotEmpty()) {
+                val sampleUrl = movies.first().videoUrl
+                println("4. Fetching Movie Details for Sample ($sampleUrl)...")
+                val sampleDetail = VideoExtractor.fetchVideoDetails(sampleUrl)
+                println("Sample Detail: title=${sampleDetail?.title}, servers=${sampleDetail?.servers?.size}")
+                sampleDetail?.servers?.forEach { println("   Server: ${it.name} -> ${it.url}") }
+                assertTrue("Sample title should not be empty", !sampleDetail?.title.isNullOrEmpty())
+            }
 
             val rawTitle = "Love Me (2024) REBAHIN BIOSKOPKEREN Sub Indo - tv5.rebahinxxi.auction"
             val cleaned = VideoExtractor.cleanTitle(rawTitle)
@@ -119,12 +122,6 @@ class MyLocalTest {
             val serverName = VideoExtractor.identifyMirrorName("Server 1", "https://watch.asiastream.cc/watch?v=W90HJUZR")
             println("Identified AsiaStream server name: $serverName")
             assertEquals("AsiaStream", serverName)
-
-            // Verify loveMeDetail parsed the AsiaStream server
-            assertTrue("Love Me details should contain at least 1 server", (loveMeDetail?.servers?.size ?: 0) >= 1)
-            val hasAsiaStream = loveMeDetail?.servers?.any { it.url.contains("asiastream") } == true
-            println("Love Me has AsiaStream server: $hasAsiaStream")
-            assertTrue("Love Me must have AsiaStream server extracted", hasAsiaStream)
 
             // Test PencuriMovie search for "Love Me"
             val pencuriSearchHtml = VideoExtractor.fetchHtml("https://ww44.pencurimovie.baby/?s=Love+Me")
@@ -180,7 +177,7 @@ class MyLocalTest {
         val genreAction = VideoViewModel.getIntraGroupRank(VideoViewModel.CategoryGroup.GENRE, "/action/", "Action")
         val genreSciFi = VideoViewModel.getIntraGroupRank(VideoViewModel.CategoryGroup.GENRE, "/science-fiction/", "Science Fiction")
         assertTrue(genreAction < genreSciFi)
-        assertEquals(6, genreSciFi)
+        assertEquals(8, genreSciFi)
     }
 
     @Test
@@ -193,20 +190,32 @@ class MyLocalTest {
     }
 
     @Test
+    fun testPencuriNormalizationMappings() {
+        assertEquals("/movies/", VideoExtractor.normalizePath("/movie/"))
+        assertEquals("/movies/", VideoExtractor.normalizePath("/category/movie/"))
+        assertEquals("/series/", VideoExtractor.normalizePath("/serial-tv/"))
+        assertEquals("/series/", VideoExtractor.normalizePath("/serial-tv-terbaru/"))
+        assertEquals("/top-imdb/", VideoExtractor.normalizePath("/box-office/"))
+        assertEquals("/release-year/2026/", VideoExtractor.normalizePath("/year/2026/"))
+    }
+
+    @Test
     fun testWhitelistedHostProtection() {
         // Legitimate video hosters must be whitelisted
         assertTrue(VideoExtractor.isWhitelistedHost("playsobat.xyz"))
         assertTrue(VideoExtractor.isWhitelistedHost("https://playsobat.xyz/e/fem4zkr6s0"))
         assertTrue(VideoExtractor.isWhitelistedHost("watch.asiastream.cc"))
         assertTrue(VideoExtractor.isWhitelistedHost("asiatik01.site"))
-        assertTrue(VideoExtractor.isWhitelistedHost("tv5.rebahinxxi.auction"))
-        assertTrue(VideoExtractor.isWhitelistedHost("204.3.234.75"))
+        assertTrue(VideoExtractor.isWhitelistedHost("ww44.pencurimovie.baby"))
+        assertTrue(VideoExtractor.isWhitelistedHost("pencurimovie.baby"))
         assertTrue(VideoExtractor.isWhitelistedHost("streamtape.com"))
         assertTrue(VideoExtractor.isWhitelistedHost("voe.sx"))
         assertTrue(VideoExtractor.isWhitelistedHost("hgcloud.to"))
         assertTrue(VideoExtractor.isWhitelistedHost("dailymotion.com"))
 
         // Known dead/gate hosts or unknown spam domains must NOT be whitelisted
+        org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost("tv5.rebahinxxi.auction"))
+        org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost("204.3.234.75"))
         org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost("listeamed.net"))
         org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost("ww1.listeamed.net"))
         org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost("unknown-spam-ads.com"))

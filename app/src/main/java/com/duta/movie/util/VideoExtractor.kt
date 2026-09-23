@@ -33,7 +33,7 @@ import org.json.JSONObject
 object VideoExtractor {
     private const val TAG = "!!!VideoExtractor!!!"
     private var USER_AGENT = NetworkConfig.SHARED_USER_AGENT
-    private var BASE_URL = "https://204.3.234.75"
+    private var BASE_URL = "https://ww44.pencurimovie.baby"
 
     fun setUserAgent(ua: String) {
         USER_AGENT = ua
@@ -141,6 +141,7 @@ object VideoExtractor {
                 val isBlockedHost = host.contains("duta.media") || host.contains("dutamovie21.now") ||
                     host.contains("dutamovie.com") || host.contains("dutamovie21.xyz") ||
                     host.contains("algarvebuzz.com") || host.contains("digitalpapercuts.com") ||
+                    host.contains("204.3.234.75") || host.contains("rebahin") || host.contains("rebahinxxi") ||
                     host.contains("ww38") || Regex("""^ww\d+\.""").containsMatchIn(host) ||
                     host.contains("sedo") || host.contains("parking") || host.contains("abovedomains") ||
                     host.contains("dan.com") || host.contains("godaddy") ||
@@ -153,7 +154,6 @@ object VideoExtractor {
                     host.contains("youtube") || host.contains("youtu.be") || host.contains("bilibili") || host.contains("dailymotion") ||
                     host.contains("google") || host.contains("player") || 
                     host.contains("stream") || host.contains("mirror") || host.contains("cdn") ||
-                    host.contains("pencurimovie") || host.contains("pencurivideo") || host.contains("pencurifilm") ||
                     // Video hosts, stream endpoints, and embed players
                     host.contains("vibuxer") || host.contains("hanerix") || host.contains("hgcloud") ||
                     host.contains("hglink") || host.contains("hgcdn") || host.contains("voe") ||
@@ -192,7 +192,15 @@ object VideoExtractor {
 
     fun normalizePath(path: String): String {
         if (path.isEmpty() || path == "/") return "/"
-        if (path.contains("country/viet-nam", ignoreCase = true) || path.contains("country/vietnam", ignoreCase = true)) return "/country/viet-nam/"
+        val pClean = path.trim().trim('/')
+        if (pClean.equals("movie", ignoreCase = true) || pClean.equals("movies", ignoreCase = true) || pClean.equals("category/movie", ignoreCase = true)) return "/movies/"
+        if (pClean.equals("serial-tv", ignoreCase = true) || pClean.equals("serial-tv-terbaru", ignoreCase = true) || 
+            pClean.equals("tv", ignoreCase = true) || pClean.equals("series", ignoreCase = true) || 
+            pClean.equals("category/tv", ignoreCase = true) || pClean.equals("category/series", ignoreCase = true)) return "/series/"
+        if (pClean.equals("box-office", ignoreCase = true) || pClean.equals("popular", ignoreCase = true)) return "/top-imdb/"
+        val yearMatch = Regex("""^(?:release-year|year)/(\d{4})$""", RegexOption.IGNORE_CASE).find(pClean)
+        if (yearMatch != null) return "/release-year/${yearMatch.groupValues[1]}/"
+        if (path.contains("country/viet-nam", ignoreCase = true) || path.contains("country/vietnam", ignoreCase = true)) return "/country/vietnam/"
         if (path.contains("country/malaysia", ignoreCase = true)) return "/country/malaysia/"
         if (path.contains("p-ramlee", ignoreCase = true) || path.contains("FilemP.ramlee", ignoreCase = true)) return "/category/p-ramlee/"
         if (path.matches(Regex("""^(.*/)?sci-fi/?$""", RegexOption.IGNORE_CASE))) return "/science-fiction/"
@@ -240,12 +248,13 @@ object VideoExtractor {
         val isBasePoisoned = lowBase.contains("katherineschoolphone") || lowBase.contains("voe") || 
             lowBase.contains("player") || lowBase.contains("dutamovie.com") || lowBase.contains("dutamovie21.xyz") ||
             lowBase.contains("algarvebuzz.com") || lowBase.contains("digitalpapercuts.com") ||
+            lowBase.contains("204.3.234.75") || lowBase.contains("rebahin") || lowBase.contains("rebahinxxi") ||
             lowBase.contains("ww38") || Regex("""^https?://ww\d+\.""").containsMatchIn(lowBase) ||
             lowBase.contains("parking") || lowBase.contains("sedo") || lowBase.contains("abovedomains") ||
             lowBase.contains("dan.com") || lowBase.contains("godaddy") ||
             !lowBase.startsWith("http")
         if (isBasePoisoned) {
-            currentBase = "https://204.3.234.75"
+            currentBase = getPencuriBaseUrl()
             setBaseUrl(currentBase)
         }
         val currentBaseHost = try { android.net.Uri.parse(currentBase).host?.lowercase() } catch(_: Throwable) { null }
@@ -317,58 +326,19 @@ object VideoExtractor {
                low.contains("dutamovie") || low.contains("indostream") ||
                low.contains("amt") || low.contains("zeus") || low.contains("eddieoneverything") ||
                low.contains("dooplay") || low.contains("dbmovies") ||
-               low.contains("muvipro") || low.contains("204.3.234.75") || low.contains("rebahin") ||
+               low.contains("muvipro") ||
                low.contains("pencurimovie") || low.contains("pencurifilm") ||
                low.contains("katakatamutiara") || low.contains("ohionewsnow")
     }
 
     suspend fun probeForNewDomain(): String? = withContext(Dispatchers.IO) {
-        Log.i(TAG, "SCOUTING: Starting adaptive domain discovery...")
+        Log.i(TAG, "SCOUTING: Starting adaptive domain discovery for PencuriMovie...")
         
-        // PRIMARY SCOUT: Dedicated gateway
-        val gateways = listOf("https://duta.media/", "https://dutamovie21.now/")
-        val deferredGateways = gateways.map { gateway ->
-            async {
-                try {
-                    val request = Request.Builder().url(gateway).header("User-Agent", USER_AGENT).build()
-                    NetworkConfig.okHttpClient.newCall(request).execute().use { response ->
-                        val finalUrl = response.request.url.toString()
-                        val html = response.body?.string() ?: ""
-                        
-                        // TRUST THE GATEWAY: If our dedicated gateway redirects us somewhere, accept it.
-                        if (response.isSuccessful && !finalUrl.contains("duta.media") && !finalUrl.contains("dutamovie21.now")) {
-                            Log.i(TAG, "Gateway redirected directly to new domain: $finalUrl")
-                            return@async "${response.request.url.scheme}://${response.request.url.host}"
-                        }
-                        
-                        val doc = Jsoup.parse(html, gateway)
-                        val links = doc.select("a[href], iframe[src]")
-                        for (link in links) {
-                            val href = link.attr("abs:href").ifEmpty { link.attr("abs:src") }
-                            if (href.isNotEmpty()) {
-                                val root = try { 
-                                    val u = android.net.Uri.parse(href)
-                                    "${u.scheme}://${u.host}"
-                                } catch(_: Exception) { null }
-                                
-                                if (root != null && !root.contains("facebook") && !root.contains("twitter") && !root.contains("google") && !root.contains("duta.media") && !root.contains("dutamovie21.now")) {
-                                    if (pingAndVerify(root)) {
-                                        return@async root
-                                    }
-                                }
-                            }
-                        }
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "SCOUTING: Gateway probe failed for $gateway: ${e.message}")
-                }
-                null
-            }
-        }
-        val primaryResult = deferredGateways.firstNotNullOfOrNull { it.await() }
-        if (primaryResult != null) {
-            updateBaseUrl(primaryResult, force = true)
-            return@withContext primaryResult
+        // PRIMARY SCOUT: PencuriMovie Domain Discovery
+        val pmLive = probePencuriDomain()
+        if (pmLive != null) {
+            updateBaseUrl(pmLive, force = true)
+            return@withContext pmLive
         }
 
         // TIER 2 SCOUT: Remote Over-The-Air (OTA) Config from GitHub Gist
@@ -392,9 +362,7 @@ object VideoExtractor {
         }
 
         // TIER 3 SCOUT: Known fallback candidate patterns
-        val candidates = listOf(
-            "https://204.3.234.75",
-            "https://tv5.rebahinxxi.auction",
+        val candidates = PENCURI_FALLBACKS + listOf(
             "https://ohionewsnow.com",
             "https://billofrightsforum.org",
             "https://eddieoneverything.com", 
@@ -1388,7 +1356,7 @@ object VideoExtractor {
         if (activeBaseHost != null && (low == activeBaseHost || low.contains(activeBaseHost))) return true
         if (pencuriHost != null && (low == pencuriHost || low.contains(pencuriHost))) return true
         return low.contains("archive.org") || low.contains("pencurimovie") || low.contains("pencurifilm") ||
-            low.contains("dutamovie") || low.contains("204.3.234.75") || low.contains("rebahin") || low.contains("rebahinxxi") ||
+            low.contains("dutamovie") ||
             low.contains("algarvebuzz") || low.contains("actors-pictures") ||
             low.contains("playsobat") || low.contains("asiastream") || low.contains("asiatik") || low.contains("streamsobat") ||
             low.contains("youtube") || low.contains("youtu.be") || low.contains("googlevideo") ||
@@ -1463,23 +1431,13 @@ object VideoExtractor {
             var html = fetchHtml(url)
 
             if (html.isNullOrEmpty() && currentPage == 1) {
-                if (path.contains("pencurimovie") || path.contains("country/malaysia")) {
-                    Log.w(TAG, "PencuriMovie category failed on $url. Probing fallback domains...")
-                    val liveDomain = probePencuriDomain()
-                    if (liveDomain != null) {
-                        url = "$liveDomain/country/malaysia/"
-                        Log.i(TAG, "Retrying category with live domain: $url")
-                        html = fetchHtml(url)
-                    }
-                } else {
-                    Log.w(TAG, "Category $path failed on $url. Probing for live Duta domain...")
-                    val liveDomain = probeForNewDomain()
-                    if (liveDomain != null && !url.startsWith(liveDomain)) {
-                        val normalizedPath = normalizePath(path).removeSuffix("/")
-                        url = if (currentPage > 1) "$liveDomain$normalizedPath/page/$currentPage/" else "$liveDomain$normalizedPath/"
-                        Log.i(TAG, "Retrying category with live domain: $url")
-                        html = fetchHtml(url)
-                    }
+                Log.w(TAG, "Category $path failed on $url. Probing for live PencuriMovie domain...")
+                val liveDomain = probePencuriDomain()
+                if (liveDomain != null && !url.startsWith(liveDomain)) {
+                    val normalizedPath = normalizePath(path).removeSuffix("/")
+                    url = if (currentPage > 1) "$liveDomain$normalizedPath/page/$currentPage/" else "$liveDomain$normalizedPath/"
+                    Log.i(TAG, "Retrying category with live domain: $url")
+                    html = fetchHtml(url)
                 }
             }
 
@@ -1509,34 +1467,6 @@ object VideoExtractor {
             currentPage++
         }
         Log.i(TAG, "Fetch complete for $path. Final count: ${results.size}")
-        if (results.isEmpty() && !path.contains("malaysia", ignoreCase = true) && !path.contains("viet", ignoreCase = true) && !path.contains("p-ramlee", ignoreCase = true)) {
-            val pencuriBase = getPencuriBaseUrl()
-            val pencuriPath = when {
-                path == "/" || path.isEmpty() -> if (page > 1) "/page/$page/" else "/"
-                path.contains("serial-tv", ignoreCase = true) || path.contains("/tv/", ignoreCase = true) || path.contains("/series/", ignoreCase = true) ->
-                    if (page > 1) "/series/page/$page/" else "/series/"
-                path.contains("movie", ignoreCase = true) || path.contains("box-office", ignoreCase = true) ->
-                    if (page > 1) "/category/movie/page/$page/" else "/category/movie/"
-                path.contains("genre/", ignoreCase = true) -> {
-                    val g = path.substringAfter("genre/").trim('/')
-                    if (page > 1) "/genre/$g/page/$page/" else "/genre/$g/"
-                }
-                path.trim('/').matches(Regex("^[a-zA-Z0-9-]+$")) -> {
-                    val g = path.trim('/')
-                    if (page > 1) "/genre/$g/page/$page/" else "/genre/$g/"
-                }
-                else -> if (page > 1) "/category/movie/page/$page/" else "/category/movie/"
-            }
-            val pencuriUrl = "$pencuriBase$pencuriPath"
-            Log.w(TAG, "DutaMovie section empty for $path. Auto-fallback to PencuriMovie: $pencuriUrl")
-            val phtml = fetchHtml(pencuriUrl)
-            if (!phtml.isNullOrEmpty()) {
-                val isSeriesCategory = path.contains("serial-tv", ignoreCase = true) || path.contains("/tv/", ignoreCase = true) || path.contains("/series/", ignoreCase = true)
-                val pScraped = scrapeVideosFromHtml(phtml, pencuriUrl)
-                val finalScraped = if (isSeriesCategory) pScraped.map { it.copy(isSeries = true) } else pScraped
-                results.addAll(finalScraped)
-            }
-        }
         results.take(count)
     }
 
@@ -3549,9 +3479,8 @@ object VideoExtractor {
             return@withContext filterAndSortByRelevance(results, query).take(count)
         }
 
-        // GLOBAL SEARCH: Concurrently query all 6 platforms simultaneously:
-        // DutaMovie, PencuriMovie, KepalaBergetar, P.Ramlee Archive, YouTube, Bilibili, and Dailymotion
-        val dutaDeferred = async { searchDomain(BASE_URL, query, page, count) }
+        // GLOBAL SEARCH: Concurrently query all 5 platforms simultaneously:
+        // PencuriMovie, KepalaBergetar, P.Ramlee Archive, YouTube, Bilibili, and Dailymotion
         val pencuriDeferred = async { searchDomain(getPencuriBaseUrl(), query, page, count) }
         val kepalaDeferred = async { searchKepalaBergetar(query, page, count) }
         val pramleeDeferred = async {
@@ -3567,7 +3496,6 @@ object VideoExtractor {
         val biliDeferred = async { if (page == 1) searchBilibiliAsVideos(query) else emptyList() }
         val dmDeferred = async { if (page == 1) searchDailymotionAsVideos(query) else emptyList() }
 
-        var dutaResults = dutaDeferred.await()
         var pencuriResults = pencuriDeferred.await()
         val kepalaResults = kepalaDeferred.await()
         val pramleeResults = pramleeDeferred.await()
@@ -3575,23 +3503,21 @@ object VideoExtractor {
         val biliResults = biliDeferred.await()
         val dmResults = dmDeferred.await()
 
-        // Smart query fallback: If full multi-word query returned 0 on primary catalogs,
+        // Smart query fallback: If full multi-word query returned 0 on primary catalog,
         // retry searching with core tokens (strip stop words / punctuation)
         val parsed = parseSearchQuery(query)
-        if (dutaResults.isEmpty() && pencuriResults.isEmpty() && parsed.coreTokens.size in 1..4) {
+        if (pencuriResults.isEmpty() && parsed.coreTokens.size in 1..4) {
             val coreQuery = parsed.coreTokens.joinToString(" ")
             if (!coreQuery.equals(query.trim(), ignoreCase = true)) {
                 Log.d(TAG, "Smart fallback search retry on core tokens: '$coreQuery'")
-                val retryDuta = async { searchDomain(BASE_URL, coreQuery, page, count) }
                 val retryPencuri = async { searchDomain(getPencuriBaseUrl(), coreQuery, page, count) }
-                dutaResults = retryDuta.await()
                 pencuriResults = retryPencuri.await()
             }
         }
 
-        Log.i(TAG, "Simultaneous search completed: Duta=${dutaResults.size}, Pencuri=${pencuriResults.size}, Kepala=${kepalaResults.size}, PRamlee=${pramleeResults.size}, YT=${ytResults.size}, Bili=${biliResults.size}, DM=${dmResults.size}")
+        Log.i(TAG, "Simultaneous search completed: Pencuri=${pencuriResults.size}, Kepala=${kepalaResults.size}, PRamlee=${pramleeResults.size}, YT=${ytResults.size}, Bili=${biliResults.size}, DM=${dmResults.size}")
 
-        val allMerged = (dutaResults + pencuriResults + kepalaResults + pramleeResults + ytResults + biliResults + dmResults)
+        val allMerged = (pencuriResults + kepalaResults + pramleeResults + ytResults + biliResults + dmResults)
             .distinctBy { it.id }
 
         val relevantResults = filterAndSortByRelevance(allMerged, query)

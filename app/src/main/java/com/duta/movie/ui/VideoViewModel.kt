@@ -385,9 +385,10 @@ class VideoViewModel @Inject constructor(
     companion object {
         val CURATED_CORE_ORDER = listOf(
             "/",
-            "/movie/",
-            "/serial-tv-terbaru/",
-            "/box-office/"
+            "/movies/",
+            "/series/",
+            "/top-imdb/",
+            "/most-viewed/"
         ).map { VideoExtractor.normalizePath(it) }
 
         val CURATED_REGIONAL_ORDER = listOf(
@@ -415,6 +416,8 @@ class VideoViewModel @Inject constructor(
         ).map { VideoExtractor.normalizePath(it) }
 
         val CURATED_GENRE_ORDER = listOf(
+            "/genre/subbed/malay-subbed/",
+            "/genre/dubbed/malay/",
             "/action/",
             "/animasi/",
             "/comedy/",
@@ -443,8 +446,8 @@ class VideoViewModel @Inject constructor(
             val lowName = name.trim().lowercase()
 
             return when {
-                normPath == "/" || lowPath.contains("/movie") || lowPath.contains("/serial-tv") || lowPath.contains("/tv") || lowPath.contains("box-office") ||
-                lowName in listOf("newly updated", "movies", "movie", "tv series", "serial tv", "box-office") -> CategoryGroup.CORE
+                normPath == "/" || lowPath.contains("/movie") || lowPath.contains("/series") || lowPath.contains("/serial-tv") || lowPath.contains("/tv") || lowPath.contains("box-office") || lowPath.contains("top-imdb") || lowPath.contains("most-viewed") ||
+                lowName in listOf("newly updated", "movies", "movie", "tv series", "serial tv", "series", "box-office", "top imdb", "most viewed") -> CategoryGroup.CORE
 
                 lowPath.startsWith("/country/") || lowPath.contains("p-ramlee") ||
                 lowName in listOf("malaysia", "p.ramlee", "viet nam", "vietnam", "indonesia", "korea", "thailand", "japan", "china", "hong kong", "india", "usa", "united states", "united kingdom", "uk", "australia", "canada", "france", "germany", "italy", "philippines", "spain", "taiwan", "russia", "netherlands") -> CategoryGroup.REGIONAL
@@ -455,7 +458,7 @@ class VideoViewModel @Inject constructor(
                 lowPath.startsWith("/genre/") || lowPath.contains("/animasi") ||
                 lowName in listOf("action", "adventure", "animasi", "anime", "animation", "biography", "comedy", "crime", "documentary", "drama", "family", "fantasy", "history", "horror", "music", "mystery", "romance", "sci-fi", "science fiction", "sport", "thriller", "war", "western") -> CategoryGroup.GENRE
 
-                lowPath.startsWith("/release/") || lowPath.startsWith("/year/") || lowName.matches(Regex("""^(19|20)\d{2}$""")) -> CategoryGroup.YEAR
+                lowPath.startsWith("/release-year/") || lowPath.startsWith("/release/") || lowPath.startsWith("/year/") || lowName.matches(Regex("""^(19|20)\d{2}$""")) -> CategoryGroup.YEAR
 
                 else -> CategoryGroup.OTHER
             }
@@ -470,10 +473,11 @@ class VideoViewModel @Inject constructor(
                     val idx = CURATED_CORE_ORDER.indexOf(normPath)
                     if (idx != -1) idx else {
                         when {
-                            lowName.contains("newly") -> 0
-                            lowName.contains("movie") -> 1
-                            lowName.contains("series") || lowName.contains("serial") -> 2
-                            lowName.contains("box-office") -> 3
+                            lowName.contains("newly") || normPath == "/" -> 0
+                            lowName.contains("movie") || normPath.contains("/movie") -> 1
+                            lowName.contains("series") || lowName.contains("serial") || normPath.contains("/series") -> 2
+                            lowName.contains("imdb") || normPath.contains("imdb") -> 3
+                            lowName.contains("viewed") || normPath.contains("viewed") -> 4
                             else -> 100
                         }
                     }
@@ -552,8 +556,12 @@ class VideoViewModel @Inject constructor(
 
     fun cleanDeadMirrors() {
         val predicate: (String) -> Boolean = { item ->
-            val host = try { android.net.Uri.parse(item).host?.lowercase() ?: java.net.URI(item).host?.lowercase() } catch(_: Throwable) { null }
-            com.duta.movie.util.VideoExtractor.isWhitelistedHost(item) || (host != null && com.duta.movie.util.VideoExtractor.isWhitelistedHost(host))
+            val isFullUrl = item.contains("://") || item.contains("/")
+            if (isFullUrl) {
+                false
+            } else {
+                com.duta.movie.util.VideoExtractor.isWhitelistedHost(item)
+            }
         }
         deadMirrors.removeAll(predicate)
         hardDeadMirrors.removeAll(predicate)
@@ -773,9 +781,9 @@ class VideoViewModel @Inject constructor(
         viewModelScope.launch(Dispatchers.IO) {
             val currentBase = VideoExtractor.getBaseUrl()
             val lowBase = currentBase.lowercase()
-            if (lowBase.contains("katherineschoolphone") || lowBase.contains("voe") || !VideoExtractor.pingAndVerify(currentBase)) {
+            if (lowBase.contains("katherineschoolphone") || lowBase.contains("voe") || lowBase.contains("204.3.234.75") || !VideoExtractor.pingAndVerify(currentBase)) {
                 Log.w("VideoViewModel", "Active base domain ($currentBase) is invalid or dead. Probing fresh domain...")
-                val fresh = VideoExtractor.probeForNewDomain() ?: "https://204.3.234.75"
+                val fresh = VideoExtractor.probeForNewDomain() ?: VideoExtractor.getPencuriBaseUrl()
                 VideoExtractor.setBaseUrl(fresh)
                 preferenceManager.setActiveBaseUrl(fresh)
                 Log.i("VideoViewModel", "Active base domain restored to: $fresh")
@@ -1367,6 +1375,10 @@ class VideoViewModel @Inject constructor(
     }
 
     fun notifyPlaybackFailure(url: String) {
+        if (url.isNotEmpty()) {
+            deadMirrors.add(url)
+            exhaustedServerUrls.add(url)
+        }
         val host = try { android.net.Uri.parse(url).host?.lowercase() ?: java.net.URI(url).host?.lowercase() } catch(_: Throwable) { null }
         if (host == null || com.duta.movie.util.VideoExtractor.isWhitelistedHost(host) || com.duta.movie.util.VideoExtractor.isWhitelistedHost(url)) return
         
@@ -1443,20 +1455,18 @@ class VideoViewModel @Inject constructor(
         blacklistHost(resolvedHost, hard = false)
 
         // Record exhausted URLs so they aren't retried this session
-        if (!originalUrl.isNullOrEmpty() && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(originalHost) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(originalUrl)) {
+        if (!originalUrl.isNullOrEmpty()) {
             exhaustedServerUrls.add(originalUrl)
             deadMirrors.add(originalUrl)
         }
-        if (effectiveUrl.isNotEmpty() && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(stuckHost) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(effectiveUrl)) {
+        if (effectiveUrl.isNotEmpty()) {
             exhaustedServerUrls.add(effectiveUrl)
             deadMirrors.add(effectiveUrl)
         }
         mirrorUrl?.let {
-            if (!com.duta.movie.util.VideoExtractor.isWhitelistedHost(mirrorHost) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(it)) {
-                exhaustedServerUrls.add(it)
-                deadMirrors.add(it)
-                Log.i("VideoViewModel", "notifyGateStuck: Marked parent mirror dead: $it")
-            }
+            exhaustedServerUrls.add(it)
+            deadMirrors.add(it)
+            Log.i("VideoViewModel", "notifyGateStuck: Marked parent mirror dead: $it")
         }
 
         Log.i("VideoViewModel", "notifyGateStuck: effectiveUrl=$effectiveUrl, videoId=$effectiveVideoId")
@@ -1468,20 +1478,17 @@ class VideoViewModel @Inject constructor(
         isPlaybackActive = false
         isRotationLocked = false
         val stuckHost = try { android.net.Uri.parse(url).host?.lowercase() ?: java.net.URI(url).host?.lowercase() } catch(_: Throwable) { null }
-        if (!com.duta.movie.util.VideoExtractor.isWhitelistedHost(stuckHost) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(url)) {
-            blacklistHost(stuckHost, hard = false)
-            exhaustedServerUrls.add(url)
-            deadMirrors.add(url)
-            com.duta.movie.util.VideoExtractor.markConfirmedDead(url)
-        }
+        blacklistHost(stuckHost, hard = false)
+        exhaustedServerUrls.add(url)
+        deadMirrors.add(url)
+        com.duta.movie.util.VideoExtractor.markConfirmedDead(url)
         _currentServerUrl.value?.let { parentMirror ->
             val parentHost = try { android.net.Uri.parse(parentMirror).host?.lowercase() ?: java.net.URI(parentMirror).host?.lowercase() } catch(_: Throwable) { null }
-            if (!com.duta.movie.util.VideoExtractor.isWhitelistedHost(parentHost) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(parentMirror)) {
-                exhaustedServerUrls.add(parentMirror)
-                deadMirrors.add(parentMirror)
-                com.duta.movie.util.VideoExtractor.markConfirmedDead(parentMirror)
-                Log.i("VideoViewModel", "notifyMirrorDead: Marked parent mirror dead: $parentMirror (child was $url)")
-            }
+            blacklistHost(parentHost, hard = false)
+            exhaustedServerUrls.add(parentMirror)
+            deadMirrors.add(parentMirror)
+            com.duta.movie.util.VideoExtractor.markConfirmedDead(parentMirror)
+            Log.i("VideoViewModel", "notifyMirrorDead: Marked parent mirror dead: $parentMirror (child was $url)")
         }
         
         val mirrorUrl = _currentServerUrl.value
@@ -1497,14 +1504,12 @@ class VideoViewModel @Inject constructor(
 
     fun purgeServerFromVideo(videoId: String, serverUrl: String) {
         if (videoId.isEmpty() || serverUrl.isEmpty()) return
+        deadMirrors.add(serverUrl)
+        hardDeadMirrors.add(serverUrl)
         val host = try { android.net.Uri.parse(serverUrl).host?.lowercase() ?: java.net.URI(serverUrl).host?.lowercase() } catch(_: Throwable) { null }
-        if (!com.duta.movie.util.VideoExtractor.isWhitelistedHost(host) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(serverUrl)) {
-            deadMirrors.add(serverUrl)
-            hardDeadMirrors.add(serverUrl)
-            if (host != null && com.duta.movie.util.VideoExtractor.isEphemeralOrExpiredStream(serverUrl)) {
-                deadMirrors.add(host)
-                hardDeadMirrors.add(host)
-            }
+        if (host != null && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(host) && com.duta.movie.util.VideoExtractor.isEphemeralOrExpiredStream(serverUrl)) {
+            deadMirrors.add(host)
+            hardDeadMirrors.add(host)
         }
         val video = _videoMetadata.value?.takeIf { it.id == videoId } ?: getVideo(videoId)
         if (video != null) {
@@ -1880,8 +1885,8 @@ class VideoViewModel @Inject constructor(
                 // Cleanse expired/ephemeral direct streams from persistent video servers list
                 val sanitizedServers = baseVideoServers.filter { 
                     !com.duta.movie.util.VideoExtractor.isEphemeralOrExpiredStream(it.url) &&
-                    (!deadMirrors.contains(it.url) || com.duta.movie.util.VideoExtractor.isWhitelistedHost(it.url)) &&
-                    (!hardDeadMirrors.contains(it.url) || com.duta.movie.util.VideoExtractor.isWhitelistedHost(it.url))
+                    !hardDeadMirrors.contains(it.url) &&
+                    !com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url)
                 }
                 if (sanitizedServers.size != baseVideoServers.size && video != null) {
                     val cleanedVideo = video!!.copy(servers = sanitizedServers)
@@ -1975,10 +1980,8 @@ class VideoViewModel @Inject constructor(
                             }
                             return
                         } else {
-                            if (!com.duta.movie.util.VideoExtractor.isWhitelistedHost(candidate)) {
-                                deadMirrors.add(candidate)
-                                hardDeadMirrors.add(candidate)
-                            }
+                            deadMirrors.add(candidate)
+                            hardDeadMirrors.add(candidate)
                             val cHost = try { android.net.Uri.parse(candidate).host?.lowercase() ?: java.net.URI(candidate).host?.lowercase() } catch(_: Throwable) { null }
                             if (cHost != null && !com.duta.movie.util.VideoExtractor.isDirectVideoUrl(candidate) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(cHost)) {
                                 blacklistHost(cHost, hard = false)
@@ -1996,10 +1999,10 @@ class VideoViewModel @Inject constructor(
                 var topMirrors = (baseList + mirrorsFromMetadata)
                     .distinct()
                     .filter { url -> 
-                        val host = try { android.net.Uri.parse(url).host?.lowercase() ?: java.net.URI(url).host?.lowercase() } catch(_: Throwable) { null }
                         val low = url.lowercase()
-                        val isWhitelisted = com.duta.movie.util.VideoExtractor.isWhitelistedHost(host) || com.duta.movie.util.VideoExtractor.isWhitelistedHost(url)
-                        !low.contains("listeamed") && (host == null || !deadMirrors.contains(host) || isWhitelisted) && (!deadMirrors.contains(url) || isWhitelisted)
+                        val host = try { android.net.Uri.parse(url).host?.lowercase() ?: java.net.URI(url).host?.lowercase() } catch(_: Throwable) { null }
+                        val isHostWhitelisted = com.duta.movie.util.VideoExtractor.isWhitelistedHost(host)
+                        !low.contains("listeamed") && (host == null || !deadMirrors.contains(host) || isHostWhitelisted) && !deadMirrors.contains(url) && !hardDeadMirrors.contains(url) && !exhaustedServerUrls.contains(url) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(url)
                     }
                     .take(concurrencyLimit)
                 
@@ -2008,7 +2011,11 @@ class VideoViewModel @Inject constructor(
 
                 if (isExplicitServer || isRotation) {
                     // For an explicit server selection or rotation, target that specific server mirror only
-                    topMirrors = listOf(mirrorToResolve)
+                    if (mirrorToResolve != null && (deadMirrors.contains(mirrorToResolve) || hardDeadMirrors.contains(mirrorToResolve) || exhaustedServerUrls.contains(mirrorToResolve) || com.duta.movie.util.VideoExtractor.isConfirmedDead(mirrorToResolve))) {
+                        topMirrors = topMirrors.filter { it != mirrorToResolve }
+                    } else {
+                        topMirrors = listOf(mirrorToResolve)
+                    }
                 } else if (topMirrors.isEmpty() || skipDirectRace) {
                     if (skipDirectRace) addResolutionLog("No mirrors found in metadata. Fast-tracking to WebView Shield...")
                     topMirrors = listOf(mirrorToResolve)
@@ -2053,10 +2060,16 @@ class VideoViewModel @Inject constructor(
                     }
                 } else {
                     val targetFallback = mirrorToResolve ?: topMirrors.firstOrNull()
+                    val isConfirmedDead = targetFallback != null && (
+                        deadMirrors.contains(targetFallback) ||
+                        hardDeadMirrors.contains(targetFallback) ||
+                        exhaustedServerUrls.contains(targetFallback) ||
+                        com.duta.movie.util.VideoExtractor.isConfirmedDead(targetFallback)
+                    )
                     val isPlayableTarget = targetFallback != null && (
                         com.duta.movie.util.VideoExtractor.isProbablyVideoHost(targetFallback) ||
                         isRotation || isExplicitServer
-                    )
+                    ) && !isConfirmedDead
                     if (isPlayableTarget && targetFallback != null) {
                         addResolutionLog("Falling back to WebView Shield for embed mirror: ${targetFallback.take(40)}...")
                         withContext(Dispatchers.Main) {
@@ -2070,10 +2083,12 @@ class VideoViewModel @Inject constructor(
                     } else {
                         addResolutionLog("Direct resolution produced no playable streams. Marking tested mirrors dead and rotating...")
                         topMirrors.forEach { m ->
-                            if (!com.duta.movie.util.VideoExtractor.isWhitelistedHost(m)) {
-                                deadMirrors.add(m)
-                                exhaustedServerUrls.add(m)
-                            }
+                            deadMirrors.add(m)
+                            exhaustedServerUrls.add(m)
+                        }
+                        if (targetFallback != null) {
+                            deadMirrors.add(targetFallback)
+                            exhaustedServerUrls.add(targetFallback)
                         }
                         withContext(Dispatchers.Main) {
                             isRotationLocked = false
@@ -2310,10 +2325,8 @@ class VideoViewModel @Inject constructor(
                             }
                             return
                         } else {
-                            if (!com.duta.movie.util.VideoExtractor.isWhitelistedHost(candidate)) {
-                                deadMirrors.add(candidate)
-                                hardDeadMirrors.add(candidate)
-                            }
+                            deadMirrors.add(candidate)
+                            hardDeadMirrors.add(candidate)
                             val cHost = try { android.net.Uri.parse(candidate).host?.lowercase() ?: java.net.URI(candidate).host?.lowercase() } catch(_: Throwable) { null }
                             if (cHost != null && !com.duta.movie.util.VideoExtractor.isDirectVideoUrl(candidate) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(cHost)) {
                                 blacklistHost(cHost, hard = false)
@@ -2333,15 +2346,15 @@ class VideoViewModel @Inject constructor(
                 var topMirrors = (baseList + mirrorsFromMetadata)
                     .distinct()
                     .filter { url -> 
+                        val low = url.lowercase()
                         val host = try { android.net.Uri.parse(url).host?.lowercase() ?: java.net.URI(url).host?.lowercase() } catch(_: Throwable) { null }
                         val isVideoHost = com.duta.movie.util.VideoExtractor.isProbablyVideoHost(url)
                         val isSameEp = !isSeries || isVideoHost ||
                                        com.duta.movie.util.VideoExtractor.extractStableId(url) == primarySlug || 
                                        url.contains(primarySlug) || 
                                        primaryUrl.contains(com.duta.movie.util.VideoExtractor.extractStableId(url))
-                        val low = url.lowercase()
-                        val isWhitelisted = com.duta.movie.util.VideoExtractor.isWhitelistedHost(host) || com.duta.movie.util.VideoExtractor.isWhitelistedHost(url)
-                        !low.contains("listeamed") && (host == null || !deadMirrors.contains(host) || isWhitelisted) && (!deadMirrors.contains(url) || isWhitelisted) && isSameEp
+                        val isHostWhitelisted = com.duta.movie.util.VideoExtractor.isWhitelistedHost(host)
+                        !low.contains("listeamed") && (host == null || !deadMirrors.contains(host) || isHostWhitelisted) && !deadMirrors.contains(url) && !hardDeadMirrors.contains(url) && !exhaustedServerUrls.contains(url) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(url) && isSameEp
                     }
                     .take(concurrencyLimit)
                 
@@ -2350,7 +2363,11 @@ class VideoViewModel @Inject constructor(
 
                 if (isExplicitServer || isRotation) {
                     // For an explicit server selection or rotation, target that specific server mirror only
-                    topMirrors = listOf(mirrorToResolve)
+                    if (mirrorToResolve != null && (deadMirrors.contains(mirrorToResolve) || hardDeadMirrors.contains(mirrorToResolve) || exhaustedServerUrls.contains(mirrorToResolve) || com.duta.movie.util.VideoExtractor.isConfirmedDead(mirrorToResolve))) {
+                        topMirrors = topMirrors.filter { it != mirrorToResolve }
+                    } else {
+                        topMirrors = listOf(mirrorToResolve)
+                    }
                 } else if (topMirrors.isEmpty() || skipDirectRace) {
                     if (skipDirectRace) addResolutionLog("No mirrors found in metadata. Fast-tracking to WebView Shield...")
                     topMirrors = listOf(mirrorToResolve)
@@ -2402,8 +2419,9 @@ class VideoViewModel @Inject constructor(
                 } else {
                     val targetFallback = mirrorToResolve ?: topMirrors.firstOrNull()
                     val isConfirmedDead = targetFallback != null && (
-                        (deadMirrors.contains(targetFallback) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(targetFallback)) ||
-                        (hardDeadMirrors.contains(targetFallback) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(targetFallback)) ||
+                        deadMirrors.contains(targetFallback) ||
+                        hardDeadMirrors.contains(targetFallback) ||
+                        exhaustedServerUrls.contains(targetFallback) ||
                         com.duta.movie.util.VideoExtractor.isConfirmedDead(targetFallback)
                     )
                     
@@ -2424,7 +2442,11 @@ class VideoViewModel @Inject constructor(
                         }
                     } else {
                         addResolutionLog("No direct stream and fallback is not viable. Rotating to next server...")
-                        if (targetFallback != null && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(targetFallback)) {
+                        topMirrors.forEach { m ->
+                            deadMirrors.add(m)
+                            exhaustedServerUrls.add(m)
+                        }
+                        if (targetFallback != null) {
                             deadMirrors.add(targetFallback)
                             exhaustedServerUrls.add(targetFallback)
                         }
@@ -2455,6 +2477,9 @@ class VideoViewModel @Inject constructor(
 
         val jobs = topMirrors.mapIndexed { idx, url ->
             launch {
+                if (deadMirrors.contains(url) || hardDeadMirrors.contains(url) || exhaustedServerUrls.contains(url) || com.duta.movie.util.VideoExtractor.isConfirmedDead(url)) {
+                    return@launch
+                }
                 try {
                     val result = com.duta.movie.util.VideoExtractor.extractVideoUrl(url, referer = primaryUrl)
                     if (result != null) {
@@ -2468,9 +2493,9 @@ class VideoViewModel @Inject constructor(
                         val winHost = try { android.net.Uri.parse(winUrl).host?.lowercase() ?: java.net.URI(winUrl).host?.lowercase() } catch(_: Throwable) { null }
                         val isWhitelisted = com.duta.movie.util.VideoExtractor.isWhitelistedHost(winHost) || com.duta.movie.util.VideoExtractor.isWhitelistedHost(winUrl)
                         
-                        if (lowWin.contains("listeamed") || (winHost != null && deadMirrors.contains(winHost) && !isWhitelisted)) {
+                        if (lowWin.contains("listeamed") || deadMirrors.contains(winUrl) || hardDeadMirrors.contains(winUrl) || exhaustedServerUrls.contains(winUrl) || com.duta.movie.util.VideoExtractor.isConfirmedDead(winUrl) || (winHost != null && deadMirrors.contains(winHost) && !isWhitelisted)) {
                             blacklistedCount.incrementAndGet()
-                            android.util.Log.w("VideoViewModel", "God Mode rejected $winUrl because host is blacklisted.")
+                            android.util.Log.w("VideoViewModel", "God Mode rejected $winUrl because host or url is blacklisted/dead.")
                             return@launch
                         }
                         
@@ -2489,7 +2514,7 @@ class VideoViewModel @Inject constructor(
                             jsWinnerChannel.trySend(enrichedResult)
                         }
                     } else {
-                        if (com.duta.movie.util.VideoExtractor.isConfirmedDead(url) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(url)) {
+                        if (com.duta.movie.util.VideoExtractor.isConfirmedDead(url)) {
                             deadMirrors.add(url)
                             exhaustedServerUrls.add(url)
                         }
@@ -2574,8 +2599,11 @@ class VideoViewModel @Inject constructor(
             .filter { cand ->
                 val winUrl = cand.videoUrl
                 val winHost = try { android.net.Uri.parse(winUrl).host?.lowercase() ?: java.net.URI(winUrl).host?.lowercase() } catch(_: Throwable) { null }
-                val isWhitelisted = com.duta.movie.util.VideoExtractor.isWhitelistedHost(winHost) || com.duta.movie.util.VideoExtractor.isWhitelistedHost(winUrl)
-                (!deadMirrors.contains(winUrl) || isWhitelisted) && (winHost == null || !deadMirrors.contains(winHost) || isWhitelisted)
+                val isHostWhitelisted = com.duta.movie.util.VideoExtractor.isWhitelistedHost(winHost)
+                !deadMirrors.contains(winUrl) && 
+                !exhaustedServerUrls.contains(winUrl) && 
+                !com.duta.movie.util.VideoExtractor.isConfirmedDead(winUrl) && 
+                (winHost == null || !deadMirrors.contains(winHost) || isHostWhitelisted)
             }
             .maxByOrNull { cand ->
                 com.duta.movie.util.VideoExtractor.getProviderPriority(cand.videoUrl, cand.videoUrl)
@@ -2975,8 +3003,8 @@ class VideoViewModel @Inject constructor(
                         }
                     }
                     if (isYt && !lowUrl.contains("/embed/") && !s.name.contains("YouTube", ignoreCase = true)) return@filter false
-                    val isWhitelisted = com.duta.movie.util.VideoExtractor.isWhitelistedHost(host) || com.duta.movie.util.VideoExtractor.isWhitelistedHost(s.url)
-                    (!deadMirrors.contains(host) || isWhitelisted) && (!deadMirrors.contains(s.url) || isWhitelisted) && (!exhaustedServerUrls.contains(s.url) || isWhitelisted) && !com.duta.movie.util.VideoExtractor.isEphemeralOrExpiredStream(s.url) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(s.url)
+                    val isHostWhitelisted = com.duta.movie.util.VideoExtractor.isWhitelistedHost(host)
+                    (!deadMirrors.contains(host) || isHostWhitelisted) && !deadMirrors.contains(s.url) && !hardDeadMirrors.contains(s.url) && !exhaustedServerUrls.contains(s.url) && !com.duta.movie.util.VideoExtractor.isEphemeralOrExpiredStream(s.url) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(s.url)
                 }.sortedByDescending { s -> 
                     val host = try { android.net.Uri.parse(s.url).host?.lowercase() ?: java.net.URI(s.url).host?.lowercase() ?: "" } catch(_: Throwable) { "" }
                     val weight = sourceWeights.value[host] ?: 0
@@ -2985,50 +3013,46 @@ class VideoViewModel @Inject constructor(
                 }
                 
                 if (sortedServers.isEmpty()) {
+                    if (!hasAttemptedAltHealing) {
+                        hasAttemptedAltHealing = true
+                        addResolutionLog("All mirrors failed. Searching partner aggregators for alternative sources...")
+                        val altServers = VideoExtractor.findAlternativeSources(video)
+                        if (altServers.isNotEmpty()) {
+                            addResolutionLog("Auto-healed: Discovered ${altServers.size} fresh mirrors from partner! Resuming playback...")
+                            discoveredAltServers[effectiveVideoId] = altServers
+                            val combinedServers = (video.servers + altServers).distinctBy { it.url }
+                            val updatedVideo = video.copy(servers = combinedServers)
+                            metadataCache[effectiveVideoId] = updatedVideo
+                            withContext(Dispatchers.Main) {
+                                _videoMetadata.value = updatedVideo
+                            }
+                            viewModelScope.launch { videoRepository.updateVideoInDb(updatedVideo) }
+                            rotationCount = 0
+                            consecutiveAllBlacklistedCount = 0
+                            isRotationLocked = false
+                            if (video.isSeries == true) {
+                                playTVSeries(effectiveVideoId, altServers.first().url, forceReset = false, targetEpisode = _currentEpisode.value, isRotation = false)
+                            } else {
+                                playMovie(effectiveVideoId, altServers.first().url, forceReset = false, isRotation = false)
+                            }
+                            return@launch
+                        } else {
+                            addResolutionLog("Cross-provider search completed: No alternative sources found.")
+                        }
+                    }
+
                     val allServersDead = serversToUse.isEmpty() || serversToUse.all { s ->
                         val host = try { android.net.Uri.parse(s.url).host?.lowercase() ?: java.net.URI(s.url).host?.lowercase() } catch(_: Throwable) { null }
-                        val isWhitelisted = com.duta.movie.util.VideoExtractor.isWhitelistedHost(host) || com.duta.movie.util.VideoExtractor.isWhitelistedHost(s.url)
-                        if (isWhitelisted) {
-                            false
-                        } else {
-                            (host != null && (hardDeadMirrors.contains(host) || deadMirrors.contains(host))) || 
-                            hardDeadMirrors.contains(s.url) || deadMirrors.contains(s.url) ||
-                            exhaustedServerUrls.contains(s.url) ||
-                            com.duta.movie.util.VideoExtractor.isConfirmedDead(s.url)
-                        }
+                        val isHostWhitelisted = com.duta.movie.util.VideoExtractor.isWhitelistedHost(host)
+                        (host != null && !isHostWhitelisted && (hardDeadMirrors.contains(host) || deadMirrors.contains(host))) || 
+                        hardDeadMirrors.contains(s.url) || deadMirrors.contains(s.url) ||
+                        exhaustedServerUrls.contains(s.url) ||
+                        com.duta.movie.util.VideoExtractor.isConfirmedDead(s.url)
                     }
                     val isSingleServer = serversToUse.size <= 1
                     val maxTries = if (isSingleServer) 3 else serversToUse.size
                     Log.w("VideoViewModel", "sortedServers is EMPTY! allServersDead=$allServersDead, rotationCount=$rotationCount, serversCount=${serversToUse.size}")
-                    if (hasAttemptedAltHealing || (allServersDead && !isSingleServer) || rotationCount >= maxTries || rotationCount >= maxRotation) {
-                        if (!hasAttemptedAltHealing) {
-                            hasAttemptedAltHealing = true
-                            addResolutionLog("All mirrors failed. Searching partner aggregators for alternative sources...")
-                            val altServers = VideoExtractor.findAlternativeSources(video)
-                            if (altServers.isNotEmpty()) {
-                                addResolutionLog("Auto-healed: Discovered ${altServers.size} fresh mirrors from partner! Resuming playback...")
-                                discoveredAltServers[effectiveVideoId] = altServers
-                                val combinedServers = (video.servers + altServers).distinctBy { it.url }
-                                val updatedVideo = video.copy(servers = combinedServers)
-                                metadataCache[effectiveVideoId] = updatedVideo
-                                withContext(Dispatchers.Main) {
-                                    _videoMetadata.value = updatedVideo
-                                }
-                                viewModelScope.launch { videoRepository.updateVideoInDb(updatedVideo) }
-                                rotationCount = 0
-                                consecutiveAllBlacklistedCount = 0
-                                isRotationLocked = false
-                                if (video.isSeries == true) {
-                                    playTVSeries(effectiveVideoId, altServers.first().url, forceReset = false, targetEpisode = _currentEpisode.value, isRotation = false)
-                                } else {
-                                    playMovie(effectiveVideoId, altServers.first().url, forceReset = false, isRotation = false)
-                                }
-                                return@launch
-                            } else {
-                                addResolutionLog("Cross-provider search completed: No alternative sources found.")
-                            }
-                        }
-
+                    if (allServersDead || rotationCount >= maxTries || rotationCount >= maxRotation) {
                         Log.e("VideoViewModel", "All servers dead or exhausted for $effectiveVideoId. Showing error UI.")
                         addResolutionLog("All available mirrors for this title have failed or are dead. Halting playback.")
                         withContext(Dispatchers.Main) {
@@ -3062,11 +3086,20 @@ class VideoViewModel @Inject constructor(
                     (activeHost != null && try { android.net.Uri.parse(it.url).host?.lowercase() == activeHost } catch(_: Exception) { false }) ||
                     (parentMirrorHost != null && try { android.net.Uri.parse(it.url).host?.lowercase() == parentMirrorHost } catch(_: Exception) { false })
                 }
-                val nextIndex = if (currentIndex == -1 || currentIndex >= sortedServers.size - 1) 0 else currentIndex + 1
                 if (activeUrl != null) exhaustedServerUrls.add(activeUrl)
                 if (currentIndex != -1) exhaustedServerUrls.add(sortedServers[currentIndex].url)
-                
-                val nextServer = sortedServers[nextIndex]
+
+                val freshServers = sortedServers.filter { 
+                    !exhaustedServerUrls.contains(it.url) && 
+                    !deadMirrors.contains(it.url) && 
+                    !hardDeadMirrors.contains(it.url) && 
+                    !com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url)
+                }
+
+                val nextServer = freshServers.firstOrNull() ?: run {
+                    val nextIndex = if (currentIndex == -1 || currentIndex >= sortedServers.size - 1) 0 else currentIndex + 1
+                    sortedServers[nextIndex]
+                }
                 Log.i("VideoViewModel", "Mirror Rotation: Shifting to ${nextServer.name} (${nextServer.url.take(30)}...)")
                 addResolutionLog("Mirror Rotation: Shifting to ${nextServer.name}...")
                 

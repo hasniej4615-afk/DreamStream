@@ -46,15 +46,16 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
 
         val DEFAULT_ENABLED_CATEGORIES = setOf(
             "/",
-            "/movie/",
-            "/serial-tv-terbaru/",
+            "/movies/",
+            "/series/",
+            "/top-imdb/",
             "/country/malaysia/",
             "/category/p-ramlee/"
         ).map { com.duta.movie.util.VideoExtractor.normalizePath(it) }.toSet()
     }
 
     val activeBaseUrl: Flow<String> = context.dataStore.data.map { prefs ->
-        val raw = prefs[BASE_URL_KEY] ?: "https://204.3.234.75"
+        val raw = prefs[BASE_URL_KEY] ?: "https://ww44.pencurimovie.baby"
         val low = raw.lowercase()
         val isPoisoned = low.contains("katherineschoolphone") ||
                 low.contains("voe") ||
@@ -69,6 +70,9 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
                 low.contains("dutamovie21.xyz") ||
                 low.contains("algarvebuzz.com") ||
                 low.contains("digitalpapercuts.com") ||
+                low.contains("204.3.234.75") ||
+                low.contains("rebahin") ||
+                low.contains("rebahinxxi") ||
                 low.contains("ww38") ||
                 Regex("""^https?://ww\d+\.""").containsMatchIn(low) ||
                 low.contains("sedo") ||
@@ -77,23 +81,23 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
                 low.contains("dan.com") ||
                 low.contains("godaddy") ||
                 low.contains("kepalabergetar") ||
-                low.contains("pencuri") ||
                 low.contains("archive.org") ||
                 !low.startsWith("http")
-        if (isPoisoned) "https://204.3.234.75" else {
+        if (isPoisoned) "https://ww44.pencurimovie.baby" else {
             try {
                 val uri = android.net.Uri.parse(raw)
                 "${uri.scheme}://${uri.host}"
-            } catch (_: Exception) { "https://204.3.234.75" }
+            } catch (_: Exception) { "https://ww44.pencurimovie.baby" }
         }
     }
 
     suspend fun setActiveBaseUrl(url: String) {
         val low = url.lowercase()
         if (low.contains("katherineschoolphone") || low.contains("voe") || low.contains("kepalabergetar") ||
-            low.contains("pencuri") || low.contains("archive.org") ||
+            low.contains("archive.org") ||
             low.contains("dutamovie.com") || low.contains("dutamovie21.xyz") ||
             low.contains("algarvebuzz.com") || low.contains("digitalpapercuts.com") ||
+            low.contains("204.3.234.75") || low.contains("rebahin") || low.contains("rebahinxxi") ||
             low.contains("ww38") ||
             Regex("""^https?://ww\d+\.""").containsMatchIn(low) ||
             low.contains("parking") || low.contains("sedo") || low.contains("abovedomains") ||
