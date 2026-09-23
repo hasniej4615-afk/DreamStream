@@ -2746,7 +2746,7 @@ fun VideoPlayerWebView(
                                           low.contains("platformdocumentation") || low.contains("hgcloud") || low.contains("hglink") ||
                                           com.duta.movie.util.VideoExtractor.isJsOnlyHost(u) ||
                                           com.duta.movie.util.VideoExtractor.isJsOnlyHost(url)) &&
-                                          !low.contains(".m3u8") && !low.contains(".mp4") && !low.contains(".mkv") && !low.contains(".webm") && !low.contains("cloudwindow")
+                                          !low.contains(".m3u8") && !low.contains(".mp4") && !low.contains(".mkv") && !low.contains(".webm") && !low.contains(".txt") && !low.contains("cloudwindow")
                         if (!isLegit || isProtected) return
                         scope.launch(Dispatchers.Main) { 
                              Log.i("VideoPlayerSniffer", "Sniffed Legit Stream: $u | Ref: $ref")
@@ -2832,7 +2832,7 @@ fun VideoPlayerWebView(
                                                       lowU.contains("platformdocumentation") || lowU.contains("hgcloud") || lowU.contains("hglink") ||
                                                       com.duta.movie.util.VideoExtractor.isJsOnlyHost(u) ||
                                                       com.duta.movie.util.VideoExtractor.isJsOnlyHost(url)) &&
-                                                      !lowU.contains(".m3u8") && !lowU.contains(".mp4") && !lowU.contains(".mkv") && !lowU.contains(".webm") && !lowU.contains("cloudwindow")
+                                                      !lowU.contains(".m3u8") && !lowU.contains(".mp4") && !lowU.contains(".mkv") && !lowU.contains(".webm") && !lowU.contains(".txt") && !lowU.contains("cloudwindow")
                                     if (isProtected) return true
 
                                     // Deep sniff: extract nested m3u8 from query params if it's a wrapper URL
@@ -3162,7 +3162,7 @@ fun VideoPlayerWebView(
                                                 low.contains("hanerix") || low.contains("vibuxer") || low.contains("audinifer") ||
                                                 com.duta.movie.util.VideoExtractor.isJsOnlyHost(u) ||
                                                 com.duta.movie.util.VideoExtractor.isJsOnlyHost(url)) &&
-                                                !low.contains(".m3u8") && !low.contains(".mp4") && !low.contains(".mkv") && !low.contains(".webm") && !low.contains("cloudwindow")
+                                                !low.contains(".m3u8") && !low.contains(".mp4") && !low.contains(".mkv") && !low.contains(".webm") && !low.contains(".txt") && !low.contains("cloudwindow")
 
                         if (isStream && !r.isForMainFrame && !isProtectedStream) {
                             val streamRef = when {

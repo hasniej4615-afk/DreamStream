@@ -154,7 +154,11 @@ object SubtitleExtractor {
     fun searchAndGetSubtitles(title: String, imdbId: String? = null, scope: CoroutineScope, onResultsFound: (List<Subtitle>) -> Unit, onComplete: () -> Unit) {
         val lowTitle = title.lowercase()
         val baseTitle = title.replace(Regex("""(?i)\bS\d+E\d+\b|\bEpisode\s*\d+\b|\bSeason\s*\d+\b"""), "").trim()
-        val cleanBase = baseTitle.replace(Regex("""(?i)\b(?:reducing|fhd|hd|4k|720p|1080p|bluray|web-?dl|webrip|amzn|nf|dovi|hdr|10bit|hdtv|x264|x265|proper|internal|dual-?audio|hindi|dubbed|subbed)\b"""), " ")
+        val cleanBase = baseTitle.replace(Regex("""(?i)\s*-\s*(?:tv\d+\s*)?rebahinxxi\s*(?:auction)?.*$"""), " ")
+                             .replace(Regex("""(?i)\s*-\s*(?:[a-zA-Z0-9-]+\.)+[a-zA-Z0-9-]+.*$"""), " ")
+                             .replace(Regex("""(?i)\s*-\s*\d+\.\d+\.\d+\.\d+.*$"""), " ")
+                             .replace(Regex("""(?i)\b(rebahin|bioskopkeren|layarkaca21|lk21|indoxxi|idlix|dutamovie21|dutamovie|itoshii|sub\s*indo(?:nesia)?|subtitle\s*indo(?:nesia)?)\b"""), " ")
+                             .replace(Regex("""(?i)\b(?:reducing|fhd|hd|4k|720p|1080p|bluray|web-?dl|webrip|amzn|nf|dovi|hdr|10bit|hdtv|x264|x265|proper|internal|dual-?audio|hindi|dubbed|subbed)\b"""), " ")
                              .replace(Regex("""[._()&:"!?,;+]"""), " ")
                              .replace('’', '\'') // Normalize fancy apostrophe
                              .replace(Regex("""\s+"""), " ")

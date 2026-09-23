@@ -1341,9 +1341,9 @@ object VideoExtractor {
         if (isStaticResource(url)) return false
         val low = url.lowercase()
 
-        // OWL'S EYE: Direct streams (.m3u8, .mp4, .mkv, .webm, .ts, .mpd, get_video) are NEVER JS-Only web pages
+        // OWL'S EYE: Direct streams (.m3u8, .mp4, .mkv, .webm, .ts, .mpd, .txt, get_video) are NEVER JS-Only web pages
         if (low.contains(".m3u8") || low.contains(".mp4") || low.contains(".mkv") || low.contains(".webm") || low.contains(".ts") || low.contains(".mpd") ||
-            low.contains("get_video?") || low.contains("tapecontent.net") || low.contains("/stream/")) return false
+            low.contains(".txt") || low.contains("get_video?") || low.contains("tapecontent.net") || low.contains("/stream/")) return false
 
         // Dailymotion, YouTube, and Bilibili web embeds/pages are JS-Only web players (when not direct m3u8 streams)
         if (low.contains("dailymotion.com") || low.contains("dai.ly") ||
@@ -1358,6 +1358,7 @@ object VideoExtractor {
         
         val jsOnlyHosts = setOf(
             "youtube", "youtu.be", "dailymotion", "dai.ly", "bilibili",
+            "asiastream", "playsobat",
             "streamtape", "hgplayer", "rebeccasciencestreet", "ryderjet", "ghbrisk", "ghb", "duvidun", "hanerix", 
             "fujihide", "dood", "embedo", "mixdrop", "filemoon", "dsvplay", 
             "latestmoviereview", "playerp2p", "upstream", "vidplay", "mycloud", "vidhide", "vidsrc", "viatrix", "breakplan", 
@@ -1393,6 +1394,7 @@ object VideoExtractor {
                low.contains("/e/") || low.contains("/v/") || low.contains("/embed/") || 
                low.contains("/stream/") || low.contains("/hls/") || low.contains("mirror") ||
                low.contains("player") || low.contains("swhoi") || low.contains("playstream") ||
+               low.contains("asiastream") || low.contains("playsobat") || low.contains("/watch?") || low.contains("watch.") ||
                low.contains("pyrox") || low.contains("embedpyrox") || low.contains("amt") ||
                low.contains("haneri") || low.contains("audinifer") || low.contains("vibuxer") ||
                low.contains("morencius") || low.contains("bestcdn") ||
@@ -1934,7 +1936,10 @@ object VideoExtractor {
             .replace("nonton", " ")
             .replace(Regex("""sub\s+indo(?:nesia)?"""), " ")
             .replace(Regex("""subtitle\s+indo(?:nesia)?"""), " ")
-            .replace(Regex("""dutamovie21|dutamovie|layarkaca21|lk21|itoshii"""), " ")
+            .replace(Regex("""dutamovie21|dutamovie|layarkaca21|lk21|itoshii|rebahin|bioskopkeren|indoxxi|idlix"""), " ")
+            .replace(Regex("""\s*-\s*(?:tv\d+\s*)?rebahinxxi\s*(?:auction)?.*$"""), " ")
+            .replace(Regex("""\s*-\s*(?:[a-zA-Z0-9-]+\.)+[a-zA-Z0-9-]+.*$"""), " ")
+            .replace(Regex("""\s*-\s*\d+\.\d+\.\d+\.\d+.*$"""), " ")
             .replace(Regex("""\b(?:web-?dl|web-?rip|1080p|720p|480p|360p|hdcam|cam-?rip|bluray|blu-?ray|hdrip)\b"""), " ")
             .replace(Regex("""\b(?:full\s*movie|full\s*film|lengkap|terbaru|official|phim|tonton|watch)\b"""), " ")
             .replace(Regex("""[\(\)\[\]\{\}\-_,:\.'\"\|\\\/]"""), " ")
@@ -1956,7 +1961,8 @@ object VideoExtractor {
             "the", "a", "an", "and", "or", "by", "of", "in", "on", "to", "for", "with", "from",
             "part", "chapter", "season", "vol", "volume", "movie", "film", "malay", "malaysian",
             "hd", "dubbed", "eng", "sub", "source", "director", "sutradara", "pemeran",
-            "dailymotion", "youtube", "bilibili", "archive", "server", "phim", "tonton", "watch"
+            "dailymotion", "youtube", "bilibili", "archive", "server", "phim", "tonton", "watch",
+            "rebahin", "bioskopkeren", "indoxxi", "idlix"
         )
         val tokens = clean.split(Regex("""\s+"""))
         val baseTokens = mutableListOf<String>()
@@ -3578,6 +3584,10 @@ object VideoExtractor {
                     .replace("Layarkaca21", "", ignoreCase = true)
                     .replace("LK21", "", ignoreCase = true)
                     .replace(Regex("""(?i)\s*-\s*Pencuri\s*Movie.*"""), "")
+                    .replace(Regex("""(?i)\s*-\s*(?:tv\d+\s*)?rebahinxxi\s*(?:auction)?.*$"""), "")
+                    .replace(Regex("""(?i)\s*-\s*(?:[a-zA-Z0-9-]+\.)+[a-zA-Z0-9-]+.*$"""), "")
+                    .replace(Regex("""(?i)\s*-\s*\d+\.\d+\.\d+\.\d+.*$"""), "")
+                    .replace(Regex("""(?i)\b(rebahin|bioskopkeren|layarkaca21|lk21|indoxxi|idlix|dutamovie21|dutamovie|itoshii|sub\s*indo(?:nesia)?|subtitle\s*indo(?:nesia)?)\b"""), " ")
                     .replace(Regex("""(?i)\s*(?:Tonton\s+)?Drama\s+(?:Video|Melayu|Online)\s*"""), " ")
                     .replace(Regex("""(?i)\s*Tonton\s+Video\s*"""), " ")
                     .replace(Regex("""(?i)\s*Kepala\s*Bergetar\s*"""), " ")
@@ -3849,6 +3859,8 @@ object VideoExtractor {
             lowUrl.contains("streamsilk") -> "Streamsilk"
             lowUrl.contains("waaw") || lowUrl.contains("netu") || lowUrl.contains("hqq") -> "Netu"
             lowUrl.contains("vkspeed") -> "VKSpeed"
+            lowUrl.contains("asiastream") -> "AsiaStream"
+            lowUrl.contains("playsobat") -> "PlaySobat"
             else -> null
         }
         if (provider != null) return provider

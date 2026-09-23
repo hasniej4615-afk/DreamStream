@@ -2,6 +2,7 @@
 package com.duta.movie
 import org.junit.Test
 import com.duta.movie.util.VideoExtractor
+import com.duta.movie.util.NetworkConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import com.duta.movie.ui.VideoViewModel
@@ -89,21 +90,48 @@ class MyLocalTest {
             println("Series count: ${series.size}")
             series.take(3).forEach { println(" - Series item: ${it.title} | ${it.videoUrl}") }
 
-            println("4. Fetching Movie Details...")
-            val firstMovie = movies.firstOrNull() ?: homeVideos.firstOrNull()
-            if (firstMovie != null) {
-                val movieDetail = VideoExtractor.fetchVideoDetails(firstMovie.videoUrl)
-                println("Detail for ${firstMovie.title}: servers=${movieDetail?.servers?.size}, isSeries=${movieDetail?.isSeries}")
-                movieDetail?.servers?.forEach { println("   Server: ${it.name} -> ${it.url}") }
-            }
+            println("4. Fetching Movie Details for Love Me 2024...")
+            val loveMeUrl = "https://tv5.rebahinxxi.auction/love-me-2024/"
+            val loveMeHtml = VideoExtractor.fetchHtml(loveMeUrl)
+            println("Love Me HTML length: ${loveMeHtml?.length}")
+            val loveMeDoc = loveMeHtml?.let { org.jsoup.Jsoup.parse(it, loveMeUrl) }
+            val iframes = loveMeDoc?.select("iframe")?.map { it.attr("src") }
+            val tabButtons = loveMeDoc?.select(".muvipro-player-tabs li a, .player_nav li a, ul#playeroptionsul li")?.map { "${it.text()} -> ${it.attr("href")} | data-post=${it.attr("data-post")} | data-nume=${it.attr("data-nume")}" }
+            println("Love Me Iframes: $iframes")
+            println("Love Me Tabs: $tabButtons")
 
-            println("5. Fetching Series Details...")
-            val realSeries = series.find { it.videoUrl.contains("/tv/") || it.title.contains("Line of Fire") || it.title.contains("Season") } ?: series.firstOrNull()
-            if (realSeries != null) {
-                val seriesDetail = VideoExtractor.fetchVideoDetails(realSeries.videoUrl)
-                println("Detail for ${realSeries.title}: isSeries=${seriesDetail?.isSeries}, episodes=${seriesDetail?.episodes?.size}, servers=${seriesDetail?.servers?.size}")
-                seriesDetail?.episodes?.take(5)?.forEach { println("   Ep: ${it.name} -> ${it.url}") }
-                seriesDetail?.servers?.forEach { println("   Server: ${it.name} -> ${it.url}") }
+            val loveMeDetail = VideoExtractor.fetchVideoDetails(loveMeUrl)
+            println("Love Me Detail: title=${loveMeDetail?.title}, servers=${loveMeDetail?.servers?.size}")
+            loveMeDetail?.servers?.forEach { println("   Server: ${it.name} -> ${it.url}") }
+
+            val rawTitle = "Love Me (2024) REBAHIN BIOSKOPKEREN Sub Indo - tv5.rebahinxxi.auction"
+            val cleaned = VideoExtractor.cleanTitle(rawTitle)
+            println("RawTitle: '$rawTitle' -> Cleaned: '$cleaned'")
+            assertEquals("Love Me (2024)", cleaned)
+
+            val altQueries = VideoExtractor.buildAlternativeSearchQueries(rawTitle)
+            println("Alt queries for '$rawTitle': $altQueries")
+            assertTrue("Alt queries must contain 'Love Me'", altQueries.contains("Love Me"))
+
+            val isVideoHost = VideoExtractor.isProbablyVideoHost("https://watch.asiastream.cc/watch?v=W90HJUZR")
+            assertTrue("watch.asiastream.cc must be recognized as video host", isVideoHost)
+
+            val serverName = VideoExtractor.identifyMirrorName("Server 1", "https://watch.asiastream.cc/watch?v=W90HJUZR")
+            println("Identified AsiaStream server name: $serverName")
+            assertEquals("AsiaStream", serverName)
+
+            // Verify loveMeDetail parsed the AsiaStream server
+            assertTrue("Love Me details should contain at least 1 server", (loveMeDetail?.servers?.size ?: 0) >= 1)
+            val hasAsiaStream = loveMeDetail?.servers?.any { it.url.contains("asiastream") } == true
+            println("Love Me has AsiaStream server: $hasAsiaStream")
+            assertTrue("Love Me must have AsiaStream server extracted", hasAsiaStream)
+
+            // Test PencuriMovie search for "Love Me"
+            val pencuriSearchHtml = VideoExtractor.fetchHtml("https://ww44.pencurimovie.baby/?s=Love+Me")
+            if (pencuriSearchHtml != null) {
+                val foundVideos = VideoExtractor.scrapeVideosFromHtml(pencuriSearchHtml, "https://ww44.pencurimovie.baby/")
+                println("Pencuri search for 'Love Me': found ${foundVideos.size} videos")
+                foundVideos.take(3).forEach { println("   Found: ${it.title} -> ${it.videoUrl}") }
             }
         }
     }

@@ -2596,11 +2596,11 @@ class VideoViewModel @Inject constructor(
             // OWL'S EYE: Hard block non-video files from entering the playback pipe
             if (low.contains(".gif") || low.contains(".png") || low.contains(".jpg") || 
                 low.contains(".jpeg") || low.contains(".ico") || low.contains(".svg")) {
-                 if (!low.contains(".m3u8") && !low.contains(".mp4") && !low.contains(".mkv") && !low.contains(".webm")) return
+                 if (!low.contains(".m3u8") && !low.contains(".mp4") && !low.contains(".mkv") && !low.contains(".webm") && !low.contains(".txt")) return
             }
 
             // CRITICAL: Block protected internal CDN streams and JS-Only embed hosts from overriding resolvedUrl
-            val isDirectStream = low.contains(".m3u8") || low.contains(".mp4") || low.contains(".mkv") || low.contains(".webm")
+            val isDirectStream = low.contains(".m3u8") || low.contains(".mp4") || low.contains(".mkv") || low.contains(".webm") || low.contains(".txt") || low.contains("/stream/")
             val isProtectedStream = (low.contains("playmogo") ||
                                     low.contains("digitalidentity") || low.contains("sunrisevalleycreative") ||
                                     low.contains("johnfullwonder") || low.contains("voe") ||

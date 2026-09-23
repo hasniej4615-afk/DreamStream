@@ -42,7 +42,8 @@ object NetworkConfig {
         val lowUrl = url.lowercase()
         return when {
             lowUrl.contains("bestcdn") || lowUrl.contains("morencius") || lowUrl.contains("dhcplay") ||
-            lowUrl.contains("ryderjet") || lowUrl.contains("faststream") || lowUrl.contains("iplayer") -> HeaderProfile.AGGRESSIVE_SPOOF
+            lowUrl.contains("ryderjet") || lowUrl.contains("faststream") || lowUrl.contains("iplayer") ||
+            lowUrl.contains("asiastream") || lowUrl.contains("asiatik") -> HeaderProfile.AGGRESSIVE_SPOOF
             lowUrl.contains("hgcloud") || lowUrl.contains("hanerix") || lowUrl.contains("vibuxer") ||
             lowUrl.contains("audinifer") || lowUrl.contains("haneri") || lowUrl.contains("abyss") || 
             lowUrl.contains("bond") || lowUrl.contains("iamcdn") || lowUrl.contains("katakatamutiara") -> HeaderProfile.MOBILE
@@ -193,6 +194,13 @@ object NetworkConfig {
                     sessionReferers["tnmr.org"] = "https://luluvdo.com/"
                     sessionReferers["cdn-tnmr.org"] = "https://luluvdo.com/"
                     sessionReferers[host] = "https://luluvdo.com/"
+                }
+
+                if (host.contains("asiastream") || host.contains("asiatik")) {
+                    sessionReferers["watch.asiastream.cc"] = "https://watch.asiastream.cc/"
+                    sessionReferers["asiastream.cc"] = "https://watch.asiastream.cc/"
+                    sessionReferers["asiatik01.site"] = "https://watch.asiastream.cc/"
+                    sessionReferers[host] = "https://watch.asiastream.cc/"
                 }
 
                 if (host.contains("iplayer") || host.contains("indostream") || host.contains("morencius") || host.contains("bestcdn") || host.contains("latestmoviereview") || host.contains("wellnessspace") || host.contains("meadowpath") ||
@@ -431,6 +439,7 @@ object NetworkConfig {
                     sessionReferers[host] ?: if (host.contains("cloudwindow")) sessionReferers["cloudwindow-route.com"]
                     else if (host.contains("dailymotion") || host.contains("cdndirector") || host.contains("dmcdn")) "https://www.dailymotion.com/"
                     else if (host.contains("luluvdo") || host.contains("lulustream") || host.contains("tnmr.org") || host.contains("lulucdn")) "https://luluvdo.com/"
+                    else if (host.contains("asiastream") || host.contains("asiatik")) sessionReferers["watch.asiastream.cc"] ?: "https://watch.asiastream.cc/"
                     else null 
                 }
                 
@@ -457,6 +466,7 @@ object NetworkConfig {
                     host.contains("indostream") || host.contains("morencius") -> "https://iplayerhls.com"
                     host.contains("dailymotion") || host.contains("cdndirector") || host.contains("dmcdn") -> "https://www.dailymotion.com"
                     host.contains("luluvdo") || host.contains("lulustream") || host.contains("tnmr.org") || host.contains("lulucdn") -> "https://luluvdo.com"
+                    host.contains("asiastream") || host.contains("asiatik") -> "https://watch.asiastream.cc"
                     else -> "https://${host}"
                 }
                 
@@ -469,6 +479,9 @@ object NetworkConfig {
                 } else if (host.contains("luluvdo") || host.contains("lulustream") || host.contains("tnmr.org") || host.contains("lulucdn")) {
                     requestBuilder.header("Referer", currentReferer ?: "https://luluvdo.com/")
                     requestBuilder.header("Origin", "https://luluvdo.com")
+                } else if (host.contains("asiastream") || host.contains("asiatik")) {
+                    requestBuilder.header("Referer", currentReferer ?: "https://watch.asiastream.cc/")
+                    requestBuilder.header("Origin", "https://watch.asiastream.cc")
                 } else {
                     requestBuilder.header("Origin", finalOrigin)
                     if (currentReferer != null) {
