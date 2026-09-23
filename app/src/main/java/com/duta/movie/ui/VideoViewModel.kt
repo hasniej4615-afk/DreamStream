@@ -763,7 +763,7 @@ class VideoViewModel @Inject constructor(
             val lowBase = currentBase.lowercase()
             if (lowBase.contains("katherineschoolphone") || lowBase.contains("voe") || !VideoExtractor.pingAndVerify(currentBase)) {
                 Log.w("VideoViewModel", "Active base domain ($currentBase) is invalid or dead. Probing fresh domain...")
-                val fresh = VideoExtractor.probeForNewDomain() ?: "https://algarvebuzz.com"
+                val fresh = VideoExtractor.probeForNewDomain() ?: "https://204.3.234.75"
                 VideoExtractor.setBaseUrl(fresh)
                 preferenceManager.setActiveBaseUrl(fresh)
                 Log.i("VideoViewModel", "Active base domain restored to: $fresh")
@@ -1380,7 +1380,7 @@ class VideoViewModel @Inject constructor(
         val pencuriHost = try { android.net.Uri.parse(com.duta.movie.util.VideoExtractor.getPencuriBaseUrl()).host?.lowercase() } catch(_: Exception) { null }
         if (host == null || host.isEmpty() || host == activeBaseHost || host == pencuriHost ||
             host.contains("archive.org") || host.contains("pencurimovie") || host.contains("pencurifilm") ||
-            host.contains("dutamovie") || host.contains("algarvebuzz") || host.contains("actors-pictures") ||
+            host.contains("dutamovie") || host.contains("204.3.234.75") || host.contains("algarvebuzz") || host.contains("actors-pictures") ||
             host.contains("youtube") || host.contains("googlevideo") || host.contains("bilibili") ||
             host.contains("dailymotion") || host.contains("dmcdn") ||
             host.contains("streamtape") || host.contains("dood") ||

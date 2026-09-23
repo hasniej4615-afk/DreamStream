@@ -43,6 +43,69 @@ class MyLocalTest {
 
         VideoExtractor.updateBaseUrl("http://ww38.dutamovie.com", force = true)
         assertEquals("ww38 must be blocked", initialBase, VideoExtractor.getBaseUrl())
+
+        VideoExtractor.updateBaseUrl("https://algarvebuzz.com", force = true)
+        assertEquals("algarvebuzz must be blocked", initialBase, VideoExtractor.getBaseUrl())
+
+        VideoExtractor.updateBaseUrl("https://digitalpapercuts.com", force = true)
+        assertEquals("digitalpapercuts must be blocked", initialBase, VideoExtractor.getBaseUrl())
+    }
+
+    @Test
+    fun testPencuriCategories() {
+        kotlinx.coroutines.runBlocking {
+            val testPaths = listOf("/", "/category/movie/", "/series/", "/category/tv/", "/category/drama/", "/tv/", "/drama/", "/genre/action/")
+            val pencuriBase = VideoExtractor.getPencuriBaseUrl()
+            for (p in testPaths) {
+                val url = "$pencuriBase$p"
+                val html = VideoExtractor.fetchHtml(url)
+                if (html != null) {
+                    val videos = VideoExtractor.scrapeVideosFromHtml(html, url)
+                    println("Pencuri path $p ($url) -> Scraped ${videos.size} videos")
+                } else {
+                    println("Pencuri path $p ($url) -> HTML is NULL")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun testDutaMovieDomains() {
+        kotlinx.coroutines.runBlocking {
+            VideoExtractor.setBaseUrl("https://204.3.234.75")
+
+            println("1. Fetching Section '/'...")
+            val homeVideos = VideoExtractor.fetchVideosBySection("/", 1, 10)
+            println("Home count: ${homeVideos.size}")
+            homeVideos.take(3).forEach { println(" - Home item: ${it.title} | ${it.videoUrl}") }
+
+            println("2. Fetching Section '/movie/'...")
+            val movies = VideoExtractor.fetchVideosBySection("/movie/", 1, 10)
+            println("Movies count: ${movies.size}")
+            movies.take(3).forEach { println(" - Movie item: ${it.title} | ${it.videoUrl}") }
+
+            println("3. Fetching Section '/serial-tv-terbaru/'...")
+            val series = VideoExtractor.fetchVideosBySection("/serial-tv-terbaru/", 1, 10)
+            println("Series count: ${series.size}")
+            series.take(3).forEach { println(" - Series item: ${it.title} | ${it.videoUrl}") }
+
+            println("4. Fetching Movie Details...")
+            val firstMovie = movies.firstOrNull() ?: homeVideos.firstOrNull()
+            if (firstMovie != null) {
+                val movieDetail = VideoExtractor.fetchVideoDetails(firstMovie.videoUrl)
+                println("Detail for ${firstMovie.title}: servers=${movieDetail?.servers?.size}, isSeries=${movieDetail?.isSeries}")
+                movieDetail?.servers?.forEach { println("   Server: ${it.name} -> ${it.url}") }
+            }
+
+            println("5. Fetching Series Details...")
+            val realSeries = series.find { it.videoUrl.contains("/tv/") || it.title.contains("Line of Fire") || it.title.contains("Season") } ?: series.firstOrNull()
+            if (realSeries != null) {
+                val seriesDetail = VideoExtractor.fetchVideoDetails(realSeries.videoUrl)
+                println("Detail for ${realSeries.title}: isSeries=${seriesDetail?.isSeries}, episodes=${seriesDetail?.episodes?.size}, servers=${seriesDetail?.servers?.size}")
+                seriesDetail?.episodes?.take(5)?.forEach { println("   Ep: ${it.name} -> ${it.url}") }
+                seriesDetail?.servers?.forEach { println("   Server: ${it.name} -> ${it.url}") }
+            }
+        }
     }
 
     @Test

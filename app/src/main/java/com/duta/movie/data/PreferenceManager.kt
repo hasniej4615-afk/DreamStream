@@ -54,7 +54,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
     }
 
     val activeBaseUrl: Flow<String> = context.dataStore.data.map { prefs ->
-        val raw = prefs[BASE_URL_KEY] ?: "https://algarvebuzz.com"
+        val raw = prefs[BASE_URL_KEY] ?: "https://204.3.234.75"
         val low = raw.lowercase()
         val isPoisoned = low.contains("katherineschoolphone") ||
                 low.contains("voe") ||
@@ -67,6 +67,8 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
                 low.contains("dutamovie21.now") ||
                 low.contains("dutamovie.com") ||
                 low.contains("dutamovie21.xyz") ||
+                low.contains("algarvebuzz.com") ||
+                low.contains("digitalpapercuts.com") ||
                 low.contains("ww38") ||
                 Regex("""^https?://ww\d+\.""").containsMatchIn(low) ||
                 low.contains("sedo") ||
@@ -78,11 +80,11 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
                 low.contains("pencuri") ||
                 low.contains("archive.org") ||
                 !low.startsWith("http")
-        if (isPoisoned) "https://algarvebuzz.com" else {
+        if (isPoisoned) "https://204.3.234.75" else {
             try {
                 val uri = android.net.Uri.parse(raw)
                 "${uri.scheme}://${uri.host}"
-            } catch (_: Exception) { "https://algarvebuzz.com" }
+            } catch (_: Exception) { "https://204.3.234.75" }
         }
     }
 
@@ -90,7 +92,9 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         val low = url.lowercase()
         if (low.contains("katherineschoolphone") || low.contains("voe") || low.contains("kepalabergetar") ||
             low.contains("pencuri") || low.contains("archive.org") ||
-            low.contains("dutamovie.com") || low.contains("dutamovie21.xyz") || low.contains("ww38") ||
+            low.contains("dutamovie.com") || low.contains("dutamovie21.xyz") ||
+            low.contains("algarvebuzz.com") || low.contains("digitalpapercuts.com") ||
+            low.contains("ww38") ||
             Regex("""^https?://ww\d+\.""").containsMatchIn(low) ||
             low.contains("parking") || low.contains("sedo") || low.contains("abovedomains") ||
             low.contains("dan.com") || low.contains("godaddy") ||

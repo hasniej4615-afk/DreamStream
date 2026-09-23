@@ -33,7 +33,7 @@ import org.json.JSONObject
 object VideoExtractor {
     private const val TAG = "!!!VideoExtractor!!!"
     private var USER_AGENT = NetworkConfig.SHARED_USER_AGENT
-    private var BASE_URL = "https://algarvebuzz.com"
+    private var BASE_URL = "https://204.3.234.75"
 
     fun setUserAgent(ua: String) {
         USER_AGENT = ua
@@ -140,6 +140,7 @@ object VideoExtractor {
                 // Explicitly block known "poison" domains, VIDEO HOSTS, GATEWAYS, and PARKED DOMAINS from hijacking BASE_URL
                 val isBlockedHost = host.contains("duta.media") || host.contains("dutamovie21.now") ||
                     host.contains("dutamovie.com") || host.contains("dutamovie21.xyz") ||
+                    host.contains("algarvebuzz.com") || host.contains("digitalpapercuts.com") ||
                     host.contains("ww38") || Regex("""^ww\d+\.""").containsMatchIn(host) ||
                     host.contains("sedo") || host.contains("parking") || host.contains("abovedomains") ||
                     host.contains("dan.com") || host.contains("godaddy") ||
@@ -238,12 +239,13 @@ object VideoExtractor {
         val lowBase = currentBase.lowercase()
         val isBasePoisoned = lowBase.contains("katherineschoolphone") || lowBase.contains("voe") || 
             lowBase.contains("player") || lowBase.contains("dutamovie.com") || lowBase.contains("dutamovie21.xyz") ||
+            lowBase.contains("algarvebuzz.com") || lowBase.contains("digitalpapercuts.com") ||
             lowBase.contains("ww38") || Regex("""^https?://ww\d+\.""").containsMatchIn(lowBase) ||
             lowBase.contains("parking") || lowBase.contains("sedo") || lowBase.contains("abovedomains") ||
             lowBase.contains("dan.com") || lowBase.contains("godaddy") ||
             !lowBase.startsWith("http")
         if (isBasePoisoned) {
-            currentBase = "https://algarvebuzz.com"
+            currentBase = "https://204.3.234.75"
             setBaseUrl(currentBase)
         }
         val currentBaseHost = try { android.net.Uri.parse(currentBase).host?.lowercase() } catch(_: Throwable) { null }
@@ -315,7 +317,7 @@ object VideoExtractor {
                low.contains("dutamovie") || low.contains("indostream") ||
                low.contains("amt") || low.contains("zeus") || low.contains("eddieoneverything") ||
                low.contains("dooplay") || low.contains("dbmovies") ||
-               low.contains("muvipro") || low.contains("algarvebuzz") ||
+               low.contains("muvipro") || low.contains("204.3.234.75") || low.contains("rebahin") ||
                low.contains("pencurimovie") || low.contains("pencurifilm") ||
                low.contains("katakatamutiara") || low.contains("ohionewsnow")
     }
@@ -391,7 +393,8 @@ object VideoExtractor {
 
         // TIER 3 SCOUT: Known fallback candidate patterns
         val candidates = listOf(
-            "https://algarvebuzz.com",
+            "https://204.3.234.75",
+            "https://tv5.rebahinxxi.auction",
             "https://ohionewsnow.com",
             "https://billofrightsforum.org",
             "https://eddieoneverything.com", 
@@ -1475,6 +1478,34 @@ object VideoExtractor {
             currentPage++
         }
         Log.i(TAG, "Fetch complete for $path. Final count: ${results.size}")
+        if (results.isEmpty() && !path.contains("malaysia", ignoreCase = true) && !path.contains("viet", ignoreCase = true) && !path.contains("p-ramlee", ignoreCase = true)) {
+            val pencuriBase = getPencuriBaseUrl()
+            val pencuriPath = when {
+                path == "/" || path.isEmpty() -> if (page > 1) "/page/$page/" else "/"
+                path.contains("serial-tv", ignoreCase = true) || path.contains("/tv/", ignoreCase = true) || path.contains("/series/", ignoreCase = true) ->
+                    if (page > 1) "/series/page/$page/" else "/series/"
+                path.contains("movie", ignoreCase = true) || path.contains("box-office", ignoreCase = true) ->
+                    if (page > 1) "/category/movie/page/$page/" else "/category/movie/"
+                path.contains("genre/", ignoreCase = true) -> {
+                    val g = path.substringAfter("genre/").trim('/')
+                    if (page > 1) "/genre/$g/page/$page/" else "/genre/$g/"
+                }
+                path.trim('/').matches(Regex("^[a-zA-Z0-9-]+$")) -> {
+                    val g = path.trim('/')
+                    if (page > 1) "/genre/$g/page/$page/" else "/genre/$g/"
+                }
+                else -> if (page > 1) "/category/movie/page/$page/" else "/category/movie/"
+            }
+            val pencuriUrl = "$pencuriBase$pencuriPath"
+            Log.w(TAG, "DutaMovie section empty for $path. Auto-fallback to PencuriMovie: $pencuriUrl")
+            val phtml = fetchHtml(pencuriUrl)
+            if (!phtml.isNullOrEmpty()) {
+                val isSeriesCategory = path.contains("serial-tv", ignoreCase = true) || path.contains("/tv/", ignoreCase = true) || path.contains("/series/", ignoreCase = true)
+                val pScraped = scrapeVideosFromHtml(phtml, pencuriUrl)
+                val finalScraped = if (isSeriesCategory) pScraped.map { it.copy(isSeries = true) } else pScraped
+                results.addAll(finalScraped)
+            }
+        }
         results.take(count)
     }
 
