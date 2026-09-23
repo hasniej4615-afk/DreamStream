@@ -182,11 +182,23 @@ class MyLocalTest {
 
     @Test
     fun testSciFiNormalization() {
-        assertEquals("/science-fiction/", VideoExtractor.normalizePath("/sci-fi/"))
-        assertEquals("/science-fiction/", VideoExtractor.normalizePath("sci-fi"))
-        assertEquals("/science-fiction/", VideoExtractor.normalizePath("/genre/sci-fi/"))
-        assertEquals("/science-fiction/", VideoExtractor.normalizePath("https://ohionewsnow.com/sci-fi/"))
-        assertEquals("/science-fiction/", VideoExtractor.normalizePath("/science-fiction/"))
+        assertEquals("/genre/science-fiction/", VideoExtractor.normalizePath("/sci-fi/"))
+        assertEquals("/genre/science-fiction/", VideoExtractor.normalizePath("sci-fi"))
+        assertEquals("/genre/science-fiction/", VideoExtractor.normalizePath("/genre/sci-fi/"))
+        assertEquals("/genre/science-fiction/", VideoExtractor.normalizePath("https://ohionewsnow.com/sci-fi/"))
+        assertEquals("/genre/science-fiction/", VideoExtractor.normalizePath("/science-fiction/"))
+        assertEquals("/genre/science-fiction/", VideoExtractor.normalizePath("/genre/science-fiction/"))
+    }
+
+    @Test
+    fun testGenreNormalization() {
+        assertEquals("/genre/action/", VideoExtractor.normalizePath("/action/"))
+        assertEquals("/genre/action/", VideoExtractor.normalizePath("action"))
+        assertEquals("/genre/action/", VideoExtractor.normalizePath("/genre/action/"))
+        assertEquals("/genre/comedy/", VideoExtractor.normalizePath("/comedy/"))
+        assertEquals("/genre/horror/", VideoExtractor.normalizePath("/horror/"))
+        assertEquals("/genre/animation/", VideoExtractor.normalizePath("/animasi/"))
+        assertEquals("/genre/animation/", VideoExtractor.normalizePath("/animation/"))
     }
 
     @Test

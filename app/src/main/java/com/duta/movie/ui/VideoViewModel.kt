@@ -370,8 +370,8 @@ class VideoViewModel @Inject constructor(
     val metadataCache = ConcurrentHashMap<String, Video>()
     val episodeServersCache = ConcurrentHashMap<String, List<VideoServer>>()
     val filterResultCache = ConcurrentHashMap<String, Boolean>()
-    private val moviePath = VideoExtractor.normalizePath("/movie/")
-    private val seriesPath = VideoExtractor.normalizePath("/serial-tv-terbaru/")
+    private val moviePath = VideoExtractor.normalizePath("/movies/")
+    private val seriesPath = VideoExtractor.normalizePath("/series/")
 
     enum class CategoryGroup(val priority: Int, val label: String, val tag: String) {
         CORE(1, "Core Catalogs", "CORE"),
@@ -394,6 +394,7 @@ class VideoViewModel @Inject constructor(
         val CURATED_REGIONAL_ORDER = listOf(
             "/country/malaysia/",
             "/category/p-ramlee/",
+            "/country/vietnam/",
             "/country/viet-nam/",
             "/country/indonesia/",
             "/country/korea/",
@@ -418,19 +419,18 @@ class VideoViewModel @Inject constructor(
         val CURATED_GENRE_ORDER = listOf(
             "/genre/subbed/malay-subbed/",
             "/genre/dubbed/malay/",
-            "/action/",
-            "/animasi/",
-            "/comedy/",
-            "/drama/",
-            "/horror/",
-            "/romance/",
-            "/science-fiction/",
-            "/thriller/",
-            "/adventure/",
-            "/crime/",
-            "/fantasy/",
-            "/mystery/",
-            "/animation/"
+            "/genre/action/",
+            "/genre/animation/",
+            "/genre/comedy/",
+            "/genre/drama/",
+            "/genre/horror/",
+            "/genre/romance/",
+            "/genre/science-fiction/",
+            "/genre/thriller/",
+            "/genre/adventure/",
+            "/genre/crime/",
+            "/genre/fantasy/",
+            "/genre/mystery/"
         ).map { VideoExtractor.normalizePath(it) }
 
         val PRIORITY_PATHS = (
@@ -615,13 +615,9 @@ class VideoViewModel @Inject constructor(
             it.toMutableMap().apply { 
                 val origPath = get("path") ?: ""
                 var p = VideoExtractor.normalizePath(origPath)
-                // Migrate /genre/X/ paths to /X/ (root paths have 20 items + pagination vs 11 without)
-                if (p.startsWith("/genre/") && p != "/genre/") {
-                    p = p.removePrefix("/genre")
-                }
                 if (p.contains("country/viet-nam", ignoreCase = true) || p.contains("country/vietnam", ignoreCase = true)) {
-                    p = "/country/viet-nam/"
-                    put("name", "Viet Nam")
+                    p = "/country/vietnam/"
+                    put("name", "Vietnam")
                 }
                 if (p.contains("country/malaysia", ignoreCase = true)) {
                     p = "/country/malaysia/"
@@ -631,8 +627,8 @@ class VideoViewModel @Inject constructor(
                     p = "/category/p-ramlee/"
                     put("name", "P.Ramlee")
                 }
-                if (p.matches(Regex("""^(.*/)?sci-fi/?$""", RegexOption.IGNORE_CASE)) || p.contains("/science-fiction", ignoreCase = true)) {
-                    p = "/science-fiction/"
+                if (p.matches(Regex("""^(.*/)?sci-fi/?$""", RegexOption.IGNORE_CASE)) || p.contains("science-fiction", ignoreCase = true)) {
+                    p = "/genre/science-fiction/"
                     put("name", "Science Fiction")
                 }
                 put("path", p)
@@ -661,6 +657,7 @@ class VideoViewModel @Inject constructor(
             !lowName.contains("iklan") &&
             !lowName.contains("film lainnya") &&
             !lowName.contains("islamic republic of") &&
+            !lowPath.startsWith("/network/") &&
             !lowPath.contains("kelas-bintang") &&
             !lowPath.contains("vivamax") &&
             !lowPath.contains("bokep") &&
@@ -704,25 +701,26 @@ class VideoViewModel @Inject constructor(
             mapOf("name" to "Newly Updated", "path" to "/"),
             mapOf("name" to "Movies", "path" to moviePath),
             mapOf("name" to "TV Series", "path" to seriesPath),
-            mapOf("name" to "Box-Office", "path" to "/box-office/"),
+            mapOf("name" to "Top IMDb", "path" to "/top-imdb/"),
+            mapOf("name" to "Trending", "path" to "/most-viewed/"),
+            mapOf("name" to "Malay Subbed", "path" to "/genre/subbed/malay-subbed/"),
+            mapOf("name" to "Malay Dubbed", "path" to "/genre/dubbed/malay/"),
             mapOf("name" to "Malaysia", "path" to "/country/malaysia/"),
             mapOf("name" to "P.Ramlee", "path" to "/category/p-ramlee/"),
-            mapOf("name" to "Viet Nam", "path" to "/country/viet-nam/"),
             mapOf("name" to "Indonesia", "path" to "/country/indonesia/"),
             mapOf("name" to "Korea", "path" to "/country/korea/"),
             mapOf("name" to "Thailand", "path" to "/country/thailand/"),
-            mapOf("name" to "Netflix", "path" to "/network/netflix/"),
-            mapOf("name" to "Disney+", "path" to "/network/disney/"),
-            mapOf("name" to "Apple TV+", "path" to "/network/apple-tv/"),
-            mapOf("name" to "HBO", "path" to "/network/hbo/"),
-            mapOf("name" to "Action", "path" to "/action/"),
-            mapOf("name" to "Anime", "path" to "/animasi/"),
-            mapOf("name" to "Comedy", "path" to "/comedy/"),
-            mapOf("name" to "Drama", "path" to "/drama/"),
-            mapOf("name" to "Horror", "path" to "/horror/"),
-            mapOf("name" to "Romance", "path" to "/romance/"),
-            mapOf("name" to "Science Fiction", "path" to "/science-fiction/"),
-            mapOf("name" to "Thriller", "path" to "/thriller/")
+            mapOf("name" to "Vietnam", "path" to "/country/vietnam/"),
+            mapOf("name" to "Japan", "path" to "/country/japan/"),
+            mapOf("name" to "China", "path" to "/country/china/"),
+            mapOf("name" to "Action", "path" to "/genre/action/"),
+            mapOf("name" to "Animation", "path" to "/genre/animation/"),
+            mapOf("name" to "Comedy", "path" to "/genre/comedy/"),
+            mapOf("name" to "Drama", "path" to "/genre/drama/"),
+            mapOf("name" to "Horror", "path" to "/genre/horror/"),
+            mapOf("name" to "Romance", "path" to "/genre/romance/"),
+            mapOf("name" to "Science Fiction", "path" to "/genre/science-fiction/"),
+            mapOf("name" to "Thriller", "path" to "/genre/thriller/")
         )
         
         // Immediate initialization with sorted defaults

@@ -73,8 +73,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
                 low.contains("204.3.234.75") ||
                 low.contains("rebahin") ||
                 low.contains("rebahinxxi") ||
-                low.contains("ww38") ||
-                Regex("""^https?://ww\d+\.""").containsMatchIn(low) ||
+                (!low.contains("pencurimovie") && (low.contains("ww38") || Regex("""^https?://ww\d+\.""").containsMatchIn(low))) ||
                 low.contains("sedo") ||
                 low.contains("parking") ||
                 low.contains("abovedomains") ||
@@ -98,8 +97,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
             low.contains("dutamovie.com") || low.contains("dutamovie21.xyz") ||
             low.contains("algarvebuzz.com") || low.contains("digitalpapercuts.com") ||
             low.contains("204.3.234.75") || low.contains("rebahin") || low.contains("rebahinxxi") ||
-            low.contains("ww38") ||
-            Regex("""^https?://ww\d+\.""").containsMatchIn(low) ||
+            (!low.contains("pencurimovie") && (low.contains("ww38") || Regex("""^https?://ww\d+\.""").containsMatchIn(low))) ||
             low.contains("parking") || low.contains("sedo") || low.contains("abovedomains") ||
             low.contains("dan.com") || low.contains("godaddy") ||
             !low.startsWith("http")) return

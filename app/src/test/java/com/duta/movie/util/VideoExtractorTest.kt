@@ -90,27 +90,27 @@ class VideoExtractorTest {
     fun testUpdateBaseUrlProtection() {
         val initialBase = VideoExtractor.getBaseUrl()
         try {
-            VideoExtractor.setBaseUrl("https://actors-pictures.com")
+            VideoExtractor.setBaseUrl("https://ww44.pencurimovie.baby")
             
             // 1. Ensure video stream / embed hosts are rejected even with force=true
             VideoExtractor.updateBaseUrl("https://vibuxer.com/stream/mZVaBmSVUnUA-wR2JkPKRw/kjhhiuahiuhgihdf/1789190911/74200242/index-v1-a1.m3u8", force = true)
-            assert(VideoExtractor.getBaseUrl() == "https://actors-pictures.com") { "Vibuxer must never hijack BASE_URL" }
+            assert(VideoExtractor.getBaseUrl() == "https://ww44.pencurimovie.baby") { "Vibuxer must never hijack BASE_URL" }
 
             VideoExtractor.updateBaseUrl("https://player.abyssplayer.com/yERq-2PX2", force = true)
-            assert(VideoExtractor.getBaseUrl() == "https://actors-pictures.com") { "Abyss must never hijack BASE_URL" }
+            assert(VideoExtractor.getBaseUrl() == "https://ww44.pencurimovie.baby") { "Abyss must never hijack BASE_URL" }
 
             VideoExtractor.updateBaseUrl("https://hgcloud.to/e/w3i6fj8k2fci", force = true)
-            assert(VideoExtractor.getBaseUrl() == "https://actors-pictures.com") { "Hgcloud must never hijack BASE_URL" }
+            assert(VideoExtractor.getBaseUrl() == "https://ww44.pencurimovie.baby") { "Hgcloud must never hijack BASE_URL" }
 
             VideoExtractor.updateBaseUrl("https://voe.sx/e/rjhhtsfxts04", force = true)
-            assert(VideoExtractor.getBaseUrl() == "https://actors-pictures.com") { "VOE must never hijack BASE_URL" }
+            assert(VideoExtractor.getBaseUrl() == "https://ww44.pencurimovie.baby") { "VOE must never hijack BASE_URL" }
 
-            VideoExtractor.updateBaseUrl("https://ww44.pencurimovie.baby/narsata-sekutu-setan-2026/", force = true)
-            assert(VideoExtractor.getBaseUrl() == "https://actors-pictures.com") { "PencuriMovie must not hijack Duta BASE_URL" }
+            VideoExtractor.updateBaseUrl("https://204.3.234.75/movie/test/", force = true)
+            assert(VideoExtractor.getBaseUrl() == "https://ww44.pencurimovie.baby") { "Blocked IP must not hijack BASE_URL" }
 
-            // 2. Legitimate DutaMovie domain updates should be accepted
-            VideoExtractor.updateBaseUrl("https://actors-pictures.com/movie/test/", force = false)
-            assert(VideoExtractor.getBaseUrl() == "https://actors-pictures.com") { "actors-pictures.com should be accepted" }
+            // 2. Legitimate PencuriMovie domain updates should be accepted
+            VideoExtractor.updateBaseUrl("https://ww45.pencurimovie.baby/movie/test/", force = true)
+            assert(VideoExtractor.getBaseUrl() == "https://ww45.pencurimovie.baby") { "ww45.pencurimovie.baby should be accepted" }
         } finally {
             VideoExtractor.setBaseUrl(initialBase)
         }

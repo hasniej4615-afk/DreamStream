@@ -110,7 +110,7 @@ object VideoExtractor {
                     if (response.isSuccessful) {
                         val finalUrl = response.request.url.toString()
                         val html = response.body?.string() ?: ""
-                        if (html.contains("pencurimovie") || html.contains("class=\"gmr-") || html.contains("content=\"video.movie\"") || html.contains("id=\"movies\"")) {
+                        if (html.contains("pencurimovie") || html.contains("moviemo") || html.contains("ml-item") || html.contains("class=\"gmr-") || html.contains("content=\"video.movie\"") || html.contains("id=\"movies\"")) {
                             val root = "${response.request.url.scheme}://${response.request.url.host}"
                             Log.i(TAG, "SCOUTING: Live PencuriMovie domain confirmed: $root (via $finalUrl)")
                             updatePencuriBaseUrl(root)
@@ -142,7 +142,7 @@ object VideoExtractor {
                     host.contains("dutamovie.com") || host.contains("dutamovie21.xyz") ||
                     host.contains("algarvebuzz.com") || host.contains("digitalpapercuts.com") ||
                     host.contains("204.3.234.75") || host.contains("rebahin") || host.contains("rebahinxxi") ||
-                    host.contains("ww38") || Regex("""^ww\d+\.""").containsMatchIn(host) ||
+                    (!host.contains("pencurimovie") && (host.contains("ww38") || Regex("""^ww\d+\.""").containsMatchIn(host))) ||
                     host.contains("sedo") || host.contains("parking") || host.contains("abovedomains") ||
                     host.contains("dan.com") || host.contains("godaddy") ||
                     host.contains("test-videos.co.uk") || host.contains("sample-videos.com") || 
@@ -193,17 +193,38 @@ object VideoExtractor {
     fun normalizePath(path: String): String {
         if (path.isEmpty() || path == "/") return "/"
         val pClean = path.trim().trim('/')
-        if (pClean.equals("movie", ignoreCase = true) || pClean.equals("movies", ignoreCase = true) || pClean.equals("category/movie", ignoreCase = true)) return "/movies/"
+        if (pClean.equals("movie", ignoreCase = true) || pClean.equals("movies", ignoreCase = true) || pClean.equals("category/movie", ignoreCase = true) || pClean.equals("type/movies", ignoreCase = true)) return "/movies/"
         if (pClean.equals("serial-tv", ignoreCase = true) || pClean.equals("serial-tv-terbaru", ignoreCase = true) || 
             pClean.equals("tv", ignoreCase = true) || pClean.equals("series", ignoreCase = true) || 
-            pClean.equals("category/tv", ignoreCase = true) || pClean.equals("category/series", ignoreCase = true)) return "/series/"
+            pClean.equals("category/tv", ignoreCase = true) || pClean.equals("category/series", ignoreCase = true) ||
+            pClean.equals("type/series", ignoreCase = true)) return "/series/"
         if (pClean.equals("box-office", ignoreCase = true) || pClean.equals("popular", ignoreCase = true)) return "/top-imdb/"
+        if (pClean.equals("trending", ignoreCase = true)) return "/most-viewed/"
         val yearMatch = Regex("""^(?:release-year|year)/(\d{4})$""", RegexOption.IGNORE_CASE).find(pClean)
         if (yearMatch != null) return "/release-year/${yearMatch.groupValues[1]}/"
         if (path.contains("country/viet-nam", ignoreCase = true) || path.contains("country/vietnam", ignoreCase = true)) return "/country/vietnam/"
         if (path.contains("country/malaysia", ignoreCase = true)) return "/country/malaysia/"
         if (path.contains("p-ramlee", ignoreCase = true) || path.contains("FilemP.ramlee", ignoreCase = true)) return "/category/p-ramlee/"
-        if (path.matches(Regex("""^(.*/)?sci-fi/?$""", RegexOption.IGNORE_CASE))) return "/science-fiction/"
+        val categoryPrefix = if (pClean.startsWith("category/", ignoreCase = true)) pClean.removePrefix("category/").removePrefix("Category/") else pClean
+        val genreTarget = when {
+            path.matches(Regex("""^(.*/)?sci-fi/?$""", RegexOption.IGNORE_CASE)) || path.contains("science-fiction", ignoreCase = true) -> "science-fiction"
+            categoryPrefix.equals("animasi", ignoreCase = true) || categoryPrefix.equals("animation", ignoreCase = true) -> "animation"
+            categoryPrefix.equals("action", ignoreCase = true) -> "action"
+            categoryPrefix.equals("horror", ignoreCase = true) -> "horror"
+            categoryPrefix.equals("comedy", ignoreCase = true) -> "comedy"
+            categoryPrefix.equals("drama", ignoreCase = true) -> "drama"
+            categoryPrefix.equals("romance", ignoreCase = true) -> "romance"
+            categoryPrefix.equals("thriller", ignoreCase = true) -> "thriller"
+            categoryPrefix.equals("adventure", ignoreCase = true) -> "adventure"
+            categoryPrefix.equals("crime", ignoreCase = true) -> "crime"
+            categoryPrefix.equals("fantasy", ignoreCase = true) -> "fantasy"
+            categoryPrefix.equals("mystery", ignoreCase = true) -> "mystery"
+            categoryPrefix.equals("family", ignoreCase = true) -> "family"
+            categoryPrefix.equals("history", ignoreCase = true) -> "history"
+            categoryPrefix.equals("music", ignoreCase = true) -> "music"
+            else -> null
+        }
+        if (genreTarget != null) return "/genre/$genreTarget/"
         if (path.startsWith("http")) return path.trim()
         
         // Repair corrupted external URLs saved by older versions (e.g. /https:/example.com -> https://example.com)
@@ -249,7 +270,7 @@ object VideoExtractor {
             lowBase.contains("player") || lowBase.contains("dutamovie.com") || lowBase.contains("dutamovie21.xyz") ||
             lowBase.contains("algarvebuzz.com") || lowBase.contains("digitalpapercuts.com") ||
             lowBase.contains("204.3.234.75") || lowBase.contains("rebahin") || lowBase.contains("rebahinxxi") ||
-            lowBase.contains("ww38") || Regex("""^https?://ww\d+\.""").containsMatchIn(lowBase) ||
+            (!lowBase.contains("pencurimovie") && (lowBase.contains("ww38") || Regex("""^https?://ww\d+\.""").containsMatchIn(lowBase))) ||
             lowBase.contains("parking") || lowBase.contains("sedo") || lowBase.contains("abovedomains") ||
             lowBase.contains("dan.com") || lowBase.contains("godaddy") ||
             !lowBase.startsWith("http")
@@ -319,7 +340,9 @@ object VideoExtractor {
                 low.contains("muvipro-player-tabs") || low.contains("gmr-watch-button") || low.contains("gmr-movie-on") ||
                 low.contains("player_nav") || low.contains("class=\"gmr-") || low.contains("id=\"movies\"") ||
                 low.contains("og:type\" content=\"video.movie\"") || low.contains("class=\"muvipro") ||
-                (low.contains("href=\"/movie/") && (low.contains("href=\"/episode/") || low.contains("href=\"/series/")))
+                low.contains("ml-item") || low.contains("ml-mask") || low.contains("moviemo") ||
+                low.contains("pencurimovie") || low.contains("pencurifilm") ||
+                ((low.contains("href=\"/movie/") || low.contains("href=\"/movies/")) && (low.contains("href=\"/episode/") || low.contains("href=\"/series/")))
         if (!hasCmsFingerprint) return false
 
         return low.contains("dutamovie21") || low.contains("itoshii-movie") ||
@@ -1554,7 +1577,8 @@ object VideoExtractor {
             val pagesToFetch = if (count > 40) 3 else 1
             for (offset in 0 until pagesToFetch) {
                 val currPage = page + offset
-                val url = if (currPage > 1) "$BASE_URL/country/viet-nam/page/$currPage/" else "$BASE_URL/country/viet-nam/"
+                val vietPath = if (BASE_URL.contains("pencurimovie")) "/country/vietnam/" else "/country/viet-nam/"
+                val url = if (currPage > 1) "$BASE_URL${vietPath}page/$currPage/" else "$BASE_URL$vietPath"
                 try {
                     val html = fetchHtml(url) ?: break
                     val scraped = scrapeVideosFromHtml(html, url)
@@ -3630,19 +3654,12 @@ object VideoExtractor {
         // Aggressively try base and secondary pages for categories to be exhaustive
         val sources = listOf(
             BASE_URL, 
-            "$BASE_URL/movie/", 
-            "$BASE_URL/tv/", 
-            "$BASE_URL/horror/", 
-            "$BASE_URL/box-office/", 
-            "$BASE_URL/type/movies/", 
-            "$BASE_URL/type/series/", 
-            "$BASE_URL/network/netflix/", 
-            "$BASE_URL/network/disney/",
-            "$BASE_URL/genre/",
-            "$BASE_URL/country/",
-            "$BASE_URL/release/",
-            "$BASE_URL/popular/",
-            "$BASE_URL/trending/"
+            "$BASE_URL/movies/", 
+            "$BASE_URL/series/", 
+            "$BASE_URL/top-imdb/", 
+            "$BASE_URL/most-viewed/", 
+            "$BASE_URL/country/malaysia/",
+            "$BASE_URL/genre/subbed/malay-subbed/"
         )
         val results = mutableListOf<Map<String, String>>()
         val mutex = kotlinx.coroutines.sync.Mutex()
@@ -3700,22 +3717,9 @@ object VideoExtractor {
             }
         }.awaitAll()
         
-        // Prefer root-level genre paths (e.g., /horror/) over /genre/ paths (e.g., /genre/horror/)
-        // because root paths return more items (20 vs 11) and support pagination
-        val genreUpgraded = results.map { entry ->
-            val path = entry["path"] ?: ""
-            if (path.startsWith("/genre/")) {
-                val rootPath = path.removePrefix("/genre")
-                // Check if root-level version exists in results
-                val rootExists = results.any { it["path"] == rootPath }
-                if (rootExists) null // Drop this /genre/ entry, root version is better
-                else entry.toMutableMap().apply { this["path"] = rootPath } // Upgrade to root path
-            } else entry
-        }.filterNotNull()
-
-        val sortedResults = genreUpgraded.distinctBy { it["path"] }.sortedBy { it["name"] }.toMutableList()
+        val sortedResults = results.distinctBy { it["path"] }.sortedBy { it["name"] }.toMutableList()
         if (sortedResults.none { (it["path"] ?: "").contains("country/viet-nam", ignoreCase = true) || (it["path"] ?: "").contains("country/vietnam", ignoreCase = true) }) {
-            sortedResults.add(mapOf("name" to "Viet Nam", "path" to "/country/viet-nam/"))
+            sortedResults.add(mapOf("name" to "Vietnam", "path" to "/country/vietnam/"))
         }
         if (sortedResults.none { (it["path"] ?: "").contains("country/malaysia", ignoreCase = true) }) {
             sortedResults.add(mapOf("name" to "Malaysia", "path" to "/country/malaysia/"))
@@ -3727,21 +3731,25 @@ object VideoExtractor {
         // Final fallback if nothing found (safety net)
         if (sortedResults.isEmpty()) {
             return@withContext listOf(
-                mapOf("name" to "Update Film Terbaru", "path" to "/movie/"),
-                mapOf("name" to "Serial TV Terbaru", "path" to "/serial-tv-terbaru/"),
-                mapOf("name" to "Viet Nam", "path" to "/country/viet-nam/"),
-                mapOf("name" to "Box-Office", "path" to "/box-office/"),
-                mapOf("name" to "Anime", "path" to "/animasi/"),
-                mapOf("name" to "Action", "path" to "/action/"),
-                mapOf("name" to "Comedy", "path" to "/comedy/"),
-                mapOf("name" to "Drama", "path" to "/drama/"),
-                mapOf("name" to "Horror", "path" to "/horror/"),
-                mapOf("name" to "Thriller", "path" to "/thriller/"),
-                mapOf("name" to "Romance", "path" to "/romance/"),
+                mapOf("name" to "Movies", "path" to "/movies/"),
+                mapOf("name" to "TV Series", "path" to "/series/"),
+                mapOf("name" to "Top IMDb", "path" to "/top-imdb/"),
+                mapOf("name" to "Trending", "path" to "/most-viewed/"),
+                mapOf("name" to "Malay Subbed", "path" to "/genre/subbed/malay-subbed/"),
+                mapOf("name" to "Malay Dubbed", "path" to "/genre/dubbed/malay/"),
+                mapOf("name" to "Action", "path" to "/genre/action/"),
+                mapOf("name" to "Animation", "path" to "/genre/animation/"),
+                mapOf("name" to "Comedy", "path" to "/genre/comedy/"),
+                mapOf("name" to "Drama", "path" to "/genre/drama/"),
+                mapOf("name" to "Horror", "path" to "/genre/horror/"),
+                mapOf("name" to "Romance", "path" to "/genre/romance/"),
+                mapOf("name" to "Science Fiction", "path" to "/genre/science-fiction/"),
+                mapOf("name" to "Thriller", "path" to "/genre/thriller/"),
+                mapOf("name" to "Malaysia", "path" to "/country/malaysia/"),
                 mapOf("name" to "Indonesia", "path" to "/country/indonesia/"),
                 mapOf("name" to "Korea", "path" to "/country/korea/"),
                 mapOf("name" to "Thailand", "path" to "/country/thailand/"),
-                mapOf("name" to "Malaysia", "path" to "/country/malaysia/"),
+                mapOf("name" to "Vietnam", "path" to "/country/vietnam/"),
                 mapOf("name" to "P.Ramlee", "path" to "/category/p-ramlee/")
             )
         }
