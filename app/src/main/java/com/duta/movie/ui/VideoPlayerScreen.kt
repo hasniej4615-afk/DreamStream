@@ -1499,6 +1499,7 @@ fun VideoPlayerScreen(
             val finalPlaying = when (state) {
                 1 -> true
                 2 -> false
+                0 -> if (isAdvancing && !userInitiatedPause) true else false
                 else -> if (isAdvancing && !userInitiatedPause) true else prev.isPlaying
             }
             webPlayerState.value = WebPlayerState(
@@ -2002,63 +2003,123 @@ fun VideoPlayerContent(
             override fun getPlaybackState() = if (isVideoReady) Player.STATE_READY else Player.STATE_BUFFERING
             override fun play() {
                 onUserPauseChange(false)
+                onPlayerStateChange(1, currentWebState.position / 1000f, currentWebState.duration / 1000f)
                 val script = """
                     (function() {
+                        var broadcast = function(win) {
+                            try {
+                                win.postMessage({ type: 'duta:play' }, '*');
+                                win.postMessage(JSON.stringify({ type: 'duta:play' }), '*');
+                                win.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
+                                win.postMessage(JSON.stringify({ method: 'play' }), '*');
+                                win.postMessage(JSON.stringify({ type: 'play' }), '*');
+                            } catch(e) {}
+                            try {
+                                for (var j = 0; j < win.frames.length; j++) {
+                                    broadcast(win.frames[j]);
+                                }
+                            } catch(e) {}
+                        };
+                        broadcast(window);
                         if (window.playerBridge && typeof window.playerBridge.play === 'function') {
-                            try { window.playerBridge.play(); return; } catch(e) {}
+                            try { window.playerBridge.play(); } catch(e) {}
                         }
                         var v = document.querySelector('video');
                         if (v) { v.play().catch(function(){}); }
-                        var ifrs = document.querySelectorAll('iframe');
-                        for (var i = 0; i < ifrs.length; i++) {
+                        if (window.jwplayer && typeof window.jwplayer === 'function') {
+                            try { window.jwplayer().play(); } catch(e) {}
+                        }
+                        if (window.videojs) {
                             try {
-                                ifrs[i].contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*');
-                                ifrs[i].contentWindow.postMessage(JSON.stringify({ method: 'play' }), '*');
-                                ifrs[i].contentWindow.postMessage(JSON.stringify({ type: 'play' }), '*');
+                                var players = window.videojs.getPlayers ? window.videojs.getPlayers() : {};
+                                for (var p in players) { if (players[p] && players[p].play) players[p].play(); }
                             } catch(e) {}
                         }
                     })();
                 """.trimIndent()
                 safeEvaluateJavascript(webViewRef.value, script)
+                webListeners.forEach {
+                    it.onPlayWhenReadyChanged(true, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+                    it.onIsPlayingChanged(true)
+                    it.onPlaybackStateChanged(Player.STATE_READY)
+                }
             }
             override fun pause() {
                 onUserPauseChange(true)
+                onPlayerStateChange(2, currentWebState.position / 1000f, currentWebState.duration / 1000f)
                 val script = """
                     (function() {
+                        var broadcast = function(win) {
+                            try {
+                                win.postMessage({ type: 'duta:pause' }, '*');
+                                win.postMessage(JSON.stringify({ type: 'duta:pause' }), '*');
+                                win.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*');
+                                win.postMessage(JSON.stringify({ method: 'pause' }), '*');
+                                win.postMessage(JSON.stringify({ type: 'pause' }), '*');
+                            } catch(e) {}
+                            try {
+                                for (var j = 0; j < win.frames.length; j++) {
+                                    broadcast(win.frames[j]);
+                                }
+                            } catch(e) {}
+                        };
+                        broadcast(window);
                         if (window.playerBridge && typeof window.playerBridge.pause === 'function') {
-                            try { window.playerBridge.pause(); return; } catch(e) {}
+                            try { window.playerBridge.pause(); } catch(e) {}
                         }
                         var v = document.querySelector('video');
                         if (v) { v.pause(); }
-                        var ifrs = document.querySelectorAll('iframe');
-                        for (var i = 0; i < ifrs.length; i++) {
+                        if (window.jwplayer && typeof window.jwplayer === 'function') {
+                            try { window.jwplayer().pause(); } catch(e) {}
+                        }
+                        if (window.videojs) {
                             try {
-                                ifrs[i].contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'pauseVideo', args: [] }), '*');
-                                ifrs[i].contentWindow.postMessage(JSON.stringify({ method: 'pause' }), '*');
-                                ifrs[i].contentWindow.postMessage(JSON.stringify({ type: 'pause' }), '*');
+                                var players = window.videojs.getPlayers ? window.videojs.getPlayers() : {};
+                                for (var p in players) { if (players[p] && players[p].pause) players[p].pause(); }
                             } catch(e) {}
                         }
                     })();
                 """.trimIndent()
                 safeEvaluateJavascript(webViewRef.value, script)
+                webListeners.forEach {
+                    it.onPlayWhenReadyChanged(false, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+                    it.onIsPlayingChanged(false)
+                }
             }
             override fun seekTo(positionMs: Long) {
                 val time = positionMs / 1000.0
+                onPlayerStateChange(if (currentWebState.isPlaying) 1 else 2, time.toFloat(), currentWebState.duration / 1000f)
                 val script = """
                     (function() {
                         var t = $time;
+                        var broadcast = function(win) {
+                            try {
+                                win.postMessage({ type: 'duta:seek', time: t }, '*');
+                                win.postMessage(JSON.stringify({ type: 'duta:seek', time: t }), '*');
+                                win.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [t, true] }), '*');
+                                win.postMessage(JSON.stringify({ method: 'seek', value: t }), '*');
+                                win.postMessage(JSON.stringify({ type: 'seek', value: t }), '*');
+                                win.postMessage({ type: 'player:seek', time: t }, '*');
+                            } catch(e) {}
+                            try {
+                                for (var j = 0; j < win.frames.length; j++) {
+                                    broadcast(win.frames[j]);
+                                }
+                            } catch(e) {}
+                        };
+                        broadcast(window);
                         if (window.playerBridge && typeof window.playerBridge.seek === 'function') {
-                            try { window.playerBridge.seek(t); return; } catch(e) {}
+                            try { window.playerBridge.seek(t); } catch(e) {}
                         }
                         var v = document.querySelector('video');
                         if (v) { v.currentTime = t; }
-                        var ifrs = document.querySelectorAll('iframe');
-                        for (var i = 0; i < ifrs.length; i++) {
+                        if (window.jwplayer && typeof window.jwplayer === 'function') {
+                            try { window.jwplayer().seek(t); } catch(e) {}
+                        }
+                        if (window.videojs) {
                             try {
-                                ifrs[i].contentWindow.postMessage(JSON.stringify({ event: 'command', func: 'seekTo', args: [t, true] }), '*');
-                                ifrs[i].contentWindow.postMessage(JSON.stringify({ method: 'seek', value: t }), '*');
-                                ifrs[i].contentWindow.postMessage(JSON.stringify({ type: 'seek', value: t }), '*');
-                                ifrs[i].contentWindow.postMessage({ type: 'player:seek', time: t }, '*');
+                                var players = window.videojs.getPlayers ? window.videojs.getPlayers() : {};
+                                for (var p in players) { if (players[p] && players[p].currentTime) players[p].currentTime(t); }
                             } catch(e) {}
                         }
                     })();
@@ -3014,6 +3075,21 @@ fun VideoPlayerWebView(
                         if (v?.getTag(R.id.is_destroyed) == true) return
                         Log.d("VideoPlayerSniffer", "Injecting Nuker SCRIPT via onPageFinished")
                         safeEvaluateJavascript(v, nukerScript)
+                        val removePopupScript = """
+                            (function() {
+                                try {
+                                    var bads = document.querySelectorAll('#videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"]');
+                                    for (var i = 0; i < bads.length; i++) {
+                                        bads[i].style.setProperty('display', 'none', 'important');
+                                        try { bads[i].remove(); } catch(e){}
+                                    }
+                                    if (typeof window.closeVideoInfo === 'function') {
+                                        try { window.closeVideoInfo(); } catch(e){}
+                                    }
+                                } catch(e) {}
+                            })();
+                        """.trimIndent()
+                        safeEvaluateJavascript(v, removePopupScript)
                     }
                     override fun shouldInterceptRequest(view: android.webkit.WebView, r: android.webkit.WebResourceRequest): android.webkit.WebResourceResponse? {
                         val u = r.url.toString()
@@ -3054,9 +3130,10 @@ fun VideoPlayerWebView(
                             return null // Never block legitimate Dailymotion player assets or video chunks
                         }
 
-                        // Intercept Abyss/Bond Player HTML pages to eradicate the big SVG play button overlay & anti-framing redirect
+                        // Intercept Abyss/Bond/Playsobat Player HTML pages to eradicate the big SVG play button overlay, videoInfo popup & anti-framing redirect
                         val isAbyssPlayerPage = (low.contains("abyssplayer.com/") || low.contains("bondplayer.com/") || 
-                                                 low.contains("abyss.to/") || low.contains("bond.to/")) &&
+                                                 low.contains("abyss.to/") || low.contains("bond.to/") ||
+                                                 low.contains("playsobat.xyz/")) &&
                                                 !low.contains(".js") && !low.contains(".css") && !low.contains(".jpg") && 
                                                 !low.contains(".png") && !low.contains(".m3u8") && !low.contains(".mp4") && 
                                                 !low.contains(".mkv") && !low.contains(".webm") && 
@@ -3088,14 +3165,14 @@ fun VideoPlayerWebView(
                                         html = html.replace("<div id=\"playback\">", "<div id=\"playback\" style=\"display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;width:0!important;height:0!important;z-index:-99999!important;\">")
                                         
                                         // 4. Inject CSS in <head>
-                                        val css = "<style>#overlay, #playback, #overlay *, #playback * { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; width: 0 !important; height: 0 !important; z-index: -99999 !important; }</style>"
+                                        val css = "<style>#overlay, #playback, #overlay *, #playback *, #videoInfo, .video-info, [id*=\"videoInfo\"], [class*=\"video-info\"], .video-info-title, .video-info-hint, .video-info-close { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; width: 0 !important; height: 0 !important; z-index: -99999 !important; }</style>"
                                         html = if (html.contains("</head>")) html.replace("</head>", "$css</head>") else css + html
                                         
                                         // 5. Inject immediate DOM killer script and Nuker script directly into player frame
-                                        val remover = "<script>(function(){ var kill = function(){ var o=document.getElementById('overlay'); if(o){ o.style.display='none'; try{o.remove();}catch(e){} } var p=document.getElementById('playback'); if(p){ p.style.display='none'; try{p.remove();}catch(e){} } }; kill(); setInterval(kill, 200); })();</script><script type=\"text/javascript\">$nukerScript</script>"
+                                        val remover = "<script>(function(){ var kill = function(){ var o=document.getElementById('overlay'); if(o){ o.style.display='none'; try{o.remove();}catch(e){} } var p=document.getElementById('playback'); if(p){ p.style.display='none'; try{p.remove();}catch(e){} } var bads=document.querySelectorAll('#videoInfo, .video-info, [id*=\"videoInfo\"], [class*=\"video-info\"]'); for(var i=0;i<bads.length;i++){ bads[i].style.display='none'; try{bads[i].remove();}catch(e){} } if(typeof window.closeVideoInfo==='function'){ try{window.closeVideoInfo();}catch(e){} } }; kill(); setInterval(kill, 200); })();</script><script type=\"text/javascript\">$nukerScript</script>"
                                         html = if (html.contains("</body>")) html.replace("</body>", "$remover</body>") else html + remover
                                         
-                                        Log.d("VideoPlayerTurbo", "Neutralized Abyss/Bond player page overlay & redirect: $u")
+                                        Log.d("VideoPlayerTurbo", "Neutralized Abyss/Bond/Playsobat player page overlay & redirect: $u")
                                         return android.webkit.WebResourceResponse("text/html", "UTF-8", java.io.ByteArrayInputStream(html.toByteArray(Charsets.UTF_8)))
                                     }
                                 }

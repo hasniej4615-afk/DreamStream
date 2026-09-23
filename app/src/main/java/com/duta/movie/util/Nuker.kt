@@ -157,10 +157,38 @@ object Nuker {
                                 };
                                 return find(document);
                             },
+                            broadcastToFrames: function(msg) {
+                                try {
+                                    var ifrs = document.querySelectorAll('iframe');
+                                    for (var i = 0; i < ifrs.length; i++) {
+                                        try {
+                                            ifrs[i].contentWindow.postMessage(msg, '*');
+                                            ifrs[i].contentWindow.postMessage(JSON.stringify(msg), '*');
+                                        } catch(e){}
+                                    }
+                                } catch(err){}
+                            },
+                            reportState: function(isPlaying, time, duration) {
+                                try {
+                                    if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
+                                        window.AndroidPlayer.onPlayerState(isPlaying ? 1 : 0, time, duration);
+                                    }
+                                } catch(e){}
+                                try {
+                                    if (window.parent && window.parent !== window) {
+                                        window.parent.postMessage({
+                                            type: 'duta:state',
+                                            isPlaying: isPlaying,
+                                            time: time,
+                                            duration: duration
+                                        }, '*');
+                                    }
+                                } catch(e){}
+                            },
                             play: function() {
                                 try {
                                     var v = this.findVideo();
-                                    if (v && v.play) v.play();
+                                    if (v && !v.isProxy && v.play) v.play().catch(function(){});
                                     if (window.jwplayer && typeof window.jwplayer === 'function') {
                                         try { window.jwplayer().play(); } catch(e){}
                                     }
@@ -170,20 +198,13 @@ object Nuker {
                                             for (var p in players) { if (players[p] && players[p].play) players[p].play(); }
                                         } catch(e){}
                                     }
-                                    var ifrs = document.querySelectorAll('iframe');
-                                    for (var i = 0; i < ifrs.length; i++) {
-                                        try {
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({event:'command',func:'playVideo',args:[]}), '*');
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({method:'play'}), '*');
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({type:'play'}), '*');
-                                        } catch(e){}
-                                    }
+                                    this.broadcastToFrames({ type: 'duta:play', method: 'play', event: 'command', func: 'playVideo', args: [] });
                                 } catch(e){}
                             },
                             pause: function() {
                                 try {
                                     var v = this.findVideo();
-                                    if (v && v.pause) v.pause();
+                                    if (v && !v.isProxy && v.pause) v.pause();
                                     if (window.jwplayer && typeof window.jwplayer === 'function') {
                                         try { window.jwplayer().pause(); } catch(e){}
                                     }
@@ -193,14 +214,7 @@ object Nuker {
                                             for (var p in players) { if (players[p] && players[p].pause) players[p].pause(); }
                                         } catch(e){}
                                     }
-                                    var ifrs = document.querySelectorAll('iframe');
-                                    for (var i = 0; i < ifrs.length; i++) {
-                                        try {
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({event:'command',func:'pauseVideo',args:[]}), '*');
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({method:'pause'}), '*');
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({type:'pause'}), '*');
-                                        } catch(e){}
-                                    }
+                                    this.broadcastToFrames({ type: 'duta:pause', method: 'pause', event: 'command', func: 'pauseVideo', args: [] });
                                 } catch(e){}
                             },
                             seek: function(t) {
@@ -216,16 +230,9 @@ object Nuker {
                                             for (var p in players) { if (players[p] && players[p].currentTime) players[p].currentTime(t); }
                                         } catch(e){}
                                     }
-                                    var ifrs = document.querySelectorAll('iframe');
-                                    for (var i = 0; i < ifrs.length; i++) {
-                                        try {
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({event:'command',func:'seekTo',args:[t,true]}), '*');
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({method:'seek',value:t}), '*');
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({type:'seek',value:t}), '*');
-                                        } catch(e){}
-                                    }
-                                    if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
-                                        window.AndroidPlayer.onPlayerState(1, t, (v && v.duration) || 0);
+                                    this.broadcastToFrames({ type: 'duta:seek', time: t, value: t, method: 'seek', event: 'command', func: 'seekTo', args: [t, true] });
+                                    if (v && !v.isProxy) {
+                                        this.reportState(1, t, v.duration || 0);
                                     }
                                 } catch(e){}
                             },
@@ -238,6 +245,19 @@ object Nuker {
                                         
                                         if (!v.isProxy) {
                                             window.videoFound = true;
+                                            if (!v._dutaHooked) {
+                                                v._dutaHooked = true;
+                                                var self = this;
+                                                v.addEventListener('timeupdate', function() {
+                                                    self.reportState(!v.paused, v.currentTime, v.duration || 0);
+                                                });
+                                                v.addEventListener('play', function() {
+                                                    self.reportState(true, v.currentTime, v.duration || 0);
+                                                });
+                                                v.addEventListener('pause', function() {
+                                                    self.reportState(false, v.currentTime, v.duration || 0);
+                                                });
+                                            }
                                         }
 
                                         // Auto-start JWPlayer / VideoJS if available
@@ -251,6 +271,7 @@ object Nuker {
                                                     }
                                                     if (!window.jwHooked && typeof jw.on === 'function') {
                                                         window.jwHooked = true;
+                                                        var self = this;
                                                         jw.on('play', function() {
                                                             window.videoFound = true;
                                                             if (!window.successNotified && window.AndroidPlayer) {
@@ -258,6 +279,10 @@ object Nuker {
                                                                 log("JWPlayer onPlay event fired");
                                                                 window.AndroidPlayer.notifyVideoPlaying();
                                                             }
+                                                            self.reportState(true, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
+                                                        });
+                                                        jw.on('pause', function() {
+                                                            self.reportState(false, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
                                                         });
                                                         jw.on('time', function(e) {
                                                             if (e && e.currentTime > 0.3) {
@@ -266,9 +291,7 @@ object Nuker {
                                                                     window.successNotified = true;
                                                                     window.AndroidPlayer.notifyVideoPlaying();
                                                                 }
-                                                                if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
-                                                                    window.AndroidPlayer.onPlayerState(1, e.currentTime || 0.1, e.duration || (jw.getDuration ? jw.getDuration() : 0));
-                                                                }
+                                                                self.reportState(true, e.currentTime || 0.1, e.duration || (jw.getDuration ? jw.getDuration() : 0));
                                                             }
                                                         });
                                                     }
@@ -281,9 +304,7 @@ object Nuker {
                                                             log("JWPlayer playing state - notifying success");
                                                             window.AndroidPlayer.notifyVideoPlaying();
                                                         }
-                                                        if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
-                                                            window.AndroidPlayer.onPlayerState(1, jwPos, jwDur);
-                                                        }
+                                                        this.reportState(true, jwPos, jwDur);
                                                     }
                                                 }
                                             } catch(e){}
@@ -312,7 +333,7 @@ object Nuker {
                                             }); 
                                         }
                                         
-                                        var isShortClip = v.duration > 0 && v.duration < 45;
+                                        var isShortClip = !v.isProxy && v.duration > 0 && v.duration < 45;
                                         if (isShortClip && !window.gateNotified) {
                                             window.gateNotified = true;
                                             log("Short video placeholder detected (duration=" + v.duration + "s). Triggering auto-rotation.");
@@ -328,13 +349,94 @@ object Nuker {
                                             log("Handshake Success - Playback Verified");
                                             window.AndroidPlayer.notifyVideoPlaying();
                                         }
-                                        window.AndroidPlayer.onPlayerState(v.paused ? 0 : 1, v.currentTime || 0.1, v.duration || 0);
+                                        if (!v.isProxy) {
+                                            this.reportState(v.paused ? 0 : 1, v.currentTime || 0.1, v.duration || 0);
+                                        }
                                     }
                                 } catch(e) {}
                             }
                         };
                         setInterval(function() { window.playerBridge.sync(); }, 1200);
                         setInterval(function() { window.playerBridge.heartbeat(); }, 5000);
+                    }
+
+                    if (!window.dutaMsgHooked) {
+                        window.dutaMsgHooked = true;
+                        window.addEventListener('message', function(event) {
+                            try {
+                                var data = event.data;
+                                if (typeof data === 'string') {
+                                    try { data = JSON.parse(data); } catch(e){}
+                                }
+                                if (!data || typeof data !== 'object') return;
+
+                                if (data.type === 'duta:state') {
+                                    window.videoFound = true;
+                                    if (data.time > 0.3 && !window.successNotified && window.AndroidPlayer) {
+                                        window.successNotified = true;
+                                        window.AndroidPlayer.notifyVideoPlaying();
+                                    }
+                                    if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
+                                        window.AndroidPlayer.onPlayerState(data.isPlaying ? 1 : 0, data.time, data.duration);
+                                    }
+                                    return;
+                                }
+
+                                if (data.type === 'duta:success') {
+                                    window.videoFound = true;
+                                    if (!window.successNotified && window.AndroidPlayer) {
+                                        window.successNotified = true;
+                                        window.AndroidPlayer.notifyVideoPlaying();
+                                    }
+                                    return;
+                                }
+
+                                var cmd = data.type || data.method || data.action || (data.func ? data.func : '');
+                                if (cmd === 'play' || cmd === 'playVideo' || cmd === 'duta:play') {
+                                    if (window.jwplayer && typeof window.jwplayer === 'function') {
+                                        try { window.jwplayer().play(); } catch(e){}
+                                    }
+                                    var vid = document.querySelector('video');
+                                    if (vid && vid.play) { vid.play().catch(function(){}); }
+                                    if (window.videojs) {
+                                        try {
+                                            var players = window.videojs.getPlayers ? window.videojs.getPlayers() : {};
+                                            for (var p in players) { if (players[p] && players[p].play) players[p].play(); }
+                                        } catch(e){}
+                                    }
+                                } else if (cmd === 'pause' || cmd === 'pauseVideo' || cmd === 'duta:pause') {
+                                    if (window.jwplayer && typeof window.jwplayer === 'function') {
+                                        try { window.jwplayer().pause(); } catch(e){}
+                                    }
+                                    var vid = document.querySelector('video');
+                                    if (vid && vid.pause) { vid.pause(); }
+                                    if (window.videojs) {
+                                        try {
+                                            var players = window.videojs.getPlayers ? window.videojs.getPlayers() : {};
+                                            for (var p in players) { if (players[p] && players[p].pause) players[p].pause(); }
+                                        } catch(e){}
+                                    }
+                                } else if (cmd === 'seek' || cmd === 'seekTo' || cmd === 'duta:seek' || cmd === 'player:seek') {
+                                    var targetTime = (typeof data.value !== 'undefined') ? data.value : 
+                                                     ((typeof data.time !== 'undefined') ? data.time : 
+                                                     ((data.args && data.args.length > 0) ? data.args[0] : 0));
+                                    targetTime = parseFloat(targetTime);
+                                    if (!isNaN(targetTime)) {
+                                        if (window.jwplayer && typeof window.jwplayer === 'function') {
+                                            try { window.jwplayer().seek(targetTime); } catch(e){}
+                                        }
+                                        var vid = document.querySelector('video');
+                                        if (vid) { vid.currentTime = targetTime; }
+                                        if (window.videojs) {
+                                            try {
+                                                var players = window.videojs.getPlayers ? window.videojs.getPlayers() : {};
+                                                for (var p in players) { if (players[p] && players[p].currentTime) players[p].currentTime(targetTime); }
+                                            } catch(e){}
+                                        }
+                                    }
+                                }
+                            } catch(err){}
+                        });
                     }
 
                     var unhidePlayerAncestors = function() {
@@ -402,6 +504,9 @@ object Nuker {
                                         div[class*="playerp2p-ad"], div[class*="ad-overlay"], div[id*="ad-overlay"],
                                         div[class*="pop-under"], div[class*="floating-ad"],
                                         .jw-preview, .vjs-poster,
+                                        #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"],
+                                        .video-info-title, .video-info-hint, .video-info-close,
+                                        div#videoInfo, div.video-info,
                                         #sidebar, #header, #footer {
                                             display: none !important;
                                             opacity: 0 !important; 
@@ -577,6 +682,10 @@ object Nuker {
                                   }
                                   if (el.closest && el.closest('.muvipro-player-tabs, .player-tabs, .gmr-player-nav, .server-list, nav, header, footer')) continue;
                                   var txt = (el.innerText || el.textContent || "").toLowerCase();
+                                  if (txt.indexOf('informasi video') !== -1 || txt.indexOf('ganti player pada') !== -1 || txt.indexOf('klik pesan ini untuk menutup') !== -1) {
+                                      try { el.style.display = 'none'; el.remove(); } catch(e){}
+                                      continue;
+                                  }
                                   if (txt.indexOf('trailer') !== -1) continue;
                                   if (txt.indexOf('play video') !== -1 || 
                                       txt.indexOf('continue to') !== -1 || txt.indexOf('watch now') !== -1 ||
@@ -615,7 +724,7 @@ object Nuker {
                                    }
                                }
                               // 3. Floating Ad/Overlay Killer
-                              var overlays = ['#overlay', '#playback', 'div#overlay', 'div#playback', '.ad-overlay', '.ads-overlay', '.pop-overlay', '.banner-overlay', '.float-overlay', '.modal-backdrop', 'div[class*="ad-overlay"]', 'div[id*="ad-overlay"]', 'img[src*=\"dm21\"]', '.dm21', '#dm21', '.ads-box', '.ad-wrapper', 'img[src*=\"idks\"]', 'div[id*=\"idks\"]', '.idks', 'ins.adsbygoogle', 'div[id*=\"aswift\"]', 'div[id*=\"google_ads\"]', '.ad-container', '#ad-container', '#player-ads', '.player-ads', 'div[class*=\"playerp2p-ad\"]', 'div[class*=\"pop-under\"]', 'div[class*=\"floating-ad\"]'];
+                              var overlays = ['#overlay', '#playback', 'div#overlay', 'div#playback', '#videoInfo', '.video-info', '[id*="videoInfo"]', '[class*="video-info"]', '.video-info-title', '.video-info-hint', '.video-info-close', '.ad-overlay', '.ads-overlay', '.pop-overlay', '.banner-overlay', '.float-overlay', '.modal-backdrop', 'div[class*="ad-overlay"]', 'div[id*="ad-overlay"]', 'img[src*=\"dm21\"]', '.dm21', '#dm21', '.ads-box', '.ad-wrapper', 'img[src*=\"idks\"]', 'div[id*=\"idks\"]', '.idks', 'ins.adsbygoogle', 'div[id*=\"aswift\"]', 'div[id*=\"google_ads\"]', '.ad-container', '#ad-container', '#player-ads', '.player-ads', 'div[class*=\"playerp2p-ad\"]', 'div[class*=\"pop-under\"]', 'div[class*=\"floating-ad\"]'];
                               overlays.forEach(function(s) {
                                   try {
                                       var elements = document.querySelectorAll(s);
@@ -647,9 +756,13 @@ object Nuker {
                                   } catch(e){} 
                               });
                               try {
-                                  var badOverlays = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback');
+                                  if (typeof window.closeVideoInfo === 'function') {
+                                      try { window.closeVideoInfo(); } catch(e){}
+                                  }
+                                  var badOverlays = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"]');
                                   for (var bo = 0; bo < badOverlays.length; bo++) {
-                                      badOverlays[bo].remove();
+                                      badOverlays[bo].style.display = 'none';
+                                      try { badOverlays[bo].remove(); } catch(e){}
                                   }
                               } catch(e) {}
                               
@@ -814,7 +927,9 @@ object Nuker {
                                 var txt = (elem.innerText || elem.textContent || "").toLowerCase();
                                 if (txt.indexOf('not a robot') !== -1 || txt.indexOf('verify you are human') !== -1 ||
                                     txt.indexOf('click allow') !== -1 || txt.indexOf('press allow') !== -1 ||
-                                    txt.indexOf('enable notification') !== -1) {
+                                    txt.indexOf('enable notification') !== -1 ||
+                                    txt.indexOf('informasi video') !== -1 || txt.indexOf('ganti player pada') !== -1 ||
+                                    txt.indexOf('klik pesan ini untuk menutup') !== -1) {
                                     var container = elem.closest('div') || elem;
                                     if (container && container !== document.body && container !== document.documentElement && container.parentNode) {
                                         container.style.setProperty('display', 'none', 'important');
@@ -822,9 +937,12 @@ object Nuker {
                                     }
                                 }
                             }
-                            var badPms = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback');
+                            var badPms = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"]');
                             for (var bi = 0; bi < badPms.length; bi++) {
                                 badPms[bi].remove();
+                            }
+                            if (typeof window.closeVideoInfo === 'function') {
+                                try { window.closeVideoInfo(); } catch(e) {}
                             }
                         } catch(e) {}
                     };
@@ -881,10 +999,38 @@ object Nuker {
                                 };
                                 return find(document);
                             },
+                            broadcastToFrames: function(msg) {
+                                try {
+                                    var ifrs = document.querySelectorAll('iframe');
+                                    for (var i = 0; i < ifrs.length; i++) {
+                                        try {
+                                            ifrs[i].contentWindow.postMessage(msg, '*');
+                                            ifrs[i].contentWindow.postMessage(JSON.stringify(msg), '*');
+                                        } catch(e){}
+                                    }
+                                } catch(err){}
+                            },
+                            reportState: function(isPlaying, time, duration) {
+                                try {
+                                    if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
+                                        window.AndroidPlayer.onPlayerState(isPlaying ? 1 : 0, time, duration);
+                                    }
+                                } catch(e){}
+                                try {
+                                    if (window.parent && window.parent !== window) {
+                                        window.parent.postMessage({
+                                            type: 'duta:state',
+                                            isPlaying: isPlaying,
+                                            time: time,
+                                            duration: duration
+                                        }, '*');
+                                    }
+                                } catch(e){}
+                            },
                             play: function() {
                                 try {
                                     var v = this.findVideo();
-                                    if (v && v.play) v.play();
+                                    if (v && !v.isProxy && v.play) v.play().catch(function(){});
                                     if (window.jwplayer && typeof window.jwplayer === 'function') {
                                         try { window.jwplayer().play(); } catch(e){}
                                     }
@@ -894,20 +1040,13 @@ object Nuker {
                                             for (var p in players) { if (players[p] && players[p].play) players[p].play(); }
                                         } catch(e){}
                                     }
-                                    var ifrs = document.querySelectorAll('iframe');
-                                    for (var i = 0; i < ifrs.length; i++) {
-                                        try {
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({event:'command',func:'playVideo',args:[]}), '*');
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({method:'play'}), '*');
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({type:'play'}), '*');
-                                        } catch(e){}
-                                    }
+                                    this.broadcastToFrames({ type: 'duta:play', method: 'play', event: 'command', func: 'playVideo', args: [] });
                                 } catch(e){}
                             },
                             pause: function() {
                                 try {
                                     var v = this.findVideo();
-                                    if (v && v.pause) v.pause();
+                                    if (v && !v.isProxy && v.pause) v.pause();
                                     if (window.jwplayer && typeof window.jwplayer === 'function') {
                                         try { window.jwplayer().pause(); } catch(e){}
                                     }
@@ -917,14 +1056,7 @@ object Nuker {
                                             for (var p in players) { if (players[p] && players[p].pause) players[p].pause(); }
                                         } catch(e){}
                                     }
-                                    var ifrs = document.querySelectorAll('iframe');
-                                    for (var i = 0; i < ifrs.length; i++) {
-                                        try {
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({event:'command',func:'pauseVideo',args:[]}), '*');
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({method:'pause'}), '*');
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({type:'pause'}), '*');
-                                        } catch(e){}
-                                    }
+                                    this.broadcastToFrames({ type: 'duta:pause', method: 'pause', event: 'command', func: 'pauseVideo', args: [] });
                                 } catch(e){}
                             },
                             seek: function(t) {
@@ -940,16 +1072,9 @@ object Nuker {
                                             for (var p in players) { if (players[p] && players[p].currentTime) players[p].currentTime(t); }
                                         } catch(e){}
                                     }
-                                    var ifrs = document.querySelectorAll('iframe');
-                                    for (var i = 0; i < ifrs.length; i++) {
-                                        try {
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({event:'command',func:'seekTo',args:[t,true]}), '*');
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({method:'seek',value:t}), '*');
-                                            ifrs[i].contentWindow.postMessage(JSON.stringify({type:'seek',value:t}), '*');
-                                        } catch(e){}
-                                    }
-                                    if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
-                                        window.AndroidPlayer.onPlayerState(1, t, (v && v.duration) || 0);
+                                    this.broadcastToFrames({ type: 'duta:seek', time: t, value: t, method: 'seek', event: 'command', func: 'seekTo', args: [t, true] });
+                                    if (v && !v.isProxy) {
+                                        this.reportState(1, t, v.duration || 0);
                                     }
                                 } catch(e){}
                             },
@@ -970,6 +1095,7 @@ object Nuker {
                                                     }
                                                     if (!window.jwHooked && typeof jw.on === 'function') {
                                                         window.jwHooked = true;
+                                                        var self = this;
                                                         jw.on('play', function() {
                                                             window.videoFound = true;
                                                             if (!window.successNotified && window.AndroidPlayer) {
@@ -977,6 +1103,10 @@ object Nuker {
                                                                 log("JWPlayer onPlay fired");
                                                                 window.AndroidPlayer.notifyVideoPlaying();
                                                             }
+                                                            self.reportState(true, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
+                                                        });
+                                                        jw.on('pause', function() {
+                                                            self.reportState(false, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
                                                         });
                                                         jw.on('time', function(e) {
                                                             if (e && e.currentTime > 0.3) {
@@ -985,14 +1115,7 @@ object Nuker {
                                                                     window.successNotified = true;
                                                                     window.AndroidPlayer.notifyVideoPlaying();
                                                                 }
-                                                                if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
-                                                                    window.AndroidPlayer.onPlayerState(1, e.currentTime || 0.1, e.duration || (jw.getDuration ? jw.getDuration() : 0));
-                                                                }
-                                                            }
-                                                        });
-                                                        jw.on('pause', function() {
-                                                            if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
-                                                                window.AndroidPlayer.onPlayerState(0, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
+                                                                self.reportState(true, e.currentTime || 0.1, e.duration || (jw.getDuration ? jw.getDuration() : 0));
                                                             }
                                                         });
                                                     }
@@ -1004,9 +1127,7 @@ object Nuker {
                                                             log("JWPlayer playing - notifying success");
                                                             window.AndroidPlayer.notifyVideoPlaying();
                                                         }
-                                                        if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
-                                                            window.AndroidPlayer.onPlayerState(1, jwPos, jwDur);
-                                                        }
+                                                        this.reportState(true, jwPos, jwDur);
                                                     }
                                                 }
                                             } catch(e){}
@@ -1014,6 +1135,19 @@ object Nuker {
 
                                         // 2. Direct HTML5 Video element hook
                                         if (!v.isProxy) {
+                                            if (!v._dutaHooked) {
+                                                v._dutaHooked = true;
+                                                var self = this;
+                                                v.addEventListener('timeupdate', function() {
+                                                    self.reportState(!v.paused, v.currentTime, v.duration || 0);
+                                                });
+                                                v.addEventListener('play', function() {
+                                                    self.reportState(true, v.currentTime, v.duration || 0);
+                                                });
+                                                v.addEventListener('pause', function() {
+                                                    self.reportState(false, v.currentTime, v.duration || 0);
+                                                });
+                                            }
                                             var isDead = false;
                                             if (!window.successNotified) {
                                                 isDead = checkDeadInside(document) || isLandingPageGate();
@@ -1043,9 +1177,7 @@ object Nuker {
                                                 log("HTML5 Video playing - notifying success");
                                                 window.AndroidPlayer.notifyVideoPlaying();
                                             }
-                                            if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
-                                                window.AndroidPlayer.onPlayerState(v.paused ? 0 : 1, v.currentTime || 0.1, v.duration || 0);
-                                            }
+                                            this.reportState(v.paused ? 0 : 1, v.currentTime || 0.1, v.duration || 0);
                                         }
                                     }
                                 } catch(e){}
@@ -1053,6 +1185,85 @@ object Nuker {
                         };
                         setInterval(function() { window.playerBridge.sync(); }, 1000);
                         setInterval(function() { window.playerBridge.heartbeat(); }, 5000);
+                    }
+
+                    if (!window.pmDutaMsgHooked) {
+                        window.pmDutaMsgHooked = true;
+                        window.addEventListener('message', function(event) {
+                            try {
+                                var data = event.data;
+                                if (typeof data === 'string') {
+                                    try { data = JSON.parse(data); } catch(e){}
+                                }
+                                if (!data || typeof data !== 'object') return;
+
+                                if (data.type === 'duta:state') {
+                                    window.videoFound = true;
+                                    if (data.time > 0.3 && !window.successNotified && window.AndroidPlayer) {
+                                        window.successNotified = true;
+                                        window.AndroidPlayer.notifyVideoPlaying();
+                                    }
+                                    if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
+                                        window.AndroidPlayer.onPlayerState(data.isPlaying ? 1 : 0, data.time, data.duration);
+                                    }
+                                    return;
+                                }
+
+                                if (data.type === 'duta:success') {
+                                    window.videoFound = true;
+                                    if (!window.successNotified && window.AndroidPlayer) {
+                                        window.successNotified = true;
+                                        window.AndroidPlayer.notifyVideoPlaying();
+                                    }
+                                    return;
+                                }
+
+                                var cmd = data.type || data.method || data.action || (data.func ? data.func : '');
+                                if (cmd === 'play' || cmd === 'playVideo' || cmd === 'duta:play') {
+                                    if (window.jwplayer && typeof window.jwplayer === 'function') {
+                                        try { window.jwplayer().play(); } catch(e){}
+                                    }
+                                    var vid = document.querySelector('video');
+                                    if (vid && vid.play) { vid.play().catch(function(){}); }
+                                    if (window.videojs) {
+                                        try {
+                                            var players = window.videojs.getPlayers ? window.videojs.getPlayers() : {};
+                                            for (var p in players) { if (players[p] && players[p].play) players[p].play(); }
+                                        } catch(e){}
+                                    }
+                                } else if (cmd === 'pause' || cmd === 'pauseVideo' || cmd === 'duta:pause') {
+                                    if (window.jwplayer && typeof window.jwplayer === 'function') {
+                                        try { window.jwplayer().pause(); } catch(e){}
+                                    }
+                                    var vid = document.querySelector('video');
+                                    if (vid && vid.pause) { vid.pause(); }
+                                    if (window.videojs) {
+                                        try {
+                                            var players = window.videojs.getPlayers ? window.videojs.getPlayers() : {};
+                                            for (var p in players) { if (players[p] && players[p].pause) players[p].pause(); }
+                                        } catch(e){}
+                                    }
+                                } else if (cmd === 'seek' || cmd === 'seekTo' || cmd === 'duta:seek' || cmd === 'player:seek') {
+                                    var targetTime = (typeof data.value !== 'undefined') ? data.value : 
+                                                     ((typeof data.time !== 'undefined') ? data.time : 
+                                                     ((data.args && data.args.length > 0) ? data.args[0] : 0));
+                                    targetTime = parseFloat(targetTime);
+                                    if (!isNaN(targetTime)) {
+                                        if (window.jwplayer && typeof window.jwplayer === 'function') {
+                                            try { window.jwplayer().seek(targetTime); } catch(e){}
+                                        }
+                                        var vid = document.querySelector('video');
+                                        if (vid) { vid.currentTime = targetTime; }
+                                        if (window.videojs) {
+                                            try {
+                                                var players = window.videojs.getPlayers ? window.videojs.getPlayers() : {};
+                                                for (var p in players) { if (players[p] && players[p].currentTime) players[p].currentTime(targetTime); }
+                                            } catch(e){}
+                                        }
+                                    }
+                                }
+                            } catch(err){}
+                        });
                     }
 
                     // Apply dedicated clean transparent styles
@@ -1120,6 +1331,9 @@ object Nuker {
                                         iframe:not(.nuker-active-frame),
                                         #overlay, #playback, #overlay *, #playback *,
                                         div#overlay, div#playback,
+                                        #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"],
+                                        .video-info-title, .video-info-hint, .video-info-close,
+                                        div#videoInfo, div.video-info,
                                         div[class*="captcha"], div[id*="captcha"],
                                         div[class*="robot"], div[id*="robot"],
                                         div[class*="verify"], div[id*="verify"],
