@@ -163,7 +163,11 @@ class VideoRepository @Inject constructor(
                 if (fallbackUrl.isNotBlank()) {
                     val fetched = VideoExtractor.fetchVideoDetails(fallbackUrl)
                     if (fetched != null) {
-                        val toSave = fetched.copy(id = videoId)
+                        var toSave = fetched.copy(id = videoId)
+                        if (toSave.servers.isEmpty() && (toSave.episodes.isEmpty() || toSave.isSeries != true)) {
+                            val healed = VideoExtractor.healVideoFromAlternativeSources(toSave)
+                            if (healed != null) toSave = mergeVideos(healed, toSave)
+                        }
                         videoDao.insertOrUpdateVideos(listOf(toSave.toEntity()))
                         videoCache[videoId] = toSave
                         return@withContext toSave
@@ -190,10 +194,24 @@ class VideoRepository @Inject constructor(
             val targetUrl = VideoExtractor.resolveVideoUrl(videoId, video.videoUrl)
             val updated = if (targetUrl.isNotBlank()) VideoExtractor.fetchVideoDetails(targetUrl) else null
             if (updated != null) {
-                val merged = mergeVideos(updated, video)
+                var merged = mergeVideos(updated, video)
+                if (merged.servers.isEmpty() && (merged.episodes.isEmpty() || merged.isSeries != true)) {
+                    val healed = VideoExtractor.healVideoFromAlternativeSources(merged)
+                    if (healed != null) {
+                        merged = mergeVideos(healed, merged)
+                    }
+                }
                 videoDao.insertOrUpdateVideos(listOf(merged.toEntity()))
                 videoCache[videoId] = merged
                 return@withContext merged
+            } else {
+                val healed = VideoExtractor.healVideoFromAlternativeSources(video)
+                if (healed != null) {
+                    val merged = mergeVideos(healed, video)
+                    videoDao.insertOrUpdateVideos(listOf(merged.toEntity()))
+                    videoCache[videoId] = merged
+                    return@withContext merged
+                }
             }
         } catch (_: Exception) {}
         null

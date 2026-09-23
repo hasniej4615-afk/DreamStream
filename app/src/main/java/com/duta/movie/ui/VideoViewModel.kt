@@ -3065,16 +3065,22 @@ class VideoViewModel @Inject constructor(
                     return@launch
                 }
 
-                val altServers = VideoExtractor.findAlternativeSources(video)
-                if (altServers.isNotEmpty()) {
+                val healed = VideoExtractor.healVideoFromAlternativeSources(video)
+                val altServers = healed?.servers ?: VideoExtractor.findAlternativeSources(video)
+                if (altServers.isNotEmpty() || healed?.episodes?.isNotEmpty() == true) {
                     val combinedServers = (video.servers + altServers).distinctBy { it.url }
-                    val updatedVideo = video.copy(servers = combinedServers)
+                    val resolvedEpisodes = if (video.episodes.isEmpty() && healed?.episodes?.isNotEmpty() == true) healed.episodes else video.episodes
+                    val updatedVideo = video.copy(
+                        servers = combinedServers,
+                        episodes = resolvedEpisodes,
+                        isSeries = if (resolvedEpisodes.isNotEmpty()) true else video.isSeries
+                    )
                     metadataCache[effectiveVideoId] = updatedVideo
                     withContext(Dispatchers.Main) {
                         _videoMetadata.value = updatedVideo
                     }
                     viewModelScope.launch { videoRepository.updateVideoInDb(updatedVideo) }
-                    withContext(Dispatchers.Main) { onResult?.invoke(altServers.size) }
+                    withContext(Dispatchers.Main) { onResult?.invoke(combinedServers.size) }
                 } else {
                     withContext(Dispatchers.Main) { onResult?.invoke(0) }
                 }

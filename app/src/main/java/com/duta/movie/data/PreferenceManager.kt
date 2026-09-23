@@ -65,6 +65,15 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
                 low.contains("stream") ||
                 low.contains("duta.media") ||
                 low.contains("dutamovie21.now") ||
+                low.contains("dutamovie.com") ||
+                low.contains("dutamovie21.xyz") ||
+                low.contains("ww38") ||
+                Regex("""^https?://ww\d+\.""").containsMatchIn(low) ||
+                low.contains("sedo") ||
+                low.contains("parking") ||
+                low.contains("abovedomains") ||
+                low.contains("dan.com") ||
+                low.contains("godaddy") ||
                 low.contains("kepalabergetar") ||
                 low.contains("pencuri") ||
                 low.contains("archive.org") ||
@@ -80,7 +89,12 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
     suspend fun setActiveBaseUrl(url: String) {
         val low = url.lowercase()
         if (low.contains("katherineschoolphone") || low.contains("voe") || low.contains("kepalabergetar") ||
-            low.contains("pencuri") || low.contains("archive.org") || !low.startsWith("http")) return
+            low.contains("pencuri") || low.contains("archive.org") ||
+            low.contains("dutamovie.com") || low.contains("dutamovie21.xyz") || low.contains("ww38") ||
+            Regex("""^https?://ww\d+\.""").containsMatchIn(low) ||
+            low.contains("parking") || low.contains("sedo") || low.contains("abovedomains") ||
+            low.contains("dan.com") || low.contains("godaddy") ||
+            !low.startsWith("http")) return
         val cleanUrl = try {
             val uri = android.net.Uri.parse(url)
             "${uri.scheme}://${uri.host}"
