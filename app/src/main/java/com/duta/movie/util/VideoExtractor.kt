@@ -1378,6 +1378,35 @@ object VideoExtractor {
         return jsOnlyHosts.any { cleanUrl.contains(it) }
     }
 
+    fun isWhitelistedHost(host: String?): Boolean {
+        if (host.isNullOrBlank()) return false
+        val low = host.lowercase()
+        val activeBaseHost = try { android.net.Uri.parse(getBaseUrl()).host?.lowercase() } catch(_: Throwable) { null }
+            ?: try { java.net.URI(getBaseUrl()).host?.lowercase() } catch(_: Throwable) { null }
+        val pencuriHost = try { android.net.Uri.parse(getPencuriBaseUrl()).host?.lowercase() } catch(_: Throwable) { null }
+            ?: try { java.net.URI(getPencuriBaseUrl()).host?.lowercase() } catch(_: Throwable) { null }
+        if (activeBaseHost != null && (low == activeBaseHost || low.contains(activeBaseHost))) return true
+        if (pencuriHost != null && (low == pencuriHost || low.contains(pencuriHost))) return true
+        return low.contains("archive.org") || low.contains("pencurimovie") || low.contains("pencurifilm") ||
+            low.contains("dutamovie") || low.contains("204.3.234.75") || low.contains("rebahin") || low.contains("rebahinxxi") ||
+            low.contains("algarvebuzz") || low.contains("actors-pictures") ||
+            low.contains("playsobat") || low.contains("asiastream") || low.contains("asiatik") || low.contains("streamsobat") ||
+            low.contains("youtube") || low.contains("youtu.be") || low.contains("googlevideo") ||
+            low.contains("bilibili") || low.contains("bilivideo") || low.contains("hdslb") ||
+            low.contains("dailymotion") || low.contains("dai.ly") || low.contains("dmcdn") ||
+            low.contains("streamtape") || low.contains("tapecontent") || low.contains("dood") ||
+            low.contains("mixdrop") || low.contains("filemoon") || low.contains("uptostream") ||
+            low.contains("indostream") || low.contains("playstream") ||
+            low.contains("voe") || low.contains("johnfullwonder") || low.contains("cloudwindow") ||
+            low.contains("playerp2p") || low.contains("embed4me") || low.contains("upns") ||
+            low.contains("p2p") || low.contains("4meplayer") || low.contains("abyss") || low.contains("bond") ||
+            low.contains("hgcloud") || low.contains("hanerix") || low.contains("vibuxer") || low.contains("audinifer") || low.contains("hglink") ||
+            low.contains("dhcplay") || low.contains("morencius") || low.contains("vidhide") || low.contains("fujihide") ||
+            low.contains("streamwish") || low.contains("wishonly") || low.contains("strwish") || low.contains("wishembed") ||
+            low.contains("luluvdo") || low.contains("lulustream") || low.contains("bestcdn") ||
+            low.contains("waaw") || low.contains("netu") || low.contains("hqq") || low.contains("vkspeed")
+    }
+
     fun isProbablyVideoHost(url: String): Boolean {
         val low = url.lowercase()
         val isYt = low.contains("youtube") || low.contains("youtu.be")

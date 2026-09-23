@@ -191,5 +191,27 @@ class MyLocalTest {
         assertEquals("/science-fiction/", VideoExtractor.normalizePath("https://ohionewsnow.com/sci-fi/"))
         assertEquals("/science-fiction/", VideoExtractor.normalizePath("/science-fiction/"))
     }
+
+    @Test
+    fun testWhitelistedHostProtection() {
+        // Legitimate video hosters must be whitelisted
+        assertTrue(VideoExtractor.isWhitelistedHost("playsobat.xyz"))
+        assertTrue(VideoExtractor.isWhitelistedHost("https://playsobat.xyz/e/fem4zkr6s0"))
+        assertTrue(VideoExtractor.isWhitelistedHost("watch.asiastream.cc"))
+        assertTrue(VideoExtractor.isWhitelistedHost("asiatik01.site"))
+        assertTrue(VideoExtractor.isWhitelistedHost("tv5.rebahinxxi.auction"))
+        assertTrue(VideoExtractor.isWhitelistedHost("204.3.234.75"))
+        assertTrue(VideoExtractor.isWhitelistedHost("streamtape.com"))
+        assertTrue(VideoExtractor.isWhitelistedHost("voe.sx"))
+        assertTrue(VideoExtractor.isWhitelistedHost("hgcloud.to"))
+        assertTrue(VideoExtractor.isWhitelistedHost("dailymotion.com"))
+
+        // Known dead/gate hosts or unknown spam domains must NOT be whitelisted
+        org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost("listeamed.net"))
+        org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost("ww1.listeamed.net"))
+        org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost("unknown-spam-ads.com"))
+        org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost(""))
+        org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost(null))
+    }
 }
 
