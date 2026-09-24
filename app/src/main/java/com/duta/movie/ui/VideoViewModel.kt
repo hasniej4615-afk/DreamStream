@@ -395,7 +395,6 @@ class VideoViewModel @Inject constructor(
             "/country/malaysia/",
             "/category/p-ramlee/",
             "/country/vietnam/",
-            "/country/viet-nam/",
             "/country/indonesia/",
             "/country/korea/",
             "/country/thailand/",
@@ -404,9 +403,8 @@ class VideoViewModel @Inject constructor(
             "/country/hong-kong/",
             "/country/india/",
             "/country/usa/",
-            "/country/united-states/",
             "/country/united-kingdom/"
-        ).map { VideoExtractor.normalizePath(it) }
+        ).map { VideoExtractor.normalizePath(it) }.distinct()
 
         val CURATED_STREAMING_ORDER = listOf(
             "/network/netflix/",
@@ -450,7 +448,7 @@ class VideoViewModel @Inject constructor(
                 lowName in listOf("newly updated", "movies", "movie", "tv series", "serial tv", "series", "box-office", "top imdb", "most viewed") -> CategoryGroup.CORE
 
                 lowPath.startsWith("/country/") || lowPath.contains("p-ramlee") ||
-                lowName in listOf("malaysia", "p.ramlee", "viet nam", "vietnam", "indonesia", "korea", "thailand", "japan", "china", "hong kong", "india", "usa", "united states", "united kingdom", "uk", "australia", "canada", "france", "germany", "italy", "philippines", "spain", "taiwan", "russia", "netherlands") -> CategoryGroup.REGIONAL
+                lowName in listOf("malaysia", "p.ramlee", "viet nam", "vietnam", "indonesia", "indonesian", "korea", "south korea", "thailand", "japan", "china", "hong kong", "india", "usa", "united states", "united kingdom", "uk", "australia", "canada", "france", "germany", "italy", "philippines", "spain", "taiwan", "russia", "netherlands") -> CategoryGroup.REGIONAL
 
                 lowPath.startsWith("/network/") ||
                 lowName in listOf("netflix", "disney+", "disney", "apple tv+", "apple tv", "hbo", "hbo max", "amazon prime", "amazon", "paramount+", "hulu", "peacock") -> CategoryGroup.STREAMING
@@ -550,20 +548,37 @@ class VideoViewModel @Inject constructor(
             return list.map { 
                 it.toMutableMap().apply { 
                     val origPath = get("path") ?: ""
+                    val origName = get("name")?.trim() ?: ""
                     var p = VideoExtractor.normalizePath(origPath)
-                    if (p.contains("country/viet-nam", ignoreCase = true) || p.contains("country/vietnam", ignoreCase = true)) {
+                    if (p.contains("country/viet-nam", ignoreCase = true) || p.contains("country/vietnam", ignoreCase = true) || origName.equals("viet nam", ignoreCase = true) || origName.equals("vietnam", ignoreCase = true)) {
                         p = "/country/vietnam/"
                         put("name", "Vietnam")
                     }
-                    if (p.contains("country/malaysia", ignoreCase = true)) {
+                    if (p.contains("country/malaysia", ignoreCase = true) || origName.equals("malaysia", ignoreCase = true)) {
                         p = "/country/malaysia/"
                         put("name", "Malaysia")
                     }
-                    if (p.contains("p-ramlee", ignoreCase = true) || p.contains("FilemP.ramlee", ignoreCase = true)) {
+                    if (p.contains("p-ramlee", ignoreCase = true) || p.contains("FilemP.ramlee", ignoreCase = true) || origName.equals("p.ramlee", ignoreCase = true)) {
                         p = "/category/p-ramlee/"
                         put("name", "P.Ramlee")
                     }
-                    if (p.matches(Regex("""^(.*/)?sci-fi/?$""", RegexOption.IGNORE_CASE)) || p.contains("science-fiction", ignoreCase = true)) {
+                    if (p.contains("country/indonesia", ignoreCase = true) || p.contains("country/indonesian", ignoreCase = true) || origName.equals("indonesia", ignoreCase = true) || origName.equals("indonesian", ignoreCase = true)) {
+                        p = "/country/indonesia/"
+                        put("name", "Indonesia")
+                    }
+                    if (p.contains("country/south-korea", ignoreCase = true) || p.contains("country/korea", ignoreCase = true) || origName.equals("south korea", ignoreCase = true) || origName.equals("korea", ignoreCase = true)) {
+                        p = "/country/korea/"
+                        put("name", "Korea")
+                    }
+                    if (p.contains("country/united-kingdom", ignoreCase = true) || p.contains("country/uk", ignoreCase = true) || origName.equals("united kingdom", ignoreCase = true) || origName.equals("uk", ignoreCase = true)) {
+                        p = "/country/united-kingdom/"
+                        put("name", "United Kingdom")
+                    }
+                    if (p.contains("country/united-states", ignoreCase = true) || p.contains("country/usa", ignoreCase = true) || origName.equals("united states", ignoreCase = true) || origName.equals("usa", ignoreCase = true)) {
+                        p = "/country/usa/"
+                        put("name", "USA")
+                    }
+                    if (p.matches(Regex("""^(.*/)?sci-fi/?$""", RegexOption.IGNORE_CASE)) || p.contains("science-fiction", ignoreCase = true) || origName.equals("sci-fi", ignoreCase = true)) {
                         p = "/genre/science-fiction/"
                         put("name", "Science Fiction")
                     }
@@ -731,6 +746,9 @@ class VideoViewModel @Inject constructor(
             preferenceManager.discoveredCategories.collect { list ->
                 val merged = sortAndNormalizeCategories(defaultCategories + list)
                 _categories.value = merged
+                if (list.isNotEmpty() && merged.size != (defaultCategories + list).distinctBy { it["path"] }.size) {
+                    preferenceManager.saveDiscoveredCategories(merged)
+                }
             }
         }
 

@@ -1686,7 +1686,9 @@ fun translateCategoryName(name: String): String {
         "Fantasy" -> stringResource(R.string.fantasy)
         "Mystery" -> stringResource(R.string.mystery)
         "Indonesia" -> stringResource(R.string.indonesia)
+        "Indonesian" -> stringResource(R.string.indonesia)
         "Korea" -> stringResource(R.string.korea)
+        "South Korea" -> stringResource(R.string.korea)
         "Malaysia" -> stringResource(R.string.malaysia)
         "Netflix" -> stringResource(R.string.netflix)
         "P.Ramlee" -> stringResource(R.string.p_ramlee)
@@ -1697,6 +1699,8 @@ fun translateCategoryName(name: String): String {
         "China" -> stringResource(R.string.china)
         "India" -> stringResource(R.string.india)
         "USA" -> stringResource(R.string.usa)
+        "United States" -> stringResource(R.string.usa)
+        "UK" -> stringResource(R.string.united_kingdom)
         "United Kingdom" -> stringResource(R.string.united_kingdom)
         else -> name
     }

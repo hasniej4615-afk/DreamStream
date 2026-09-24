@@ -202,6 +202,43 @@ class MyLocalTest {
     }
 
     @Test
+    fun testRegionalCountryDeduplicationAndCombining() {
+        // Test normalizePath
+        assertEquals("/country/indonesia/", VideoExtractor.normalizePath("/country/indonesia/"))
+        assertEquals("/country/indonesia/", VideoExtractor.normalizePath("/country/indonesian/"))
+        assertEquals("/country/korea/", VideoExtractor.normalizePath("/country/korea/"))
+        assertEquals("/country/korea/", VideoExtractor.normalizePath("/country/south-korea/"))
+        assertEquals("/country/united-kingdom/", VideoExtractor.normalizePath("/country/united-kingdom/"))
+        assertEquals("/country/united-kingdom/", VideoExtractor.normalizePath("/country/uk/"))
+        assertEquals("/country/usa/", VideoExtractor.normalizePath("/country/usa/"))
+        assertEquals("/country/usa/", VideoExtractor.normalizePath("/country/united-states/"))
+
+        // Test sortAndNormalizeCategories combination and deduplication
+        val rawCategories = listOf(
+            mapOf("name" to "Indonesia", "path" to "/country/indonesia/"),
+            mapOf("name" to "Indonesian", "path" to "/country/indonesian/"),
+            mapOf("name" to "Korea", "path" to "/country/korea/"),
+            mapOf("name" to "South Korea", "path" to "/country/south-korea/"),
+            mapOf("name" to "United Kingdom", "path" to "/country/united-kingdom/"),
+            mapOf("name" to "UK", "path" to "/country/uk/"),
+            mapOf("name" to "USA", "path" to "/country/usa/"),
+            mapOf("name" to "United States", "path" to "/country/united-states/")
+        )
+        val normalized = VideoViewModel.sortAndNormalizeCategories(rawCategories)
+
+        assertEquals(4, normalized.size)
+        assertTrue(normalized.any { it["name"] == "Indonesia" && it["path"] == "/country/indonesia/" })
+        assertTrue(normalized.any { it["name"] == "Korea" && it["path"] == "/country/korea/" })
+        assertTrue(normalized.any { it["name"] == "United Kingdom" && it["path"] == "/country/united-kingdom/" })
+        assertTrue(normalized.any { it["name"] == "USA" && it["path"] == "/country/usa/" })
+
+        assertTrue(normalized.none { it["name"] == "Indonesian" })
+        assertTrue(normalized.none { it["name"] == "South Korea" })
+        assertTrue(normalized.none { it["name"] == "UK" })
+        assertTrue(normalized.none { it["name"] == "United States" })
+    }
+
+    @Test
     fun testSciFiNormalization() {
         assertEquals("/genre/science-fiction/", VideoExtractor.normalizePath("/sci-fi/"))
         assertEquals("/genre/science-fiction/", VideoExtractor.normalizePath("sci-fi"))

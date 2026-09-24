@@ -246,9 +246,13 @@ object VideoExtractor {
         if (pClean.equals("trending", ignoreCase = true)) return "/most-viewed/"
         val yearMatch = Regex("""^(?:release-year|year)/(\d{4})$""", RegexOption.IGNORE_CASE).find(pClean)
         if (yearMatch != null) return "/release-year/${yearMatch.groupValues[1]}/"
-        if (path.contains("country/viet-nam", ignoreCase = true) || path.contains("country/vietnam", ignoreCase = true)) return "/country/vietnam/"
-        if (path.contains("country/malaysia", ignoreCase = true)) return "/country/malaysia/"
-        if (path.contains("p-ramlee", ignoreCase = true) || path.contains("FilemP.ramlee", ignoreCase = true)) return "/category/p-ramlee/"
+        if (path.contains("country/viet-nam", ignoreCase = true) || path.contains("country/vietnam", ignoreCase = true) || pClean.equals("vietnam", ignoreCase = true) || pClean.equals("viet-nam", ignoreCase = true)) return "/country/vietnam/"
+        if (path.contains("country/malaysia", ignoreCase = true) || pClean.equals("malaysia", ignoreCase = true)) return "/country/malaysia/"
+        if (path.contains("p-ramlee", ignoreCase = true) || path.contains("FilemP.ramlee", ignoreCase = true) || pClean.equals("p-ramlee", ignoreCase = true)) return "/category/p-ramlee/"
+        if (path.contains("country/indonesia", ignoreCase = true) || path.contains("country/indonesian", ignoreCase = true) || pClean.equals("indonesia", ignoreCase = true) || pClean.equals("indonesian", ignoreCase = true)) return "/country/indonesia/"
+        if (path.contains("country/south-korea", ignoreCase = true) || path.contains("country/korea", ignoreCase = true) || pClean.equals("korea", ignoreCase = true) || pClean.equals("south-korea", ignoreCase = true)) return "/country/korea/"
+        if (path.contains("country/united-kingdom", ignoreCase = true) || path.contains("country/uk", ignoreCase = true) || pClean.equals("united-kingdom", ignoreCase = true) || pClean.equals("uk", ignoreCase = true)) return "/country/united-kingdom/"
+        if (path.contains("country/united-states", ignoreCase = true) || path.contains("country/usa", ignoreCase = true) || pClean.equals("united-states", ignoreCase = true) || pClean.equals("usa", ignoreCase = true)) return "/country/usa/"
         val categoryPrefix = if (pClean.startsWith("category/", ignoreCase = true)) pClean.removePrefix("category/").removePrefix("Category/") else pClean
         val genreTarget = when {
             path.matches(Regex("""^(.*/)?sci-fi/?$""", RegexOption.IGNORE_CASE)) || path.contains("science-fiction", ignoreCase = true) -> "science-fiction"

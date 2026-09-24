@@ -122,7 +122,7 @@ fun SettingsScreen(
 
     val allCategories: List<Map<String, String>> by viewModel.allCategories.collectAsStateWithLifecycle()
     val visibleCategories = remember(allCategories) {
-        allCategories.filter {
+        VideoViewModel.sortAndNormalizeCategories(allCategories).filter {
             VideoViewModel.getCategoryGroup(it["path"] ?: "", it["name"] ?: "") != VideoViewModel.CategoryGroup.OTHER
         }
     }
