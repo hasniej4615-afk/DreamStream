@@ -891,21 +891,36 @@ fun VideoPlayerScreen(
 
     // OWL'S EYE: Active Playback Stall Watchdog (WebView Embeds Only)
     // Detects when playback was running, but subsequent decode or CDN starvation freezes playback.
-    // JS-protected streams (vidhide/fujihide) get a longer leash (15s) because their session-bound
+    // JS-protected streams (vidhide/fujihide) get a longer leash because their session-bound
     // CDN tokens cannot be re-acquired, and temporary buffering stalls are normal.
+    // Seek-aware: when position jumps (user scrubbed forward/back), grant a grace period
+    // for the CDN to buffer at the new position before counting stall time.
     LaunchedEffect(useWebView, isVideoReady, extractedUrl) {
         if (useWebView && isVideoReady && extractedUrl != null) {
             val embedLow = (extractedUrl ?: "").lowercase()
             val isJsProtected = embedLow.contains("vidhide") || embedLow.contains("fujihide")
-            val stallThreshold = if (isJsProtected) 15 else 6
+            val stallThreshold = if (isJsProtected) 20 else 10
+            val seekGracePeriod = if (isJsProtected) 12 else 8 // seconds of grace after a seek
             var lastPos = -1L
             var stallSeconds = 0
+            var postSeekCooldown = 0 // counts down after a seek is detected
             while (isVideoReady && !isFinishing) {
                 delay(1000)
                 if (webPlayerState.value.isPlaying && !userInitiatedPause) {
                     val currentPos = webPlayerState.value.position
-                    if (currentPos > 0L && currentPos == lastPos) {
-                        stallSeconds++
+                    // Detect seek: position jumped by more than 2 seconds in either direction
+                    if (lastPos >= 0L && currentPos > 0L && kotlin.math.abs(currentPos - lastPos) > 2000L && currentPos != lastPos) {
+                        Log.d("VideoPlayerScreen", "Owl's Eye: Seek detected (${lastPos}ms -> ${currentPos}ms). Granting ${seekGracePeriod}s buffer grace.")
+                        postSeekCooldown = seekGracePeriod
+                        stallSeconds = 0
+                        lastPos = currentPos
+                    } else if (currentPos > 0L && currentPos == lastPos) {
+                        if (postSeekCooldown > 0) {
+                            // Still within post-seek grace period, don't count as stall
+                            postSeekCooldown--
+                        } else {
+                            stallSeconds++
+                        }
                         if (stallSeconds >= stallThreshold) {
                             Log.w("VideoPlayerScreen", "Owl's Eye: WebView playback stall detected (frozen at ${currentPos}ms for ${stallSeconds}s). Failing over...")
                             val failingUrl = extractedUrl ?: currentServerUrlFromVm ?: ""
@@ -926,9 +941,11 @@ fun VideoPlayerScreen(
                     } else {
                         lastPos = currentPos
                         stallSeconds = 0
+                        postSeekCooldown = 0
                     }
                 } else {
                     stallSeconds = 0
+                    postSeekCooldown = 0
                 }
             }
         }

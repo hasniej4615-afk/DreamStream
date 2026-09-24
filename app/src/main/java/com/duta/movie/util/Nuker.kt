@@ -292,6 +292,14 @@ object Nuker {
                                                         jw.on('pause', function() {
                                                             self.reportState(false, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
                                                         });
+                                                        jw.on('seek', function(e) {
+                                                            // User scrubbed the seek bar: report not-playing so stall guard resets
+                                                            self.reportState(false, e.offset || (jw.getPosition ? jw.getPosition() : 0), jw.getDuration ? jw.getDuration() : 0);
+                                                        });
+                                                        jw.on('buffer', function() {
+                                                            // CDN buffering after seek or mid-stream: report not-playing
+                                                            self.reportState(false, jw.getPosition ? jw.getPosition() : 0, jw.getDuration ? jw.getDuration() : 0);
+                                                        });
                                                         jw.on('time', function(e) {
                                                             if (e && e.currentTime > 0.3) {
                                                                 window.videoFound = true;
