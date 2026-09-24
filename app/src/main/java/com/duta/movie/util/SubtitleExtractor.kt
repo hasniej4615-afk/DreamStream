@@ -188,8 +188,16 @@ object SubtitleExtractor {
                 queries.add("Keluang Man")
                 queries.add("Keluang Man 2025")
             }
+            val sNum = Regex("""(?i)\b(?:season|s)\s*(\d+)\b""").find(lowTitle)?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            val epNum = Regex("""(?i)\b(?:episode|ep|e)\s*(\d+)\b""").find(lowTitle)?.groupValues?.get(1)?.toIntOrNull()
+            if (epNum != null) {
+                val epTag = String.format("S%02dE%02d", sNum, epNum)
+                queries.add(0, "$cleanBase $epTag")
+                queries.add(1, "$cleanBase Episode $epNum")
+                queries.add(2, "$cleanBase $epTag".replace(Regex("""\b(19|20)\d{2}\b"""), "").trim())
+            }
             Regex("""(?i)s(\d+)e(\d+)""").find(lowTitle)?.let { queries.add(0, "$cleanBase ${it.groupValues[0]}") }
-                val uniqueQueries = queries.asSequence().distinct().filter { it.length > 2 }.toList()
+            val uniqueQueries = queries.asSequence().distinct().filter { it.length > 2 }.toList()
             
             Log.d(TAG, "Subtitle search queries: $uniqueQueries")
             
@@ -197,7 +205,10 @@ object SubtitleExtractor {
             id?.let { Log.d(TAG, "Discovery ID: $it") }
 
             val filterStrict: (List<Subtitle>) -> List<Subtitle> = { list ->
-                val requiredWords = cleanBase.lowercase().split(Regex("[\\s\\p{Punct}]+")).filter { it.length > 2 && it != "the" && it != "and" && it != "for" }
+                val requiredWords = cleanBase.lowercase()
+                    .replace(Regex("""\b(19|20)\d{2}\b"""), " ")
+                    .split(Regex("[\\s\\p{Punct}]+"))
+                    .filter { it.length > 2 && it != "the" && it != "and" && it != "for" }
                 if (requiredWords.isEmpty()) list else list.filter { sub ->
                     val subLabel = sub.label.lowercase()
                     requiredWords.all { word -> subLabel.contains(word) } || (id != null && sub.url.contains(id))
@@ -1100,10 +1111,10 @@ object SubtitleExtractor {
             val webRes = fetchHtmlWithFinalUrl(searchUrl, baseUrl, forceWebView = true)
             if (webRes != null && !webRes.first.isNullOrEmpty()) {
                 val doc = Jsoup.parse(webRes.first!!, webRes.second)
-                doc.select("a[href*=\"/subtitle/\"], a[href*=\"/dl/\"], .subtitle-link").forEach { a ->
+                doc.select("a[href*=\"/dl/\"], .subtitle-link").forEach { a ->
                     val href = a.attr("abs:href")
                     val label = a.text().trim().ifEmpty { a.parent()?.text()?.trim() } ?: "Subtitle"
-                    if (href.isNotEmpty() && !href.contains("javascript")) results.add(Subtitle("[Subdl-Web] $label", href, "Unknown"))
+                    if (href.isNotEmpty() && !href.contains("javascript") && !href.contains("/subtitle/sd")) results.add(Subtitle("[Subdl-Web] $label", href, "Unknown"))
                 }
             }
             return results
@@ -1114,22 +1125,18 @@ object SubtitleExtractor {
         override val name = "SubSource"; override val baseUrl = "https://subsource.net"
         
         private val keys = listOf(
-            "sk_ffc5b377081af6521f60769b7d784ad65cb08288a197629561dc0346398bc30e",
-            "sk_8a7d26a11fbc9f10928a6f4e1f729f10928a6f4e1f729f10928a6f4e1f729f",
-            "sk_4d21b702dfa910ec3388a101f37e19f96b42b662dfa910ec3388a101f37e1",
-            "sk_d95786a172d9f10928a6f4e1f729f10928a6f4e1f729f10928a6f4e1f729f"
+            "sk_ffc5b377081af6521f60769b7d784ad65cb08288a197629561dc0346398bc30e"
         )
 
         override suspend fun searchFast(title: String, imdbId: String?): List<Subtitle> {
             try {
-                val queries = listOfNotNull(imdbId?.let { "movieId=$it" }, "releaseInfo=${java.net.URLEncoder.encode(title, "UTF-8")}")
-                
-                val now = System.currentTimeMillis()
-                val goodKeys = keys.filter { (badKeys[it] ?: 0L) < now }.shuffled()
+                val results = mutableListOf<Subtitle>()
 
-                var lastError = ""
-                var authFailureCount = 0
-                keyLoop@ for (key in goodKeys) {
+                // 1. Try official API if key is available
+                val queries = listOfNotNull(imdbId?.let { "movieId=$it" }, "releaseInfo=${java.net.URLEncoder.encode(title, "UTF-8")}")
+                val goodKeys = keys.filter { (badKeys[it] ?: 0L) < System.currentTimeMillis() }
+
+                for (key in goodKeys) {
                     for (query in queries) {
                         val url = "https://api.subsource.net/api/v1/subtitles?$query"
                         val req = Request.Builder().url(url)
@@ -1139,52 +1146,80 @@ object SubtitleExtractor {
                             .header("Origin", "https://subsource.net")
                             .header("Referer", "https://subsource.net/")
                             .build()
-                        
-                        val res = withContext(Dispatchers.IO) {
-                            try {
-                                NetworkConfig.okHttpClient.newCall(req).execute().use { r ->
+                        try {
+                            NetworkConfig.okHttpClient.newCall(req).execute().use { r ->
+                                if (r.isSuccessful) {
                                     val body = r.body?.string() ?: "{}"
-                                    if (r.isSuccessful) {
-                                        val data = org.json.JSONObject(body).optJSONArray("data") ?: org.json.JSONArray()
-                                        List(data.length()) { i -> 
-                                            val s = data.getJSONObject(i)
-                                            Subtitle("[SubSource] ${s.optString("release")}", "https://api.subsource.net/v1/subtitles/${s.optString("id")}/download", normalizeLanguage(s.optString("language"))) 
-                                        }
-                                    } else {
-                                        if (r.code == 403 || r.code == 401) {
-                                            Log.e("SubtitleExtractor", "SubSource API ${r.code} for key ${key.take(4)}... Flagging for cooldown.")
-                                            badKeys[key] = System.currentTimeMillis() + (1000 * 60 * 60 * 6)
-                                            authFailureCount++
-                                        }
-                                        lastError = "API ${r.code}: $body"
-                                        null
+                                    val data = org.json.JSONObject(body).optJSONArray("data") ?: org.json.JSONArray()
+                                    for (i in 0 until data.length()) {
+                                        val s = data.getJSONObject(i)
+                                        results.add(Subtitle("[SubSource] ${s.optString("release")}", "https://api.subsource.net/v1/subtitles/${s.optString("id")}/download", normalizeLanguage(s.optString("language"))))
                                     }
+                                } else if (r.code == 403 || r.code == 401) {
+                                    badKeys[key] = System.currentTimeMillis() + (1000 * 60 * 60 * 6)
                                 }
-                            } catch (e: Exception) { null }
-                        }
-                        if (!res.isNullOrEmpty()) return res
-                        if (authFailureCount >= 2) {
-                            Log.w("SubtitleExtractor", "SubSource API auth rejected ($authFailureCount). Fast-tracking to scraping.")
-                            goodKeys.forEach { badKeys[it] = System.currentTimeMillis() + (1000 * 60 * 60 * 6) }
-                            break@keyLoop
-                        }
+                            }
+                        } catch (_: Exception) {}
+                    }
+                    if (results.isNotEmpty()) return results
+                }
+
+                // 2. Direct Slug & Season Web Scraping (SubSource hosts /subtitles/<slug>/season-X and /subtitles/<slug>)
+                val cleanTitle = title.replace(Regex("""(?i)\b(fhd|hd|4k|1080p|720p|bluray|web-?dl|webrip|x264|x265)\b"""), "").trim()
+                val seasonMatch = Regex("""(?i)\b(?:season|s)[-_ ]?(\d+)\b""").find(title)
+                val seasonNum = seasonMatch?.groupValues?.get(1)?.toIntOrNull() ?: 1
+
+                val baseSlug = cleanTitle.replace(Regex("""(?i)\b(?:season|s|episode|ep)[-_ ]?\d+\b"""), "")
+                    .replace(Regex("""[^a-zA-Z0-9\s-]"""), "")
+                    .trim()
+                    .replace(Regex("""\s+"""), "-")
+                    .lowercase()
+
+                val slugCandidates = mutableListOf<String>()
+                if (baseSlug.isNotEmpty()) {
+                    slugCandidates.add(baseSlug)
+                    if (!baseSlug.endsWith("2026") && title.contains("2026")) {
+                        slugCandidates.add("$baseSlug-2026")
+                    }
+                    val noYearSlug = baseSlug.replace(Regex("""-\d{4}$"""), "")
+                    if (noYearSlug != baseSlug) {
+                        slugCandidates.add(noYearSlug)
                     }
                 }
-                
-                Log.d("SubtitleExtractor", "SubSource API failed ($lastError), falling back to scraping")
-                val searchUrl = if (imdbId != null) "$baseUrl/subtitles?imdb=$imdbId" else "$baseUrl/subtitles?query=${java.net.URLEncoder.encode(title, "UTF-8")}"
-                val webRes = fetchHtmlWithFinalUrl(searchUrl, baseUrl, forceWebView = true)
-                if (webRes != null && !webRes.first.isNullOrEmpty()) {
-                    val doc = Jsoup.parse(webRes.first!!, webRes.second)
-                    return doc.select("a[href*=\"/subtitles/\"], .subtitle-card a").mapNotNull { a ->
-                        val href = a.attr("abs:href")
-                        val label = a.text().trim()
-                        if (href.isNotEmpty() && !href.contains("download") && !href.contains("api")) {
-                            Subtitle("[SubSource-Web] $label", href, "Unknown")
-                        } else null
-                    }
+
+                val scrapableUrls = mutableListOf<String>()
+                for (slug in slugCandidates.distinct()) {
+                    scrapableUrls.add("$baseUrl/subtitles/$slug/season-$seasonNum")
+                    scrapableUrls.add("$baseUrl/subtitles/$slug")
                 }
-            } catch(e: Exception) {
+
+                for (sUrl in scrapableUrls) {
+                    try {
+                        val req = Request.Builder()
+                            .url(sUrl)
+                            .header("User-Agent", NetworkConfig.SHARED_USER_AGENT)
+                            .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                            .build()
+                        NetworkConfig.okHttpClient.newCall(req).execute().use { resp ->
+                            if (resp.isSuccessful) {
+                                val html = resp.body?.string() ?: ""
+                                val doc = Jsoup.parse(html, sUrl)
+                                val subLinks = doc.select("a[href*='/subtitle/']")
+                                for (a in subLinks) {
+                                    val href = a.attr("href")
+                                    val parts = href.split("/")
+                                    val lang = if (parts.size >= 4) parts[3] else "Unknown"
+                                    val label = a.text().trim().replace("\n", " ").ifEmpty { a.attr("title").trim() }.ifEmpty { "Subtitle" }
+                                    val fullUrl = if (href.startsWith("http")) href else "$baseUrl$href"
+                                    results.add(Subtitle("[SubSource] $label", fullUrl, normalizeLanguage(lang)))
+                                }
+                            }
+                        }
+                        if (results.isNotEmpty()) break
+                    } catch (_: Exception) {}
+                }
+                return results
+            } catch (e: Exception) {
                 Log.e("SubtitleExtractor", "SubSource error", e)
             }
             return emptyList()
@@ -1192,12 +1227,38 @@ object SubtitleExtractor {
 
         override suspend fun resolve(url: String): String {
             try {
-                var resolved = ""
-                for (key in keys.shuffled()) {
-                    resolved = withContext(Dispatchers.IO) {
-                        NetworkConfig.okHttpClient.newCall(Request.Builder().url(url).header("X-API-Key", key).header("User-Agent", NetworkConfig.SHARED_USER_AGENT).build()).execute().use { r ->
-                            if (r.isSuccessful) org.json.JSONObject(r.body?.string() ?: "{}").optString("link") else ""
+                // If it's a SubSource webpage (e.g. https://subsource.net/subtitle/...), extract the direct download link
+                if (url.contains("subsource.net/subtitle/")) {
+                    val req = Request.Builder()
+                        .url(url)
+                        .header("User-Agent", NetworkConfig.SHARED_USER_AGENT)
+                        .build()
+                    val directDownload = withContext(Dispatchers.IO) {
+                        NetworkConfig.okHttpClient.newCall(req).execute().use { resp ->
+                            if (resp.isSuccessful) {
+                                val html = resp.body?.string() ?: ""
+                                val doc = Jsoup.parse(html, url)
+                                doc.select("a[href*='/subtitle/download/']").firstOrNull()?.attr("abs:href")
+                            } else null
                         }
+                    }
+                    if (!directDownload.isNullOrEmpty()) return directDownload
+                }
+
+                // If it's an API download link or requires key
+                val goodKeys = keys.filter { (badKeys[it] ?: 0L) < System.currentTimeMillis() }
+                for (key in goodKeys) {
+                    val resolved = withContext(Dispatchers.IO) {
+                        try {
+                            NetworkConfig.okHttpClient.newCall(Request.Builder().url(url).header("X-API-Key", key).header("User-Agent", NetworkConfig.SHARED_USER_AGENT).build()).execute().use { r ->
+                                if (r.isSuccessful) {
+                                    val body = r.body?.string() ?: "{}"
+                                    if (body.trimStart().startsWith("{")) {
+                                        org.json.JSONObject(body).optString("link")
+                                    } else ""
+                                } else ""
+                            }
+                        } catch (_: Exception) { "" }
                     }
                     if (resolved.isNotEmpty()) return resolved
                 }
@@ -1223,8 +1284,8 @@ object SubtitleExtractor {
                     Request.Builder().url(searchUrl).header("User-Agent", NetworkConfig.SHARED_USER_AGENT).build()
                 ).execute().use { r ->
                     val doc = Jsoup.parse(r.body?.string() ?: "", searchUrl)
-                    val rows = doc.select("table tr, .sub-entry, .sub-row")
-                    for (row in rows.take(2)) {
+                    val rows = doc.select("table tr:has(a[href*='/subs/']), .sub-entry, .sub-row")
+                    for (row in rows.take(15)) {
                         val linkEl = row.select("a").firstOrNull { it.attr("href").contains("/subs/") || it.attr("href").contains("subs/") } ?: continue
                         val moviePageUrl = linkEl.attr("abs:href")
                         val movieTitle = linkEl.text().ifBlank { title }.trim()

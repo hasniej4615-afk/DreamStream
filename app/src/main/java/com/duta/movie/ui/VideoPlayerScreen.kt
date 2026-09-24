@@ -371,7 +371,7 @@ fun VideoPlayerScreen(
 
     var isFinishing by remember { mutableStateOf(false) }
 
-    LaunchedEffect(videoId, video?.title) { video?.title?.let { viewModel.fetchSubtitles(it) } }
+    LaunchedEffect(videoId, video?.title, currentEpisode?.url) { video?.title?.let { viewModel.fetchSubtitles(it, isTV = video?.isSeries == true) } }
 
     val isAnyDialogOpen = showServerDialog || showSubtitleDialog || showSyncDialog || showEpisodeDialog || showResumeDialog
     LaunchedEffect(showControls, isVideoReady, isAnyDialogOpen, lastInteractionTime) { 
@@ -1427,7 +1427,7 @@ fun VideoPlayerScreen(
         onVisibilityToggle = { if (!isInPip) showControls = !showControls },
         onFullscreenToggle = { isFullscreen = !isFullscreen },
         onServerListClick = { showServerDialog = true },
-        onSubtitleClick = { showSubtitleDialog = true; viewModel.fetchSubtitles(video?.title ?: "") },
+        onSubtitleClick = { showSubtitleDialog = true; viewModel.fetchSubtitles(video?.title ?: "", isTV = video?.isSeries == true) },
         onSyncClick = { showSyncDialog = true },
         onPipClick = { (context.findActivity() as? com.duta.movie.MainActivity)?.enterPipMode() },
         onEpisodeListClick = { showEpisodeDialog = true },

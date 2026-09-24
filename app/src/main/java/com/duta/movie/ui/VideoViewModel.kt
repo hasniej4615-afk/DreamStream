@@ -2748,14 +2748,29 @@ class VideoViewModel @Inject constructor(
     }
 
     fun fetchSubtitles(title: String, isTV: Boolean = false) {
-        if (title == lastSubtitleSearchTitle) return
-        lastSubtitleSearchTitle = title
+        val curEp = _currentEpisode.value
+        val effectiveTitle = if (curEp != null && (isTV || _videoMetadata.value?.isSeries == true)) {
+            val epName = curEp.name.trim()
+            val epNumMatch = Regex("""(?i)\b(?:episode|ep|e)\s*(\d+)\b""").find(epName) ?: Regex("""\b(\d+)\b""").find(epName)
+            val epNum = epNumMatch?.groupValues?.get(1)?.toIntOrNull()
+            val seasonMatch = Regex("""(?i)\b(?:season|s)\s*(\d+)\b""").find(curEp.season.ifEmpty { curEp.url })
+            val seasonNum = seasonMatch?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            if (epNum != null) {
+                val epTag = String.format("S%02dE%02d", seasonNum, epNum)
+                "$title $epTag"
+            } else {
+                "$title $epName"
+            }
+        } else title
+
+        if (effectiveTitle == lastSubtitleSearchTitle) return
+        lastSubtitleSearchTitle = effectiveTitle
         subSearchJob?.cancel()
         subSearchJob = viewModelScope.launch(Dispatchers.IO) { 
             _isSubtitleLoading.value = true
             _subtitles.value = emptyList()
             try { 
-                SubtitleExtractor.searchAndGetSubtitles(title, null, this, { subs -> 
+                SubtitleExtractor.searchAndGetSubtitles(effectiveTitle, null, this, { subs -> 
                     val combined = (_subtitles.value + subs).distinctBy { it.url }
                     _subtitles.value = combined
                     
