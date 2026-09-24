@@ -2738,12 +2738,14 @@ class VideoViewModel @Inject constructor(
 
             // CRITICAL: Block protected internal CDN streams and JS-Only embed hosts from overriding resolvedUrl
             val isDirectStream = low.contains(".m3u8") || low.contains(".mp4") || low.contains(".mkv") || low.contains(".webm") || low.contains(".txt") || low.contains("/stream/")
+            val isSessionProtected = low.contains("vidhide") || low.contains("fujihide") || low.contains("tnmr.org")
             val isProtectedStream = (low.contains("playmogo") ||
                                     low.contains("digitalidentity") || low.contains("sunrisevalleycreative") ||
                                     low.contains("johnfullwonder") || low.contains("voe") ||
                                     low.contains("platformdocumentation") || low.contains("hgcloud") || low.contains("hglink") ||
+                                    isSessionProtected ||
                                     com.duta.movie.util.VideoExtractor.isJsOnlyHost(finalUrl)) &&
-                                    !isDirectStream && !low.contains("cloudwindow")
+                                    (!isDirectStream || isSessionProtected) && !low.contains("cloudwindow")
             if (isProtectedStream) {
                 Log.w("VideoViewModel", "Protected/Internal CDN stream blocked from overriding resolvedUrl: $finalUrl")
                 return

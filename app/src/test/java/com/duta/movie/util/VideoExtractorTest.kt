@@ -921,6 +921,18 @@ class VideoExtractorTest {
     }
 
     @Test
+    fun testCleanTitleDutaFilm() {
+        val raw1 = "DUTAFILM - Nonton Film Thrash (2026) Streaming Online Download"
+        assert(VideoExtractor.cleanTitle(raw1) == "Thrash (2026)") { "Expected 'Thrash (2026)', got '${VideoExtractor.cleanTitle(raw1)}'" }
+
+        val raw2 = "DUTAFILM - Film Thrash (2026) Streaming Online Download"
+        assert(VideoExtractor.cleanTitle(raw2) == "Thrash (2026)") { "Expected 'Thrash (2026)', got '${VideoExtractor.cleanTitle(raw2)}'" }
+
+        val raw3 = "Nonton Film Inception (2010)"
+        assert(VideoExtractor.cleanTitle(raw3) == "Inception (2010)") { "Expected 'Inception (2010)', got '${VideoExtractor.cleanTitle(raw3)}'" }
+    }
+
+    @Test
     fun testKepalaBergetarEpisodeExtractionAndSocialFiltering() {
         val html = buildString {
             append("<html><body>")

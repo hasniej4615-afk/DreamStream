@@ -3672,7 +3672,11 @@ object VideoExtractor {
     fun cleanTitle(title: String): String {
         return title.replace("Permalink ke:", "", ignoreCase = true)
                     .replace("Error (", "(", ignoreCase = true)
-                    .replace("Nonton ", "", ignoreCase = true)
+                    .replace(Regex("""(?i)^\s*(?:DUTAFILM|REBAHIN|INDOKEREN)\s*[-–—:]\s*"""), "")
+                    .replace(Regex("""(?i)^\s*Nonton\s+(?:Film\s+)?"""), "")
+                    .replace(Regex("""(?i)^\s*Film\s+"""), "")
+                    .replace(Regex("""(?i)\s*[-–—:]\s*Streaming\s*Online\s*(?:Download)?\s*$"""), "")
+                    .replace(Regex("""(?i)\s*(?:Streaming\s*Online\s*Download|Streaming\s*Online|Streaming|Download)\s*$"""), "")
                     .replace("Dutamovie21", "", ignoreCase = true)
                     .replace("DutaMovie", "", ignoreCase = true)
                     .replace("Itoshii", "", ignoreCase = true)
@@ -3684,7 +3688,7 @@ object VideoExtractor {
                     .replace(Regex("""(?i)\s*-\s*(?:tv\d+\s*)?rebahinxxi\s*(?:auction)?.*$"""), "")
                     .replace(Regex("""(?i)\s*-\s*(?:[a-zA-Z0-9-]+\.)+[a-zA-Z0-9-]+.*$"""), "")
                     .replace(Regex("""(?i)\s*-\s*\d+\.\d+\.\d+\.\d+.*$"""), "")
-                    .replace(Regex("""(?i)\b(rebahin|bioskopkeren|layarkaca21|lk21|indoxxi|idlix|dutamovie21|dutamovie|itoshii|sub\s*indo(?:nesia)?|subtitle\s*indo(?:nesia)?)\b"""), " ")
+                    .replace(Regex("""(?i)\b(rebahin|bioskopkeren|layarkaca21|lk21|indoxxi|idlix|dutamovie21|dutamovie|dutafilm|itoshii|sub\s*indo(?:nesia)?|subtitle\s*indo(?:nesia)?)\b"""), " ")
                     .replace(Regex("""(?i)\s*(?:Tonton\s+)?Drama\s+(?:Video|Melayu|Online)\s*"""), " ")
                     .replace(Regex("""(?i)\s*Tonton\s+Video\s*"""), " ")
                     .replace(Regex("""(?i)\s*Kepala\s*Bergetar\s*"""), " ")
@@ -4060,9 +4064,10 @@ object VideoExtractor {
         }
         if (html == null) return@withContext null
         val doc = Jsoup.parse(html, effectiveUrl)
-        val rawTitle = doc.select(".entry-title, h1, .sheader .data h3, .data h3, .data h2, .data h1, .info-header h3, .entry-header h3, article h3, meta[property='og:title']").firstOrNull()?.let {
-            if (it.tagName() == "meta") it.attr("content") else it.text()
-        } ?: "Unknown"
+        val domTitle = doc.select("h1.entry-title, .entry-title, h1, .sheader .data h3, .data h3, .data h2, .data h1, .info-header h3, .entry-header h3, article h3").firstOrNull()?.text()?.trim()
+        val rawTitle = if (!domTitle.isNullOrEmpty()) domTitle else {
+            doc.select("meta[property='og:title']").firstOrNull()?.attr("content")?.trim() ?: "Unknown"
+        }
         val title = cleanTitle(rawTitle)
         
         val poster = getHighResImage(doc.select("meta[property=\"og:image\"], .poster img").firstOrNull()?.let { it.attr("content").ifEmpty { it.attr("abs:src") } } ?: "")

@@ -1292,14 +1292,26 @@ fun VideoPlayerScreen(
                     }
                 } else if (is403) {
                     val failingUrl = extractedUrl ?: currentServerUrl.value ?: ""
-                    Log.w("VideoPlayerScreen", "Owl's Eye: Detected 403 Forbidden on $failingUrl. Purging dead stream & rotating...")
-                    if (failingUrl.isNotEmpty()) {
-                        viewModel.notifyMirrorDead(failingUrl)
-                        viewModel.purgeServerFromVideo(currentVideoId.value, failingUrl)
-                    }
-                    scope.launch {
-                        delay(600)
-                        viewModel.resolveNextServer(currentVideoId.value, currentServerUrl.value, force = true)
+                    val currentServ = currentServerUrl.value ?: ""
+                    val isJsHoster = com.duta.movie.util.VideoExtractor.isJsOnlyHost(currentServ) || 
+                                     currentServ.contains("vidhide", ignoreCase = true) || 
+                                     currentServ.contains("fujihide", ignoreCase = true) ||
+                                     failingUrl.contains("tnmr.org", ignoreCase = true)
+
+                    if (isJsHoster && !isUserForcingWebView) {
+                        Log.w("VideoPlayerScreen", "Owl's Eye: 403 on direct stream for JS hoster ($currentServ). Falling back to shielded WebView player.")
+                        isUserForcingWebView = true
+                        viewModel.updateExtractedUrl(currentVideoId.value, currentServ)
+                    } else {
+                        Log.w("VideoPlayerScreen", "Owl's Eye: Detected 403 Forbidden on $failingUrl. Purging dead stream & rotating...")
+                        if (failingUrl.isNotEmpty()) {
+                            viewModel.notifyMirrorDead(failingUrl)
+                            viewModel.purgeServerFromVideo(currentVideoId.value, failingUrl)
+                        }
+                        scope.launch {
+                            delay(600)
+                            viewModel.resolveNextServer(currentVideoId.value, currentServerUrl.value, force = true)
+                        }
                     }
                 } else if (isSourceError && autoRetryCount == 0) {
                     autoRetryCount++
@@ -2972,13 +2984,18 @@ fun VideoPlayerWebView(
                             low.contains(".jpeg") || low.contains(".gif") || low.contains(".svg")) return
                             
                         val isLegit = low.startsWith("http") && (low.contains(".m3u8") || low.contains(".mp4") || low.contains(".mkv") || low.contains(".webm") || low.contains(".txt") || low.contains("/amt/") || low.contains(".amt") || low.contains("amt1.pro") || low.contains("amt2.pro") || low.contains("haneri"))
+                        val isVidhideStream = low.contains("vidhide") || low.contains("fujihide") || low.contains("tnmr.org") ||
+                                              url.lowercase().contains("vidhide") || url.lowercase().contains("fujihide")
                         val isProtected = (low.contains("playmogo") || 
                                           low.contains("digitalidentity") || low.contains("sunrisevalleycreative") ||
                                           low.contains("johnfullwonder") || low.contains("voe") ||
                                           low.contains("platformdocumentation") || low.contains("hgcloud") || low.contains("hglink") ||
+                                          isVidhideStream ||
                                           com.duta.movie.util.VideoExtractor.isJsOnlyHost(u) ||
                                           com.duta.movie.util.VideoExtractor.isJsOnlyHost(url)) &&
-                                          !low.contains(".m3u8") && !low.contains(".mp4") && !low.contains(".mkv") && !low.contains(".webm") && !low.contains(".txt") && !low.contains("cloudwindow")
+                                          !low.contains("cloudwindow") &&
+                                          (!low.contains(".m3u8") || isVidhideStream) &&
+                                          !low.contains(".mp4") && !low.contains(".mkv") && !low.contains(".webm") && !low.contains(".txt")
                         if (!isLegit || isProtected) return
                         scope.launch(Dispatchers.Main) { 
                              Log.i("VideoPlayerSniffer", "Sniffed Legit Stream: $u | Ref: $ref")
