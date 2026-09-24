@@ -890,9 +890,14 @@ fun VideoPlayerScreen(
     }
 
     // OWL'S EYE: Active Playback Stall Watchdog (WebView Embeds Only)
-    // Detects when playback was running, but subsequent decode or CDN starvation freezes playback for > 5s
+    // Detects when playback was running, but subsequent decode or CDN starvation freezes playback.
+    // JS-protected streams (vidhide/fujihide) get a longer leash (15s) because their session-bound
+    // CDN tokens cannot be re-acquired, and temporary buffering stalls are normal.
     LaunchedEffect(useWebView, isVideoReady, extractedUrl) {
         if (useWebView && isVideoReady && extractedUrl != null) {
+            val embedLow = (extractedUrl ?: "").lowercase()
+            val isJsProtected = embedLow.contains("vidhide") || embedLow.contains("fujihide")
+            val stallThreshold = if (isJsProtected) 15 else 6
             var lastPos = -1L
             var stallSeconds = 0
             while (isVideoReady && !isFinishing) {
@@ -901,12 +906,19 @@ fun VideoPlayerScreen(
                     val currentPos = webPlayerState.value.position
                     if (currentPos > 0L && currentPos == lastPos) {
                         stallSeconds++
-                        if (stallSeconds >= 6) {
+                        if (stallSeconds >= stallThreshold) {
                             Log.w("VideoPlayerScreen", "Owl's Eye: WebView playback stall detected (frozen at ${currentPos}ms for ${stallSeconds}s). Failing over...")
                             val failingUrl = extractedUrl ?: currentServerUrlFromVm ?: ""
                             if (failingUrl.isNotEmpty()) {
-                                viewModel.notifyMirrorDead(failingUrl)
-                                viewModel.notifyPlaybackFailure(failingUrl)
+                                if (isJsProtected) {
+                                    // Soft-fail only: do NOT permanently kill JS-protected mirrors
+                                    // on a stall. The stream may recover on retry, and nuking the
+                                    // only viable mirror leaves the user with nothing.
+                                    viewModel.notifyPlaybackFailure(failingUrl)
+                                } else {
+                                    viewModel.notifyMirrorDead(failingUrl)
+                                    viewModel.notifyPlaybackFailure(failingUrl)
+                                }
                             }
                             viewModel.resolveNextServer(videoId, failingUrl, force = true)
                             break
