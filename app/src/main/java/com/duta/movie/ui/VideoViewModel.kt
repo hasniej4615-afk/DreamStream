@@ -1305,7 +1305,7 @@ class VideoViewModel @Inject constructor(
                                     val existingServerUrls = current.servers.map { it.url.trimEnd('/') }.toSet()
                                     val newUnique = altServers.filter { !existingServerUrls.contains(it.url.trimEnd('/')) }
                                     if (newUnique.isNotEmpty()) {
-                                        val combined = current.servers + newUnique
+                                        val combined = (current.servers + newUnique).sortedByDescending { com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) }
                                         val updated = current.copy(servers = combined)
                                         withContext(Dispatchers.Main) {
                                             _videoMetadata.value = applyMetadata(updated)

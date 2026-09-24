@@ -272,7 +272,47 @@ class MyLocalTest {
             val altServers = VideoExtractor.findAlternativeSources(mockPencuriVideo)
             println("Alternative servers found for Avatar: ${altServers.size}")
             altServers.forEach { println(" - Alt Server: ${it.name} | ${it.url}") }
-            assertTrue("Should discover alternative mirrors from DutaFilm", altServers.any { it.name.contains("DutaFilm") || it.url.contains("vidhide") })
+            assertTrue("Should discover alternative mirrors from DutaFilm/Cluster", altServers.any { it.name.contains("DutaFilm") || it.url.contains("vidhide") })
+        }
+    }
+
+    @Test
+    fun testClusterMirrorsIntegration() {
+        // 1. Cluster configuration
+        assertEquals(27, VideoExtractor.CLUSTER_MIRROR_URLS.size)
+        assertTrue(VideoExtractor.isClusterSite("http://165.227.237.129/"))
+        assertTrue(VideoExtractor.isClusterSite("http://178.128.166.138/"))
+        assertTrue(VideoExtractor.isClusterSite("https://138.68.169.162/"))
+        assertTrue(VideoExtractor.isClusterSite("165.227.237.129"))
+        assertTrue(VideoExtractor.isWhitelistedHost("165.227.237.129"))
+        assertTrue(VideoExtractor.isWhitelistedHost("138.68.169.162"))
+
+        // 2. Primary Priority tier
+        val vidhidePriority = VideoExtractor.getProviderPriority("VidHide", "https://vidhide.org/embed/wtc8s9")
+        assertEquals(128, vidhidePriority)
+        val youtubePriority = VideoExtractor.getProviderPriority("YouTube", "https://www.youtube.com/embed/123")
+        assertTrue("VidHide must have higher priority than YouTube fallback", vidhidePriority > youtubePriority)
+
+        // 3. Stable ID & Video URL resolution
+        val clusterUrl = "http://165.227.237.129/avatar-the-way-of-water-2022/"
+        val stableId = VideoExtractor.extractStableId(clusterUrl)
+        assertEquals("df_avatar-the-way-of-water-2022", stableId)
+        assertTrue(VideoExtractor.isDutaFilm(videoId = stableId))
+        assertTrue(VideoExtractor.isDutaFilm(videoUrl = clusterUrl))
+
+        kotlinx.coroutines.runBlocking {
+            // 4. Cluster Search
+            val clusterResults = VideoExtractor.searchClusterMirrors("Avatar", 1, 10)
+            println("Cluster search results: ${clusterResults.size}")
+            clusterResults.forEach { println(" - Cluster item: ${it.id} | ${it.title} | ${it.videoUrl}") }
+            assertTrue("Cluster search should return items", clusterResults.isNotEmpty())
+
+            // 5. Video Details on cluster mirror
+            val details = VideoExtractor.fetchVideoDetails("http://165.227.237.129/avatar-the-way-of-water-2022/")
+            println("Cluster details: title=${details?.title}, servers=${details?.servers?.size}")
+            details?.servers?.forEach { println(" - Cluster server: ${it.name} -> ${it.url}") }
+            assertTrue("Cluster details should be parsed", details != null)
+            assertTrue("Should contain VidHide mirror", details?.servers?.any { it.url.contains("vidhide") } == true)
         }
     }
 }

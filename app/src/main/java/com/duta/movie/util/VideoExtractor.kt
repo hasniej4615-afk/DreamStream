@@ -62,6 +62,48 @@ object VideoExtractor {
 
     private var PENCURI_BASE_URL = "https://ww44.pencurimovie.baby"
     const val DUTAFILM_BASE_URL = "http://159.89.249.45"
+
+    val CLUSTER_MIRROR_URLS = listOf(
+        "http://165.227.237.129",
+        "http://168.144.209.219",
+        "http://159.89.249.45",
+        "http://134.209.20.140",
+        "http://134.122.56.188",
+        "http://178.62.72.37",
+        "http://57.131.49.97",
+        "http://178.128.166.138",
+        "http://138.68.147.79",
+        "http://178.128.172.224",
+        "http://178.128.38.104",
+        "http://159.65.211.104",
+        "http://165.232.109.192",
+        "http://159.65.85.128",
+        "http://159.223.244.83",
+        "http://161.35.161.167",
+        "http://159.65.29.100",
+        "http://167.99.83.109",
+        "https://138.68.169.162",
+        "http://167.71.68.139",
+        "http://139.59.189.160",
+        "http://167.172.35.72",
+        "http://167.99.94.206",
+        "http://152.42.158.72",
+        "http://129.212.160.210",
+        "http://174.138.122.222",
+        "http://139.59.168.59"
+    )
+
+    val CLUSTER_HOSTS: Set<String> = CLUSTER_MIRROR_URLS.mapNotNull {
+        try { android.net.Uri.parse(it).host } catch(_: Throwable) { null }
+            ?: try { java.net.URI(it).host } catch(_: Throwable) { null }
+    }.toSet()
+
+    fun isClusterSite(urlOrHost: String?): Boolean {
+        if (urlOrHost.isNullOrBlank()) return false
+        val low = urlOrHost.lowercase()
+        return CLUSTER_HOSTS.any { low.contains(it) } || low.contains("dutafilm")
+    }
+
     private var onPencuriDomainLearned: ((String) -> Unit)? = null
 
     val PENCURI_FALLBACKS = listOf(
@@ -251,7 +293,7 @@ object VideoExtractor {
         
         if (host.contains("archive.org")) return url
         if (host.contains("kepalabergetar")) return url
-        if (host.contains("159.89.249.45") || host.contains("dutafilm")) return url
+        if (host.contains("159.89.249.45") || host.contains("dutafilm") || isClusterSite(host)) return url
         
         // Auto-heal for PencuriMovie standalone catalog
         if (host.contains("pencurimovie") || host.contains("pencurifilm") || host.contains("pencurivideo")) {
@@ -335,6 +377,8 @@ object VideoExtractor {
      */
     fun isDutaFilm(videoId: String? = null, videoUrl: String? = null, streamUrl: String? = null): Boolean {
         if (videoId?.startsWith("df_") == true) return true
+        if (videoUrl != null && isClusterSite(videoUrl)) return true
+        if (streamUrl != null && isClusterSite(streamUrl)) return true
         if (videoUrl?.contains("159.89.249.45", ignoreCase = true) == true) return true
         if (videoUrl?.contains("dutafilm", ignoreCase = true) == true) return true
         if (streamUrl?.contains("159.89.249.45", ignoreCase = true) == true) return true
@@ -1394,6 +1438,7 @@ object VideoExtractor {
             ?: try { java.net.URI(getPencuriBaseUrl()).host?.lowercase() } catch(_: Throwable) { null }
         if (activeBaseHost != null && (low == activeBaseHost || low.contains(activeBaseHost))) return true
         if (pencuriHost != null && (low == pencuriHost || low.contains(pencuriHost))) return true
+        if (isClusterSite(low)) return true
         return low.contains("archive.org") || low.contains("pencurimovie") || low.contains("pencurifilm") ||
             low.contains("159.89.249.45") || low.contains("dutafilm") ||
             low.contains("dutamovie") ||
@@ -1681,12 +1726,17 @@ object VideoExtractor {
                 async(Dispatchers.IO) {
                     val partnerServers = mutableListOf<VideoServer>()
                     for (q in distinctQueries) {
-                        var searchResults = searchDomain(partnerDomain, q, startPage = 1, maxCount = 20)
-                        if (searchResults.isEmpty() && partnerTag == "Pencuri") {
-                            // If PencuriMovie returned nothing, probe active domain and retry
-                            probePencuriDomain()?.let { liveDomain ->
-                                searchResults = searchDomain(liveDomain, q, startPage = 1, maxCount = 20)
+                        var searchResults = if (partnerTag == "DutaFilm") {
+                            searchClusterMirrors(q, page = 1, count = 20)
+                        } else {
+                            var res = searchDomain(partnerDomain, q, startPage = 1, maxCount = 20)
+                            if (res.isEmpty() && partnerTag == "Pencuri") {
+                                // If PencuriMovie returned nothing, probe active domain and retry
+                                probePencuriDomain()?.let { liveDomain ->
+                                    res = searchDomain(liveDomain, q, startPage = 1, maxCount = 20)
+                                }
                             }
+                            res
                         }
 
                         val matched = searchResults.find { isCrossProviderMovieMatch(video, it) }
@@ -1713,12 +1763,12 @@ object VideoExtractor {
                                     details.servers
                                 }
 
-                                 if (serversToExamine.isNotEmpty()) {
+                                if (serversToExamine.isNotEmpty()) {
                                     val newServers = serversToExamine.filter { s ->
                                         val cleanUrl = s.url.trimEnd('/')
                                         !existingUrls.contains(cleanUrl) && !isConfirmedDead(cleanUrl)
                                     }.map { s ->
-                                        val cleanName = if (s.name.contains(partnerTag, ignoreCase = true)) s.name else "${s.name} ($partnerTag)"
+                                        val cleanName = if (s.name.contains(partnerTag, ignoreCase = true) || s.name.contains("VidHide", ignoreCase = true)) s.name else "${s.name} ($partnerTag)"
                                         VideoServer(name = cleanName, url = s.url)
                                     }
                                     if (newServers.isNotEmpty()) {
@@ -3466,49 +3516,70 @@ object VideoExtractor {
         }
     }
 
-    suspend fun searchDutaFilm(query: String, page: Int = 1, count: Int = 20): List<Video> = withContext(Dispatchers.IO) {
+    suspend fun searchClusterMirrors(query: String, page: Int = 1, count: Int = 30): List<Video> = withContext(Dispatchers.IO) {
         val encoded = encodeQuery(query)
-        val url = if (page > 1) "$DUTAFILM_BASE_URL/page/$page/?s=$encoded" else "$DUTAFILM_BASE_URL/?s=$encoded"
         try {
-            val html = fetchHtml(url) ?: return@withContext emptyList()
-            val doc = Jsoup.parse(html, url)
-            val mainContent = doc.selectFirst("#archive-content, .items, .movies-list, #main-content, .post-listing, #gmr-main-load, .archive-container, main, #primary, #content") ?: doc
-            val items = mainContent.select("article.item, article.item-infinite, .item-infinite, .gmr-item, [id^='post-']")
-            if (items.isEmpty()) return@withContext emptyList()
+            coroutineScope {
+                val jobs = CLUSTER_MIRROR_URLS.map { base ->
+                    async {
+                        val url = if (page > 1) "$base/page/$page/?s=$encoded" else "$base/?s=$encoded"
+                        try {
+                            val request = Request.Builder()
+                                .url(url)
+                                .header("User-Agent", USER_AGENT)
+                                .build()
+                            NetworkConfig.fastOkHttpClient.newCall(request).execute().use { response ->
+                                if (!response.isSuccessful) return@async emptyList<Video>()
+                                val html = response.body?.string() ?: return@async emptyList<Video>()
+                                val doc = Jsoup.parse(html, url)
+                                val mainContent = doc.selectFirst("#archive-content, .items, .movies-list, #main-content, .post-listing, #gmr-main-load, .archive-container, main, #primary, #content") ?: doc
+                                val items = mainContent.select("article.item, article.item-infinite, .item-infinite, .gmr-item, [id^='post-']")
+                                if (items.isEmpty()) return@async emptyList<Video>()
 
-            items.asSequence().mapNotNull { el ->
-                val titleEl = el.selectFirst(".entry-title a, h2.entry-title a, h2 a, h3 a, .content-thumbnail a") ?: return@mapNotNull null
-                val rawTitle = titleEl.text().trim().ifEmpty {
-                    titleEl.attr("title").replace("Permalink ke:", "", ignoreCase = true).trim()
+                                items.asSequence().mapNotNull { el ->
+                                    val titleEl = el.selectFirst(".entry-title a, h2.entry-title a, h2 a, h3 a, .content-thumbnail a") ?: return@mapNotNull null
+                                    val rawTitle = titleEl.text().trim().ifEmpty {
+                                        titleEl.attr("title").replace("Permalink ke:", "", ignoreCase = true).trim()
+                                    }
+                                    val title = cleanTitle(rawTitle)
+                                    val link = titleEl.attr("abs:href")
+                                    if (title.length < 2 || link.isEmpty() || !link.startsWith("http")) return@mapNotNull null
+
+                                    val rawImg = el.selectFirst("img")?.let { imgTag ->
+                                        imgTag.attr("abs:data-src").ifEmpty { imgTag.attr("abs:src") }.ifEmpty { imgTag.attr("src") }
+                                    } ?: ""
+                                    val duration = el.select(".gmr-duration-item").text().trim()
+                                    val quality = el.select(".gmr-quality-item, .quality").text().trim()
+                                    val rating = el.select(".gmr-rating-item, .rating").text().trim()
+                                    val slug = link.trimEnd('/').substringAfterLast('/')
+
+                                    Video(
+                                        id = "df_$slug",
+                                        title = title,
+                                        thumbnailUrl = rawImg,
+                                        videoUrl = link,
+                                        duration = duration,
+                                        quality = quality.ifEmpty { "HD" },
+                                        views = rating,
+                                        isSeries = link.contains("/series/") || link.contains("/tv/") || link.contains("/episode/") || title.contains("Season", ignoreCase = true)
+                                    )
+                                }.toList()
+                            }
+                        } catch (_: Exception) {
+                            emptyList<Video>()
+                        }
+                    }
                 }
-                val title = cleanTitle(rawTitle)
-                val link = titleEl.attr("abs:href")
-                if (title.length < 2 || link.isEmpty() || !link.startsWith("http")) return@mapNotNull null
-
-                val rawImg = el.selectFirst("img")?.let { imgTag ->
-                    imgTag.attr("abs:data-src").ifEmpty { imgTag.attr("abs:src") }.ifEmpty { imgTag.attr("src") }
-                } ?: ""
-                val duration = el.select(".gmr-duration-item").text().trim()
-                val quality = el.select(".gmr-quality-item, .quality").text().trim()
-                val rating = el.select(".gmr-rating-item, .rating").text().trim()
-                val slug = link.trimEnd('/').substringAfterLast('/')
-
-                Video(
-                    id = "df_$slug",
-                    title = title,
-                    thumbnailUrl = rawImg,
-                    videoUrl = link,
-                    duration = duration,
-                    quality = quality.ifEmpty { "HD" },
-                    views = rating,
-                    isSeries = link.contains("/series/") || link.contains("/episode/") || title.contains("Season", ignoreCase = true)
-                )
-            }.distinctBy { it.id }.take(count).toList()
+                val allResults = jobs.awaitAll().flatten()
+                allResults.distinctBy { normalizeForDedup(it.title) }.take(count)
+            }
         } catch (e: Exception) {
-            Log.w(TAG, "DutaFilm search error for '$query': ${e.message}")
+            Log.w(TAG, "Cluster mirrors search error for '$query': ${e.message}")
             emptyList()
         }
     }
+
+    suspend fun searchDutaFilm(query: String, page: Int = 1, count: Int = 20): List<Video> = searchClusterMirrors(query, page, count)
 
     suspend fun searchVideos(query: String, page: Int, count: Int, categoryPath: String? = null): List<Video> = withContext(Dispatchers.IO) {
         if (categoryPath != null) {
@@ -3573,10 +3644,10 @@ object VideoExtractor {
             return@withContext filterAndSortByRelevance(results, query).take(count)
         }
 
-        // GLOBAL SEARCH: Concurrently query all 6 platforms simultaneously:
-        // PencuriMovie, DutaFilm (159.89.249.45), KepalaBergetar, P.Ramlee Archive, YouTube, Bilibili, and Dailymotion
+        // GLOBAL SEARCH: Concurrently query all platforms simultaneously:
+        // PencuriMovie, Primary Cluster Mirrors (27 sites), KepalaBergetar, P.Ramlee Archive, YouTube, Bilibili, and Dailymotion
         val pencuriDeferred = async { searchDomain(getPencuriBaseUrl(), query, page, count) }
-        val dutafilmDeferred = async { searchDutaFilm(query, page, count) }
+        val clusterDeferred = async { searchClusterMirrors(query, page, count) }
         val kepalaDeferred = async { searchKepalaBergetar(query, page, count) }
         val pramleeDeferred = async {
             try {
@@ -3592,7 +3663,7 @@ object VideoExtractor {
         val dmDeferred = async { if (page == 1) searchDailymotionAsVideos(query) else emptyList() }
 
         var pencuriResults = pencuriDeferred.await()
-        val dutafilmResults = dutafilmDeferred.await()
+        val clusterResults = clusterDeferred.await()
         val kepalaResults = kepalaDeferred.await()
         val pramleeResults = pramleeDeferred.await()
         val ytResults = ytDeferred.await()
@@ -3611,9 +3682,9 @@ object VideoExtractor {
             }
         }
 
-        Log.i(TAG, "Simultaneous search completed: Pencuri=${pencuriResults.size}, DutaFilm=${dutafilmResults.size}, Kepala=${kepalaResults.size}, PRamlee=${pramleeResults.size}, YT=${ytResults.size}, Bili=${biliResults.size}, DM=${dmResults.size}")
+        Log.i(TAG, "Simultaneous search completed: Pencuri=${pencuriResults.size}, Cluster=${clusterResults.size}, Kepala=${kepalaResults.size}, PRamlee=${pramleeResults.size}, YT=${ytResults.size}, Bili=${biliResults.size}, DM=${dmResults.size}")
 
-        val allMerged = (pencuriResults + dutafilmResults + kepalaResults + pramleeResults + ytResults + biliResults + dmResults)
+        val allMerged = (pencuriResults + clusterResults + kepalaResults + pramleeResults + ytResults + biliResults + dmResults)
             .distinctBy { it.id }
 
         val relevantResults = filterAndSortByRelevance(allMerged, query)
@@ -3624,7 +3695,7 @@ object VideoExtractor {
         val slug = url.substringBefore('?').trimEnd('/').substringAfterLast('/')
         return when {
             url.contains("pencurimovie", ignoreCase = true) || url.contains("pencurifilm", ignoreCase = true) -> "pm_$slug"
-            url.contains("159.89.249.45") || url.contains("dutafilm", ignoreCase = true) -> "df_$slug"
+            isClusterSite(url) || url.contains("159.89.249.45") || url.contains("dutafilm", ignoreCase = true) -> "df_$slug"
             else -> slug
         }
     }
@@ -4500,6 +4571,10 @@ object VideoExtractor {
             lowUrl.contains("player=1") ||
             lowName.contains("hgcloud") || lowName.contains("hgvip") -> 130
             
+            // OWL'S EYE: Priority Tier 1c - VidHide / Cluster Primary Mirrors (Ultra Fast Direct HLS Extracted)
+            lowUrl.contains("vidhide") || lowUrl.contains("vidsrc") || lowUrl.contains("fujihide") ||
+            lowName.contains("vidhide") || lowName.contains("cluster") -> 128
+
             // OWL'S EYE: Priority Tier 2 - IndoStream (Local Favorite & High-Speed SEA CDN)
             lowUrl.contains("indostream") || isIndoStreamAmt(lowUrl) || lowUrl.contains("iplayer") || 
             lowUrl.contains("pm21") || lowUrl.contains("dm21") || lowUrl.contains("player=2") ||
@@ -4523,7 +4598,6 @@ object VideoExtractor {
             lowName.contains("direct") || lowUrl.contains(".mp4") || lowUrl.contains(".m3u8") -> 88
             lowUrl.contains("dsvplay") || lowName.contains("dsvplay") -> 85
             lowUrl.contains("swishsrv") || lowUrl.contains("swish") || lowName.contains("swish") -> 85
-            lowUrl.contains("vidhide") || lowUrl.contains("vidsrc") -> 75
             lowUrl.contains("dood") -> 70
 
             // OWL'S EYE: External Alternative Partner Mirrors (Dailymotion / Bilibili Fallbacks)

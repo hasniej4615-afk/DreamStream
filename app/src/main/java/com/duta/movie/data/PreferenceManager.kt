@@ -408,6 +408,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         if (h.contains("morencius") || h.contains("bestcdn") || h.contains("faststream") || 
             h.contains("iplayerhls") || h.contains("indostream.lol") || h.contains("archive.org") ||
             h.contains("platformdocumentation") || h.contains("hgcloud") || h.contains("hglink") ||
+            h.contains("vidhide") || h.contains("fujihide") ||
             h.endsWith(".m3u8") || h.endsWith(".mp4") || h.contains(".txt") || h.contains("tapecontent")) {
             return false
         }
