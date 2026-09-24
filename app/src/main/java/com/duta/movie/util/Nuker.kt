@@ -281,6 +281,14 @@ object Nuker {
                                                             }
                                                             self.reportState(true, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
                                                         });
+                                                        jw.on('firstFrame', function() {
+                                                            window.videoFound = true;
+                                                            if (!window.successNotified && window.AndroidPlayer) {
+                                                                window.successNotified = true;
+                                                                log("JWPlayer onFirstFrame event fired");
+                                                                window.AndroidPlayer.notifyVideoPlaying();
+                                                            }
+                                                        });
                                                         jw.on('pause', function() {
                                                             self.reportState(false, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
                                                         });
@@ -650,14 +658,32 @@ object Nuker {
                             return;
                         }
                         var hasGate = isLandingPageGate();
-                        var gateTimeoutReached = (hasGate && elapsedMs > 8000) || (elapsedMs > 12000);
+                        var v = window.playerBridge ? window.playerBridge.findVideo() : null;
+                        var hasRealVideo = window.videoFound && v && !v.isProxy;
+                        if (hasRealVideo) {
+                            if (!window.videoDetectedTime) {
+                                window.videoDetectedTime = Date.now();
+                            }
+                        }
+                        var videoAgeMs = window.videoDetectedTime ? (Date.now() - window.videoDetectedTime) : 0;
+                        var isJwBuffering = false;
+                        try {
+                            if (window.jwplayer && typeof window.jwplayer === 'function') {
+                                var jw = window.jwplayer();
+                                if (jw && typeof jw.getState === 'function') {
+                                    var st = jw.getState();
+                                    if (st === 'buffering' || st === 'playing') isJwBuffering = true;
+                                }
+                            }
+                        } catch(e){}
+
+                        var isActivelyLoading = hasRealVideo && (videoAgeMs < 15000 || v.networkState === 2 || isJwBuffering);
+                        var hasEmbedFrames = document.querySelectorAll('iframe[src*="player"], iframe[src*="embed"], iframe[src*="abyss"], iframe[src*="sobat"], iframe[src*="mogo"], iframe[src*="stream"], iframe[src*="vidhide"], iframe[src*="fujihide"]').length > 0;
+                        var isDeadAir = !hasRealVideo && !hasEmbedFrames && elapsedMs > 12000;
+                        var isStuckVideo = hasRealVideo && !isActivelyLoading && v.readyState === 0 && v.currentTime === 0 && !v.seeking;
+
+                        var gateTimeoutReached = (hasGate && elapsedMs > 8000) || isDeadAir || isStuckVideo;
                         if (gateTimeoutReached && !window.successNotified) {
-                             var v = window.playerBridge ? window.playerBridge.findVideo() : null;
-                             var hasRealVideo = window.videoFound && v && !v.isProxy;
-                             var hasEmbedFrames = document.querySelectorAll('iframe[src*="player"], iframe[src*="embed"], iframe[src*="abyss"], iframe[src*="sobat"], iframe[src*="mogo"], iframe[src*="stream"]').length > 0;
-                             var isDeadAir = !hasRealVideo && !hasEmbedFrames;
-                             var isStuckVideo = hasRealVideo && v.readyState === 0 && v.currentTime === 0 && !v.seeking;
-                             
                              if (hasGate || isDeadAir || isStuckVideo) {
                                  if (!window.gateNotified) {
                                      if (window.AndroidPlayer && window.AndroidPlayer.notifyGateStuck) {

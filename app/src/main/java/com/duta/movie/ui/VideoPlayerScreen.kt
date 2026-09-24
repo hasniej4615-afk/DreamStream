@@ -3309,6 +3309,15 @@ fun VideoPlayerWebView(
                             return null // Never block legitimate Dailymotion player assets or video chunks
                         }
 
+                        val isVidhideDomain = low.contains("vidhide") || low.contains("fujihide") || low.contains("tnmr.org")
+                        if (isVidhideDomain) {
+                            // Only block actual ad popup networks, never block legitimate player assets, video chunks, or steganographic key poster images
+                            if (low.contains("popads") || low.contains("onclickads") || low.contains("adsterra") || low.contains("exoclick") || low.contains("propellerads")) {
+                                return android.webkit.WebResourceResponse("text/plain", "UTF-8", null)
+                            }
+                            return null // Never block legitimate Vidhide player assets, video chunks, or steganographic key poster images
+                        }
+
                         // Intercept Abyss/Bond/Playsobat Player HTML pages to eradicate the big SVG play button overlay, videoInfo popup & anti-framing redirect
                         val isAbyssPlayerPage = (low.contains("abyssplayer.com/") || low.contains("bondplayer.com/") || 
                                                  low.contains("abyss.to/") || low.contains("bond.to/") ||
@@ -3420,14 +3429,19 @@ fun VideoPlayerWebView(
                                        !low.contains("blank.mp4") && !low.contains("empty.mp4") && !low.contains(".js") && !low.contains(".css") && !low.contains("/api/") &&
                                        !low.contains("pagead") && !low.contains("googleads") && !low.contains("doubleclick") && !low.contains("/aclk")
                         
+                        val isVidhideStream = low.contains("vidhide") || low.contains("fujihide") || low.contains("tnmr.org") ||
+                                              url.lowercase().contains("vidhide") || url.lowercase().contains("fujihide")
                         val isProtectedStream = (low.contains("playmogo") || 
                                                 low.contains("digitalidentity") || low.contains("sunrisevalleycreative") ||
                                                 low.contains("johnfullwonder") || low.contains("voe") ||
                                                 low.contains("platformdocumentation") || low.contains("hgcloud") || low.contains("hglink") ||
                                                 low.contains("hanerix") || low.contains("vibuxer") || low.contains("audinifer") ||
+                                                isVidhideStream ||
                                                 com.duta.movie.util.VideoExtractor.isJsOnlyHost(u) ||
                                                 com.duta.movie.util.VideoExtractor.isJsOnlyHost(url)) &&
-                                                !low.contains(".m3u8") && !low.contains(".mp4") && !low.contains(".mkv") && !low.contains(".webm") && !low.contains(".txt") && !low.contains("cloudwindow")
+                                                !low.contains("cloudwindow") &&
+                                                (!low.contains(".m3u8") || isVidhideStream) &&
+                                                !low.contains(".mp4") && !low.contains(".mkv") && !low.contains(".webm") && !low.contains(".txt")
 
                         if (isStream && !r.isForMainFrame && !isProtectedStream) {
                             val streamRef = when {
