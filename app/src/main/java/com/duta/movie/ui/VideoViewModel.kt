@@ -545,6 +545,91 @@ class VideoViewModel @Inject constructor(
                 CategoryGroup.OTHER -> 500
             }
         }
+
+        fun sortAndNormalizeCategories(list: List<Map<String, String>>): List<Map<String, String>> {
+            return list.map { 
+                it.toMutableMap().apply { 
+                    val origPath = get("path") ?: ""
+                    var p = VideoExtractor.normalizePath(origPath)
+                    if (p.contains("country/viet-nam", ignoreCase = true) || p.contains("country/vietnam", ignoreCase = true)) {
+                        p = "/country/vietnam/"
+                        put("name", "Vietnam")
+                    }
+                    if (p.contains("country/malaysia", ignoreCase = true)) {
+                        p = "/country/malaysia/"
+                        put("name", "Malaysia")
+                    }
+                    if (p.contains("p-ramlee", ignoreCase = true) || p.contains("FilemP.ramlee", ignoreCase = true)) {
+                        p = "/category/p-ramlee/"
+                        put("name", "P.Ramlee")
+                    }
+                    if (p.matches(Regex("""^(.*/)?sci-fi/?$""", RegexOption.IGNORE_CASE)) || p.contains("science-fiction", ignoreCase = true)) {
+                        p = "/genre/science-fiction/"
+                        put("name", "Science Fiction")
+                    }
+                    put("path", p)
+                } 
+            }
+            .filter { 
+                val name = it["name"]?.trim() ?: ""
+                val path = it["path"] ?: ""
+                val lowName = name.lowercase()
+                val lowPath = path.lowercase()
+                
+                !lowName.equals("country") &&
+                !lowName.equals("country #") &&
+                !lowName.contains("kelas bintang") &&
+                !lowName.contains("semi barat") &&
+                !lowName.contains("semi jav") &&
+                !lowName.contains("semi indo") &&
+                !lowName.contains("semi korea") &&
+                !lowName.contains("vivamax") &&
+                !lowName.contains("bokep") &&
+                !lowName.contains("dunia21") &&
+                !lowName.contains("idlix") &&
+                !lowName.contains("rebahin") &&
+                !lowName.contains("lk21") &&
+                !lowName.contains("dm21") &&
+                !lowName.contains("iklan") &&
+                !lowName.contains("film lainnya") &&
+                !lowName.contains("islamic republic of") &&
+                !lowPath.startsWith("/network/") &&
+                !lowPath.contains("kelas-bintang") &&
+                !lowPath.contains("vivamax") &&
+                !lowPath.contains("bokep") &&
+                !lowPath.contains("dunia21") &&
+                !lowPath.contains("idlix") &&
+                !lowPath.contains("rebahin") &&
+                !lowPath.contains("pasang-iklan") &&
+                !lowPath.equals("/sci-fi/") &&
+                !(lowName == "sci-fi" && lowPath.contains("sci-fi")) &&
+                getCategoryGroup(path, name) != CategoryGroup.OTHER &&
+                name.isNotEmpty() && path.isNotEmpty() && path != "#"
+            }
+            .distinctBy { it["path"] }
+            .distinctBy { it["name"]?.trim()?.lowercase() }
+            .sortedWith { a, b ->
+                val pathA = a["path"] ?: ""
+                val nameA = a["name"] ?: ""
+                val pathB = b["path"] ?: ""
+                val nameB = b["name"] ?: ""
+
+                val groupA = getCategoryGroup(pathA, nameA)
+                val groupB = getCategoryGroup(pathB, nameB)
+
+                if (groupA.priority != groupB.priority) {
+                    groupA.priority.compareTo(groupB.priority)
+                } else {
+                    val rankA = getIntraGroupRank(groupA, pathA, nameA)
+                    val rankB = getIntraGroupRank(groupB, pathB, nameB)
+                    if (rankA != rankB) {
+                        rankA.compareTo(rankB)
+                    } else {
+                        nameA.compareTo(nameB, ignoreCase = true)
+                    }
+                }
+            }
+        }
     }
     
     private var moviesPage = 1
@@ -609,90 +694,6 @@ class VideoViewModel @Inject constructor(
     val uiThumbnailScaleFactor: StateFlow<Float> = preferenceManager.uiThumbnailScaleFactor.stateIn(viewModelScope, SharingStarted.Eagerly, if (isTV()) 0.60f else 1.0f)
 
     val sourceWeights: StateFlow<Map<String, Int>> = preferenceManager.sourceWeights.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
-
-    private fun sortAndNormalizeCategories(list: List<Map<String, String>>): List<Map<String, String>> {
-        return list.map { 
-            it.toMutableMap().apply { 
-                val origPath = get("path") ?: ""
-                var p = VideoExtractor.normalizePath(origPath)
-                if (p.contains("country/viet-nam", ignoreCase = true) || p.contains("country/vietnam", ignoreCase = true)) {
-                    p = "/country/vietnam/"
-                    put("name", "Vietnam")
-                }
-                if (p.contains("country/malaysia", ignoreCase = true)) {
-                    p = "/country/malaysia/"
-                    put("name", "Malaysia")
-                }
-                if (p.contains("p-ramlee", ignoreCase = true) || p.contains("FilemP.ramlee", ignoreCase = true)) {
-                    p = "/category/p-ramlee/"
-                    put("name", "P.Ramlee")
-                }
-                if (p.matches(Regex("""^(.*/)?sci-fi/?$""", RegexOption.IGNORE_CASE)) || p.contains("science-fiction", ignoreCase = true)) {
-                    p = "/genre/science-fiction/"
-                    put("name", "Science Fiction")
-                }
-                put("path", p)
-            } 
-        }
-        .filter { 
-            val name = it["name"]?.trim() ?: ""
-            val path = it["path"] ?: ""
-            val lowName = name.lowercase()
-            val lowPath = path.lowercase()
-            
-            !lowName.equals("country") &&
-            !lowName.equals("country #") &&
-            !lowName.contains("kelas bintang") &&
-            !lowName.contains("semi barat") &&
-            !lowName.contains("semi jav") &&
-            !lowName.contains("semi indo") &&
-            !lowName.contains("semi korea") &&
-            !lowName.contains("vivamax") &&
-            !lowName.contains("bokep") &&
-            !lowName.contains("dunia21") &&
-            !lowName.contains("idlix") &&
-            !lowName.contains("rebahin") &&
-            !lowName.contains("lk21") &&
-            !lowName.contains("dm21") &&
-            !lowName.contains("iklan") &&
-            !lowName.contains("film lainnya") &&
-            !lowName.contains("islamic republic of") &&
-            !lowPath.startsWith("/network/") &&
-            !lowPath.contains("kelas-bintang") &&
-            !lowPath.contains("vivamax") &&
-            !lowPath.contains("bokep") &&
-            !lowPath.contains("dunia21") &&
-            !lowPath.contains("idlix") &&
-            !lowPath.contains("rebahin") &&
-            !lowPath.contains("pasang-iklan") &&
-            !lowPath.equals("/sci-fi/") &&
-            !(lowName == "sci-fi" && lowPath.contains("sci-fi")) &&
-            name.isNotEmpty() && path.isNotEmpty() && path != "#"
-        }
-        .distinctBy { it["path"] }
-        .distinctBy { it["name"]?.trim()?.lowercase() }
-        .sortedWith { a, b ->
-            val pathA = a["path"] ?: ""
-            val nameA = a["name"] ?: ""
-            val pathB = b["path"] ?: ""
-            val nameB = b["name"] ?: ""
-
-            val groupA = getCategoryGroup(pathA, nameA)
-            val groupB = getCategoryGroup(pathB, nameB)
-
-            if (groupA.priority != groupB.priority) {
-                groupA.priority.compareTo(groupB.priority)
-            } else {
-                val rankA = getIntraGroupRank(groupA, pathA, nameA)
-                val rankB = getIntraGroupRank(groupB, pathB, nameB)
-                if (rankA != rankB) {
-                    rankA.compareTo(rankB)
-                } else {
-                    nameA.compareTo(nameB, ignoreCase = true)
-                }
-            }
-        }
-    }
 
     init {
         cleanDeadMirrors()
@@ -885,7 +886,9 @@ class VideoViewModel @Inject constructor(
     fun toggleCategory(path: String) { viewModelScope.launch { preferenceManager.toggleCategoryPath(path) } }
 
     fun enableAllCategories() {
-        val allPaths = _categories.value.mapNotNull { it["path"] }
+        val allPaths = _categories.value
+            .filter { getCategoryGroup(it["path"] ?: "", it["name"] ?: "") != CategoryGroup.OTHER }
+            .mapNotNull { it["path"] }
         viewModelScope.launch { preferenceManager.enableAllCategories(allPaths) }
     }
 

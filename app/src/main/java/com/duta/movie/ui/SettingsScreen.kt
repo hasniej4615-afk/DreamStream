@@ -121,6 +121,11 @@ fun SettingsScreen(
     val activeBaseUrl by viewModel.activeBaseUrl.collectAsStateWithLifecycle()
 
     val allCategories: List<Map<String, String>> by viewModel.allCategories.collectAsStateWithLifecycle()
+    val visibleCategories = remember(allCategories) {
+        allCategories.filter {
+            VideoViewModel.getCategoryGroup(it["path"] ?: "", it["name"] ?: "") != VideoViewModel.CategoryGroup.OTHER
+        }
+    }
     val enabledPaths: Set<String> by viewModel.enabledCategoryPaths.collectAsStateWithLifecycle()
     var categorySortMode by remember { mutableStateOf(CategorySortMode.TAXONOMY) }
 
@@ -617,10 +622,13 @@ fun SettingsScreen(
                                 }
 
                                 if (categorySortMode == CategorySortMode.TAXONOMY) {
-                                    val grouped = allCategories.groupBy { 
+                                    val grouped = visibleCategories.groupBy { 
                                         VideoViewModel.getCategoryGroup(it["path"] ?: "", it["name"] ?: "") 
                                     }
-                                    VideoViewModel.CategoryGroup.entries.sortedBy { it.priority }.forEach { group ->
+                                    VideoViewModel.CategoryGroup.entries
+                                        .filter { it != VideoViewModel.CategoryGroup.OTHER }
+                                        .sortedBy { it.priority }
+                                        .forEach { group ->
                                         val itemsInGroup = grouped[group] ?: emptyList()
                                         if (itemsInGroup.isNotEmpty()) {
                                             item(key = "hdr_${group.name}") {
@@ -644,14 +652,14 @@ fun SettingsScreen(
                                     }
                                 } else {
                                     val sortedList = when (categorySortMode) {
-                                        CategorySortMode.ACTIVE_FIRST -> allCategories.sortedWith(
+                                        CategorySortMode.ACTIVE_FIRST -> visibleCategories.sortedWith(
                                             compareByDescending<Map<String, String>> { enabledPaths.contains(it["path"]) }
-                                                .thenBy { allCategories.indexOf(it) }
+                                                .thenBy { visibleCategories.indexOf(it) }
                                         )
-                                        CategorySortMode.ALPHABETICAL -> allCategories.sortedBy { 
+                                        CategorySortMode.ALPHABETICAL -> visibleCategories.sortedBy { 
                                             (it["name"] ?: "").lowercase() 
                                         }
-                                        else -> allCategories
+                                        else -> visibleCategories
                                     }
 
                                     items(sortedList, key = { it["path"] ?: it["name"] ?: "" }) { category ->

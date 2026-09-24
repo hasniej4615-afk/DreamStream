@@ -181,6 +181,27 @@ class MyLocalTest {
     }
 
     @Test
+    fun testOtherCategoriesFilteredOut() {
+        val testCats = listOf(
+            mapOf("name" to "Movies", "path" to "/movies/"),
+            mapOf("name" to "Malaysia", "path" to "/country/malaysia/"),
+            mapOf("name" to "Action", "path" to "/genre/action/"),
+            mapOf("name" to "2024", "path" to "/release/2024/"),
+            mapOf("name" to "DMCA Notice", "path" to "/dmca/"),
+            mapOf("name" to "Disclaimer", "path" to "/disclaimer/"),
+            mapOf("name" to "Random Noise", "path" to "/tag/random-tag/")
+        )
+        val normalized = VideoViewModel.sortAndNormalizeCategories(testCats)
+        assertTrue(normalized.none { it["name"] == "DMCA Notice" })
+        assertTrue(normalized.none { it["name"] == "Disclaimer" })
+        assertTrue(normalized.none { it["name"] == "Random Noise" })
+        assertTrue(normalized.any { it["name"] == "Movies" })
+        assertTrue(normalized.any { it["name"] == "Malaysia" })
+        assertTrue(normalized.any { it["name"] == "Action" })
+        assertTrue(normalized.any { it["name"] == "2024" })
+    }
+
+    @Test
     fun testSciFiNormalization() {
         assertEquals("/genre/science-fiction/", VideoExtractor.normalizePath("/sci-fi/"))
         assertEquals("/genre/science-fiction/", VideoExtractor.normalizePath("sci-fi"))
