@@ -1764,7 +1764,13 @@ fun VideoPlayerScreen(
                                 Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.Gray, modifier = Modifier.size(18.dp))
                             },
                             trailingIcon = {
-                                if (subSearchText.isNotEmpty()) {
+                                if (isSubtitleLoading) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        color = Color.Red,
+                                        strokeWidth = 2.dp
+                                    )
+                                } else if (subSearchText.isNotEmpty()) {
                                     IconButton(onClick = { subSearchText = "" }) {
                                         Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color.Gray, modifier = Modifier.size(16.dp))
                                     }
@@ -1779,7 +1785,7 @@ fun VideoPlayerScreen(
                                 unfocusedContainerColor = Color(0xFF202020)
                             ),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = { performSearch() }),
+                            keyboardActions = KeyboardActions(onSearch = { if (!isSubtitleLoading) performSearch() }),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .weight(1f)
@@ -1789,10 +1795,13 @@ fun VideoPlayerScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Button(
-                            onClick = { performSearch() },
+                            onClick = { if (!isSubtitleLoading) performSearch() },
+                            enabled = !isSubtitleLoading,
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isSearchBtnFocused) Color.White else Color.Red,
-                                contentColor = if (isSearchBtnFocused) Color.Black else Color.White
+                                contentColor = if (isSearchBtnFocused) Color.Black else Color.White,
+                                disabledContainerColor = if (isSearchBtnFocused) Color.White.copy(alpha = 0.8f) else Color.Red.copy(alpha = 0.6f),
+                                disabledContentColor = if (isSearchBtnFocused) Color.Black else Color.White
                             ),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
@@ -1801,8 +1810,36 @@ fun VideoPlayerScreen(
                                 .focusable()
                                 .border(if (isSearchBtnFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                         ) {
-                            Text(stringResource(R.string.search), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            if (isSubtitleLoading) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.Center
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(14.dp),
+                                        color = if (isSearchBtnFocused) Color.Black else Color.White,
+                                        strokeWidth = 2.dp
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text(stringResource(R.string.searching), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                            } else {
+                                Text(stringResource(R.string.search), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            }
                         }
+                    }
+
+                    if (isSubtitleLoading) {
+                        LinearProgressIndicator(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                                .height(3.dp),
+                            color = Color.Red,
+                            trackColor = Color.White.copy(alpha = 0.1f)
+                        )
+                    } else {
+                        Spacer(Modifier.height(3.dp))
                     }
 
                     LazyColumn(
@@ -1845,8 +1882,28 @@ fun VideoPlayerScreen(
                         }
                         if (isSubtitleLoading) { 
                             item(key = "loading") { 
-                                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { 
-                                    CircularProgressIndicator(color = Color.Red) 
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth()
+                                        .padding(vertical = 16.dp), 
+                                    contentAlignment = Alignment.Center
+                                ) { 
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.Center
+                                    ) {
+                                        CircularProgressIndicator(
+                                            color = Color.Red,
+                                            modifier = Modifier.size(18.dp),
+                                            strokeWidth = 2.5.dp
+                                        )
+                                        Spacer(Modifier.width(10.dp))
+                                        Text(
+                                            stringResource(R.string.searching_subtitles),
+                                            color = Color.LightGray,
+                                            fontSize = 12.sp
+                                        )
+                                    }
                                 } 
                             } 
                         } else if (filteredSubs.isEmpty() && subtitles.isNotEmpty()) {

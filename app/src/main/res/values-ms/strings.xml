@@ -15,6 +15,8 @@
     <string name="auto">Auto</string>
 
     <string name="close">Tutup</string>
+    <string name="search_subtitles">Cari sarikata...</string>
+    <string name="searching_subtitles">Mencari sarikata...</string>
 
     <string name="manual_base_url">URL Asas Manual</string>
 

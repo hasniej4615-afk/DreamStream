@@ -17,6 +17,7 @@
     <string name="close">Close</string>
 
     <string name="search_subtitles">Search subtitles...</string>
+    <string name="searching_subtitles">Searching subtitles...</string>
 
     <string name="manual_base_url">Manual Base URL</string>
 
