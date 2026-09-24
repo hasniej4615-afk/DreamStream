@@ -1410,6 +1410,7 @@ object VideoExtractor {
             low.contains("playerp2p") || low.contains("embed4me") || low.contains("upns") ||
             low.contains("p2p") || low.contains("4meplayer") || low.contains("abyss") || low.contains("bond") ||
             low.contains("hgcloud") || low.contains("hanerix") || low.contains("vibuxer") || low.contains("audinifer") || low.contains("hglink") ||
+            low.contains("vide0") || low.contains("dsvplay") || low.contains("playmogo") ||
             low.contains("dhcplay") || low.contains("morencius") || low.contains("vidhide") || low.contains("fujihide") ||
             low.contains("streamwish") || low.contains("wishonly") || low.contains("strwish") || low.contains("wishembed") ||
             low.contains("luluvdo") || low.contains("lulustream") || low.contains("bestcdn") ||
@@ -1436,6 +1437,7 @@ object VideoExtractor {
                low.contains("pyrox") || low.contains("embedpyrox") || low.contains("amt") ||
                low.contains("haneri") || low.contains("audinifer") || low.contains("vibuxer") ||
                low.contains("morencius") || low.contains("bestcdn") ||
+               low.contains("vide0") || low.contains("dsvplay") || low.contains("playmogo") ||
                low.contains("luluvdo") || low.contains("lulustream") || low.contains("tnmr.org") || low.contains("lulucdn") ||
                low.contains("waaw") || low.contains("netu") || low.contains("hqq") || low.contains("vkspeed")
     }
@@ -1737,8 +1739,8 @@ object VideoExtractor {
             }
         }
 
-        // Full movie fallbacks: Only applicable for standalone movies, not TV series episodes
-        if (video.isSeries != true) {
+        // Full movie fallbacks: Only applicable for standalone movies or series with no episodes
+        if (video.isSeries != true || video.episodes.isEmpty()) {
             // Also check classic P. Ramlee Archive.org catalogue if applicable
             if (altServers.isEmpty() || !video.videoUrl.contains("archive.org")) {
                 try {
@@ -1883,6 +1885,8 @@ object VideoExtractor {
             .replace(Regex("""\((?:19|20)\d{2}\)"""), "")
             .replace(":", " ")
             .replace("-", " ")
+            .replace("–", " ")
+            .replace("—", " ")
             .replace("'", "")
             .replace("’", "")
             .replace(Regex("""\s+"""), " ")
@@ -1947,7 +1951,7 @@ object VideoExtractor {
             .replace(Regex("""\s*-\s*\d+\.\d+\.\d+\.\d+.*$"""), " ")
             .replace(Regex("""\b(?:web-?dl|web-?rip|1080p|720p|480p|360p|hdcam|cam-?rip|bluray|blu-?ray|hdrip)\b"""), " ")
             .replace(Regex("""\b(?:full\s*movie|full\s*film|lengkap|terbaru|official|phim|tonton|watch)\b"""), " ")
-            .replace(Regex("""[\(\)\[\]\{\}\-_,:\.'\"\|\\\/]"""), " ")
+            .replace(Regex("""[\(\)\[\]\{\}\-_,:\.'\"\|\\\/–—]"""), " ")
             .replace(Regex("""\s+"""), " ")
             .trim()
 
@@ -3634,6 +3638,8 @@ object VideoExtractor {
                     .replace("Itoshii", "", ignoreCase = true)
                     .replace("Layarkaca21", "", ignoreCase = true)
                     .replace("LK21", "", ignoreCase = true)
+                    .replace("–", "-")
+                    .replace("—", "-")
                     .replace(Regex("""(?i)\s*-\s*Pencuri\s*Movie.*"""), "")
                     .replace(Regex("""(?i)\s*-\s*(?:tv\d+\s*)?rebahinxxi\s*(?:auction)?.*$"""), "")
                     .replace(Regex("""(?i)\s*-\s*(?:[a-zA-Z0-9-]+\.)+[a-zA-Z0-9-]+.*$"""), "")
@@ -4316,7 +4322,7 @@ object VideoExtractor {
         }
 
         val isExplicitSeries = videoUrl.contains("/series/") || videoUrl.contains("/tv/") || videoUrl.contains("/serial-tv/")
-        val hasEpisodeContainer = doc.select(".gmr-listseries, .muvipro-listepisode, .list-episode, .episodios, .eps-item, .list-eps, .list-series, .seasons, .season, [class*='listseries'], .episode-list-container, .episodes-grid, #seasons, #season, .tvseason, .les-content, [id*='season']").isNotEmpty()
+        val hasEpisodeContainer = doc.select(".gmr-listseries, .muvipro-listepisode, .list-episode, .episodios, .eps-item, .list-eps, .list-series, .seasons, .season, [class*='listseries'], .episode-list-container, .episodes-grid, #seasons, #season, .tvseason, [id*='season']").isNotEmpty()
         val isEpisodePage = videoUrl.contains("/eps/") || videoUrl.contains("/episode/") || videoUrl.contains("-episode-") ||
                             videoUrl.contains("/episod/") || videoUrl.contains("-episod-") || videoUrl.contains("-epi-")
         
@@ -4382,7 +4388,7 @@ object VideoExtractor {
             }
         }
 
-        val finalIsSeries = rawEpisodes.isNotEmpty() || isExplicitSeries || (hasEpisodeContainer && !videoUrl.contains("/movie/"))
+        val finalIsSeries = rawEpisodes.isNotEmpty() || isExplicitSeries || isEpisodePage
         val episodes = if (finalIsSeries) rawEpisodes else emptyList()
 
         // OWL'S EYE: Speculative Probing (v5.9)
@@ -4608,7 +4614,7 @@ object VideoExtractor {
     fun extractEpisodesFromDoc(doc: Document, videoUrl: String, title: String): List<Episode> {
         val episodes = mutableListOf<Episode>()
         // Prioritize dedicated episode containers; fall back to searching full document
-        val containers = doc.select(".gmr-listseries, .muvipro-listepisode, .list-episode, .episodios, .eps-item, .list-eps, .list-series, .seasons, .season, [class*='listseries'], .episode-list-container, .episodes-grid, #seasons, #season, .tvseason, .les-content, [id*='season']")
+        val containers = doc.select(".gmr-listseries, .muvipro-listepisode, .list-episode, .episodios, .eps-item, .list-eps, .list-series, .seasons, .season, [class*='listseries'], .episode-list-container, .episodes-grid, #seasons, #season, .tvseason, [id*='season']")
         val searchScope = if (containers.isNotEmpty()) containers else doc.select("body").ifEmpty { doc.select("*") }
 
         val rawSlug = extractStableId(videoUrl).removePrefix("pm_")

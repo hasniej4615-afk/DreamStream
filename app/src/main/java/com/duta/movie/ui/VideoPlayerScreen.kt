@@ -375,7 +375,7 @@ fun VideoPlayerScreen(
 
     var isFinishing by remember { mutableStateOf(false) }
 
-    LaunchedEffect(videoId, video?.title, currentEpisode?.url) { video?.title?.let { viewModel.fetchSubtitles(it, isTV = video?.isSeries == true) } }
+    LaunchedEffect(videoId, video?.title, currentEpisode?.url) { video?.title?.let { viewModel.fetchSubtitles(it, isTV = (video?.isSeries == true && video?.episodes?.isNotEmpty() == true) || currentEpisode != null) } }
 
     val isAnyDialogOpen = showServerDialog || showSubtitleDialog || showSyncDialog || showEpisodeDialog || showResumeDialog
     LaunchedEffect(showControls, isVideoReady, isAnyDialogOpen, lastInteractionTime) { 
@@ -752,7 +752,8 @@ fun VideoPlayerScreen(
         android.webkit.CookieManager.getInstance().flush()
         
         val isEpisodeUrl = serverUrl?.let { (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || it.contains("/episod/") || it.contains("-episod-") || it.contains("-epi-") || it.contains("/ep-")) && !it.contains("player=") && !it.contains("mirror=") } ?: false
-        if (video?.isSeries == true || isEpisodeUrl) {
+        val isRealSeries = (video?.isSeries == true && video?.episodes?.isNotEmpty() == true) || isEpisodeUrl
+        if (isRealSeries) {
             viewModel.playTVSeries(videoId, serverUrl, forceReset = true)
         } else {
             viewModel.playMovie(videoId, serverUrl, forceReset = true)
@@ -1431,7 +1432,7 @@ fun VideoPlayerScreen(
         onVisibilityToggle = { if (!isInPip) showControls = !showControls },
         onFullscreenToggle = { isFullscreen = !isFullscreen },
         onServerListClick = { showServerDialog = true },
-        onSubtitleClick = { showSubtitleDialog = true; viewModel.fetchSubtitles(video?.title ?: "", isTV = video?.isSeries == true) },
+        onSubtitleClick = { showSubtitleDialog = true; viewModel.fetchSubtitles(video?.title ?: "", isTV = (video?.isSeries == true && video?.episodes?.isNotEmpty() == true) || currentEpisode != null) },
         onSyncClick = { showSyncDialog = true },
         onPipClick = { (context.findActivity() as? com.duta.movie.MainActivity)?.enterPipMode() },
         onEpisodeListClick = { showEpisodeDialog = true },

@@ -176,7 +176,7 @@ object SubtitleExtractor {
                              .replace(Regex("""(?i)\s*-\s*\d+\.\d+\.\d+\.\d+.*$"""), " ")
                              .replace(Regex("""(?i)\b(rebahin|bioskopkeren|layarkaca21|lk21|indoxxi|idlix|dutamovie21|dutamovie|itoshii|sub\s*indo(?:nesia)?|subtitle\s*indo(?:nesia)?)\b"""), " ")
                              .replace(Regex("""(?i)\b(?:reducing|fhd|hd|4k|720p|1080p|bluray|web-?dl|webrip|amzn|nf|dovi|hdr|10bit|hdtv|x264|x265|proper|internal|dual-?audio|hindi|dubbed|subbed)\b"""), " ")
-                             .replace(Regex("""[._()&:"!?,;+]"""), " ")
+                             .replace(Regex("""[._()&:"!?,;+\-–—]"""), " ")
                              .replace('’', '\'') // Normalize fancy apostrophe
                              .replace(Regex("""\s+"""), " ")
                              .trim()
