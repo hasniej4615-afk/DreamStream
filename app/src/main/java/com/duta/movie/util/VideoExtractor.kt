@@ -1367,7 +1367,7 @@ object VideoExtractor {
             "youtube", "youtu.be", "dailymotion", "dai.ly", "bilibili",
             "asiastream", "playsobat",
             "streamtape", "hgplayer", "rebeccasciencestreet", "ryderjet", "ghbrisk", "ghb", "duvidun", "hanerix", 
-            "fujihide", "dood", "embedo", "mixdrop", "filemoon", "dsvplay", 
+            "fujihide", "dood", "embedo", "sbanh", "mixdrop", "filemoon", "dsvplay", 
             "latestmoviereview", "playerp2p", "upstream", "vidplay", "mycloud", "vidhide", "vidsrc", "viatrix", "breakplan", 
             "hexload", "vstream", "player.fun", "movearnpre", "movienu", "movielite",
             "embed4me", "amtv", "amfist", "highload", "vizcloud", "vplay", 
@@ -1403,6 +1403,7 @@ object VideoExtractor {
             low.contains("bilibili") || low.contains("bilivideo") || low.contains("hdslb") ||
             low.contains("dailymotion") || low.contains("dai.ly") || low.contains("dmcdn") ||
             low.contains("streamtape") || low.contains("tapecontent") || low.contains("dood") ||
+            low.contains("embedo") || low.contains("sbanh") ||
             low.contains("mixdrop") || low.contains("filemoon") || low.contains("uptostream") ||
             low.contains("indostream") || low.contains("playstream") ||
             low.contains("voe") || low.contains("johnfullwonder") || low.contains("cloudwindow") ||
@@ -3933,7 +3934,7 @@ object VideoExtractor {
         val adDomains = listOf(
             "zeus", "klik", "vingaming", "pingaming", "chiptaylor", "ketik.live",
             "poker", "slot", "bet", "jud", "bola", "win", "88", "138", "jackpot",
-            "qpon", "butynejutes", "parklogic", "embedo"
+            "qpon", "butynejutes", "parklogic"
         )
         val host = try { android.net.Uri.parse(url).host?.lowercase() ?: "" } catch(_: Exception) { "" }
         if (adDomains.any { host.contains(it) || lowName.contains(it) }) return false
@@ -3943,13 +3944,15 @@ object VideoExtractor {
         
         if (lowName.contains("server") || lowName.contains("mirror") || lowName.contains("vip") || 
             lowName.contains("s1") || lowName.contains("s2") || lowName.contains("s3") || lowName.contains("s4")) {
-            if (host.contains("parklogic") || host.contains("embedo")) return false
+            if (host.contains("parklogic")) return false
             return true
         }
 
         return lowName.contains("hgcloud") || 
                lowName.contains("indostream") ||
                lowName.contains("voe") || 
+               lowName.contains("embedo") || lowUrl.contains("embedo") ||
+               lowName.contains("sbanh") || lowUrl.contains("sbanh") ||
                lowName.contains("abyss") || lowName.contains("dood") || 
                lowName.contains("streamtape") || lowName.contains("playstream") ||
                lowName.contains("vidplay") || lowName.contains("mycloud") ||
@@ -4505,6 +4508,9 @@ object VideoExtractor {
             lowUrl.contains("embedpyrox") || lowUrl.contains("pyrox") ||
             lowUrl.contains("faststream") || lowUrl.contains("upstream") ||
             lowUrl.contains("vstream") || lowUrl.contains("hexload") -> 95
+
+            lowUrl.contains("embedo") || lowName.contains("embedo") -> 100
+            lowUrl.contains("sbanh") || lowName.contains("sbanh") -> 80
 
             lowName.contains("vip") || lowUrl.contains("vip") -> 90
             lowUrl.contains("archive.org/download") -> 45

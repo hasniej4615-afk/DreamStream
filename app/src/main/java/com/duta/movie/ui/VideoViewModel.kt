@@ -2003,15 +2003,6 @@ class VideoViewModel @Inject constructor(
                                 _isResolving.value = false
                             }
                             return
-                        } else {
-                            if (!com.duta.movie.util.VideoExtractor.isJsOnlyHost(candidate)) {
-                                deadMirrors.add(candidate)
-                                hardDeadMirrors.add(candidate)
-                                val cHost = try { android.net.Uri.parse(candidate).host?.lowercase() ?: java.net.URI(candidate).host?.lowercase() } catch(_: Throwable) { null }
-                                if (cHost != null && !com.duta.movie.util.VideoExtractor.isDirectVideoUrl(candidate) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(cHost)) {
-                                    blacklistHost(cHost, hard = false)
-                                }
-                            }
                         }
                     }
                 }
@@ -2107,20 +2098,34 @@ class VideoViewModel @Inject constructor(
                             _isResolving.value = false
                         }
                     } else {
-                        addResolutionLog("Direct resolution produced no playable streams. Marking tested mirrors dead and rotating...")
-                        topMirrors.forEach { m ->
-                            deadMirrors.add(m)
-                            exhaustedServerUrls.add(m)
+                        val playableCandidates = (listOfNotNull(targetFallback) + topMirrors + sortedServers.map { it.url }).distinct().filter { url ->
+                            val isDead = deadMirrors.contains(url) || hardDeadMirrors.contains(url) || 
+                                          exhaustedServerUrls.contains(url) || com.duta.movie.util.VideoExtractor.isConfirmedDead(url)
+                            val isPlayable = com.duta.movie.util.VideoExtractor.isProbablyVideoHost(url) || isRotation || isExplicitServer
+                            isPlayable && !isDead
                         }
-                        if (targetFallback != null) {
-                            deadMirrors.add(targetFallback)
-                            exhaustedServerUrls.add(targetFallback)
+                        val chosenFallback = playableCandidates.firstOrNull()
+                        if (chosenFallback != null) {
+                            addResolutionLog("Falling back to WebView Shield for embed mirror: ${chosenFallback.take(40)}...")
+                            withContext(Dispatchers.Main) {
+                                consecutiveAllBlacklistedCount = 0
+                                _currentServerUrl.value = chosenFallback
+                                _resolvedUrl.value = chosenFallback
+                                _lastReferer.value = primaryUrl
+                                _resolutionProgress.value = null
+                                _isResolving.value = false
+                            }
+                        } else {
+                            addResolutionLog("No direct stream and no viable fallback embed mirror. Rotating to next server...")
+                            if (targetFallback != null) {
+                                exhaustedServerUrls.add(targetFallback)
+                            }
+                            withContext(Dispatchers.Main) {
+                                isRotationLocked = false
+                                resolveNextServer(videoId, targetFallback, force = true)
+                            }
+                            return
                         }
-                        withContext(Dispatchers.Main) {
-                            isRotationLocked = false
-                            resolveNextServer(videoId, mirrorToResolve, force = true)
-                        }
-                        return
                     }
                 }
             } catch (e: Exception) { _error.value = "Resolution Failed: ${e.message}"; _isResolving.value = false }
@@ -2350,13 +2355,6 @@ class VideoViewModel @Inject constructor(
                                 _isResolving.value = false
                             }
                             return
-                        } else {
-                            deadMirrors.add(candidate)
-                            hardDeadMirrors.add(candidate)
-                            val cHost = try { android.net.Uri.parse(candidate).host?.lowercase() ?: java.net.URI(candidate).host?.lowercase() } catch(_: Throwable) { null }
-                            if (cHost != null && !com.duta.movie.util.VideoExtractor.isDirectVideoUrl(candidate) && !com.duta.movie.util.VideoExtractor.isWhitelistedHost(cHost)) {
-                                blacklistHost(cHost, hard = false)
-                            }
                         }
                     }
                 }
@@ -2467,20 +2465,35 @@ class VideoViewModel @Inject constructor(
                             _isResolving.value = false
                         }
                     } else {
-                        addResolutionLog("No direct stream and fallback is not viable. Rotating to next server...")
-                        topMirrors.forEach { m ->
-                            deadMirrors.add(m)
-                            exhaustedServerUrls.add(m)
+                        // Find any playable embed mirror that hasn't been exhausted or confirmed dead
+                        val playableCandidates = (listOfNotNull(targetFallback) + topMirrors + sortedServers.map { it.url }).distinct().filter { url ->
+                            val isDead = deadMirrors.contains(url) || hardDeadMirrors.contains(url) || 
+                                          exhaustedServerUrls.contains(url) || com.duta.movie.util.VideoExtractor.isConfirmedDead(url)
+                            val isPlayable = com.duta.movie.util.VideoExtractor.isProbablyVideoHost(url) || isRotation || isExplicitServer
+                            isPlayable && !isDead
                         }
-                        if (targetFallback != null) {
-                            deadMirrors.add(targetFallback)
-                            exhaustedServerUrls.add(targetFallback)
+                        val chosenFallback = playableCandidates.firstOrNull()
+                        if (chosenFallback != null) {
+                            addResolutionLog("Falling back to WebView Shield for embed mirror: ${chosenFallback.take(40)}...")
+                            withContext(Dispatchers.Main) {
+                                consecutiveAllBlacklistedCount = 0
+                                _currentServerUrl.value = chosenFallback
+                                _resolvedUrl.value = chosenFallback
+                                _lastReferer.value = primaryUrl
+                                _resolutionProgress.value = null
+                                _isResolving.value = false
+                            }
+                        } else {
+                            addResolutionLog("No direct stream and no viable fallback embed mirror. Rotating to next server...")
+                            if (targetFallback != null) {
+                                exhaustedServerUrls.add(targetFallback)
+                            }
+                            withContext(Dispatchers.Main) {
+                                isRotationLocked = false
+                                resolveNextServer(videoId, targetFallback, force = true)
+                            }
+                            return
                         }
-                        withContext(Dispatchers.Main) {
-                            isRotationLocked = false
-                            resolveNextServer(videoId, mirrorToResolve, force = true)
-                        }
-                        return
                     }
                 }
             } catch (e: Exception) { _error.value = "Resolution Failed: ${e.message}"; _isResolving.value = false }

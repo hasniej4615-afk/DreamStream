@@ -306,8 +306,10 @@ object SubtitleExtractor {
             
             Log.d(TAG, "Resolving URL: $finalUrl ($preferredLanguage)")
 
-            // Enhanced referer for SubtitleCat
-            val downloadReferer = if (finalUrl.contains("subtitlecat.com")) "https://subtitlecat.com/" else subUrl
+            // Enhanced referer for SubtitleCat and SubSource
+            val downloadReferer = if (finalUrl.contains("subtitlecat.com")) "https://subtitlecat.com/" 
+                                  else if (finalUrl.contains("subsource.net") || subUrl.contains("subsource.net")) "https://subsource.net/" 
+                                  else subUrl
 
             var result = downloadToInternalFile(finalUrl, downloadReferer, preferredLanguage)
             result?.let { return@withContext it }
@@ -326,12 +328,16 @@ object SubtitleExtractor {
      */
     private suspend fun downloadToInternalFile(url: String, referer: String, lang: String?): String? = withContext(Dispatchers.IO) {
         try {
-            val req = Request.Builder()
+            val isSubSource = url.contains("subsource.net") || referer.contains("subsource.net")
+            val reqBuilder = Request.Builder()
                 .url(url)
                 .header("User-Agent", NetworkConfig.SHARED_USER_AGENT)
-                .header("Referer", referer)
+                .header("Referer", if (isSubSource) "https://subsource.net/" else referer)
                 .header("Accept", "*/*")
-                .build()
+            if (isSubSource) {
+                reqBuilder.header("Origin", "https://subsource.net")
+            }
+            val req = reqBuilder.build()
             
             NetworkConfig.okHttpClient.newCall(req).execute().use { resp ->
                 if (!resp.isSuccessful) {
@@ -481,13 +487,54 @@ object SubtitleExtractor {
                 @android.webkit.JavascriptInterface
                 fun onTriggerDownload(target: String, currentUrl: String) {
                     if (done) return
-                    Log.i(TAG, "JS Bridge: Triggering download navigation: $target")
-                    handler.post { 
-                        if (done) return@post
+                    Log.i(TAG, "JS Bridge: Triggering download: $target")
+                    CoroutineScope(Dispatchers.IO).launch {
                         try {
-                            val headers = mutableMapOf("Referer" to currentUrl)
-                            webView.loadUrl(target, headers) 
-                        } catch(e: Exception) { Log.e(TAG, "Nav Error", e) }
+                            val cookies = withContext(Dispatchers.Main) {
+                                try { CookieManager.getInstance().getCookie(target) } catch (_: Exception) { null }
+                            }
+                            val reqBuilder = Request.Builder()
+                                .url(target)
+                                .header("User-Agent", NetworkConfig.SHARED_USER_AGENT)
+                                .header("Referer", currentUrl)
+                                .header("Accept", "*/*")
+                            if (!cookies.isNullOrEmpty()) {
+                                reqBuilder.header("Cookie", cookies)
+                            }
+                            if (target.contains("subsource.net") || currentUrl.contains("subsource.net")) {
+                                reqBuilder.header("Origin", "https://subsource.net")
+                            }
+                            NetworkConfig.okHttpClient.newCall(reqBuilder.build()).execute().use { resp ->
+                                if (resp.isSuccessful) {
+                                    val bytes = resp.body?.bytes()
+                                    if (bytes != null && bytes.isNotEmpty()) {
+                                        val path = processToInternalFile(bytes, lang)
+                                        if (path != null) {
+                                            withContext(Dispatchers.Main) {
+                                                if (!done) {
+                                                    Log.i(TAG, "Subtitle Resolved via onTriggerDownload: $path")
+                                                    done = true
+                                                    handler.removeCallbacks(timer)
+                                                    cont.resume(path)
+                                                    safeDestroyWebView(webView)
+                                                }
+                                            }
+                                            return@launch
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "onTriggerDownload fetch error", e)
+                        }
+                        withContext(Dispatchers.Main) {
+                            if (!done) {
+                                try {
+                                    val headers = mutableMapOf("Referer" to currentUrl)
+                                    webView.loadUrl(target, headers)
+                                } catch(e: Exception) { Log.e(TAG, "Nav Error", e) }
+                            }
+                        }
                     }
                 }
                 @android.webkit.JavascriptInterface
@@ -627,7 +674,7 @@ object SubtitleExtractor {
                             return;
                         }
 
-                        if (t.indexOf('.srt') !== -1 || t.indexOf('.vtt') !== -1 || t.indexOf('.zip') !== -1 || t.indexOf('action=download') !== -1 || t.indexOf('download.php') !== -1) {
+                        if (t.indexOf('.srt') !== -1 || t.indexOf('.vtt') !== -1 || t.indexOf('.zip') !== -1 || t.indexOf('action=download') !== -1 || t.indexOf('download.php') !== -1 || t.indexOf('/subtitle/download/') !== -1 || t.indexOf('/download/') !== -1) {
                             Bridge.onLog('Navigating to download: ' + t);
                             window.captured = true;
                             Bridge.onTriggerDownload(t, window.location.href);
@@ -653,6 +700,15 @@ object SubtitleExtractor {
                         var b64 = toB64(bt);
                         if (b64 && b64.length > 100) { 
                             window.captured = true; Bridge.onRaw(b64); return;
+                        }
+                    }
+
+                    if (window.location.host.indexOf('subsource.net') !== -1) {
+                        var dl = document.querySelector('a[href*="/subtitle/download/"], a[href*="api.subsource.net"], a[download]');
+                        if (dl && dl.href) {
+                            Bridge.onLog('SubSource Match: ' + dl.href);
+                            capture(dl.href);
+                            return;
                         }
                     }
 
@@ -817,6 +873,50 @@ object SubtitleExtractor {
                         transport?.webView = newWebView
                         resultMsg?.sendToTarget()
                         return true
+                    }
+                }
+
+                setDownloadListener { dUrl, userAgent, _, _, _ ->
+                    if (done) return@setDownloadListener
+                    Log.i(TAG, "WebView setDownloadListener triggered: $dUrl")
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            val cookies = withContext(Dispatchers.Main) {
+                                try { CookieManager.getInstance().getCookie(dUrl) } catch (_: Exception) { null }
+                            }
+                            val reqBuilder = Request.Builder()
+                                .url(dUrl)
+                                .header("User-Agent", if (!userAgent.isNullOrBlank()) userAgent else NetworkConfig.SHARED_USER_AGENT)
+                                .header("Referer", url)
+                                .header("Accept", "*/*")
+                            if (!cookies.isNullOrEmpty()) {
+                                reqBuilder.header("Cookie", cookies)
+                            }
+                            if (dUrl.contains("subsource.net") || url.contains("subsource.net")) {
+                                reqBuilder.header("Origin", "https://subsource.net")
+                            }
+                            NetworkConfig.okHttpClient.newCall(reqBuilder.build()).execute().use { resp ->
+                                if (resp.isSuccessful) {
+                                    val bytes = resp.body?.bytes()
+                                    if (bytes != null && bytes.isNotEmpty()) {
+                                        val path = processToInternalFile(bytes, lang)
+                                        if (path != null) {
+                                            withContext(Dispatchers.Main) {
+                                                if (!done) {
+                                                    Log.i(TAG, "Subtitle Resolved via DownloadListener: $path")
+                                                    done = true
+                                                    handler.removeCallbacks(timer)
+                                                    cont.resume(path)
+                                                    safeDestroyWebView(webView)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.e(TAG, "DownloadListener error", e)
+                        }
                     }
                 }
 
@@ -1275,14 +1375,26 @@ object SubtitleExtractor {
                     val req = Request.Builder()
                         .url(url)
                         .header("User-Agent", NetworkConfig.SHARED_USER_AGENT)
+                        .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
+                        .header("Referer", "https://subsource.net/")
                         .build()
                     val directDownload = withContext(Dispatchers.IO) {
-                        NetworkConfig.okHttpClient.newCall(req).execute().use { resp ->
-                            if (resp.isSuccessful) {
-                                val html = resp.body?.string() ?: ""
-                                val doc = Jsoup.parse(html, url)
-                                doc.select("a[href*='/subtitle/download/']").firstOrNull()?.attr("abs:href")
-                            } else null
+                        try {
+                            NetworkConfig.okHttpClient.newCall(req).execute().use { resp ->
+                                if (resp.isSuccessful) {
+                                    val html = resp.body?.string() ?: ""
+                                    val doc = Jsoup.parse(html, url)
+                                    val link = doc.select("a[href*='/subtitle/download/'], a[href*='api.subsource.net'], a[download]").firstOrNull()?.attr("abs:href")
+                                        ?: Regex("""https?://(?:api\.)?subsource\.net/(?:api/)?v1/subtitle/download/[a-zA-Z0-9_-]+""").find(html)?.value
+                                        ?: Regex("""https?://api\.subsource\.net/v1/subtitle/download/[a-zA-Z0-9_-]+""").find(html)?.value
+                                        ?: Regex("""/subtitle/download/[a-zA-Z0-9_-]+""").find(html)?.value?.let { if (it.startsWith("http")) it else "https://api.subsource.net$it" }
+                                    Log.d("SubtitleExtractor", "SubSource resolved direct download link: $link")
+                                    link
+                                } else null
+                            }
+                        } catch (e: Exception) {
+                            Log.w("SubtitleExtractor", "SubSource direct fetch error: ${e.message}")
+                            null
                         }
                     }
                     if (!directDownload.isNullOrEmpty()) return directDownload
@@ -1293,7 +1405,7 @@ object SubtitleExtractor {
                 for (key in goodKeys) {
                     val resolved = withContext(Dispatchers.IO) {
                         try {
-                            NetworkConfig.okHttpClient.newCall(Request.Builder().url(url).header("X-API-Key", key).header("User-Agent", NetworkConfig.SHARED_USER_AGENT).build()).execute().use { r ->
+                            NetworkConfig.okHttpClient.newCall(Request.Builder().url(url).header("X-API-Key", key).header("User-Agent", NetworkConfig.SHARED_USER_AGENT).header("Referer", "https://subsource.net/").build()).execute().use { r ->
                                 if (r.isSuccessful) {
                                     val body = r.body?.string() ?: "{}"
                                     if (body.trimStart().startsWith("{")) {
