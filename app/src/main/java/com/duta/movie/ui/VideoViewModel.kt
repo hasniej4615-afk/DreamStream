@@ -2800,8 +2800,21 @@ class VideoViewModel @Inject constructor(
         get() = lastSubtitleSearchTitle ?: ""
 
     fun searchSubtitles(customQuery: String) {
-        val q = customQuery.trim()
-        if (q.isBlank()) return
+        val rawQ = customQuery.trim()
+        if (rawQ.isBlank()) return
+        val curEp = _currentEpisode.value
+        val q = if (curEp != null && _videoMetadata.value?.isSeries == true && SubtitleExtractor.extractEpisodeNumber(rawQ) == null) {
+            val epName = curEp.name.trim()
+            val epNumMatch = Regex("""(?i)\b(?:episode|ep|e)\s*(\d+)\b""").find(epName) ?: Regex("""\b(\d+)\b""").find(epName)
+            val epNum = epNumMatch?.groupValues?.get(1)?.toIntOrNull()
+            val seasonMatch = Regex("""(?i)\b(?:season|s)\s*(\d+)\b""").find(curEp.season.ifEmpty { curEp.url })
+            val seasonNum = seasonMatch?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            if (epNum != null) {
+                val epTag = String.format("S%02dE%02d", seasonNum, epNum)
+                "$rawQ $epTag"
+            } else rawQ
+        } else rawQ
+
         lastSubtitleSearchTitle = q
         subSearchJob?.cancel()
         subSearchJob = viewModelScope.launch(Dispatchers.IO) {

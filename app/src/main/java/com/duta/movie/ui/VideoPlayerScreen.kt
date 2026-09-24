@@ -53,6 +53,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -1717,15 +1718,26 @@ fun VideoPlayerScreen(
             title = { Text(stringResource(R.string.subtitles), color = Color.White) }, 
             containerColor = Color(0xFF1A1A1A),
             text = {
-                var subSearchText by remember { mutableStateOf(viewModel.currentSubtitleSearchTitle) }
+                var subSearchText by remember { mutableStateOf("") }
                 var isSearchFocused by remember { mutableStateOf(false) }
                 var isSearchBtnFocused by remember { mutableStateOf(false) }
 
                 val filteredSubs = remember(subtitles, subSearchText) {
                     val q = subSearchText.trim().lowercase()
                     if (q.isEmpty()) subtitles
-                    else subtitles.filter { sub ->
-                        sub.label.lowercase().contains(q) || sub.language.lowercase().contains(q)
+                    else {
+                        val qNorm = q.replace(".", " ").replace("-", " ")
+                        subtitles.filter { sub ->
+                            val labelNorm = sub.label.lowercase().replace(".", " ").replace("-", " ")
+                            labelNorm.contains(qNorm) || sub.language.lowercase().contains(q)
+                        }
+                    }
+                }
+
+                val performSearch = {
+                    val targetQuery = subSearchText.ifBlank { viewModel.currentSubtitleSearchTitle }
+                    if (targetQuery.isNotBlank()) {
+                        viewModel.searchSubtitles(targetQuery)
                     }
                 }
 
@@ -1738,7 +1750,15 @@ fun VideoPlayerScreen(
                         OutlinedTextField(
                             value = subSearchText,
                             onValueChange = { subSearchText = it },
-                            placeholder = { Text(stringResource(R.string.search_subtitles), color = Color.Gray, fontSize = 12.sp) },
+                            placeholder = { 
+                                Text(
+                                    viewModel.currentSubtitleSearchTitle.ifBlank { stringResource(R.string.search_subtitles) }, 
+                                    color = Color.Gray, 
+                                    fontSize = 12.sp,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                ) 
+                            },
                             singleLine = true,
                             leadingIcon = {
                                 Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.Gray, modifier = Modifier.size(18.dp))
@@ -1759,9 +1779,7 @@ fun VideoPlayerScreen(
                                 unfocusedContainerColor = Color(0xFF202020)
                             ),
                             keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
-                            keyboardActions = KeyboardActions(onSearch = {
-                                if (subSearchText.isNotBlank()) viewModel.searchSubtitles(subSearchText)
-                            }),
+                            keyboardActions = KeyboardActions(onSearch = { performSearch() }),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .weight(1f)
@@ -1771,11 +1789,7 @@ fun VideoPlayerScreen(
                         )
                         Spacer(Modifier.width(8.dp))
                         Button(
-                            onClick = {
-                                if (subSearchText.isNotBlank()) {
-                                    viewModel.searchSubtitles(subSearchText)
-                                }
-                            },
+                            onClick = { performSearch() },
                             colors = ButtonDefaults.buttonColors(
                                 containerColor = if (isSearchBtnFocused) Color.White else Color.Red,
                                 contentColor = if (isSearchBtnFocused) Color.Black else Color.White
