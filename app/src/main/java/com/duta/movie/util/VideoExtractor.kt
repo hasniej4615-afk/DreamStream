@@ -1789,8 +1789,10 @@ object VideoExtractor {
             }
         }
 
-        // Full movie fallbacks: Only applicable for standalone movies or series with no episodes
-        if (video.isSeries != true || video.episodes.isEmpty()) {
+        // Full movie & universal stream fallbacks (Archive.org, YouTube, Bilibili, Dailymotion):
+        // Always engage if no mirrors found yet, or if video is not an explicit series URL
+        val isExplicitSeries = video.videoUrl.contains("/series/") || video.videoUrl.contains("/tv/") || video.videoUrl.contains("/serial-tv/")
+        if (!isExplicitSeries || video.isSeries != true || video.episodes.isEmpty() || altServers.isEmpty()) {
             // Also check classic P. Ramlee Archive.org catalogue if applicable
             if (altServers.isEmpty() || !video.videoUrl.contains("archive.org")) {
                 try {
@@ -1961,6 +1963,17 @@ object VideoExtractor {
             // 4. Single-word query ONLY if original title only has 1 or 2 words (e.g. "Munafik")
             if (cleanWords.size <= 2 && cleanWords.first().length >= 4) {
                 queries.add(cleanWords.first())
+            }
+
+            // 5. Sequel & Chapter variations (e.g. "John Wick 3" or "John Wick Chapter 3")
+            val chapterMatch = Regex("""(?i)\b(?:chapter|part|vol|volume)?\s*(\d+|ii|iii|iv|v|vi|vii|viii|ix|x)\b""").find(titleWithoutYear)
+            if (chapterMatch != null && cleanWords.size >= 2) {
+                val numStr = chapterMatch.groupValues[1]
+                val romanMap = mapOf("ii" to "2", "iii" to "3", "iv" to "4", "v" to "5", "vi" to "6", "vii" to "7", "viii" to "8", "ix" to "9", "x" to "10")
+                val seqNum = romanMap[numStr.lowercase()] ?: numStr
+                val basePrefix = cleanWords.take(2).joinToString(" ")
+                queries.add("$basePrefix $seqNum")
+                queries.add("$basePrefix Chapter $seqNum")
             }
         }
         return queries.distinct()
@@ -4688,7 +4701,7 @@ object VideoExtractor {
     fun extractEpisodesFromDoc(doc: Document, videoUrl: String, title: String): List<Episode> {
         val episodes = mutableListOf<Episode>()
         // Prioritize dedicated episode containers; fall back to searching full document
-        val containers = doc.select(".gmr-listseries, .muvipro-listepisode, .list-episode, .episodios, .eps-item, .list-eps, .list-series, .seasons, .season, [class*='listseries'], .episode-list-container, .episodes-grid, #seasons, #season, .tvseason, [id*='season']")
+        val containers = doc.select(".gmr-listseries, .muvipro-listepisode, .list-episode, .episodios, .eps-item, .list-eps, .list-series, [class*='listseries'], .episode-list-container, .episodes-grid, .tvseason")
         val searchScope = if (containers.isNotEmpty()) containers else doc.select("body").ifEmpty { doc.select("*") }
 
         val rawSlug = extractStableId(videoUrl).removePrefix("pm_")
@@ -4719,8 +4732,8 @@ object VideoExtractor {
 
             if (epUrl.isNotEmpty() && !isServer && isEpisodeLink) {
                 val cleanUrl = epUrl.substringBefore('?')
-                // Validate that episode belongs to current series if container is loose or shared
-                if (!isContainerDedicated && cleanSlugBase.length >= 3) {
+                // Validate that episode belongs to current series
+                if (cleanSlugBase.length >= 3) {
                     val belongsToSeries = lowUrl.contains(cleanSlugBase) ||
                                           (cleanSlugNoYear.length >= 3 && lowUrl.contains(cleanSlugNoYear)) ||
                                           epTitle.contains(cleanSlugBase.replace("-", " ")) ||

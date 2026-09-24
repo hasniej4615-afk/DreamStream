@@ -544,7 +544,8 @@ fun VideoPlayerScreen(
                             needsServerSwitch = true
                             Log.i("VideoPlayerScreen", "Cast: Switching to Cast-Friendly server before enabling cast: $betterServer")
                             val isEpisodeUrl = betterServer.let { (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || it.contains("/episod/") || it.contains("-episod-") || it.contains("-epi-") || it.contains("/ep-")) && !it.contains("player=") && !it.contains("mirror=") }
-                            if (video?.isSeries == true || isEpisodeUrl) {
+                            val isExplicitSeries = video?.videoUrl?.let { it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") } ?: false
+                            if ((isExplicitSeries && video?.isSeries == true && video?.episodes?.isNotEmpty() == true) || isEpisodeUrl) {
                                 viewModel.playTVSeries(videoId, betterServer, forceReset = false)
                             } else {
                                 viewModel.playMovie(videoId, betterServer, forceReset = false)
@@ -752,7 +753,8 @@ fun VideoPlayerScreen(
         android.webkit.CookieManager.getInstance().flush()
         
         val isEpisodeUrl = serverUrl?.let { (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || it.contains("/episod/") || it.contains("-episod-") || it.contains("-epi-") || it.contains("/ep-")) && !it.contains("player=") && !it.contains("mirror=") } ?: false
-        val isRealSeries = (video?.isSeries == true && video?.episodes?.isNotEmpty() == true) || isEpisodeUrl
+        val isExplicitSeries = video?.videoUrl?.let { it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") } ?: false
+        val isRealSeries = (isExplicitSeries && video?.isSeries == true && video?.episodes?.isNotEmpty() == true) || isEpisodeUrl
         if (isRealSeries) {
             viewModel.playTVSeries(videoId, serverUrl, forceReset = true)
         } else {
@@ -1321,7 +1323,8 @@ fun VideoPlayerScreen(
                     scope.launch { 
                         delay(2000)
                         val isEpisodeUrl = currentServerUrl.value?.let { (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || it.contains("/ep-")) && !it.contains("player=") && !it.contains("mirror=") } ?: false
-                        if (video?.isSeries == true || isEpisodeUrl) {
+                        val isExplicitSeries = video?.videoUrl?.let { it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") } ?: false
+                        if ((isExplicitSeries && video?.isSeries == true && video?.episodes?.isNotEmpty() == true) || isEpisodeUrl) {
                             viewModel.playTVSeries(currentVideoId.value, currentServerUrl.value, forceReset = false)
                         } else {
                             viewModel.playMovie(currentVideoId.value, currentServerUrl.value, forceReset = false)
@@ -1455,7 +1458,8 @@ fun VideoPlayerScreen(
         onRetryClick = { 
             playerErrorMessage = null
             val isEpisodeUrl = serverUrl?.let { (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || it.contains("/ep-")) && !it.contains("player=") && !it.contains("mirror=") } ?: false
-            if (video?.isSeries == true || isEpisodeUrl) {
+            val isExplicitSeries = video?.videoUrl?.let { it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") } ?: false
+            if ((isExplicitSeries && video?.isSeries == true && video?.episodes?.isNotEmpty() == true) || isEpisodeUrl) {
                 viewModel.playTVSeries(videoId, serverUrl, forceReset = true)
             } else {
                 viewModel.playMovie(videoId, serverUrl, forceReset = true)
@@ -1470,7 +1474,8 @@ fun VideoPlayerScreen(
                     val updatedVideo = viewModel.videoMetadata.value
                     val newServer = updatedVideo?.servers?.lastOrNull()?.url ?: updatedVideo?.servers?.firstOrNull()?.url
                     if (newServer != null) {
-                        if (video?.isSeries == true) {
+                        val isExplicitSeriesAlt = video?.videoUrl?.let { it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") } ?: false
+                        if (isExplicitSeriesAlt && video?.isSeries == true && video?.episodes?.isNotEmpty() == true) {
                             viewModel.playTVSeries(videoId, newServer, forceReset = false, isRotation = false)
                         } else {
                             viewModel.playMovie(videoId, newServer, forceReset = false, isRotation = false)
@@ -1485,7 +1490,8 @@ fun VideoPlayerScreen(
             isUserForcingWebView = true
             playerErrorMessage = null
             val isEpisodeUrl = serverUrl?.let { (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || it.contains("/ep-")) && !it.contains("player=") && !it.contains("mirror=") } ?: false
-            if (video?.isSeries == true || isEpisodeUrl) {
+            val isExplicitSeries = video?.videoUrl?.let { it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") } ?: false
+            if ((isExplicitSeries && video?.isSeries == true && video?.episodes?.isNotEmpty() == true) || isEpisodeUrl) {
                 viewModel.playTVSeries(videoId, serverUrl, forceReset = false)
             } else {
                 viewModel.playMovie(videoId, serverUrl, forceReset = false)

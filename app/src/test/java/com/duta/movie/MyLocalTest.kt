@@ -315,5 +315,61 @@ class MyLocalTest {
             assertTrue("Should contain VidHide mirror", details?.servers?.any { it.url.contains("vidhide") } == true)
         }
     }
+
+    @Test
+    fun testJohnWickAlternativeSources() {
+        kotlinx.coroutines.runBlocking {
+            val pmDetails = VideoExtractor.fetchVideoDetails("https://ww44.pencurimovie.baby/john-wick-chapter-3-parabellum-2019/")
+            println("PM Details: title='${pmDetails?.title}', isSeries=${pmDetails?.isSeries}, episodes=${pmDetails?.episodes?.size}, servers=${pmDetails?.servers?.size}")
+            pmDetails?.servers?.forEach { println(" - PM Server: ${it.name} -> ${it.url}") }
+            pmDetails?.episodes?.forEach { println(" - PM Episode: ${it.name} -> ${it.url}") }
+            val target = pmDetails ?: com.duta.movie.model.Video(
+                id = "pm_john-wick-chapter-3-parabellum-2019",
+                title = "John Wick: Chapter 3 – Parabellum (2019)",
+                thumbnailUrl = "",
+                videoUrl = "https://ww44.pencurimovie.baby/john-wick-chapter-3-parabellum-2019/",
+                duration = "",
+                date = "2019"
+            )
+            println("=== TESTING JOHN WICK ALTERNATIVE SOURCES ===")
+            val queries = VideoExtractor.buildAlternativeSearchQueries(target.title)
+            println("Generated queries: $queries")
+
+            for (base in VideoExtractor.CLUSTER_MIRROR_URLS) {
+                try {
+                    val url = "$base/?s=John+Wick"
+                    val req = okhttp3.Request.Builder().url(url).header("User-Agent", "Mozilla/5.0").build()
+                    NetworkConfig.fastOkHttpClient.newCall(req).execute().use { resp ->
+                        if (resp.isSuccessful) {
+                            val html = resp.body?.string() ?: ""
+                            val doc = org.jsoup.Jsoup.parse(html, url)
+                            val items = doc.select("article.item, .gmr-item, article[id^='post-']")
+                            val titles = items.map { it.select(".entry-title a, h2 a").text() }.filter { it.contains("Wick", ignoreCase = true) }
+                            if (titles.isNotEmpty()) {
+                                println("Mirror $base found ${titles.size} Wick items: $titles")
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    println("Mirror $base error: ${e.message}")
+                }
+            }
+
+            val altServers = VideoExtractor.findAlternativeSources(target)
+            println("Total alt servers discovered: ${altServers.size}")
+            altServers.forEach { println("  Alt Server: ${it.name} -> ${it.url}") }
+            assertTrue("Alt servers should be found for John Wick 3", altServers.isNotEmpty())
+
+            // Test resilience: Even if misflagged as a series with dummy episode
+            val misflaggedSeriesTarget = target.copy(
+                isSeries = true,
+                episodes = listOf(com.duta.movie.model.Episode("ep1", "Episode 1", "${target.videoUrl}ep1", ""))
+            )
+            val altForMisflagged = VideoExtractor.findAlternativeSources(misflaggedSeriesTarget)
+            println("Alt servers discovered for misflagged target: ${altForMisflagged.size}")
+            assertTrue("Fallback mirrors must be discovered even if misflagged", altForMisflagged.isNotEmpty())
+        }
+    }
 }
+
 

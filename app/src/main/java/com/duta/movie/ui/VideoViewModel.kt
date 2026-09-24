@@ -1729,7 +1729,8 @@ class VideoViewModel @Inject constructor(
                     }
                 }
 
-                if (video?.isSeries == false || (video?.episodes?.isEmpty() == true && !isEpisodeUrl && targetEpisode == null)) {
+                val isExplicitSeries = video?.videoUrl?.let { it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") } ?: false
+                if (!isExplicitSeries || video?.isSeries == false || (video?.episodes?.isEmpty() == true && !isEpisodeUrl && targetEpisode == null)) {
                     Log.i("VideoViewModel", "playTVSeries: Video is a movie or has no episodes. Redirecting to startMoviePlaybackResolution...")
                     startMoviePlaybackResolution(videoId, serverUrl = episodeUrl, forceReset = forceReset, isRotation = isRotation, clearBlacklist = clearBlacklist)
                     return@launch
