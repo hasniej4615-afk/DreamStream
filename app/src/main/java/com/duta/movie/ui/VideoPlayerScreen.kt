@@ -18,6 +18,9 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -1714,50 +1717,131 @@ fun VideoPlayerScreen(
             title = { Text(stringResource(R.string.subtitles), color = Color.White) }, 
             containerColor = Color(0xFF1A1A1A),
             text = {
-                LazyColumn(
-                    modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp),
-                    state = rememberLazyListState()
-                ) {
-                    item(key = "none") {
-                        var isFocused by remember { mutableStateOf(false) }
-                        ListItem(
-                            headlineContent = { Text(stringResource(R.string.none_embedded), color = Color.White) },
-                            leadingContent = { RadioButton(selected = selectedSubtitle == null, onClick = null, modifier = Modifier.focusable(false)) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .focusRequester(subFirstItemFocusRequester)
-                                .onFocusChanged { isFocused = it.isFocused }
-                                .clickable { viewModel.selectSubtitle(null); showSubtitleDialog = false }
-                                .focusable()
-                                .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
-                            colors = ListItemDefaults.colors(
-                                containerColor = if (isFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent
-                            )
-                        )
+                var subSearchText by remember { mutableStateOf(viewModel.currentSubtitleSearchTitle) }
+                var isSearchFocused by remember { mutableStateOf(false) }
+                var isSearchBtnFocused by remember { mutableStateOf(false) }
+
+                val filteredSubs = remember(subtitles, subSearchText) {
+                    val q = subSearchText.trim().lowercase()
+                    if (q.isEmpty()) subtitles
+                    else subtitles.filter { sub ->
+                        sub.label.lowercase().contains(q) || sub.language.lowercase().contains(q)
                     }
-                    items(subtitles, key = { it.url }) { sub ->
-                        var isFocused by remember { mutableStateOf(false) }
-                        ListItem(
-                            headlineContent = { Text(sub.label, color = Color.White) },
-                            supportingContent = { Text(sub.language, color = Color.Gray, fontSize = 12.sp) },
-                            leadingContent = { RadioButton(selected = selectedSubtitle?.url == sub.url, onClick = null, modifier = Modifier.focusable(false)) },
+                }
+
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    // Search bar row with input and action button
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = subSearchText,
+                            onValueChange = { subSearchText = it },
+                            placeholder = { Text(stringResource(R.string.search_subtitles), color = Color.Gray, fontSize = 12.sp) },
+                            singleLine = true,
+                            leadingIcon = {
+                                Icon(Icons.Default.Search, contentDescription = "Search", tint = Color.Gray, modifier = Modifier.size(18.dp))
+                            },
+                            trailingIcon = {
+                                if (subSearchText.isNotEmpty()) {
+                                    IconButton(onClick = { subSearchText = "" }) {
+                                        Icon(Icons.Default.Close, contentDescription = "Clear", tint = Color.Gray, modifier = Modifier.size(16.dp))
+                                    }
+                                }
+                            },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White,
+                                focusedBorderColor = Color.Red,
+                                unfocusedBorderColor = Color.White.copy(alpha = 0.2f),
+                                focusedContainerColor = Color(0xFF262626),
+                                unfocusedContainerColor = Color(0xFF202020)
+                            ),
+                            keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                            keyboardActions = KeyboardActions(onSearch = {
+                                if (subSearchText.isNotBlank()) viewModel.searchSubtitles(subSearchText)
+                            }),
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .onFocusChanged { isFocused = it.isFocused }
-                                .clickable { viewModel.selectSubtitle(sub); showSubtitleDialog = false }
-                                .focusable()
-                                .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
-                            colors = ListItemDefaults.colors(
-                                containerColor = if (isFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent
-                            )
+                                .weight(1f)
+                                .height(50.dp)
+                                .onFocusChanged { isSearchFocused = it.isFocused }
+                                .border(if (isSearchFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                         )
+                        Spacer(Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                if (subSearchText.isNotBlank()) {
+                                    viewModel.searchSubtitles(subSearchText)
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isSearchBtnFocused) Color.White else Color.Red,
+                                contentColor = if (isSearchBtnFocused) Color.Black else Color.White
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier
+                                .height(50.dp)
+                                .onFocusChanged { isSearchBtnFocused = it.isFocused }
+                                .focusable()
+                                .border(if (isSearchBtnFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                        ) {
+                            Text(stringResource(R.string.search), fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
                     }
-                    if (isSubtitleLoading) { 
-                        item(key = "loading") { 
-                            Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { 
-                                CircularProgressIndicator(color = Color.Red) 
+
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 380.dp),
+                        state = rememberLazyListState()
+                    ) {
+                        item(key = "none") {
+                            var isFocused by remember { mutableStateOf(false) }
+                            ListItem(
+                                headlineContent = { Text(stringResource(R.string.none_embedded), color = Color.White) },
+                                leadingContent = { RadioButton(selected = selectedSubtitle == null, onClick = null, modifier = Modifier.focusable(false)) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .focusRequester(subFirstItemFocusRequester)
+                                    .onFocusChanged { isFocused = it.isFocused }
+                                    .clickable { viewModel.selectSubtitle(null); showSubtitleDialog = false }
+                                    .focusable()
+                                    .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                                colors = ListItemDefaults.colors(
+                                    containerColor = if (isFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent
+                                )
+                            )
+                        }
+                        items(filteredSubs, key = { it.url }) { sub ->
+                            var isFocused by remember { mutableStateOf(false) }
+                            ListItem(
+                                headlineContent = { Text(sub.label, color = Color.White) },
+                                supportingContent = { Text(sub.language, color = Color.Gray, fontSize = 12.sp) },
+                                leadingContent = { RadioButton(selected = selectedSubtitle?.url == sub.url, onClick = null, modifier = Modifier.focusable(false)) },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .onFocusChanged { isFocused = it.isFocused }
+                                    .clickable { viewModel.selectSubtitle(sub); showSubtitleDialog = false }
+                                    .focusable()
+                                    .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                                colors = ListItemDefaults.colors(
+                                    containerColor = if (isFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent
+                                )
+                            )
+                        }
+                        if (isSubtitleLoading) { 
+                            item(key = "loading") { 
+                                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) { 
+                                    CircularProgressIndicator(color = Color.Red) 
+                                } 
                             } 
-                        } 
+                        } else if (filteredSubs.isEmpty() && subtitles.isNotEmpty()) {
+                            item(key = "no_filter_matches") {
+                                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
+                                    Text("No matching subtitles found locally.\nPress Search to query online.", color = Color.Gray, fontSize = 12.sp, textAlign = TextAlign.Center)
+                                }
+                            }
+                        }
                     }
                 }
             },

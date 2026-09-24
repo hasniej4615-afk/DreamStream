@@ -142,6 +142,23 @@ object SubtitleExtractor {
     }
 
     /**
+     * Extracts an episode number from a text or filename (e.g. S01E05 -> 5, 1x03 -> 3, Episode 4 -> 4).
+     */
+    fun extractEpisodeNumber(text: String): Int? {
+        val m = Regex("""(?i)\bs?(\d+)[xxe](\d+)\b""").find(text)
+            ?: Regex("""(?i)\bs\d+e(\d+)""").find(text)
+        if (m != null) {
+            val group = if (m.groupValues.size >= 3 && m.groupValues[2].isNotEmpty()) m.groupValues[2] else m.groupValues[1]
+            return group.toIntOrNull()
+        }
+        val m2 = Regex("""(?i)\b(?:episode|ep)\.?\s*(\d+)\b""").find(text)
+        if (m2 != null) {
+            return m2.groupValues[1].toIntOrNull()
+        }
+        return null
+    }
+
+    /**
      * Searches for subtitles across all registered providers concurrently.
      * Results are delivered incrementally as they are found.
      *
@@ -188,18 +205,24 @@ object SubtitleExtractor {
                 queries.add("Keluang Man")
                 queries.add("Keluang Man 2025")
             }
-            val sNum = Regex("""(?i)\b(?:season|s)\s*(\d+)\b""").find(lowTitle)?.groupValues?.get(1)?.toIntOrNull() ?: 1
-            val epNum = Regex("""(?i)\b(?:episode|ep|e)\s*(\d+)\b""").find(lowTitle)?.groupValues?.get(1)?.toIntOrNull()
+            val seMatch = Regex("""(?i)\bs?(\d+)[xxe](\d+)\b""").find(lowTitle)
+                ?: Regex("""(?i)\bs(\d+)e(\d+)""").find(lowTitle)
+            val sNum = seMatch?.groupValues?.get(1)?.toIntOrNull()
+                ?: Regex("""(?i)\bseason\s*(\d+)\b""").find(lowTitle)?.groupValues?.get(1)?.toIntOrNull()
+                ?: 1
+            val epNum = seMatch?.groupValues?.get(2)?.toIntOrNull()
+                ?: Regex("""(?i)\b(?:episode|ep)\s*(\d+)\b""").find(lowTitle)?.groupValues?.get(1)?.toIntOrNull()
             if (epNum != null) {
                 val epTag = String.format("S%02dE%02d", sNum, epNum)
                 queries.add(0, "$cleanBase $epTag")
                 queries.add(1, "$cleanBase Episode $epNum")
-                queries.add(2, "$cleanBase $epTag".replace(Regex("""\b(19|20)\d{2}\b"""), "").trim())
+                val cleanNoYear = cleanBase.replace(Regex("""\b(19|20)\d{2}\b"""), "").trim()
+                queries.add(2, "$cleanNoYear $epTag")
+                queries.add(3, "$cleanNoYear Episode $epNum")
             }
-            Regex("""(?i)s(\d+)e(\d+)""").find(lowTitle)?.let { queries.add(0, "$cleanBase ${it.groupValues[0]}") }
             val uniqueQueries = queries.asSequence().distinct().filter { it.length > 2 }.toList()
             
-            Log.d(TAG, "Subtitle search queries: $uniqueQueries")
+            Log.d(TAG, "Subtitle search queries: $uniqueQueries (Season: $sNum, Episode: $epNum)")
             
             val id = if (imdbId.isNullOrEmpty()) resolveImdbId(cleanBase) else imdbId
             id?.let { Log.d(TAG, "Discovery ID: $it") }
@@ -209,9 +232,19 @@ object SubtitleExtractor {
                     .replace(Regex("""\b(19|20)\d{2}\b"""), " ")
                     .split(Regex("[\\s\\p{Punct}]+"))
                     .filter { it.length > 2 && it != "the" && it != "and" && it != "for" }
-                if (requiredWords.isEmpty()) list else list.filter { sub ->
+                list.filter { sub ->
                     val subLabel = sub.label.lowercase()
-                    requiredWords.all { word -> subLabel.contains(word) } || (id != null && sub.url.contains(id))
+                    val titleMatch = requiredWords.isEmpty() || requiredWords.all { word -> subLabel.contains(word) } || (id != null && sub.url.contains(id))
+                    if (!titleMatch) return@filter false
+
+                    // Strict Episode Filter for TV series: if subtitle declares an episode, it MUST match epNum
+                    if (epNum != null) {
+                        val subEp = extractEpisodeNumber(sub.label) ?: extractEpisodeNumber(sub.url)
+                        if (subEp != null && subEp != epNum) {
+                            return@filter false
+                        }
+                    }
+                    true
                 }
             }
 
@@ -1205,11 +1238,18 @@ object SubtitleExtractor {
                                 val html = resp.body?.string() ?: ""
                                 val doc = Jsoup.parse(html, sUrl)
                                 val subLinks = doc.select("a[href*='/subtitle/']")
+                                val targetEp = extractEpisodeNumber(title)
                                 for (a in subLinks) {
                                     val href = a.attr("href")
                                     val parts = href.split("/")
                                     val lang = if (parts.size >= 4) parts[3] else "Unknown"
                                     val label = a.text().trim().replace("\n", " ").ifEmpty { a.attr("title").trim() }.ifEmpty { "Subtitle" }
+                                    if (targetEp != null) {
+                                        val subEp = extractEpisodeNumber(label) ?: extractEpisodeNumber(href)
+                                        if (subEp != null && subEp != targetEp) {
+                                            continue
+                                        }
+                                    }
                                     val fullUrl = if (href.startsWith("http")) href else "$baseUrl$href"
                                     results.add(Subtitle("[SubSource] $label", fullUrl, normalizeLanguage(lang)))
                                 }
@@ -1276,61 +1316,98 @@ object SubtitleExtractor {
                 queries.add(title.replace("Lee Cronin's", "").trim())
                 queries.add("The Mummy 2026")
             }
+
+            val targetEp = extractEpisodeNumber(title)
+            val cleanBase = title.replace(Regex("""(?i)\bS\d+E\d+\b|\bEpisode\s*\d+\b|\bSeason\s*\d+\b"""), "")
+                .replace(Regex("""\b(19|20)\d{2}\b"""), " ")
+                .replace(Regex("""\s+"""), " ")
+                .trim()
+            if (cleanBase.isNotEmpty() && cleanBase != title) {
+                queries.add(cleanBase)
+            }
             
             val allResults = mutableListOf<Subtitle>()
             for (q in queries.distinct()) {
                 val searchUrl = "$baseUrl/index.php?search=${java.net.URLEncoder.encode(q, "UTF-8")}"
-                NetworkConfig.okHttpClient.newCall(
-                    Request.Builder().url(searchUrl).header("User-Agent", NetworkConfig.SHARED_USER_AGENT).build()
-                ).execute().use { r ->
-                    val doc = Jsoup.parse(r.body?.string() ?: "", searchUrl)
-                    val rows = doc.select("table tr:has(a[href*='/subs/']), .sub-entry, .sub-row")
-                    for (row in rows.take(15)) {
-                        val linkEl = row.select("a").firstOrNull { it.attr("href").contains("/subs/") || it.attr("href").contains("subs/") } ?: continue
-                        val moviePageUrl = linkEl.attr("abs:href")
-                        val movieTitle = linkEl.text().ifBlank { title }.trim()
-                        
-                        try {
-                            NetworkConfig.okHttpClient.newCall(
-                                Request.Builder().url(moviePageUrl).header("User-Agent", NetworkConfig.SHARED_USER_AGENT).build()
-                            ).execute().use { pr ->
-                                val pDoc = Jsoup.parse(pr.body?.string() ?: "", moviePageUrl)
-                                val directSubs = mutableListOf<Subtitle>()
-                                pDoc.select("a[href]").forEach { a ->
-                                    val href = a.attr("href")
-                                    if (href.endsWith(".srt", ignoreCase = true) || href.endsWith(".vtt", ignoreCase = true)) {
-                                        val srtUrl = a.attr("abs:href").replace(" ", "%20")
-                                        val idAttr = a.attr("id")
-                                        val langCode = if (idAttr.startsWith("download_")) {
-                                            idAttr.removePrefix("download_")
-                                        } else {
-                                            val match = Regex("""-([a-zA-Z]{2,3}(?:-[a-zA-Z0-9]+)?)\.(?:srt|vtt)$""").find(href)
-                                            match?.groupValues?.get(1) ?: ""
-                                        }
-                                        val parent = a.parents().firstOrNull { it.hasClass("sub-single") }
-                                        val spanLang = parent?.select("span")?.map { it.text().trim() }?.firstOrNull { 
-                                            it.isNotBlank() && !it.contains("download", ignoreCase = true) && !it.contains("translate", ignoreCase = true)
-                                        }
-                                        val normLang = normalizeLanguage(if (!spanLang.isNullOrBlank()) spanLang else langCode)
-                                        directSubs.add(Subtitle("[SubCat] $movieTitle ($normLang)", srtUrl, normLang))
-                                    }
-                                }
-                                if (directSubs.isNotEmpty()) {
-                                    allResults.addAll(directSubs)
-                                } else {
-                                    allResults.add(Subtitle("[SubCat] $movieTitle", moviePageUrl, "Unknown"))
-                                }
-                            }
-                        } catch (e: Exception) {
-                            Log.w("SubtitleExtractor", "SubCat detail page error: ${e.message}")
-                            allResults.add(Subtitle("[SubCat] $movieTitle", moviePageUrl, "Unknown"))
+                val req = Request.Builder().url(searchUrl).header("User-Agent", NetworkConfig.SHARED_USER_AGENT).build()
+                val doc = withContext(Dispatchers.IO) {
+                    try {
+                        NetworkConfig.okHttpClient.newCall(req).execute().use { r ->
+                            Jsoup.parse(r.body?.string() ?: "", searchUrl)
                         }
+                    } catch (_: Exception) { null }
+                } ?: continue
+
+                val rows = doc.select("table tr:has(a[href*='subs/']), .sub-entry, .sub-row")
+                val candidateRows = mutableListOf<Pair<String, String>>()
+                for (row in rows) {
+                    val linkEl = row.select("a").firstOrNull { it.attr("href").contains("subs/") } ?: continue
+                    val moviePageUrl = linkEl.attr("abs:href")
+                    val movieTitle = linkEl.text().ifBlank { title }.trim()
+                    val rowEp = extractEpisodeNumber(movieTitle) ?: extractEpisodeNumber(moviePageUrl)
+                    if (targetEp != null) {
+                        if (rowEp == targetEp) {
+                            candidateRows.add(movieTitle to moviePageUrl)
+                        }
+                    } else {
+                        candidateRows.add(movieTitle to moviePageUrl)
                     }
                 }
+
+                val selectedRows = if (candidateRows.isNotEmpty()) candidateRows.take(4) else {
+                    rows.take(3).mapNotNull { r ->
+                        val linkEl = r.select("a").firstOrNull { it.attr("href").contains("subs/") } ?: return@mapNotNull null
+                        linkEl.text().ifBlank { title }.trim() to linkEl.attr("abs:href")
+                    }
+                }
+
+                val subLists = coroutineScope {
+                    selectedRows.map { (movieTitle, moviePageUrl) ->
+                        async(Dispatchers.IO) {
+                            val directSubs = mutableListOf<Subtitle>()
+                            try {
+                                val pReq = Request.Builder().url(moviePageUrl).header("User-Agent", NetworkConfig.SHARED_USER_AGENT).build()
+                                NetworkConfig.okHttpClient.newCall(pReq).execute().use { pr ->
+                                    val pDoc = Jsoup.parse(pr.body?.string() ?: "", moviePageUrl)
+                                    pDoc.select("a[href]").forEach { a ->
+                                        val href = a.attr("href")
+                                        if (href.endsWith(".srt", ignoreCase = true) || href.endsWith(".vtt", ignoreCase = true)) {
+                                            val srtUrl = a.attr("abs:href").replace(" ", "%20")
+                                            val idAttr = a.attr("id")
+                                            val langCode = if (idAttr.startsWith("download_")) {
+                                                idAttr.removePrefix("download_")
+                                            } else {
+                                                val match = Regex("""-([a-zA-Z]{2,3}(?:-[a-zA-Z0-9]+)?)\.(?:srt|vtt)$""").find(href)
+                                                match?.groupValues?.get(1) ?: ""
+                                            }
+                                            val parent = a.parents().firstOrNull { it.hasClass("sub-single") }
+                                            val spanLang = parent?.select("span")?.map { it.text().trim() }?.firstOrNull { 
+                                                it.isNotBlank() && !it.contains("download", ignoreCase = true) && !it.contains("translate", ignoreCase = true)
+                                            }
+                                            val normLang = normalizeLanguage(if (!spanLang.isNullOrBlank()) spanLang else langCode)
+                                            directSubs.add(Subtitle("[SubCat] $movieTitle ($normLang)", srtUrl, normLang))
+                                        }
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.w("SubtitleExtractor", "SubCat detail page error: ${e.message}")
+                            }
+                            directSubs
+                        }
+                    }.awaitAll()
+                }
+
+                for (subs in subLists) {
+                    allResults.addAll(subs)
+                }
+
                 if (allResults.isNotEmpty()) break
             }
             allResults
-        } catch(e: Exception) { emptyList() }
+        } catch (e: Exception) {
+            Log.e("SubtitleExtractor", "SubCat error", e)
+            emptyList()
+        }
 
         override suspend fun resolve(url: String): String? = resolve(url, null)
 

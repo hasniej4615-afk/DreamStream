@@ -2796,6 +2796,31 @@ class VideoViewModel @Inject constructor(
         }
     }
 
+    val currentSubtitleSearchTitle: String
+        get() = lastSubtitleSearchTitle ?: ""
+
+    fun searchSubtitles(customQuery: String) {
+        val q = customQuery.trim()
+        if (q.isBlank()) return
+        lastSubtitleSearchTitle = q
+        subSearchJob?.cancel()
+        subSearchJob = viewModelScope.launch(Dispatchers.IO) {
+            _isSubtitleLoading.value = true
+            _subtitles.value = emptyList()
+            _subtitleError.value = null
+            try {
+                SubtitleExtractor.searchAndGetSubtitles(q, null, this, { subs ->
+                    val combined = (_subtitles.value + subs).distinctBy { it.url }
+                    _subtitles.value = combined
+                }, { _isSubtitleLoading.value = false })
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { _subtitleError.value = e.message }
+            } finally {
+                _isSubtitleLoading.value = false
+            }
+        }
+    }
+
     fun adjustSubtitleOffset(delta: Long) { _subtitleOffset.value += delta }
 
     fun selectSubtitle(subtitle: Subtitle?) {

@@ -16,6 +16,8 @@
 
     <string name="close">Close</string>
 
+    <string name="search_subtitles">Search subtitles...</string>
+
     <string name="manual_base_url">Manual Base URL</string>
 
     <string name="enter_a_new_domain_e_g_https_e">Enter a new domain (e.g. https://example.com). This will override the current Base URL.</string>
