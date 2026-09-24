@@ -1491,13 +1491,70 @@ object VideoExtractor {
                low.contains("waaw") || low.contains("netu") || low.contains("hqq") || low.contains("vkspeed")
     }
 
+    fun buildDutaCategoryUrl(dutaBase: String, path: String, currPage: Int): String {
+        val cleanBase = dutaBase.trimEnd('/')
+        if (path.startsWith("http")) {
+            val eff = migrateUrlToBase(path).removeSuffix("/")
+            return if (currPage > 1) "$eff/page/$currPage/" else "$eff/"
+        }
+        val norm = normalizePath(path).removePrefix("/").removeSuffix("/")
+        return when {
+            norm == "movies" || norm.isEmpty() -> {
+                if (currPage > 1) "$cleanBase/page/$currPage/" else "$cleanBase/"
+            }
+            norm == "series" -> {
+                if (currPage > 1) "$cleanBase/page/$currPage/?post_type=tv" else "$cleanBase/?post_type=tv"
+            }
+            norm == "top-imdb" || norm == "most-viewed" -> {
+                if (currPage > 1) "$cleanBase/best-rating/page/$currPage/" else "$cleanBase/best-rating/"
+            }
+            norm.startsWith("release-year/") || norm.startsWith("year/") -> {
+                val year = norm.substringAfter('/')
+                if (currPage > 1) "$cleanBase/year/$year/page/$currPage/" else "$cleanBase/year/$year/"
+            }
+            norm == "country/vietnam" || norm == "country/viet-nam" -> {
+                if (currPage > 1) "$cleanBase/country/viet-nam/page/$currPage/" else "$cleanBase/country/viet-nam/"
+            }
+            else -> {
+                if (currPage > 1) "$cleanBase/$norm/page/$currPage/" else "$cleanBase/$norm/"
+            }
+        }
+    }
+
+    fun buildPencuriCategoryUrl(pencuriBase: String, path: String, currPage: Int): String {
+        val cleanBase = pencuriBase.trimEnd('/')
+        if (path.startsWith("http")) {
+            val eff = migrateUrlToBase(path).removeSuffix("/")
+            return if (currPage > 1) "$eff/page/$currPage/" else "$eff/"
+        }
+        val norm = normalizePath(path).removePrefix("/").removeSuffix("/")
+        return when {
+            norm == "movies" || norm.isEmpty() -> {
+                if (currPage > 1) "$cleanBase/movies/page/$currPage/" else "$cleanBase/movies/"
+            }
+            norm == "series" -> {
+                if (currPage > 1) "$cleanBase/series/page/$currPage/" else "$cleanBase/series/"
+            }
+            norm == "top-imdb" -> {
+                if (currPage > 1) "$cleanBase/top-imdb/page/$currPage/" else "$cleanBase/top-imdb/"
+            }
+            norm == "most-viewed" -> {
+                if (currPage > 1) "$cleanBase/most-viewed/page/$currPage/" else "$cleanBase/most-viewed/"
+            }
+            norm.startsWith("release-year/") || norm.startsWith("year/") -> {
+                val year = norm.substringAfter('/')
+                if (currPage > 1) "$cleanBase/release-year/$year/page/$currPage/" else "$cleanBase/release-year/$year/"
+            }
+            norm == "country/vietnam" || norm == "country/viet-nam" -> {
+                if (currPage > 1) "$cleanBase/country/vietnam/page/$currPage/" else "$cleanBase/country/vietnam/"
+            }
+            else -> {
+                if (currPage > 1) "$cleanBase/$norm/page/$currPage/" else "$cleanBase/$norm/"
+            }
+        }
+    }
+
     suspend fun fetchVideosBySection(path: String, page: Int, count: Int): List<Video> = withContext(Dispatchers.IO) {
-        if (path.contains("country/viet-nam", ignoreCase = true) || path.contains("country/vietnam", ignoreCase = true)) {
-            return@withContext fetchVietnamUnified(page, count)
-        }
-        if (path.contains("country/malaysia", ignoreCase = true)) {
-            return@withContext fetchMalaysiaUnified(page, count)
-        }
         if (path.contains("p-ramlee", ignoreCase = true) || path.contains("FilemP.ramlee", ignoreCase = true)) {
             val all = fetchArchivePramleeVideos()
             val start = (page - 1) * count
@@ -1505,196 +1562,91 @@ object VideoExtractor {
             return@withContext all.drop(start).take(count)
         }
 
-        val results = mutableListOf<Video>()
-        val seenIds = mutableSetOf<String>()
-        var currentPage = page
-        val maxPages = page + 6 // Deeper scan for genre categories that have fewer items per page
-        var consecutiveEmptyPages = 0 // Track pages with zero NEW items
-        
-        while (results.size < count && currentPage < maxPages) {
-            var url = if (path.startsWith("http")) {
-                val effectivePath = migrateUrlToBase(path)
-                if (currentPage > 1) "${effectivePath.removeSuffix("/")}/page/$currentPage/" else effectivePath
-            } else {
-                val normalizedPath = normalizePath(path).removeSuffix("/") // Remove trailing slash for page concat
-                if (currentPage > 1) "$BASE_URL$normalizedPath/page/$currentPage/" else "$BASE_URL$normalizedPath/"
-            }
-            Log.d(TAG, "Fetching Page $currentPage for $path: $url")
-            var html = fetchHtml(url)
-
-            if (html.isNullOrEmpty() && currentPage == 1) {
-                Log.w(TAG, "Category $path failed on $url. Probing for live PencuriMovie domain...")
-                val liveDomain = probePencuriDomain()
-                if (liveDomain != null && !url.startsWith(liveDomain)) {
-                    val normalizedPath = normalizePath(path).removeSuffix("/")
-                    url = if (currentPage > 1) "$liveDomain$normalizedPath/page/$currentPage/" else "$liveDomain$normalizedPath/"
-                    Log.i(TAG, "Retrying category with live domain: $url")
-                    html = fetchHtml(url)
-                }
-            }
-
-            if (html == null) break
-            val isSeriesCategory = path.contains("serial-tv", ignoreCase = true) || path.contains("/tv/", ignoreCase = true) || path.contains("/series/", ignoreCase = true)
-            val scrapedRaw = scrapeVideosFromHtml(html, url)
-            val scraped = if (isSeriesCategory) scrapedRaw.map { it.copy(isSeries = true) } else scrapedRaw
-            val newItems = scraped.count { !seenIds.contains(it.id) }
-            Log.d(TAG, "Page $currentPage found ${scraped.size} items ($newItems new). Total unique so far: ${results.size + newItems}")
-            if (scraped.isEmpty()) break
-            
-            scraped.forEach { video ->
-                if (seenIds.add(video.id)) {
-                    results.add(video)
-                }
-            }
-            
-            // Only break if we got zero new unique items for 2 consecutive pages
-            // This prevents premature exit when pages have overlapping content
-            if (newItems == 0) {
-                consecutiveEmptyPages++
-                if (consecutiveEmptyPages >= 2) break
-            } else {
-                consecutiveEmptyPages = 0
-            }
-            
-            currentPage++
+        val pagesToFetch = when {
+            count >= 200 -> 6
+            count >= 100 -> 4
+            count >= 40 -> 3
+            else -> 2
         }
-        Log.i(TAG, "Fetch complete for $path. Final count: ${results.size}")
-        results.take(count)
-    }
 
-    /**
-     * Unified Hybrid Malaysia Catalog: Concurrently fetches from both DutaMovie and PencuriMovie,
-     * deduplicating by title while prioritizing DutaMovie's high-uptime streams and interleaving
-     * PencuriMovie's long-tail exclusives.
-     */
-    private suspend fun fetchMalaysiaUnified(page: Int, count: Int): List<Video> = withContext(Dispatchers.IO) {
-        val dutaDeferred = async {
+        val isSeriesCategory = path.contains("serial-tv", ignoreCase = true) || path.contains("/tv/", ignoreCase = true) || path.contains("/series/", ignoreCase = true)
+
+        val dutaDeferred = async(Dispatchers.IO) {
             val results = mutableListOf<Video>()
             val seen = mutableSetOf<String>()
-            val pagesToFetch = if (count > 40) 3 else 1
-            for (offset in 0 until pagesToFetch) {
-                val currPage = page + offset
-                val url = if (currPage > 1) "$BASE_URL/country/malaysia/page/$currPage/" else "$BASE_URL/country/malaysia/"
-                try {
-                    var html = fetchHtml(url)
-                    if (html.isNullOrEmpty() && currPage == 1) {
-                        val liveDomain = probeForNewDomain()
-                        if (liveDomain != null) {
-                            val retryUrl = if (currPage > 1) "$liveDomain/country/malaysia/page/$currPage/" else "$liveDomain/country/malaysia/"
-                            html = fetchHtml(retryUrl)
+            val pageJobs = (0 until pagesToFetch).map { offset ->
+                async(Dispatchers.IO) {
+                    val currPage = page + offset
+                    val url = buildDutaCategoryUrl(DUTAFILM_BASE_URL, path, currPage)
+                    try {
+                        var html = fetchHtml(url)
+                        if (html.isNullOrEmpty() && currPage == 1) {
+                            val liveDomain = probeForNewDomain()
+                            if (liveDomain != null && isClusterSite(liveDomain)) {
+                                val retryUrl = buildDutaCategoryUrl(liveDomain, path, currPage)
+                                html = fetchHtml(retryUrl)
+                            }
                         }
+                        if (!html.isNullOrEmpty()) {
+                            val scrapedRaw = scrapeVideosFromHtml(html, url)
+                            if (isSeriesCategory) scrapedRaw.map { it.copy(isSeries = true) } else scrapedRaw
+                        } else emptyList()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Duta category fetch failed for $path p$currPage: ${e.message}")
+                        emptyList()
                     }
-                    if (html == null) break
-                    val scraped = scrapeVideosFromHtml(html, url)
-                    if (scraped.isEmpty()) break
-                    scraped.forEach { if (seen.add(it.id)) results.add(it) }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Duta Malaysia fetch failed on p$currPage: ${e.message}")
-                    break
                 }
+            }
+            pageJobs.awaitAll().flatten().forEach { video ->
+                if (seen.add(video.id)) results.add(video)
             }
             results
         }
 
-        val pencuriDeferred = async {
+        val pencuriDeferred = async(Dispatchers.IO) {
             val results = mutableListOf<Video>()
             val seen = mutableSetOf<String>()
-            val pagesToFetch = if (count > 40) 2 else 1
             val pencuriBase = getPencuriBaseUrl()
-            for (offset in 0 until pagesToFetch) {
-                val currPage = page + offset
-                var url = if (currPage > 1) "$pencuriBase/country/malaysia/page/$currPage/" else "$pencuriBase/country/malaysia/"
-                try {
-                    var html = fetchHtml(url)
-                    if (html.isNullOrEmpty() && currPage == 1) {
-                        val liveDomain = probePencuriDomain()
-                        if (liveDomain != null) {
-                            url = "$liveDomain/country/malaysia/"
-                            html = fetchHtml(url)
+            val pageJobs = (0 until pagesToFetch).map { offset ->
+                async(Dispatchers.IO) {
+                    val currPage = page + offset
+                    var url = buildPencuriCategoryUrl(pencuriBase, path, currPage)
+                    try {
+                        var html = fetchHtml(url)
+                        if (html.isNullOrEmpty() && currPage == 1) {
+                            val liveDomain = probePencuriDomain()
+                            if (liveDomain != null) {
+                                url = buildPencuriCategoryUrl(liveDomain, path, currPage)
+                                html = fetchHtml(url)
+                            }
                         }
+                        if (!html.isNullOrEmpty()) {
+                            val scrapedRaw = scrapeVideosFromHtml(html, url)
+                            if (isSeriesCategory) scrapedRaw.map { it.copy(isSeries = true) } else scrapedRaw
+                        } else emptyList()
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Pencuri category fetch failed for $path p$currPage: ${e.message}")
+                        emptyList()
                     }
-                    if (html == null) break
-                    val scraped = scrapeVideosFromHtml(html, url)
-                    if (scraped.isEmpty()) break
-                    scraped.forEach { if (seen.add(it.id)) results.add(it) }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Pencuri Malaysia fetch failed on p$currPage: ${e.message}")
-                    break
                 }
+            }
+            pageJobs.awaitAll().flatten().forEach { video ->
+                if (seen.add(video.id)) results.add(video)
             }
             results
         }
 
         val dutaVideos = dutaDeferred.await()
         val pencuriVideos = pencuriDeferred.await()
-        Log.i(TAG, "Malaysia Unified Fetch (Page $page, Count $count): Duta=${dutaVideos.size}, Pencuri=${pencuriVideos.size}")
+        Log.i(TAG, "Unified Category Fetch for $path (Page $page, Requested $count): Duta=${dutaVideos.size}, Pencuri=${pencuriVideos.size}")
 
         val totalAvailable = dutaVideos.size + pencuriVideos.size
-        val merged = mergeAndInterleave(dutaVideos, pencuriVideos, totalAvailable)
-        val sorted = sortVideosByNewestRelease(merged)
+        val merged = mergeAndInterleave(dutaVideos, pencuriVideos, if (count > totalAvailable) count else totalAvailable)
+        val sorted = if (path.contains("country/malaysia", ignoreCase = true)) {
+            sortVideosByNewestRelease(merged)
+        } else merged
+
         sorted.take(count)
-    }
-
-    /**
-     * Unified Hybrid Vietnam Catalog: Concurrently fetches from both DutaMovie (/country/viet-nam/)
-     * and PencuriMovie (/country/vietnam/), deduplicating and interleaving.
-     */
-    private suspend fun fetchVietnamUnified(page: Int, count: Int): List<Video> = withContext(Dispatchers.IO) {
-        val dutaDeferred = async {
-            val results = mutableListOf<Video>()
-            val seen = mutableSetOf<String>()
-            val pagesToFetch = if (count > 40) 3 else 1
-            for (offset in 0 until pagesToFetch) {
-                val currPage = page + offset
-                val vietPath = if (BASE_URL.contains("pencurimovie")) "/country/vietnam/" else "/country/viet-nam/"
-                val url = if (currPage > 1) "$BASE_URL${vietPath}page/$currPage/" else "$BASE_URL$vietPath"
-                try {
-                    val html = fetchHtml(url) ?: break
-                    val scraped = scrapeVideosFromHtml(html, url)
-                    if (scraped.isEmpty()) break
-                    scraped.forEach { if (seen.add(it.id)) results.add(it) }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Duta Vietnam fetch failed on p$currPage: ${e.message}")
-                    break
-                }
-            }
-            results
-        }
-
-        val pencuriDeferred = async {
-            val results = mutableListOf<Video>()
-            val seen = mutableSetOf<String>()
-            val pagesToFetch = if (count > 40) 2 else 1
-            val pencuriBase = getPencuriBaseUrl()
-            for (offset in 0 until pagesToFetch) {
-                val currPage = page + offset
-                var url = if (currPage > 1) "$pencuriBase/country/vietnam/page/$currPage/" else "$pencuriBase/country/vietnam/"
-                try {
-                    var html = fetchHtml(url)
-                    if (html.isNullOrEmpty() && currPage == 1) {
-                        val liveDomain = probePencuriDomain()
-                        if (liveDomain != null) {
-                            url = "$liveDomain/country/vietnam/"
-                            html = fetchHtml(url)
-                        }
-                    }
-                    if (html == null) break
-                    val scraped = scrapeVideosFromHtml(html, url)
-                    if (scraped.isEmpty()) break
-                    scraped.forEach { if (seen.add(it.id)) results.add(it) }
-                } catch (e: Exception) {
-                    Log.w(TAG, "Pencuri Vietnam fetch failed on p$currPage: ${e.message}")
-                    break
-                }
-            }
-            results
-        }
-
-        val dutaVideos = dutaDeferred.await()
-        val pencuriVideos = pencuriDeferred.await()
-        Log.i(TAG, "Vietnam Unified Fetch (Page $page, Count $count): Duta=${dutaVideos.size}, Pencuri=${pencuriVideos.size}")
-
-        mergeAndInterleave(dutaVideos, pencuriVideos, count)
     }
 
     fun normalizeForDedup(title: String): String =
@@ -1969,9 +1921,9 @@ object VideoExtractor {
                 queries.add(cleanWords.first())
             }
 
-            // 5. Sequel & Chapter variations (e.g. "John Wick 3" or "John Wick Chapter 3")
-            val chapterMatch = Regex("""(?i)\b(?:chapter|part|vol|volume)?\s*(\d+|ii|iii|iv|v|vi|vii|viii|ix|x)\b""").find(titleWithoutYear)
-            if (chapterMatch != null && cleanWords.size >= 2) {
+            // 5. Sequel & Chapter variations (e.g. "John Wick Chapter 3" or Roman numerals)
+            val chapterMatch = Regex("""(?i)\b(?:chapter|part|vol|volume)\s*(\d+|ii|iii|iv|v|vi|vii|viii|ix|x)\b""").find(titleWithoutYear)
+            if (chapterMatch != null && cleanWords.size >= 3) {
                 val numStr = chapterMatch.groupValues[1]
                 val romanMap = mapOf("ii" to "2", "iii" to "3", "iv" to "4", "v" to "5", "vi" to "6", "vii" to "7", "viii" to "8", "ix" to "9", "x" to "10")
                 val seqNum = romanMap[numStr.lowercase()] ?: numStr

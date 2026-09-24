@@ -332,16 +332,20 @@ object NetworkConfig {
 
     val imageOkHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(30, TimeUnit.SECONDS)
+            .dispatcher(okhttp3.Dispatcher().apply {
+                maxRequests = 128
+                maxRequestsPerHost = 32
+            })
+            .connectionPool(okhttp3.ConnectionPool(32, 5, TimeUnit.MINUTES))
+            .connectTimeout(8, TimeUnit.SECONDS)
+            .readTimeout(10, TimeUnit.SECONDS)
             .dns(multiDns)
             .sslSocketFactory(permissiveSslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
             .hostnameVerifier { _, _ -> true }
             .protocols(listOf(okhttp3.Protocol.HTTP_1_1)) // Force HTTP/1.1 to avoid HTTP/2 stream issues
             .addInterceptor { chain ->
-                val timeout = networkTimeoutMs.toInt()
-                chain.withConnectTimeout(timeout, TimeUnit.MILLISECONDS)
-                     .withReadTimeout(timeout, TimeUnit.MILLISECONDS)
+                chain.withConnectTimeout(8000, TimeUnit.MILLISECONDS)
+                     .withReadTimeout(10000, TimeUnit.MILLISECONDS)
                      .proceed(chain.request())
             }
             .addInterceptor { chain ->
@@ -365,7 +369,7 @@ object NetworkConfig {
                 
                 var response: okhttp3.Response? = null
                 var attempt = 0
-                val maxRetry = 2
+                val maxRetry = 1
                 
                 while (attempt <= maxRetry) {
                     try {
@@ -398,7 +402,6 @@ object NetworkConfig {
                         }
                     }
                     attempt++
-                    try { Thread.sleep(200L * attempt) } catch(_: Exception) {}
                 }
                 
                 val finalResponse = response ?: chain.proceed(request)

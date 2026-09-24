@@ -428,6 +428,52 @@ class MyLocalTest {
             assertTrue("Fallback mirrors must be discovered even if misflagged", altForMisflagged.isNotEmpty())
         }
     }
+
+    @Test
+    fun testCategoryUrlBuilding() {
+        val dutaBase = "http://159.89.249.45"
+        val pencuriBase = "https://ww44.pencurimovie.baby"
+
+        assertEquals("http://159.89.249.45/", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/movies/", 1))
+        assertEquals("http://159.89.249.45/page/2/", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/movies/", 2))
+        assertEquals("http://159.89.249.45/?post_type=tv", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/series/", 1))
+        assertEquals("http://159.89.249.45/page/2/?post_type=tv", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/series/", 2))
+        assertEquals("http://159.89.249.45/best-rating/", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/top-imdb/", 1))
+        assertEquals("http://159.89.249.45/best-rating/page/3/", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/most-viewed/", 3))
+        assertEquals("http://159.89.249.45/year/2024/", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/release-year/2024/", 1))
+        assertEquals("http://159.89.249.45/country/viet-nam/", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/country/vietnam/", 1))
+        assertEquals("http://159.89.249.45/country/korea/page/2/", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/country/korea/", 2))
+        assertEquals("http://159.89.249.45/genre/action/page/3/", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/genre/action/", 3))
+
+        assertEquals("https://ww44.pencurimovie.baby/movies/", VideoExtractor.buildPencuriCategoryUrl(pencuriBase, "/movies/", 1))
+        assertEquals("https://ww44.pencurimovie.baby/movies/page/2/", VideoExtractor.buildPencuriCategoryUrl(pencuriBase, "/movies/", 2))
+        assertEquals("https://ww44.pencurimovie.baby/series/", VideoExtractor.buildPencuriCategoryUrl(pencuriBase, "/series/", 1))
+        assertEquals("https://ww44.pencurimovie.baby/top-imdb/", VideoExtractor.buildPencuriCategoryUrl(pencuriBase, "/top-imdb/", 1))
+        assertEquals("https://ww44.pencurimovie.baby/release-year/2024/", VideoExtractor.buildPencuriCategoryUrl(pencuriBase, "/release-year/2024/", 1))
+        assertEquals("https://ww44.pencurimovie.baby/country/vietnam/", VideoExtractor.buildPencuriCategoryUrl(pencuriBase, "/country/vietnam/", 1))
+        assertEquals("https://ww44.pencurimovie.baby/country/korea/page/2/", VideoExtractor.buildPencuriCategoryUrl(pencuriBase, "/country/korea/", 2))
+        assertEquals("https://ww44.pencuri" + "movie.baby/genre/action/page/3/", VideoExtractor.buildPencuriCategoryUrl(pencuriBase, "/genre/action/", 3))
+    }
+
+    @Test
+    fun testFetchVideosBySectionLive() {
+        kotlinx.coroutines.runBlocking {
+            println("=== TESTING DUAL SOURCE FETCH FOR ACTION GENRE ===")
+            val actionVideos = VideoExtractor.fetchVideosBySection("/genre/action/", page = 1, count = 250)
+            println("Action videos fetched: ${actionVideos.size}")
+            assertTrue("Action category should fetch titles", actionVideos.isNotEmpty())
+
+            println("=== TESTING DUAL SOURCE FETCH FOR MOVIES ===")
+            val movies = VideoExtractor.fetchVideosBySection("/movies/", page = 1, count = 250)
+            println("Movies fetched: ${movies.size}")
+            assertTrue("Movies category should fetch titles", movies.isNotEmpty())
+
+            println("=== TESTING DUAL SOURCE FETCH FOR SERIES ===")
+            val series = VideoExtractor.fetchVideosBySection("/series/", page = 1, count = 250)
+            println("Series fetched: ${series.size}")
+            assertTrue("Series category should fetch titles", series.isNotEmpty())
+        }
+    }
 }
 
 

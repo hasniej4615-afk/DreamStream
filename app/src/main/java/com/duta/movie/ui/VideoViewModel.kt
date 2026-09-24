@@ -1355,7 +1355,20 @@ class VideoViewModel @Inject constructor(
 
     fun fetchVideos(category: String?) {
         if (category == null) return
-        _selectedCategory.value = category; fetchJob?.cancel(); fetchJob = viewModelScope.launch { _isLoading.value = true; try { val results = videoRepository.fetchVideosBySection(category, page = 1, count = 250); if (results.isNotEmpty()) { updateMetadataCache(results); _resultVideos.value = results; currentPage = 6 } else _error.value = "No videos found" } catch (e: Exception) { if (e !is CancellationException) _error.value = "Failed to load: ${e.message}" } finally { _isLoading.value = false } }
+        _selectedCategory.value = category; fetchJob?.cancel(); fetchJob = viewModelScope.launch { 
+            _isLoading.value = true; 
+            try { 
+                val results = videoRepository.fetchVideosBySection(category, page = 1, count = 250) 
+                if (results.isNotEmpty()) { 
+                    updateMetadataCache(results) 
+                    prefetchThumbnails(results)
+                    _resultVideos.value = results 
+                    currentPage = 6 
+                } else _error.value = "No videos found" 
+            } catch (e: Exception) { 
+                if (e !is CancellationException) _error.value = "Failed to load: ${e.message}" 
+            } finally { _isLoading.value = false } 
+        }
     }
 
     fun loadMoreVideos() {
@@ -1370,6 +1383,7 @@ class VideoViewModel @Inject constructor(
                     _isEndReached.value = true
                 } else { 
                     updateMetadataCache(moreVideos)
+                    prefetchThumbnails(moreVideos)
                     val currentIds = _resultVideos.value.asSequence().map { it.id }.toSet()
                     val combined = _resultVideos.value + moreVideos.filter { it.id !in currentIds }
                     val sorted = if (category.contains("country/malaysia", ignoreCase = true)) {
@@ -2923,6 +2937,28 @@ class VideoViewModel @Inject constructor(
 
     fun clearSubtitleError() { _subtitleError.value = null }
 
+    private fun prefetchThumbnails(videos: List<Video>) {
+        if (videos.isEmpty() || _isPlayerActive.value) return
+        val isTv = com.duta.movie.util.DeviceUtils.isTvDevice(context)
+        val limit = if (isTv) 16 else 12
+        val imageSize = if (isTv) coil.size.Size(500, 750) else coil.size.Size(240, 360)
+        videos.take(limit).forEach { video ->
+            val url = video.thumbnailUrl
+            if (url.isNotEmpty()) {
+                val optimized = com.duta.movie.util.VideoUtils.getOptimizedImage(url, isTv, context)
+                val request = coil.request.ImageRequest.Builder(context)
+                    .data(optimized)
+                    .size(imageSize)
+                    .precision(coil.size.Precision.INEXACT)
+                    .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                    .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                    .networkCachePolicy(coil.request.CachePolicy.ENABLED)
+                    .build()
+                imageLoader.enqueue(request)
+            }
+        }
+    }
+
     fun fetchVideosForCategoryRow(category: String) {
         if (_categoryLoading.value[category] == true || _isPlayerActive.value) return
         viewModelScope.launch {
@@ -2936,6 +2972,7 @@ class VideoViewModel @Inject constructor(
                         VideoExtractor.sortVideosByNewestRelease(cached)
                     } else cached
                     _categoryVideos.update { it + (category to displayCached) }
+                    prefetchThumbnails(displayCached)
                     if (category == moviePath) {
                         _latestMovies.value = cached
                         _headlinerVideo.value = cached.firstOrNull()
@@ -2945,12 +2982,13 @@ class VideoViewModel @Inject constructor(
             } catch (e: Exception) { android.util.Log.e("VideoViewModel", "Cache load failed", e) }
 
             try { 
-                val results = withContext(Dispatchers.IO) { videoRepository.fetchVideosBySection(category, page = 1, count = 150) }
+                val results = withContext(Dispatchers.IO) { videoRepository.fetchVideosBySection(category, page = 1, count = 250) }
                 if (results.isNotEmpty()) { 
                     if (!_isPlayerActive.value) {
                         updateMetadataCache(results, triggerBackground = false)
+                        prefetchThumbnails(results)
                         _categoryVideos.update { it + (category to results) }
-                        categoryPages[category] = (results.size / 20).coerceAtLeast(1) 
+                        categoryPages[category] = 6 
                         
                         // SYNC: Update specific state flows for headliner/UI stability
                         if (category == moviePath) {
@@ -2972,9 +3010,10 @@ class VideoViewModel @Inject constructor(
         viewModelScope.launch {
             val page = categoryPages[category] ?: 1; _categoryLoading.update { it + (category to true) }
             try { 
-                val more = videoRepository.fetchVideosBySection(category, page = page + 1, count = 150)
+                val more = videoRepository.fetchVideosBySection(category, page = page + 1, count = 250)
                 if (more.isNotEmpty()) { 
                     updateMetadataCache(more, triggerBackground = false)
+                    prefetchThumbnails(more)
                     _categoryVideos.update { current -> 
                         val existing = current[category] ?: emptyList()
                         val ids = existing.map { it.id }.toSet()
@@ -2984,7 +3023,7 @@ class VideoViewModel @Inject constructor(
                         } else combined
                         current + (category to sorted)
                     }
-                    categoryPages[category] = page + (more.size / 20) 
+                    categoryPages[category] = page + 6 
                 } 
             } finally { 
                 _categoryLoading.update { it + (category to false) } 

@@ -32,7 +32,7 @@ object NetworkModule {
     ): ImageLoader {
         val isLowRam = com.duta.movie.util.VideoUtils.isLowRamDevice(context)
         val isTv = com.duta.movie.util.DeviceUtils.isTvDevice(context)
-        val imageDispatcher = Dispatchers.IO.limitedParallelism(3)
+        val imageDispatcher = Dispatchers.IO.limitedParallelism(if (isLowRam) 6 else 16)
 
         return ImageLoader.Builder(context)
             .okHttpClient { NetworkConfig.imageOkHttpClient }
@@ -57,7 +57,7 @@ object NetworkModule {
                 add(coil.decode.SvgDecoder.Factory())
             }
             .respectCacheHeaders(false) 
-            .crossfade(150)
+            .crossfade(false)
             .build()
     }
 }

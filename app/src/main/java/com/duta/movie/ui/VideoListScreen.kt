@@ -1068,9 +1068,10 @@ fun NetflixThumbnail(
                         .data(VideoUtils.getOptimizedImage(video.thumbnailUrl, isTV, context))
                         .size(if (isTV) coil.size.Size(500, 750) else coil.size.Size(240, 360))
                         .precision(coil.size.Precision.INEXACT)
-                        .crossfade(150)
+                        .crossfade(false)
                         .diskCachePolicy(coil.request.CachePolicy.ENABLED)
                         .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                        .networkCachePolicy(coil.request.CachePolicy.ENABLED)
                         .build(),
                     contentDescription = video.title,
                     modifier = Modifier.fillMaxSize(),
@@ -1448,6 +1449,7 @@ fun FeaturedHero(
                         .precision(coil.size.Precision.INEXACT)
                         .diskCachePolicy(coil.request.CachePolicy.ENABLED)
                         .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                        .networkCachePolicy(coil.request.CachePolicy.ENABLED)
                         .build(),
                     contentDescription = null,
                     modifier = Modifier

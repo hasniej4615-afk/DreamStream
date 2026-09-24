@@ -20,6 +20,7 @@ class MovieApplication : Application(), ImageLoaderFactory {
     @OptIn(DelicateCoroutinesApi::class)
     override fun onCreate() {
         super.onCreate()
+        coil.Coil.setImageLoader(imageLoader)
         com.duta.movie.util.SubtitleExtractor.init(this)
         Log.i("!!!APP_START!!!", "DMStreaM Version 2.0.4 - Raven's Revenge")
         try {
