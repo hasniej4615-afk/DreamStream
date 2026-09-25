@@ -665,6 +665,7 @@ fun VideoPlayerScreen(
     }
 
     var userInitiatedPause by remember { mutableStateOf(false) }
+    var lastSeekTimeMs by remember { mutableLongStateOf(0L) }
 
     // OWL'S EYE: Stall Guard & Progress Saver
     LaunchedEffect(isVideoReady, useWebView, isCasting) {
@@ -701,9 +702,12 @@ fun VideoPlayerScreen(
 
                 val isProgressing = currentPos > lastPos && lastPos != -1L
                 val isStalled = if (useWebView && !isCasting) {
-                    !userInitiatedPause && !isProgressing && (!isPlayingOrBuffering || (currentPos == lastPos && lastPos != -1L))
+                    // OWL'S EYE: WebView embeds have their own dedicated Active Playback Stall Watchdog below
+                    // with seek-grace and JS-protected tolerance. Do not rotate WebView here.
+                    false
                 } else {
-                    isPlayingOrBuffering && currentPos == lastPos && lastPos != -1L
+                    val isSeekRecent = (System.currentTimeMillis() - lastSeekTimeMs) < 20_000L
+                    !isSeekRecent && isPlayingOrBuffering && currentPos == lastPos && lastPos != -1L
                 }
 
                 if (isStalled) {
@@ -891,39 +895,49 @@ fun VideoPlayerScreen(
 
     // OWL'S EYE: Active Playback Stall Watchdog (WebView Embeds Only)
     // Detects when playback was running, but subsequent decode or CDN starvation freezes playback.
-    // JS-protected streams (vidhide/fujihide) get a longer leash because their session-bound
+    // JS-protected streams (vidhide/fujihide/tnmr/morencius) get a longer leash because their session-bound
     // CDN tokens cannot be re-acquired, and temporary buffering stalls are normal.
-    // Seek-aware: when position jumps (user scrubbed forward/back), grant a grace period
-    // for the CDN to buffer at the new position before counting stall time.
+    // Seek-aware: when position jumps (user scrubbed forward/back) or user initiates a seek,
+    // grant a generous grace period for the CDN to buffer at the new position before counting stall time.
     LaunchedEffect(useWebView, isVideoReady, extractedUrl) {
         if (useWebView && isVideoReady && extractedUrl != null) {
             val embedLow = (extractedUrl ?: "").lowercase()
-            val isJsProtected = embedLow.contains("vidhide") || embedLow.contains("fujihide")
-            val stallThreshold = if (isJsProtected) 20 else 10
-            val seekGracePeriod = if (isJsProtected) 12 else 8 // seconds of grace after a seek
+            val isJsProtected = embedLow.contains("vidhide") || embedLow.contains("fujihide") ||
+                                embedLow.contains("tnmr.org") || embedLow.contains("morencius")
+            val stallThreshold = if (isJsProtected) 25 else 15
+            val seekGracePeriod = if (isJsProtected) 20 else 10 // seconds of grace after a seek
             var lastPos = -1L
             var stallSeconds = 0
             var postSeekCooldown = 0 // counts down after a seek is detected
+            var lastSeekObserved = 0L
+
             while (isVideoReady && !isFinishing) {
                 delay(1000)
                 if (webPlayerState.value.isPlaying && !userInitiatedPause) {
                     val currentPos = webPlayerState.value.position
-                    // Detect seek: position jumped by more than 2 seconds in either direction
-                    if (lastPos >= 0L && currentPos > 0L && kotlin.math.abs(currentPos - lastPos) > 2000L && currentPos != lastPos) {
+                    val userSeekOccurred = lastSeekTimeMs > lastSeekObserved
+                    val isPositionJump = lastPos >= 0L && currentPos > 0L && (currentPos < lastPos || kotlin.math.abs(currentPos - lastPos) > 2000L)
+
+                    if (userSeekOccurred || isPositionJump) {
+                        lastSeekObserved = System.currentTimeMillis()
                         Log.d("VideoPlayerScreen", "Owl's Eye: Seek detected (${lastPos}ms -> ${currentPos}ms). Granting ${seekGracePeriod}s buffer grace.")
                         postSeekCooldown = seekGracePeriod
                         stallSeconds = 0
                         lastPos = currentPos
+                    } else if (postSeekCooldown > 0) {
+                        // Actively within post-seek grace period: countdown grace without counting as stall
+                        postSeekCooldown--
+                        stallSeconds = 0
+                        lastPos = currentPos
                     } else if (currentPos > 0L && currentPos == lastPos) {
-                        if (postSeekCooldown > 0) {
-                            // Still within post-seek grace period, don't count as stall
-                            postSeekCooldown--
-                        } else {
-                            stallSeconds++
-                        }
+                        stallSeconds++
                         if (stallSeconds >= stallThreshold) {
                             Log.w("VideoPlayerScreen", "Owl's Eye: WebView playback stall detected (frozen at ${currentPos}ms for ${stallSeconds}s). Failing over...")
                             val failingUrl = extractedUrl ?: currentServerUrlFromVm ?: ""
+                            if (currentPos > 2000) {
+                                pendingRotationResumePosition = currentPos
+                                pendingRotationContentKey = activeContentKey
+                            }
                             if (failingUrl.isNotEmpty()) {
                                 if (isJsProtected) {
                                     // Soft-fail only: do NOT permanently kill JS-protected mirrors
@@ -939,9 +953,9 @@ fun VideoPlayerScreen(
                             break
                         }
                     } else {
+                        // Advancing normally
                         lastPos = currentPos
                         stallSeconds = 0
-                        postSeekCooldown = 0
                     }
                 } else {
                     stallSeconds = 0
@@ -1139,6 +1153,7 @@ fun VideoPlayerScreen(
             override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo, newPosition: Player.PositionInfo, reason: Int) {
                 if (reason == Player.DISCONTINUITY_REASON_SEEK || reason == Player.DISCONTINUITY_REASON_SEEK_ADJUSTMENT) {
                     isUserSeeking = true
+                    lastSeekTimeMs = System.currentTimeMillis()
                 }
             }
 
@@ -1644,6 +1659,7 @@ fun VideoPlayerScreen(
         isTV = isTV,
         activeContentKey = activeContentKey,
         onUserPauseChange = { userInitiatedPause = it },
+        onUserSeek = { lastSeekTimeMs = System.currentTimeMillis() },
         fallbackDurationMs = fallbackDurationMs
     )
 
@@ -2182,6 +2198,7 @@ fun VideoPlayerContent(
     isTV: Boolean = false,
     activeContentKey: String,
     onUserPauseChange: (Boolean) -> Unit = {},
+    onUserSeek: () -> Unit = {},
     fallbackDurationMs: Long = 0L
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -2290,6 +2307,7 @@ fun VideoPlayerContent(
                 }
             }
             override fun seekTo(positionMs: Long) {
+                onUserSeek()
                 val time = positionMs / 1000.0
                 onPlayerStateChange(if (currentWebState.isPlaying) 1 else 2, time.toFloat(), currentWebState.duration / 1000f)
                 val script = """
@@ -2383,6 +2401,7 @@ fun VideoPlayerContent(
                 else -> Long.MAX_VALUE
             }
             val newPos = (base + pendingSeekOffset).coerceIn(0L, effectiveDur)
+            onUserSeek()
             currentPlayer.seekTo(newPos)
             pendingSeekOffset = 0L
             baseSeekPosition = -1L
@@ -2392,6 +2411,7 @@ fun VideoPlayerContent(
     }
     
     val handleSeek = { offsetMs: Long ->
+        onUserSeek()
         if (baseSeekPosition == -1L) baseSeekPosition = currentPlayer.currentPosition
         pendingSeekOffset += offsetMs
         val totalSec = Math.abs(pendingSeekOffset) / 1000L
@@ -2472,6 +2492,7 @@ fun VideoPlayerContent(
                         } else false
                     }
                     android.view.KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
+                        onUserSeek()
                         currentPlayer.seekTo(0L)
                         true
                     }
