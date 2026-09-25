@@ -2569,11 +2569,19 @@ object VideoExtractor {
      */
     fun extractYouTubeId(url: String): String? {
         val clean = url.trim()
+        val isYouTube = clean.contains("youtube.com", ignoreCase = true) ||
+                        clean.contains("youtu.be", ignoreCase = true) ||
+                        clean.contains("youtube-nocookie.com", ignoreCase = true)
+        if (!isYouTube) {
+            return if (clean.length in 10..12 && !clean.contains("/") && !clean.contains("?") && !clean.contains("&") && !clean.contains("#")) clean else null
+        }
         return when {
             clean.contains("v=") -> clean.substringAfter("v=").substringBefore("&").substringBefore("?")
             clean.contains("youtu.be/") -> clean.substringAfter("youtu.be/").substringBefore("?").substringBefore("&")
             clean.contains("/embed/") -> clean.substringAfter("/embed/").substringBefore("?").substringBefore("&")
             clean.contains("/watch/") -> clean.substringAfter("/watch/").substringBefore("?").substringBefore("&")
+            clean.contains("/shorts/") -> clean.substringAfter("/shorts/").substringBefore("?").substringBefore("&")
+            clean.contains("/live/") -> clean.substringAfter("/live/").substringBefore("?").substringBefore("&")
             clean.length in 10..12 && !clean.contains("/") -> clean
             else -> null
         }
@@ -4456,11 +4464,7 @@ object VideoExtractor {
                 }
             } catch (_: Exception) {}
         }
-        return try {
-            java.net.URLDecoder.decode(sb.toString(), "UTF-8")
-        } catch (_: Exception) {
-            sb.toString()
-        }
+        return sb.toString()
     }
 
     fun extractDutaFilmWebParams(html: String): Triple<String, String, String> {
@@ -4479,13 +4483,13 @@ object VideoExtractor {
             return Triple(c, t, cApiHost)
         }
 
-        val obfRegex = Regex("""([a-zA-Z0-9_$]+)='([A-Za-z0-9+/=]{4,}(?:\.[A-Za-z0-9+/=]{4,})+)'""")
+        val obfRegex = Regex("""(?:var\s+)?([a-zA-Z0-9_$]+)\s*=\s*['"]([A-Za-z0-9+/=]{4,}(?:\.[A-Za-z0-9+/=]{4,})+)'""")
         val matches = obfRegex.findAll(html)
         for (match in matches) {
             val candidate = match.groupValues[2]
             if (candidate.length in 500..30000) {
                 val decoded = decodeDutaFilmWebObfScript(candidate)
-                if (decoded.contains("var c =") && decoded.contains("var t =")) {
+                if (decoded.contains("c_api_host") || decoded.contains("loadEpisode") || (decoded.contains("var c =") && decoded.contains("var t ="))) {
                     val cM = Regex("""var\s+c\s*=\s*['"]([^'"]+)['"]""").find(decoded)
                     val tM = Regex("""var\s+t\s*=\s*['"]([^'"]+)['"]""").find(decoded)
                     val apiM = Regex("""var\s+c_api_host\s*=\s*['"]([^'"]+)['"]""").find(decoded)
@@ -4565,7 +4569,6 @@ object VideoExtractor {
         } catch (e: Exception) {
             Log.w(TAG, "DutaFilm Web episode server resolution error: ${e.message}")
         }
-        servers.add(VideoServer("DutaFilm Web (VIP)", referer))
         servers.distinctBy { it.url }
     }
 
@@ -4701,19 +4704,6 @@ object VideoExtractor {
                 }
                 val epServers = resolveDutaFilmWebEpisodeServers(videoUrl, effectiveUrl, cApiHost, epId, catVal, tagVal, xidVal, cVal, tVal)
                 rawServers.addAll(epServers)
-            } else {
-                val svxButtons = doc.select("a.episode.btn-svx, .btn-svx")
-                if (svxButtons.isNotEmpty()) {
-                    svxButtons.forEach { btn ->
-                        val btnText = btn.text().trim()
-                        if (btnText.isNotBlank()) {
-                            val serverId = btn.id().ifBlank { btn.attr("href") }
-                            rawServers.add(VideoServer("DutaFilm Web ($btnText)", "$effectiveUrl#$serverId"))
-                        }
-                    }
-                } else {
-                    rawServers.add(VideoServer("DutaFilm Web (VIP)", effectiveUrl))
-                }
             }
         }
         
@@ -5052,6 +5042,19 @@ object VideoExtractor {
                                     Regex("""\d+""").find(it.name)?.value?.toIntOrNull() ?: 0 
                                 }
                                 Log.i(TAG, "Discovered ${rawEpisodes.size} DutaFilm Web episodes for $title")
+                                if (rawServers.isEmpty()) {
+                                    val firstEp = rawEpisodes.firstOrNull()
+                                    if (firstEp != null) {
+                                        val firstEpUri = android.net.Uri.parse(firstEp.url)
+                                        val epId = firstEpUri.getQueryParameter("epid") ?: ""
+                                        val epCat = firstEpUri.getQueryParameter("cat") ?: catVal
+                                        val epTag = firstEpUri.getQueryParameter("tag") ?: tagVal
+                                        val epXid = firstEpUri.getQueryParameter("xid") ?: serverXid
+                                        val epServers = resolveDutaFilmWebEpisodeServers(firstEp.url, effectiveUrl, cApiHost, epId, epCat, epTag, epXid, cVal, tVal)
+                                        rawServers.addAll(epServers)
+                                        Log.i(TAG, "Resolved ${epServers.size} servers from first DutaFilm Web episode for $title")
+                                    }
+                                }
                             }
                         }
                     }

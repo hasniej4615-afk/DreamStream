@@ -2293,7 +2293,7 @@ class VideoViewModel @Inject constructor(
                     kotlinx.coroutines.delay(500)
                 }
 
-                val isEpisodeUrl = serverUrl?.let { (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || it.contains("/episod/") || it.contains("-episod-") || it.contains("-epi-") || it.contains("/ep-")) && !it.contains("player=") && !it.contains("mirror=") } ?: false
+                val isEpisodeUrl = serverUrl?.let { (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || it.contains("/episod/") || it.contains("-episod-") || it.contains("-epi-") || it.contains("/ep-") || it.contains("epid=")) && !it.contains("player=") && !it.contains("mirror=") } ?: false
                 
                 val episodePageUrl = if (isEpisodeUrl) serverUrl 
                                      else if (targetEpisode != null) targetEpisode.url
