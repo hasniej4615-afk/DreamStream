@@ -278,11 +278,14 @@ object Nuker {
                                                                 document.body.classList.add('video-active', 'video-playing');
                                                             }
                                                             try {
-                                                                var pOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .vjs-big-play-button, #playback, #overlay, div#playback, div#overlay');
+                                                                var pOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                                                 for (var pi = 0; pi < pOverlays.length; pi++) {
                                                                     pOverlays[pi].style.setProperty('display', 'none', 'important');
                                                                     pOverlays[pi].style.setProperty('opacity', '0', 'important');
+                                                                    pOverlays[pi].style.setProperty('visibility', 'hidden', 'important');
                                                                     pOverlays[pi].style.setProperty('pointer-events', 'none', 'important');
+                                                                    pOverlays[pi].style.setProperty('width', '0', 'important');
+                                                                    pOverlays[pi].style.setProperty('height', '0', 'important');
                                                                 }
                                                             } catch(e){}
                                                             if (!window.successNotified && window.AndroidPlayer) {
@@ -298,11 +301,14 @@ object Nuker {
                                                                 document.body.classList.add('video-active', 'video-playing');
                                                             }
                                                             try {
-                                                                var pOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .vjs-big-play-button, #playback, #overlay, div#playback, div#overlay');
+                                                                var pOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                                                 for (var pi = 0; pi < pOverlays.length; pi++) {
                                                                     pOverlays[pi].style.setProperty('display', 'none', 'important');
                                                                     pOverlays[pi].style.setProperty('opacity', '0', 'important');
+                                                                    pOverlays[pi].style.setProperty('visibility', 'hidden', 'important');
                                                                     pOverlays[pi].style.setProperty('pointer-events', 'none', 'important');
+                                                                    pOverlays[pi].style.setProperty('width', '0', 'important');
+                                                                    pOverlays[pi].style.setProperty('height', '0', 'important');
                                                                 }
                                                             } catch(e){}
                                                             if (!window.successNotified && window.AndroidPlayer) {
@@ -394,12 +400,14 @@ object Nuker {
                                                     document.body.classList.add('video-active', 'video-playing');
                                                 }
                                                 try {
-                                                    var badPOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .vjs-big-play-button, #playback, #overlay, div#playback, div#overlay');
+                                                    var badPOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                                     for (var bi = 0; bi < badPOverlays.length; bi++) {
                                                         badPOverlays[bi].style.setProperty('display', 'none', 'important');
                                                         badPOverlays[bi].style.setProperty('opacity', '0', 'important');
                                                         badPOverlays[bi].style.setProperty('visibility', 'hidden', 'important');
                                                         badPOverlays[bi].style.setProperty('pointer-events', 'none', 'important');
+                                                        badPOverlays[bi].style.setProperty('width', '0', 'important');
+                                                        badPOverlays[bi].style.setProperty('height', '0', 'important');
                                                     }
                                                 } catch(e){}
                                             }
@@ -614,44 +622,42 @@ object Nuker {
                                         .jwplayer *, .video-js * {
                                             visibility: visible;
                                         }
-                                        .jw-display-icon-display, .jw-display-icon-container, .vjs-big-play-button, .play-button, #play-button {
-                                            z-index: 2147483647 !important; 
-                                            pointer-events: auto !important;
-                                        }
-                                        /* When video is actively playing, completely eradicate and hide big play icon overlays */
-                                        body.video-active .jw-display-icon-display,
-                                        body.video-active .jw-display-icon-container,
-                                        body.video-active .jw-display-icon-idle,
-                                        body.video-active .vjs-big-play-button,
-                                        body.video-active .play-button,
-                                        body.video-active #play-button,
-                                        body.video-active #playback,
-                                        body.video-active #overlay,
-                                        body.video-active div#playback,
-                                        body.video-active div#overlay,
-                                        body.video-active svg[viewBox="0 0 24 24"],
-                                        body.video-playing .jw-display-icon-display,
-                                        body.video-playing .jw-display-icon-container,
-                                        body.video-playing .jw-display-icon-idle,
-                                        body.video-playing .vjs-big-play-button,
-                                        body.video-playing .play-button,
-                                        body.video-playing #play-button,
-                                        body.video-playing #playback,
-                                        body.video-playing #overlay,
-                                        body.video-playing div#playback,
-                                        body.video-playing div#overlay,
-                                        body.video-playing svg[viewBox="0 0 24 24"],
-                                        .jw-state-playing .jw-display-icon-display,
-                                        .jw-state-playing .jw-display-icon-container,
-                                        .jw-state-playing .jw-display-icon-idle,
+                                        /* Big play buttons and overlays must NEVER be visible - unconditional */
+                                        .jw-display-icon-display,
+                                        .jw-display-icon-container,
+                                        .jw-display-icon-idle,
+                                        .jw-display,
+                                        .jw-icon-display,
+                                        .jw-svg-icon-play,
                                         .jw-flag-fullscreen .jw-display-icon-display,
-                                        .vjs-playing .vjs-big-play-button {
+                                        .vjs-big-play-button,
+                                        .vjs-big-play-button-mobile,
+                                        .play-button,
+                                        #play-button,
+                                        .play-btn,
+                                        #play-btn,
+                                        .big-play,
+                                        .big-play-btn,
+                                        .big-play-button,
+                                        .large-play-button,
+                                        .ytp-large-play-button,
+                                        .play-overlay,
+                                        #overlay,
+                                        #playback,
+                                        #overlay *,
+                                        #playback *,
+                                        div#overlay,
+                                        div#playback,
+                                        svg[viewBox="0 0 24 24"],
+                                        svg[viewBox="0 0 240 240"] {
                                             display: none !important;
                                             opacity: 0 !important;
                                             visibility: hidden !important;
                                             pointer-events: none !important;
                                             width: 0 !important;
                                             height: 0 !important;
+                                            max-width: 0 !important;
+                                            max-height: 0 !important;
                                             z-index: -99999 !important;
                                         }
                                     `;
@@ -865,9 +871,14 @@ object Nuker {
                                   if (typeof window.closeVideoInfo === 'function') {
                                       try { window.closeVideoInfo(); } catch(e){}
                                   }
-                                  var badOverlays = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"]');
+                                  var badOverlays = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"]');
                                   for (var bo = 0; bo < badOverlays.length; bo++) {
-                                      badOverlays[bo].style.display = 'none';
+                                      badOverlays[bo].style.setProperty('display', 'none', 'important');
+                                      badOverlays[bo].style.setProperty('opacity', '0', 'important');
+                                      badOverlays[bo].style.setProperty('visibility', 'hidden', 'important');
+                                      badOverlays[bo].style.setProperty('pointer-events', 'none', 'important');
+                                      badOverlays[bo].style.setProperty('width', '0', 'important');
+                                      badOverlays[bo].style.setProperty('height', '0', 'important');
                                       try { badOverlays[bo].remove(); } catch(e){}
                                   }
                               } catch(e) {}
@@ -1208,11 +1219,14 @@ object Nuker {
                                                                 document.body.classList.add('video-active', 'video-playing');
                                                             }
                                                             try {
-                                                                var pOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .vjs-big-play-button, #playback, #overlay, div#playback, div#overlay');
+                                                                var pOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                                                 for (var pi = 0; pi < pOverlays.length; pi++) {
                                                                     pOverlays[pi].style.setProperty('display', 'none', 'important');
                                                                     pOverlays[pi].style.setProperty('opacity', '0', 'important');
+                                                                    pOverlays[pi].style.setProperty('visibility', 'hidden', 'important');
                                                                     pOverlays[pi].style.setProperty('pointer-events', 'none', 'important');
+                                                                    pOverlays[pi].style.setProperty('width', '0', 'important');
+                                                                    pOverlays[pi].style.setProperty('height', '0', 'important');
                                                                 }
                                                             } catch(e){}
                                                             if (!window.successNotified && window.AndroidPlayer) {
@@ -1303,12 +1317,14 @@ object Nuker {
                                                     document.body.classList.add('video-active', 'video-playing');
                                                 }
                                                 try {
-                                                    var badPOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .vjs-big-play-button, #playback, #overlay, div#playback, div#overlay');
+                                                    var badPOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                                     for (var bi = 0; bi < badPOverlays.length; bi++) {
                                                         badPOverlays[bi].style.setProperty('display', 'none', 'important');
                                                         badPOverlays[bi].style.setProperty('opacity', '0', 'important');
                                                         badPOverlays[bi].style.setProperty('visibility', 'hidden', 'important');
                                                         badPOverlays[bi].style.setProperty('pointer-events', 'none', 'important');
+                                                        badPOverlays[bi].style.setProperty('width', '0', 'important');
+                                                        badPOverlays[bi].style.setProperty('height', '0', 'important');
                                                     }
                                                 } catch(e){}
                                             }
@@ -1457,34 +1473,42 @@ object Nuker {
                                             opacity: 0 !important;
                                             visibility: hidden !important;
                                         }
-                                        .jw-display-icon-display, .vjs-big-play-button {
-                                            z-index: 2147483647 !important;
-                                            pointer-events: auto !important;
-                                        }
-                                        /* Hide big play icon when video is playing/active */
-                                        body.video-active .jw-display-icon-display,
-                                        body.video-active .jw-display-icon-container,
-                                        body.video-active .jw-display-icon-idle,
-                                        body.video-active .vjs-big-play-button,
-                                        body.video-active .play-button,
-                                        body.video-active #play-button,
-                                        body.video-playing .jw-display-icon-display,
-                                        body.video-playing .jw-display-icon-container,
-                                        body.video-playing .jw-display-icon-idle,
-                                        body.video-playing .vjs-big-play-button,
-                                        body.video-playing .play-button,
-                                        body.video-playing #play-button,
-                                        .jw-state-playing .jw-display-icon-display,
-                                        .jw-state-playing .jw-display-icon-container,
-                                        .jw-state-playing .jw-display-icon-idle,
+                                        /* Big play buttons and overlays must NEVER be visible - unconditional */
+                                        .jw-display-icon-display,
+                                        .jw-display-icon-container,
+                                        .jw-display-icon-idle,
+                                        .jw-display,
+                                        .jw-icon-display,
+                                        .jw-svg-icon-play,
                                         .jw-flag-fullscreen .jw-display-icon-display,
-                                        .vjs-playing .vjs-big-play-button {
+                                        .vjs-big-play-button,
+                                        .vjs-big-play-button-mobile,
+                                        .play-button,
+                                        #play-button,
+                                        .play-btn,
+                                        #play-btn,
+                                        .big-play,
+                                        .big-play-btn,
+                                        .big-play-button,
+                                        .large-play-button,
+                                        .ytp-large-play-button,
+                                        .play-overlay,
+                                        #overlay,
+                                        #playback,
+                                        #overlay *,
+                                        #playback *,
+                                        div#overlay,
+                                        div#playback,
+                                        svg[viewBox="0 0 24 24"],
+                                        svg[viewBox="0 0 240 240"] {
                                             display: none !important;
                                             opacity: 0 !important;
                                             visibility: hidden !important;
                                             pointer-events: none !important;
                                             width: 0 !important;
                                             height: 0 !important;
+                                            max-width: 0 !important;
+                                            max-height: 0 !important;
                                             z-index: -99999 !important;
                                         }
                                         /* Aggressively eliminate ad iframes, popups, overlays, and robot verification prompts */

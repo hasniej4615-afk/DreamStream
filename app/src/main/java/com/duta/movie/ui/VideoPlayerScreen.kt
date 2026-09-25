@@ -3010,12 +3010,15 @@ fun VideoPlayerWebView(
                                     if (document.body) {
                                         document.body.classList.add('video-active', 'video-playing');
                                     }
-                                    var bads = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .jw-display-icon-display, .jw-display-icon-container, .vjs-big-play-button');
+                                    var bads = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                     for (var i = 0; i < bads.length; i++) {
                                         bads[i].style.setProperty('display', 'none', 'important');
                                         bads[i].style.setProperty('opacity', '0', 'important');
                                         bads[i].style.setProperty('visibility', 'hidden', 'important');
                                         bads[i].style.setProperty('pointer-events', 'none', 'important');
+                                        bads[i].style.setProperty('width', '0', 'important');
+                                        bads[i].style.setProperty('height', '0', 'important');
+                                        try { bads[i].remove(); } catch(e){}
                                     }
                                 } catch(e){}
                             """.trimIndent())
@@ -3327,12 +3330,14 @@ fun VideoPlayerWebView(
                                         if (o) { o.style.display = 'none'; try { o.remove(); } catch(e){} }
                                         var p = document.getElementById('playback');
                                         if (p) { p.style.display = 'none'; try { p.remove(); } catch(e){} }
-                                        var bads = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"]');
+                                        var bads = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                         for (var i = 0; i < bads.length; i++) {
                                             bads[i].style.setProperty('display', 'none', 'important');
                                             bads[i].style.setProperty('opacity', '0', 'important');
                                             bads[i].style.setProperty('visibility', 'hidden', 'important');
                                             bads[i].style.setProperty('pointer-events', 'none', 'important');
+                                            bads[i].style.setProperty('width', '0', 'important');
+                                            bads[i].style.setProperty('height', '0', 'important');
                                             try { bads[i].remove(); } catch(e){}
                                         }
                                         if (typeof window.closeVideoInfo === 'function') {
@@ -3407,7 +3412,7 @@ fun VideoPlayerWebView(
                             try {
                                 val reqBuilder = okhttp3.Request.Builder().url(u)
                                 reqBuilder.header("User-Agent", com.duta.movie.util.NetworkConfig.SHARED_USER_AGENT)
-                                val referer = lastReferer ?: "${com.duta.movie.util.VideoExtractor.getBaseUrl()}/"
+                                val referer = r.requestHeaders["Referer"] ?: lastReferer ?: "${com.duta.movie.util.VideoExtractor.getBaseUrl()}/"
                                 reqBuilder.header("Referer", referer)
                                 val cookieManager = android.webkit.CookieManager.getInstance()
                                 val cookies = cookieManager.getCookie(u)
@@ -3423,29 +3428,51 @@ fun VideoPlayerWebView(
                                 if (resp.isSuccessful) {
                                     var html = resp.body?.string() ?: ""
                                     if (html.isNotEmpty()) {
-                                        // If Cloudflare challenge page returned, delegate to WebView to handle challenge
-                                        if (html.contains("challenge-platform") || html.contains("Enable JavaScript and cookies to continue") || html.contains("_cf_chl_opt")) {
+                                        // Only treat as Cloudflare challenge if it's a genuine challenge page and NOT an actual player page
+                                        val isRealChallenge = (html.contains("<title>Just a moment...</title>") || 
+                                                               html.contains("cf-browser-verification") || 
+                                                               html.contains("cf-please-wait") || 
+                                                               html.contains("action=\"/?__cf_chl_f_tk=")) &&
+                                                              !html.contains("id=\"player\"") && 
+                                                              !html.contains("id=\"overlay\"") && 
+                                                              !html.contains("jwplayer") && 
+                                                              !html.contains("SoTrym")
+                                        if (isRealChallenge) {
                                             Log.d("VideoPlayerTurbo", "Cloudflare challenge detected on Abyss page, delegating to WebView: $u")
                                             return null
                                         }
 
                                         // 1. Defeat anti-framing / anti-direct redirect
                                         html = html.replace("if(top.location == self.location", "if(false && top.location == self.location")
+                                        html = html.replace("if(top.location!=self.location", "if(true || top.location!=self.location")
                                         
-                                        // 2. Eradicate SVG play button triangle completely from HTML
+                                        // 2. Eradicate overlay and playback elements from HTML
+                                        html = java.util.regex.Pattern.compile("<div[^>]*id=[\"']overlay[\"'].*?</div>\\s*</div>", java.util.regex.Pattern.DOTALL)
+                                            .matcher(html).replaceAll("")
+                                        html = java.util.regex.Pattern.compile("<div[^>]*id=[\"']playback[\"'].*?</div>", java.util.regex.Pattern.DOTALL)
+                                            .matcher(html).replaceAll("")
+
+                                        // 3. Eradicate SVG play button triangle completely from HTML
                                         html = java.util.regex.Pattern.compile("<svg[^>]*viewBox=[\"']0 0 24 24[\"'][^>]*>.*?</svg>", java.util.regex.Pattern.DOTALL)
                                             .matcher(html).replaceAll("")
+                                        html = java.util.regex.Pattern.compile("<svg[^>]*viewBox=[\"']0 0 240 240[\"'][^>]*>.*?</svg>", java.util.regex.Pattern.DOTALL)
+                                            .matcher(html).replaceAll("")
                                         
-                                        // 3. Add inline styles to hide and neutralize #overlay and #playback
-                                        html = html.replace("<div id=\"overlay\">", "<div id=\"overlay\" style=\"display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;width:0!important;height:0!important;z-index:-99999!important;\">")
-                                        html = html.replace("<div id=\"playback\">", "<div id=\"playback\" style=\"display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;width:0!important;height:0!important;z-index:-99999!important;\">")
+                                        // 4. Add inline styles to hide and neutralize #overlay and #playback
+                                        html = html.replace("id=\"overlay\"", "id=\"overlay\" style=\"display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;width:0!important;height:0!important;z-index:-99999!important;\"")
+                                        html = html.replace("id=\"playback\"", "id=\"playback\" style=\"display:none!important;opacity:0!important;visibility:hidden!important;pointer-events:none!important;width:0!important;height:0!important;z-index:-99999!important;\"")
                                         
-                                        // 4. Inject CSS in <head>
-                                        val css = "<style>#overlay, #playback, #overlay *, #playback *, #videoInfo, .video-info, [id*=\"videoInfo\"], [class*=\"video-info\"], .video-info-title, .video-info-hint, .video-info-close { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; width: 0 !important; height: 0 !important; z-index: -99999 !important; }</style>"
+                                        // 5. Neutralize Abyss popup click handlers so ads are blocked and overlay is gone
+                                        html = html.replace("if(overlay) {try {overlay.onclick = ra;overlay.ontouchend = ra;} catch (error) {overlay.remove();}}", "if(overlay) { try { overlay.remove(); } catch(e){} }")
+                                        html = html.replace("overlay.onclick = ra;", "overlay.remove();")
+                                        html = html.replace("overlay.ontouchend = ra;", "overlay.remove();")
+
+                                        // 6. Inject CSS in <head>
+                                        val css = "<style>#overlay, #playback, #overlay *, #playback *, div#overlay, div#playback, .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .jw-flag-fullscreen .jw-display-icon-display, .vjs-big-play-button, .vjs-big-play-button-mobile, .play-button, #play-button, .play-btn, #play-btn, .big-play, .big-play-btn, .big-play-button, .large-play-button, .ytp-large-play-button, .play-overlay, #videoInfo, .video-info, [id*=\"videoInfo\"], [class*=\"video-info\"], .video-info-title, .video-info-hint, .video-info-close, svg[viewBox=\"0 0 24 24\"], svg[viewBox=\"0 0 240 240\"] { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; width: 0 !important; height: 0 !important; max-width: 0 !important; max-height: 0 !important; z-index: -99999 !important; }</style>"
                                         html = if (html.contains("</head>")) html.replace("</head>", "$css</head>") else css + html
                                         
-                                        // 5. Inject immediate DOM killer script and Nuker script directly into player frame
-                                        val remover = "<script>(function(){ var kill = function(){ var o=document.getElementById('overlay'); if(o){ o.style.display='none'; try{o.remove();}catch(e){} } var p=document.getElementById('playback'); if(p){ p.style.display='none'; try{p.remove();}catch(e){} } var bads=document.querySelectorAll('#videoInfo, .video-info, [id*=\"videoInfo\"], [class*=\"video-info\"]'); for(var i=0;i<bads.length;i++){ bads[i].style.display='none'; try{bads[i].remove();}catch(e){} } if(typeof window.closeVideoInfo==='function'){ try{window.closeVideoInfo();}catch(e){} } }; kill(); setInterval(kill, 200); })();</script><script type=\"text/javascript\">$nukerScript</script>"
+                                        // 7. Inject immediate DOM killer script and Nuker script directly into player frame
+                                        val remover = "<script>(function(){ var kill = function(){ var o=document.getElementById('overlay'); if(o){ o.style.display='none'; try{o.remove();}catch(e){} } var p=document.getElementById('playback'); if(p){ p.style.display='none'; try{p.remove();}catch(e){} } var bads=document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*=\"videoInfo\"], [class*=\"video-info\"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg[viewBox=\"0 0 24 24\"], svg[viewBox=\"0 0 240 240\"]'); for(var i=0;i<bads.length;i++){ bads[i].style.setProperty('display', 'none', 'important'); bads[i].style.setProperty('opacity', '0', 'important'); bads[i].style.setProperty('visibility', 'hidden', 'important'); bads[i].style.setProperty('pointer-events', 'none', 'important'); bads[i].style.setProperty('width', '0', 'important'); bads[i].style.setProperty('height', '0', 'important'); try{bads[i].remove();}catch(e){} } if(typeof window.closeVideoInfo==='function'){ try{window.closeVideoInfo();}catch(e){} } }; kill(); setInterval(kill, 200); })();</script><script type=\"text/javascript\">$nukerScript</script>"
                                         html = if (html.contains("</body>")) html.replace("</body>", "$remover</body>") else html + remover
                                         
                                         Log.d("VideoPlayerTurbo", "Neutralized Abyss/Bond/Playsobat player page overlay & redirect: $u")
@@ -3584,7 +3611,7 @@ fun VideoPlayerWebView(
                                      else url
                       view.loadUrl(embedUrl, mutableMapOf("Referer" to "https://www.dailymotion.com/"))
                   }
-              } else if (url.contains("abyssplayer.com") || url.contains("bondplayer.com") || url.contains("abyss.to") || url.contains("bond.to") || url.contains("abysscdn.com")) {
+              } else if (url.contains("abyssplayer.com") || url.contains("bondplayer.com") || url.contains("abyss.to") || url.contains("bond.to") || url.contains("abysscdn.com") || url.contains("bondcdn.com") || url.contains("playsobat.xyz") || url.contains("hydrax.net")) {
                   if (view.getTag(R.id.active_url) != url || isNewEpisode) {
                       view.setTag(R.id.active_content_key, activeContentKey)
                       view.setTag(R.id.active_url, url)
