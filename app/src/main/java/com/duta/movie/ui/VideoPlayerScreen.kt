@@ -3003,7 +3003,22 @@ fun VideoPlayerWebView(
                     fun notifyVideoPlaying() {
                         onPlaybackSuccess(url)
                         this@apply.post {
-                            safeEvaluateJavascript(this@apply, "try { window.successNotified = true; window.videoFound = true; } catch(e){}")
+                            safeEvaluateJavascript(this@apply, """
+                                try {
+                                    window.successNotified = true;
+                                    window.videoFound = true;
+                                    if (document.body) {
+                                        document.body.classList.add('video-active', 'video-playing');
+                                    }
+                                    var bads = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .jw-display-icon-display, .jw-display-icon-container, .vjs-big-play-button');
+                                    for (var i = 0; i < bads.length; i++) {
+                                        bads[i].style.setProperty('display', 'none', 'important');
+                                        bads[i].style.setProperty('opacity', '0', 'important');
+                                        bads[i].style.setProperty('visibility', 'hidden', 'important');
+                                        bads[i].style.setProperty('pointer-events', 'none', 'important');
+                                    }
+                                } catch(e){}
+                            """.trimIndent())
                         }
                     }
                     @android.webkit.JavascriptInterface
@@ -3307,14 +3322,25 @@ fun VideoPlayerWebView(
                         val removePopupScript = """
                             (function() {
                                 try {
-                                    var bads = document.querySelectorAll('#videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"]');
-                                    for (var i = 0; i < bads.length; i++) {
-                                        bads[i].style.setProperty('display', 'none', 'important');
-                                        try { bads[i].remove(); } catch(e){}
-                                    }
-                                    if (typeof window.closeVideoInfo === 'function') {
-                                        try { window.closeVideoInfo(); } catch(e){}
-                                    }
+                                    var kill = function() {
+                                        var o = document.getElementById('overlay');
+                                        if (o) { o.style.display = 'none'; try { o.remove(); } catch(e){} }
+                                        var p = document.getElementById('playback');
+                                        if (p) { p.style.display = 'none'; try { p.remove(); } catch(e){} }
+                                        var bads = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"]');
+                                        for (var i = 0; i < bads.length; i++) {
+                                            bads[i].style.setProperty('display', 'none', 'important');
+                                            bads[i].style.setProperty('opacity', '0', 'important');
+                                            bads[i].style.setProperty('visibility', 'hidden', 'important');
+                                            bads[i].style.setProperty('pointer-events', 'none', 'important');
+                                            try { bads[i].remove(); } catch(e){}
+                                        }
+                                        if (typeof window.closeVideoInfo === 'function') {
+                                            try { window.closeVideoInfo(); } catch(e){}
+                                        }
+                                    };
+                                    kill();
+                                    setInterval(kill, 250);
                                 } catch(e) {}
                             })();
                         """.trimIndent()
@@ -3369,9 +3395,10 @@ fun VideoPlayerWebView(
                         }
 
                         // Intercept Abyss/Bond/Playsobat Player HTML pages to eradicate the big SVG play button overlay, videoInfo popup & anti-framing redirect
-                        val isAbyssPlayerPage = (low.contains("abyssplayer.com/") || low.contains("bondplayer.com/") || 
-                                                 low.contains("abyss.to/") || low.contains("bond.to/") ||
-                                                 low.contains("playsobat.xyz/")) &&
+                        val isAbyssPlayerPage = (low.contains("abyssplayer.com") || low.contains("bondplayer.com") || 
+                                                 low.contains("abyss.to") || low.contains("bond.to") ||
+                                                 low.contains("playsobat.xyz") || low.contains("abysscdn.com") ||
+                                                 low.contains("bondcdn.com") || low.contains("hydrax.net")) &&
                                                 !low.contains(".js") && !low.contains(".css") && !low.contains(".jpg") && 
                                                 !low.contains(".png") && !low.contains(".m3u8") && !low.contains(".mp4") && 
                                                 !low.contains(".mkv") && !low.contains(".webm") && 
@@ -3382,8 +3409,13 @@ fun VideoPlayerWebView(
                                 reqBuilder.header("User-Agent", com.duta.movie.util.NetworkConfig.SHARED_USER_AGENT)
                                 val referer = lastReferer ?: "${com.duta.movie.util.VideoExtractor.getBaseUrl()}/"
                                 reqBuilder.header("Referer", referer)
+                                val cookieManager = android.webkit.CookieManager.getInstance()
+                                val cookies = cookieManager.getCookie(u)
+                                if (!cookies.isNullOrEmpty()) {
+                                    reqBuilder.header("Cookie", cookies)
+                                }
                                 for ((k, v) in r.requestHeaders) {
-                                    if (!k.equals("User-Agent", ignoreCase = true) && !k.equals("Referer", ignoreCase = true)) {
+                                    if (!k.equals("User-Agent", ignoreCase = true) && !k.equals("Referer", ignoreCase = true) && !k.equals("Cookie", ignoreCase = true)) {
                                         reqBuilder.header(k, v)
                                     }
                                 }
@@ -3391,6 +3423,12 @@ fun VideoPlayerWebView(
                                 if (resp.isSuccessful) {
                                     var html = resp.body?.string() ?: ""
                                     if (html.isNotEmpty()) {
+                                        // If Cloudflare challenge page returned, delegate to WebView to handle challenge
+                                        if (html.contains("challenge-platform") || html.contains("Enable JavaScript and cookies to continue") || html.contains("_cf_chl_opt")) {
+                                            Log.d("VideoPlayerTurbo", "Cloudflare challenge detected on Abyss page, delegating to WebView: $u")
+                                            return null
+                                        }
+
                                         // 1. Defeat anti-framing / anti-direct redirect
                                         html = html.replace("if(top.location == self.location", "if(false && top.location == self.location")
                                         

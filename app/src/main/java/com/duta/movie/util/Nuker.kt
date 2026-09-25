@@ -274,6 +274,17 @@ object Nuker {
                                                         var self = this;
                                                         jw.on('play', function() {
                                                             window.videoFound = true;
+                                                            if (document.body) {
+                                                                document.body.classList.add('video-active', 'video-playing');
+                                                            }
+                                                            try {
+                                                                var pOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .vjs-big-play-button, #playback, #overlay, div#playback, div#overlay');
+                                                                for (var pi = 0; pi < pOverlays.length; pi++) {
+                                                                    pOverlays[pi].style.setProperty('display', 'none', 'important');
+                                                                    pOverlays[pi].style.setProperty('opacity', '0', 'important');
+                                                                    pOverlays[pi].style.setProperty('pointer-events', 'none', 'important');
+                                                                }
+                                                            } catch(e){}
                                                             if (!window.successNotified && window.AndroidPlayer) {
                                                                 window.successNotified = true;
                                                                 log("JWPlayer onPlay event fired");
@@ -283,6 +294,17 @@ object Nuker {
                                                         });
                                                         jw.on('firstFrame', function() {
                                                             window.videoFound = true;
+                                                            if (document.body) {
+                                                                document.body.classList.add('video-active', 'video-playing');
+                                                            }
+                                                            try {
+                                                                var pOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .vjs-big-play-button, #playback, #overlay, div#playback, div#overlay');
+                                                                for (var pi = 0; pi < pOverlays.length; pi++) {
+                                                                    pOverlays[pi].style.setProperty('display', 'none', 'important');
+                                                                    pOverlays[pi].style.setProperty('opacity', '0', 'important');
+                                                                    pOverlays[pi].style.setProperty('pointer-events', 'none', 'important');
+                                                                }
+                                                            } catch(e){}
                                                             if (!window.successNotified && window.AndroidPlayer) {
                                                                 window.successNotified = true;
                                                                 log("JWPlayer onFirstFrame event fired");
@@ -367,6 +389,20 @@ object Nuker {
                                         }
                                         if (!v.isProxy) {
                                             this.reportState(v.paused ? 0 : 1, v.currentTime || 0.1, v.duration || 0);
+                                            if (!v.paused || v.currentTime > 0.1 || isStrictPlaying || window.successNotified) {
+                                                if (document.body && !document.body.classList.contains('video-active')) {
+                                                    document.body.classList.add('video-active', 'video-playing');
+                                                }
+                                                try {
+                                                    var badPOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .vjs-big-play-button, #playback, #overlay, div#playback, div#overlay');
+                                                    for (var bi = 0; bi < badPOverlays.length; bi++) {
+                                                        badPOverlays[bi].style.setProperty('display', 'none', 'important');
+                                                        badPOverlays[bi].style.setProperty('opacity', '0', 'important');
+                                                        badPOverlays[bi].style.setProperty('visibility', 'hidden', 'important');
+                                                        badPOverlays[bi].style.setProperty('pointer-events', 'none', 'important');
+                                                    }
+                                                } catch(e){}
+                                            }
                                         }
                                     }
                                 } catch(e) {}
@@ -581,6 +617,42 @@ object Nuker {
                                         .jw-display-icon-display, .jw-display-icon-container, .vjs-big-play-button, .play-button, #play-button {
                                             z-index: 2147483647 !important; 
                                             pointer-events: auto !important;
+                                        }
+                                        /* When video is actively playing, completely eradicate and hide big play icon overlays */
+                                        body.video-active .jw-display-icon-display,
+                                        body.video-active .jw-display-icon-container,
+                                        body.video-active .jw-display-icon-idle,
+                                        body.video-active .vjs-big-play-button,
+                                        body.video-active .play-button,
+                                        body.video-active #play-button,
+                                        body.video-active #playback,
+                                        body.video-active #overlay,
+                                        body.video-active div#playback,
+                                        body.video-active div#overlay,
+                                        body.video-active svg[viewBox="0 0 24 24"],
+                                        body.video-playing .jw-display-icon-display,
+                                        body.video-playing .jw-display-icon-container,
+                                        body.video-playing .jw-display-icon-idle,
+                                        body.video-playing .vjs-big-play-button,
+                                        body.video-playing .play-button,
+                                        body.video-playing #play-button,
+                                        body.video-playing #playback,
+                                        body.video-playing #overlay,
+                                        body.video-playing div#playback,
+                                        body.video-playing div#overlay,
+                                        body.video-playing svg[viewBox="0 0 24 24"],
+                                        .jw-state-playing .jw-display-icon-display,
+                                        .jw-state-playing .jw-display-icon-container,
+                                        .jw-state-playing .jw-display-icon-idle,
+                                        .jw-flag-fullscreen .jw-display-icon-display,
+                                        .vjs-playing .vjs-big-play-button {
+                                            display: none !important;
+                                            opacity: 0 !important;
+                                            visibility: hidden !important;
+                                            pointer-events: none !important;
+                                            width: 0 !important;
+                                            height: 0 !important;
+                                            z-index: -99999 !important;
                                         }
                                     `;
                                 }
@@ -1132,6 +1204,17 @@ object Nuker {
                                                         var self = this;
                                                         jw.on('play', function() {
                                                             window.videoFound = true;
+                                                            if (document.body) {
+                                                                document.body.classList.add('video-active', 'video-playing');
+                                                            }
+                                                            try {
+                                                                var pOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .vjs-big-play-button, #playback, #overlay, div#playback, div#overlay');
+                                                                for (var pi = 0; pi < pOverlays.length; pi++) {
+                                                                    pOverlays[pi].style.setProperty('display', 'none', 'important');
+                                                                    pOverlays[pi].style.setProperty('opacity', '0', 'important');
+                                                                    pOverlays[pi].style.setProperty('pointer-events', 'none', 'important');
+                                                                }
+                                                            } catch(e){}
                                                             if (!window.successNotified && window.AndroidPlayer) {
                                                                 window.successNotified = true;
                                                                 log("JWPlayer onPlay fired");
@@ -1145,6 +1228,9 @@ object Nuker {
                                                         jw.on('time', function(e) {
                                                             if (e && e.currentTime > 0.3) {
                                                                 window.videoFound = true;
+                                                                if (document.body) {
+                                                                    document.body.classList.add('video-active', 'video-playing');
+                                                                }
                                                                 if (!window.successNotified && window.AndroidPlayer) {
                                                                     window.successNotified = true;
                                                                     window.AndroidPlayer.notifyVideoPlaying();
@@ -1212,6 +1298,20 @@ object Nuker {
                                                 window.AndroidPlayer.notifyVideoPlaying();
                                             }
                                             this.reportState(v.paused ? 0 : 1, v.currentTime || 0.1, v.duration || 0);
+                                            if (!v.paused || v.currentTime > 0.1 || window.successNotified) {
+                                                if (document.body && !document.body.classList.contains('video-active')) {
+                                                    document.body.classList.add('video-active', 'video-playing');
+                                                }
+                                                try {
+                                                    var badPOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .vjs-big-play-button, #playback, #overlay, div#playback, div#overlay');
+                                                    for (var bi = 0; bi < badPOverlays.length; bi++) {
+                                                        badPOverlays[bi].style.setProperty('display', 'none', 'important');
+                                                        badPOverlays[bi].style.setProperty('opacity', '0', 'important');
+                                                        badPOverlays[bi].style.setProperty('visibility', 'hidden', 'important');
+                                                        badPOverlays[bi].style.setProperty('pointer-events', 'none', 'important');
+                                                    }
+                                                } catch(e){}
+                                            }
                                         }
                                     }
                                 } catch(e){}
@@ -1360,6 +1460,32 @@ object Nuker {
                                         .jw-display-icon-display, .vjs-big-play-button {
                                             z-index: 2147483647 !important;
                                             pointer-events: auto !important;
+                                        }
+                                        /* Hide big play icon when video is playing/active */
+                                        body.video-active .jw-display-icon-display,
+                                        body.video-active .jw-display-icon-container,
+                                        body.video-active .jw-display-icon-idle,
+                                        body.video-active .vjs-big-play-button,
+                                        body.video-active .play-button,
+                                        body.video-active #play-button,
+                                        body.video-playing .jw-display-icon-display,
+                                        body.video-playing .jw-display-icon-container,
+                                        body.video-playing .jw-display-icon-idle,
+                                        body.video-playing .vjs-big-play-button,
+                                        body.video-playing .play-button,
+                                        body.video-playing #play-button,
+                                        .jw-state-playing .jw-display-icon-display,
+                                        .jw-state-playing .jw-display-icon-container,
+                                        .jw-state-playing .jw-display-icon-idle,
+                                        .jw-flag-fullscreen .jw-display-icon-display,
+                                        .vjs-playing .vjs-big-play-button {
+                                            display: none !important;
+                                            opacity: 0 !important;
+                                            visibility: hidden !important;
+                                            pointer-events: none !important;
+                                            width: 0 !important;
+                                            height: 0 !important;
+                                            z-index: -99999 !important;
                                         }
                                         /* Aggressively eliminate ad iframes, popups, overlays, and robot verification prompts */
                                         iframe:not(.nuker-active-frame),
