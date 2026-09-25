@@ -37,28 +37,30 @@ object Nuker {
 
                     var ensureBlackBackground = function() {
                         try {
-                            if (document.documentElement) {
-                                document.documentElement.style.setProperty('background', '#000', 'important');
-                                document.documentElement.style.setProperty('background-color', '#000', 'important');
-                            }
-                            if (document.body) {
-                                document.body.style.setProperty('background', '#000', 'important');
-                                document.body.style.setProperty('background-color', '#000', 'important');
-                            }
+                            var paintBlack = function(d) {
+                                if (!d) return;
+                                try {
+                                    if (d.documentElement) {
+                                        d.documentElement.style.setProperty('background', '#000', 'important');
+                                        d.documentElement.style.setProperty('background-color', '#000', 'important');
+                                    }
+                                    if (d.body) {
+                                        d.body.style.setProperty('background', '#000', 'important');
+                                        d.body.style.setProperty('background-color', '#000', 'important');
+                                    }
+                                    var bgEls = d.querySelectorAll('.stage, .wrap, #player, #content, .container, main, .jwplayer, .jw-wrapper, .jw-media, div#player, div.player, .player');
+                                    for (var bgi = 0; bgi < bgEls.length; bgi++) {
+                                        bgEls[bgi].style.setProperty('background', '#000', 'important');
+                                        bgEls[bgi].style.setProperty('background-color', '#000', 'important');
+                                    }
+                                } catch(e){}
+                            };
+                            paintBlack(document);
                             var fms = document.querySelectorAll('iframe');
                             for (var fi = 0; fi < fms.length; fi++) {
                                 try {
                                     var fDoc = fms[fi].contentDocument || (fms[fi].contentWindow && fms[fi].contentWindow.document);
-                                    if (fDoc) {
-                                        if (fDoc.documentElement) {
-                                            fDoc.documentElement.style.setProperty('background', '#000', 'important');
-                                            fDoc.documentElement.style.setProperty('background-color', '#000', 'important');
-                                        }
-                                        if (fDoc.body) {
-                                            fDoc.body.style.setProperty('background', '#000', 'important');
-                                            fDoc.body.style.setProperty('background-color', '#000', 'important');
-                                        }
-                                    }
+                                    if (fDoc) paintBlack(fDoc);
                                 } catch(e) {}
                             }
                         } catch(e) {}
@@ -154,22 +156,22 @@ object Nuker {
                                 }
                             },
                             findVideo: function() {
-                                if (window._cachedVideo && window._cachedVideo.isConnected && !window._cachedVideo.isProxy) {
-                                    return window._cachedVideo;
-                                }
-                                var find = function(root) {
-                                    if (!root) return null;
+                                var getAllMedia = function(root) {
+                                    var list = [];
+                                    if (!root) return list;
                                     try {
-                                        var v = root.querySelector('video');
-                                        if (v) { window._cachedVideo = v; return v; }
+                                        var vids = root.querySelectorAll('video, audio');
+                                        for (var vi = 0; vi < vids.length; vi++) list.push(vids[vi]);
                                         var iframes = root.querySelectorAll('iframe, embed, object');
                                         for (var i = 0; i < iframes.length; i++) {
                                             try {
-                                                var d = iframes[i].contentDocument || iframes[i].contentWindow.document;
-                                                if (d) { var found = find(d); if (found) { window._cachedVideo = found; return found; } }
+                                                var d = iframes[i].contentDocument || (iframes[i].contentWindow && iframes[i].contentWindow.document);
+                                                if (d) {
+                                                    var childList = getAllMedia(d);
+                                                    for (var ci = 0; ci < childList.length; ci++) list.push(childList[ci]);
+                                                }
                                             } catch(e) {
                                                 var src = (iframes[i].src || "").toLowerCase();
-                                                log("Checking iframe: " + src);
                                                 if (src.indexOf('player') !== -1 || src.indexOf('embed') !== -1 || src.indexOf('abyss') !== -1 || 
                                                     src.indexOf('voe') !== -1 || src.indexOf('playstream') !== -1 || src.indexOf('swhoi') !== -1 ||
                                                     src.indexOf('veev') !== -1 || src.indexOf('iplayer') !== -1 || src.indexOf('mirror') !== -1 ||
@@ -178,14 +180,70 @@ object Nuker {
                                                     src.indexOf('ghbrisk') !== -1 || src.indexOf('ohio') !== -1 || src.indexOf('hglink') !== -1 || src.indexOf('hgcloud') !== -1 ||
                                                     src.indexOf('audinifer') !== -1 || src.indexOf('vibuxer') !== -1 || src.indexOf('hanerix') !== -1 || src.indexOf('indostream') !== -1 || src.indexOf('amt') !== -1 ||
                                                     src.indexOf('youtube') !== -1 || src.indexOf('youtu.be') !== -1) {
-                                                    return { isProxy: true, paused: false, readyState: 1, currentTime: 0.1, duration: 0 };
+                                                    list.push({ isProxy: true, paused: false, readyState: 1, currentTime: 0.1, duration: 0 });
                                                 }
                                             }
                                         }
                                     } catch(e) {}
-                                    return null;
+                                    return list;
                                 };
-                                return find(document);
+
+                                // If cached video is actively playing or ready, keep it
+                                if (window._cachedVideo && window._cachedVideo.isConnected && !window._cachedVideo.isProxy) {
+                                    if (!window._cachedVideo.paused && window._cachedVideo.currentTime > 0) {
+                                        return window._cachedVideo;
+                                    }
+                                    if (window._cachedVideo.readyState >= 2) {
+                                        return window._cachedVideo;
+                                    }
+                                }
+
+                                var all = getAllMedia(document);
+                                if (!all || all.length === 0) return null;
+
+                                // 1. Actively playing
+                                for (var i = 0; i < all.length; i++) {
+                                    if (!all[i].isProxy && !all[i].paused && all[i].currentTime > 0) {
+                                        window._cachedVideo = all[i];
+                                        return all[i];
+                                    }
+                                }
+                                // 2. Advancing currentTime
+                                for (var i = 0; i < all.length; i++) {
+                                    if (!all[i].isProxy && all[i].currentTime > 0.3) {
+                                        window._cachedVideo = all[i];
+                                        return all[i];
+                                    }
+                                }
+                                // 3. ReadyState >= 2 (HAVE_CURRENT_DATA)
+                                for (var i = 0; i < all.length; i++) {
+                                    if (!all[i].isProxy && all[i].readyState >= 2) {
+                                        window._cachedVideo = all[i];
+                                        return all[i];
+                                    }
+                                }
+                                // 4. ReadyState >= 1 (HAVE_METADATA)
+                                for (var i = 0; i < all.length; i++) {
+                                    if (!all[i].isProxy && all[i].readyState >= 1) {
+                                        window._cachedVideo = all[i];
+                                        return all[i];
+                                    }
+                                }
+                                // 5. Has src
+                                for (var i = 0; i < all.length; i++) {
+                                    if (!all[i].isProxy && (all[i].src || all[i].currentSrc || all[i].querySelector('source'))) {
+                                        window._cachedVideo = all[i];
+                                        return all[i];
+                                    }
+                                }
+                                // 6. Any non-proxy
+                                for (var i = 0; i < all.length; i++) {
+                                    if (!all[i].isProxy) {
+                                        window._cachedVideo = all[i];
+                                        return all[i];
+                                    }
+                                }
+                                return all[0];
                             },
                             broadcastToFrames: function(msg) {
                                 try {
@@ -279,9 +337,19 @@ object Nuker {
                                                 v._dutaHooked = true;
                                                 var self = this;
                                                 v.addEventListener('timeupdate', function() {
+                                                    if (v.currentTime > 0.3 && !window.successNotified && window.AndroidPlayer) {
+                                                        window.successNotified = true;
+                                                        log("Video timeupdate > 0.3: declaring playback verified");
+                                                        window.AndroidPlayer.notifyVideoPlaying();
+                                                    }
                                                     self.reportState(!v.paused, v.currentTime, v.duration || 0);
                                                 });
                                                 v.addEventListener('play', function() {
+                                                    if (!window.successNotified && window.AndroidPlayer) {
+                                                        window.successNotified = true;
+                                                        log("Video play event: declaring playback verified");
+                                                        window.AndroidPlayer.notifyVideoPlaying();
+                                                    }
                                                     self.reportState(true, v.currentTime, v.duration || 0);
                                                 });
                                                 v.addEventListener('pause', function() {
@@ -290,98 +358,87 @@ object Nuker {
                                             }
                                         }
 
-                                        // Auto-start JWPlayer / VideoJS if available
-                                        if (window.jwplayer && typeof window.jwplayer === 'function') {
+                                        // Auto-start & hook JWPlayer across window and all child iframes
+                                        var selfBridge = this;
+                                        var purgeJwOverlays = function(targetDoc) {
                                             try {
-                                                var jw = window.jwplayer();
+                                                var pOverlays = (targetDoc || document).querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
+                                                for (var pi = 0; pi < pOverlays.length; pi++) {
+                                                    pOverlays[pi].style.setProperty('display', 'none', 'important');
+                                                    pOverlays[pi].style.setProperty('opacity', '0', 'important');
+                                                    pOverlays[pi].style.setProperty('visibility', 'hidden', 'important');
+                                                    pOverlays[pi].style.setProperty('pointer-events', 'none', 'important');
+                                                    pOverlays[pi].style.setProperty('width', '0', 'important');
+                                                    pOverlays[pi].style.setProperty('height', '0', 'important');
+                                                }
+                                            } catch(e){}
+                                        };
+                                        var hookJwTarget = function(win) {
+                                            if (!win || typeof win.jwplayer !== 'function') return;
+                                            try {
+                                                var jw = win.jwplayer();
                                                 if (jw && typeof jw.getState === 'function') {
                                                     var jwState = jw.getState();
                                                     if (jwState !== 'playing' && jwState !== 'buffering') {
-                                                        jw.play();
+                                                        try { jw.play(); } catch(e){}
                                                     }
-                                                    if (!window.jwHooked && typeof jw.on === 'function') {
-                                                        window.jwHooked = true;
-                                                        var self = this;
-                                                        jw.on('play', function() {
+                                                    if (!win._jwHooked && typeof jw.on === 'function') {
+                                                        win._jwHooked = true;
+                                                        var onJwPlay = function() {
                                                             window.videoFound = true;
-                                                            if (document.body) {
-                                                                document.body.classList.add('video-active', 'video-playing');
-                                                            }
-                                                            try {
-                                                                var pOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
-                                                                for (var pi = 0; pi < pOverlays.length; pi++) {
-                                                                    pOverlays[pi].style.setProperty('display', 'none', 'important');
-                                                                    pOverlays[pi].style.setProperty('opacity', '0', 'important');
-                                                                    pOverlays[pi].style.setProperty('visibility', 'hidden', 'important');
-                                                                    pOverlays[pi].style.setProperty('pointer-events', 'none', 'important');
-                                                                    pOverlays[pi].style.setProperty('width', '0', 'important');
-                                                                    pOverlays[pi].style.setProperty('height', '0', 'important');
-                                                                }
-                                                            } catch(e){}
+                                                            if (document.body) document.body.classList.add('video-active', 'video-playing');
+                                                            if (win.document && win.document.body) win.document.body.classList.add('video-active', 'video-playing');
+                                                            purgeJwOverlays(win.document);
                                                             if (!window.successNotified && window.AndroidPlayer) {
                                                                 window.successNotified = true;
-                                                                log("JWPlayer onPlay event fired");
+                                                                log("JWPlayer onPlay/firstFrame: notifying playback success");
                                                                 window.AndroidPlayer.notifyVideoPlaying();
                                                             }
-                                                            self.reportState(true, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
-                                                        });
-                                                        jw.on('firstFrame', function() {
-                                                            window.videoFound = true;
-                                                            if (document.body) {
-                                                                document.body.classList.add('video-active', 'video-playing');
-                                                            }
-                                                            try {
-                                                                var pOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
-                                                                for (var pi = 0; pi < pOverlays.length; pi++) {
-                                                                    pOverlays[pi].style.setProperty('display', 'none', 'important');
-                                                                    pOverlays[pi].style.setProperty('opacity', '0', 'important');
-                                                                    pOverlays[pi].style.setProperty('visibility', 'hidden', 'important');
-                                                                    pOverlays[pi].style.setProperty('pointer-events', 'none', 'important');
-                                                                    pOverlays[pi].style.setProperty('width', '0', 'important');
-                                                                    pOverlays[pi].style.setProperty('height', '0', 'important');
-                                                                }
-                                                            } catch(e){}
-                                                            if (!window.successNotified && window.AndroidPlayer) {
-                                                                window.successNotified = true;
-                                                                log("JWPlayer onFirstFrame event fired");
-                                                                window.AndroidPlayer.notifyVideoPlaying();
-                                                            }
-                                                        });
+                                                            selfBridge.reportState(true, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
+                                                        };
+                                                        jw.on('play', onJwPlay);
+                                                        jw.on('firstFrame', onJwPlay);
                                                         jw.on('pause', function() {
-                                                            self.reportState(false, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
+                                                            selfBridge.reportState(false, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
                                                         });
                                                         jw.on('seek', function(e) {
-                                                            // User scrubbed the seek bar: report not-playing so stall guard resets
-                                                            self.reportState(false, e.offset || (jw.getPosition ? jw.getPosition() : 0), jw.getDuration ? jw.getDuration() : 0);
+                                                            selfBridge.reportState(false, e.offset || (jw.getPosition ? jw.getPosition() : 0), jw.getDuration ? jw.getDuration() : 0);
                                                         });
                                                         jw.on('buffer', function() {
-                                                            // CDN buffering after seek or mid-stream: report not-playing
-                                                            self.reportState(false, jw.getPosition ? jw.getPosition() : 0, jw.getDuration ? jw.getDuration() : 0);
+                                                            selfBridge.reportState(false, jw.getPosition ? jw.getPosition() : 0, jw.getDuration ? jw.getDuration() : 0);
                                                         });
                                                         jw.on('time', function(e) {
                                                             if (e && e.currentTime > 0.3) {
                                                                 window.videoFound = true;
+                                                                purgeJwOverlays(win.document);
                                                                 if (!window.successNotified && window.AndroidPlayer) {
                                                                     window.successNotified = true;
+                                                                    log("JWPlayer time > 0.3: notifying playback success");
                                                                     window.AndroidPlayer.notifyVideoPlaying();
                                                                 }
-                                                                self.reportState(true, e.currentTime || 0.1, e.duration || (jw.getDuration ? jw.getDuration() : 0));
+                                                                selfBridge.reportState(true, e.currentTime || 0.1, e.duration || (jw.getDuration ? jw.getDuration() : 0));
                                                             }
                                                         });
                                                     }
                                                     if (jwState === 'playing') {
                                                         window.videoFound = true;
+                                                        purgeJwOverlays(win.document);
                                                         var jwPos = jw.getPosition ? jw.getPosition() : 0.1;
                                                         var jwDur = jw.getDuration ? jw.getDuration() : 0;
                                                         if (jwPos > 0.3 && !window.successNotified && window.AndroidPlayer) {
                                                             window.successNotified = true;
-                                                            log("JWPlayer playing state - notifying success");
+                                                            log("JWPlayer playing state: notifying playback success");
                                                             window.AndroidPlayer.notifyVideoPlaying();
                                                         }
-                                                        this.reportState(true, jwPos, jwDur);
+                                                        selfBridge.reportState(true, jwPos, jwDur);
                                                     }
                                                 }
                                             } catch(e){}
+                                        };
+                                        hookJwTarget(window);
+                                        var allFrames = document.querySelectorAll('iframe');
+                                        for (var afi = 0; afi < allFrames.length; afi++) {
+                                            try { hookJwTarget(allFrames[afi].contentWindow); } catch(e){}
                                         }
                                         if (window.videojs && typeof window.videojs.getPlayers === 'function') {
                                             try {
@@ -783,20 +840,50 @@ object Nuker {
                         }
                         var videoAgeMs = window.videoDetectedTime ? (Date.now() - window.videoDetectedTime) : 0;
                         var isJwBuffering = false;
-                        try {
-                            if (window.jwplayer && typeof window.jwplayer === 'function') {
-                                var jw = window.jwplayer();
-                                if (jw && typeof jw.getState === 'function') {
-                                    var st = jw.getState();
-                                    if (st === 'buffering' || st === 'playing') isJwBuffering = true;
+                        var isJwPlaying = false;
+                        var checkJwState = function(win) {
+                            try {
+                                if (win && win.jwplayer && typeof win.jwplayer === 'function') {
+                                    var jw = win.jwplayer();
+                                    if (jw && typeof jw.getState === 'function') {
+                                        var st = jw.getState();
+                                        if (st === 'buffering') isJwBuffering = true;
+                                        if (st === 'playing' || (jw.getPosition && jw.getPosition() > 0.3)) {
+                                            isJwPlaying = true;
+                                            isJwBuffering = true;
+                                        }
+                                    }
                                 }
-                            }
-                        } catch(e){}
+                            } catch(e){}
+                        };
+                        checkJwState(window);
+                        var checkFrames = document.querySelectorAll('iframe');
+                        for (var cfi = 0; cfi < checkFrames.length; cfi++) {
+                            try { checkJwState(checkFrames[cfi].contentWindow); } catch(e){}
+                        }
 
-                        var isActivelyLoading = hasRealVideo && (videoAgeMs < 15000 || v.networkState === 2 || isJwBuffering);
-                        var hasEmbedFrames = document.querySelectorAll('iframe[src*="player"], iframe[src*="embed"], iframe[src*="abyss"], iframe[src*="sobat"], iframe[src*="mogo"], iframe[src*="stream"], iframe[src*="vidhide"], iframe[src*="fujihide"]').length > 0;
+                        if (isJwPlaying && !window.successNotified && window.AndroidPlayer) {
+                            window.successNotified = true;
+                            log("Watchdog detected active JWPlayer: declaring playback verified");
+                            window.AndroidPlayer.notifyVideoPlaying();
+                            return;
+                        }
+
+                        var isAnyMediaActive = false;
+                        if (v && !v.isProxy) {
+                            if (!v.paused || v.currentTime > 0.1 || v.readyState >= 2) isAnyMediaActive = true;
+                        }
+                        if (isAnyMediaActive && !window.successNotified && window.AndroidPlayer && v && v.currentTime > 0.3) {
+                            window.successNotified = true;
+                            log("Watchdog detected active video element: declaring playback verified");
+                            window.AndroidPlayer.notifyVideoPlaying();
+                            return;
+                        }
+
+                        var isActivelyLoading = hasRealVideo && (videoAgeMs < 25000 || v.networkState === 2 || isJwBuffering || isAnyMediaActive);
+                        var hasEmbedFrames = document.querySelectorAll('iframe[src*="player"], iframe[src*="embed"], iframe[src*="abyss"], iframe[src*="sobat"], iframe[src*="mogo"], iframe[src*="stream"], iframe[src*="vidhide"], iframe[src*="fujihide"], iframe#playerFrame').length > 0;
                         var isDeadAir = !hasRealVideo && !hasEmbedFrames && elapsedMs > 12000;
-                        var isStuckVideo = hasRealVideo && !isActivelyLoading && v.readyState === 0 && v.currentTime === 0 && !v.seeking;
+                        var isStuckVideo = hasRealVideo && !hasEmbedFrames && !isActivelyLoading && !isJwBuffering && !isAnyMediaActive && v.readyState === 0 && v.currentTime === 0 && !v.seeking && videoAgeMs > 25000;
 
                         var gateTimeoutReached = (hasGate && elapsedMs > 8000) || isDeadAir || isStuckVideo;
                         if (gateTimeoutReached && !window.successNotified) {
@@ -992,28 +1079,30 @@ object Nuker {
 
                     var ensureBlackBackground = function() {
                         try {
-                            if (document.documentElement) {
-                                document.documentElement.style.setProperty('background', '#000', 'important');
-                                document.documentElement.style.setProperty('background-color', '#000', 'important');
-                            }
-                            if (document.body) {
-                                document.body.style.setProperty('background', '#000', 'important');
-                                document.body.style.setProperty('background-color', '#000', 'important');
-                            }
+                            var paintBlack = function(d) {
+                                if (!d) return;
+                                try {
+                                    if (d.documentElement) {
+                                        d.documentElement.style.setProperty('background', '#000', 'important');
+                                        d.documentElement.style.setProperty('background-color', '#000', 'important');
+                                    }
+                                    if (d.body) {
+                                        d.body.style.setProperty('background', '#000', 'important');
+                                        d.body.style.setProperty('background-color', '#000', 'important');
+                                    }
+                                    var bgEls = d.querySelectorAll('.stage, .wrap, #player, #content, .container, main, .jwplayer, .jw-wrapper, .jw-media, div#player, div.player, .player');
+                                    for (var bgi = 0; bgi < bgEls.length; bgi++) {
+                                        bgEls[bgi].style.setProperty('background', '#000', 'important');
+                                        bgEls[bgi].style.setProperty('background-color', '#000', 'important');
+                                    }
+                                } catch(e){}
+                            };
+                            paintBlack(document);
                             var fms = document.querySelectorAll('iframe');
                             for (var fi = 0; fi < fms.length; fi++) {
                                 try {
                                     var fDoc = fms[fi].contentDocument || (fms[fi].contentWindow && fms[fi].contentWindow.document);
-                                    if (fDoc) {
-                                        if (fDoc.documentElement) {
-                                            fDoc.documentElement.style.setProperty('background', '#000', 'important');
-                                            fDoc.documentElement.style.setProperty('background-color', '#000', 'important');
-                                        }
-                                        if (fDoc.body) {
-                                            fDoc.body.style.setProperty('background', '#000', 'important');
-                                            fDoc.body.style.setProperty('background-color', '#000', 'important');
-                                        }
-                                    }
+                                    if (fDoc) paintBlack(fDoc);
                                 } catch(e) {}
                             }
                         } catch(e) {}
@@ -1162,33 +1251,94 @@ object Nuker {
                                 }
                             },
                             findVideo: function() {
-                                if (window._cachedVideo && window._cachedVideo.isConnected && !window._cachedVideo.isProxy) {
-                                    return window._cachedVideo;
-                                }
-                                var find = function(root) {
-                                    if (!root) return null;
+                                var getAllMedia = function(root) {
+                                    var list = [];
+                                    if (!root) return list;
                                     try {
-                                        var v = root.querySelector('video');
-                                        if (v) { window._cachedVideo = v; return v; }
+                                        var vids = root.querySelectorAll('video, audio');
+                                        for (var vi = 0; vi < vids.length; vi++) list.push(vids[vi]);
                                         var iframes = root.querySelectorAll('iframe, embed, object');
                                         for (var i = 0; i < iframes.length; i++) {
                                             try {
-                                                var d = iframes[i].contentDocument || iframes[i].contentWindow.document;
-                                                if (d) { var found = find(d); if (found) { window._cachedVideo = found; return found; } }
+                                                var d = iframes[i].contentDocument || (iframes[i].contentWindow && iframes[i].contentWindow.document);
+                                                if (d) {
+                                                    var childList = getAllMedia(d);
+                                                    for (var ci = 0; ci < childList.length; ci++) list.push(childList[ci]);
+                                                }
                                             } catch(e) {
                                                 var src = (iframes[i].src || "").toLowerCase();
-                                                if (src.indexOf('player') !== -1 || src.indexOf('embed') !== -1 || src.indexOf('voe') !== -1 || 
-                                                    src.indexOf('swhoi') !== -1 || src.indexOf('veev') !== -1 || src.indexOf('hglink') !== -1 ||
-                                                    src.indexOf('hgcloud') !== -1 || src.indexOf('audinifer') !== -1 || src.indexOf('indostream') !== -1 ||
+                                                if (src.indexOf('player') !== -1 || src.indexOf('embed') !== -1 || src.indexOf('abyss') !== -1 || 
+                                                    src.indexOf('voe') !== -1 || src.indexOf('playstream') !== -1 || src.indexOf('swhoi') !== -1 ||
+                                                    src.indexOf('veev') !== -1 || src.indexOf('iplayer') !== -1 || src.indexOf('mirror') !== -1 ||
+                                                    src.indexOf('wishonly') !== -1 || src.indexOf('streamwish') !== -1 || src.indexOf('wishembed') !== -1 || src.indexOf('strwish') !== -1 ||
+                                                    src.indexOf('vidhide') !== -1 || src.indexOf('luluvdo') !== -1 || src.indexOf('lulustream') !== -1 ||
+                                                    src.indexOf('ghbrisk') !== -1 || src.indexOf('ohio') !== -1 || src.indexOf('hglink') !== -1 || src.indexOf('hgcloud') !== -1 ||
+                                                    src.indexOf('audinifer') !== -1 || src.indexOf('vibuxer') !== -1 || src.indexOf('hanerix') !== -1 || src.indexOf('indostream') !== -1 || src.indexOf('amt') !== -1 ||
                                                     src.indexOf('youtube') !== -1 || src.indexOf('youtu.be') !== -1) {
-                                                    return { isProxy: true, paused: false, readyState: 1, currentTime: 0.1, duration: 0 };
+                                                    list.push({ isProxy: true, paused: false, readyState: 1, currentTime: 0.1, duration: 0 });
                                                 }
                                             }
                                         }
                                     } catch(e) {}
-                                    return null;
+                                    return list;
                                 };
-                                return find(document);
+
+                                // If cached video is actively playing or ready, keep it
+                                if (window._cachedVideo && window._cachedVideo.isConnected && !window._cachedVideo.isProxy) {
+                                    if (!window._cachedVideo.paused && window._cachedVideo.currentTime > 0) {
+                                        return window._cachedVideo;
+                                    }
+                                    if (window._cachedVideo.readyState >= 2) {
+                                        return window._cachedVideo;
+                                    }
+                                }
+
+                                var all = getAllMedia(document);
+                                if (!all || all.length === 0) return null;
+
+                                // 1. Actively playing
+                                for (var i = 0; i < all.length; i++) {
+                                    if (!all[i].isProxy && !all[i].paused && all[i].currentTime > 0) {
+                                        window._cachedVideo = all[i];
+                                        return all[i];
+                                    }
+                                }
+                                // 2. Advancing currentTime
+                                for (var i = 0; i < all.length; i++) {
+                                    if (!all[i].isProxy && all[i].currentTime > 0.3) {
+                                        window._cachedVideo = all[i];
+                                        return all[i];
+                                    }
+                                }
+                                // 3. ReadyState >= 2 (HAVE_CURRENT_DATA)
+                                for (var i = 0; i < all.length; i++) {
+                                    if (!all[i].isProxy && all[i].readyState >= 2) {
+                                        window._cachedVideo = all[i];
+                                        return all[i];
+                                    }
+                                }
+                                // 4. ReadyState >= 1 (HAVE_METADATA)
+                                for (var i = 0; i < all.length; i++) {
+                                    if (!all[i].isProxy && all[i].readyState >= 1) {
+                                        window._cachedVideo = all[i];
+                                        return all[i];
+                                    }
+                                }
+                                // 5. Has src
+                                for (var i = 0; i < all.length; i++) {
+                                    if (!all[i].isProxy && (all[i].src || all[i].currentSrc || all[i].querySelector('source'))) {
+                                        window._cachedVideo = all[i];
+                                        return all[i];
+                                    }
+                                }
+                                // 6. Any non-proxy
+                                for (var i = 0; i < all.length; i++) {
+                                    if (!all[i].isProxy) {
+                                        window._cachedVideo = all[i];
+                                        return all[i];
+                                    }
+                                }
+                                return all[0];
                             },
                             broadcastToFrames: function(msg) {
                                 try {
@@ -1275,70 +1425,81 @@ object Nuker {
                                     if (v && window.AndroidPlayer) {
                                         window.videoFound = true;
 
-                                        // 1. Direct JWPlayer API hook
-                                        if (window.jwplayer && typeof window.jwplayer === 'function') {
+                                        // 1. Direct JWPlayer API hook across window and child frames
+                                        var selfBridge = this;
+                                        var purgePmOverlays = function(targetDoc) {
                                             try {
-                                                var jw = window.jwplayer();
+                                                var pOverlays = (targetDoc || document).querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
+                                                for (var pi = 0; pi < pOverlays.length; pi++) {
+                                                    pOverlays[pi].style.setProperty('display', 'none', 'important');
+                                                    pOverlays[pi].style.setProperty('opacity', '0', 'important');
+                                                    pOverlays[pi].style.setProperty('visibility', 'hidden', 'important');
+                                                    pOverlays[pi].style.setProperty('pointer-events', 'none', 'important');
+                                                    pOverlays[pi].style.setProperty('width', '0', 'important');
+                                                    pOverlays[pi].style.setProperty('height', '0', 'important');
+                                                }
+                                            } catch(e){}
+                                        };
+                                        var hookPmJwTarget = function(win) {
+                                            if (!win || typeof win.jwplayer !== 'function') return;
+                                            try {
+                                                var jw = win.jwplayer();
                                                 if (jw && typeof jw.getState === 'function') {
                                                     var jwState = jw.getState();
                                                     if (jwState !== 'playing' && jwState !== 'buffering') {
-                                                        jw.play();
+                                                        try { jw.play(); } catch(e){}
                                                     }
-                                                    if (!window.jwHooked && typeof jw.on === 'function') {
-                                                        window.jwHooked = true;
-                                                        var self = this;
-                                                        jw.on('play', function() {
+                                                    if (!win._jwHooked && typeof jw.on === 'function') {
+                                                        win._jwHooked = true;
+                                                        var onPmJwPlay = function() {
                                                             window.videoFound = true;
-                                                            if (document.body) {
-                                                                document.body.classList.add('video-active', 'video-playing');
-                                                            }
-                                                            try {
-                                                                var pOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
-                                                                for (var pi = 0; pi < pOverlays.length; pi++) {
-                                                                    pOverlays[pi].style.setProperty('display', 'none', 'important');
-                                                                    pOverlays[pi].style.setProperty('opacity', '0', 'important');
-                                                                    pOverlays[pi].style.setProperty('visibility', 'hidden', 'important');
-                                                                    pOverlays[pi].style.setProperty('pointer-events', 'none', 'important');
-                                                                    pOverlays[pi].style.setProperty('width', '0', 'important');
-                                                                    pOverlays[pi].style.setProperty('height', '0', 'important');
-                                                                }
-                                                            } catch(e){}
+                                                            if (document.body) document.body.classList.add('video-active', 'video-playing');
+                                                            if (win.document && win.document.body) win.document.body.classList.add('video-active', 'video-playing');
+                                                            purgePmOverlays(win.document);
                                                             if (!window.successNotified && window.AndroidPlayer) {
                                                                 window.successNotified = true;
-                                                                log("JWPlayer onPlay fired");
+                                                                log("JWPlayer onPlay: notifying playback success");
                                                                 window.AndroidPlayer.notifyVideoPlaying();
                                                             }
-                                                            self.reportState(true, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
-                                                        });
+                                                            selfBridge.reportState(true, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
+                                                        };
+                                                        jw.on('play', onPmJwPlay);
+                                                        jw.on('firstFrame', onPmJwPlay);
                                                         jw.on('pause', function() {
-                                                            self.reportState(false, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
+                                                            selfBridge.reportState(false, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
                                                         });
                                                         jw.on('time', function(e) {
                                                             if (e && e.currentTime > 0.3) {
                                                                 window.videoFound = true;
-                                                                if (document.body) {
-                                                                    document.body.classList.add('video-active', 'video-playing');
-                                                                }
+                                                                purgePmOverlays(win.document);
                                                                 if (!window.successNotified && window.AndroidPlayer) {
                                                                     window.successNotified = true;
+                                                                    log("JWPlayer time > 0.3: notifying playback success");
                                                                     window.AndroidPlayer.notifyVideoPlaying();
                                                                 }
-                                                                self.reportState(true, e.currentTime || 0.1, e.duration || (jw.getDuration ? jw.getDuration() : 0));
+                                                                selfBridge.reportState(true, e.currentTime || 0.1, e.duration || (jw.getDuration ? jw.getDuration() : 0));
                                                             }
                                                         });
                                                     }
                                                     if (jwState === 'playing') {
+                                                        window.videoFound = true;
+                                                        purgePmOverlays(win.document);
                                                         var jwPos = jw.getPosition ? jw.getPosition() : 0.1;
                                                         var jwDur = jw.getDuration ? jw.getDuration() : 0;
                                                         if (jwPos > 0.3 && !window.successNotified && window.AndroidPlayer) {
                                                             window.successNotified = true;
-                                                            log("JWPlayer playing - notifying success");
+                                                            log("JWPlayer playing: notifying playback success");
                                                             window.AndroidPlayer.notifyVideoPlaying();
                                                         }
-                                                        this.reportState(true, jwPos, jwDur);
+                                                        selfBridge.reportState(true, jwPos, jwDur);
                                                     }
                                                 }
                                             } catch(e){}
+                                        };
+                                        hookPmJwTarget(window);
+                                        var pmFrames = document.querySelectorAll('iframe');
+                                        for (var pmi = 0; pmi < pmFrames.length; pmi++) {
+                                            try { hookPmJwTarget(pmFrames[pmi].contentWindow); } catch(e){}
                                         }
 
                                         // 2. Direct HTML5 Video element hook
@@ -1347,9 +1508,19 @@ object Nuker {
                                                 v._dutaHooked = true;
                                                 var self = this;
                                                 v.addEventListener('timeupdate', function() {
+                                                    if (v.currentTime > 0.3 && !window.successNotified && window.AndroidPlayer) {
+                                                        window.successNotified = true;
+                                                        log("PM video timeupdate > 0.3: notifying playback success");
+                                                        window.AndroidPlayer.notifyVideoPlaying();
+                                                    }
                                                     self.reportState(!v.paused, v.currentTime, v.duration || 0);
                                                 });
                                                 v.addEventListener('play', function() {
+                                                    if (!window.successNotified && window.AndroidPlayer) {
+                                                        window.successNotified = true;
+                                                        log("PM video play: notifying playback success");
+                                                        window.AndroidPlayer.notifyVideoPlaying();
+                                                    }
                                                     self.reportState(true, v.currentTime, v.duration || 0);
                                                 });
                                                 v.addEventListener('pause', function() {

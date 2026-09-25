@@ -3752,6 +3752,14 @@ fun VideoPlayerWebView(
                                                   try {
                                                       var f = document.getElementById('playerFrame');
                                                       if (!f) return;
+
+                                                      // Expose AndroidPlayer interface into child iframe window
+                                                      try {
+                                                          if (window.AndroidPlayer && f.contentWindow && !f.contentWindow.AndroidPlayer) {
+                                                              f.contentWindow.AndroidPlayer = window.AndroidPlayer;
+                                                          }
+                                                      } catch(e){}
+
                                                       var doc = f.contentDocument || (f.contentWindow && f.contentWindow.document);
                                                       if (!doc) return;
                                                       if (doc.documentElement) {
@@ -3763,10 +3771,15 @@ fun VideoPlayerWebView(
                                                           doc.body.style.setProperty('background-color', '#000', 'important');
                                                           doc.body.classList.add('video-active', 'video-playing');
                                                       }
+                                                      var bgEls = doc.querySelectorAll('.stage, .wrap, #player, #content, .container, main, .jwplayer, .jw-wrapper, .jw-media, div#player, div.player, .player');
+                                                      for (var bgi = 0; bgi < bgEls.length; bgi++) {
+                                                          bgEls[bgi].style.setProperty('background', '#000', 'important');
+                                                          bgEls[bgi].style.setProperty('background-color', '#000', 'important');
+                                                      }
                                                       if (!doc.getElementById('abyss-cleaner-style')) {
                                                           var s = doc.createElement('style');
                                                           s.id = 'abyss-cleaner-style';
-                                                          s.textContent = 'html, body, .stage, .wrap, #player { background: #000 !important; background-color: #000 !important; } #overlay, #playback, #overlay *, #playback *, div#overlay, div#playback, .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .jw-flag-fullscreen .jw-display-icon-display, .jw-button-color, .vjs-big-play-button, .vjs-big-play-button-mobile, .play-button, #play-button, .play-btn, #play-btn, .big-play, .big-play-btn, .big-play-button, .large-play-button, .ytp-large-play-button, .play-overlay, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .video-info-title, .video-info-hint, .video-info-close, svg, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"], #playback svg, #overlay svg { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; width: 0 !important; height: 0 !important; max-width: 0 !important; max-height: 0 !important; z-index: -99999 !important; }';
+                                                          s.textContent = 'html, body, .stage, .wrap, #player, .jwplayer, .jw-wrapper, .jw-media, div#player, div.player, .player { background: #000 !important; background-color: #000 !important; } #overlay, #playback, #overlay *, #playback *, div#overlay, div#playback, .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .jw-flag-fullscreen .jw-display-icon-display, .jw-button-color, .vjs-big-play-button, .vjs-big-play-button-mobile, .play-button, #play-button, .play-btn, #play-btn, .big-play, .big-play-btn, .big-play-button, .large-play-button, .ytp-large-play-button, .play-overlay, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .video-info-title, .video-info-hint, .video-info-close, svg, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"], #playback svg, #overlay svg { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; width: 0 !important; height: 0 !important; max-width: 0 !important; max-height: 0 !important; z-index: -99999 !important; }';
                                                           if (doc.head) doc.head.appendChild(s);
                                                           else if (doc.body) doc.body.appendChild(s);
                                                       }
@@ -3783,13 +3796,103 @@ fun VideoPlayerWebView(
                                                       if (typeof f.contentWindow.closeVideoInfo === 'function') {
                                                           try { f.contentWindow.closeVideoInfo(); } catch(e) {}
                                                       }
+
+                                                      // Direct hook for JWPlayer inside child iframe
+                                                      try {
+                                                          if (f.contentWindow && typeof f.contentWindow.jwplayer === 'function') {
+                                                              var jw = f.contentWindow.jwplayer();
+                                                              if (jw) {
+                                                                  if (typeof jw.getState === 'function') {
+                                                                      var st = jw.getState();
+                                                                      if (st === 'playing' || (jw.getPosition && jw.getPosition() > 0.3)) {
+                                                                          if (window.AndroidPlayer && window.AndroidPlayer.notifyVideoPlaying) {
+                                                                              window.AndroidPlayer.notifyVideoPlaying();
+                                                                          }
+                                                                          if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
+                                                                              window.AndroidPlayer.onPlayerState(1, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
+                                                                          }
+                                                                      }
+                                                                  }
+                                                                  if (typeof jw.on === 'function' && !f.contentWindow._jwDutaHooked) {
+                                                                      f.contentWindow._jwDutaHooked = true;
+                                                                      var notifySuccess = function() {
+                                                                          if (window.AndroidPlayer && window.AndroidPlayer.notifyVideoPlaying) {
+                                                                              window.AndroidPlayer.notifyVideoPlaying();
+                                                                          }
+                                                                      };
+                                                                      jw.on('play', function() {
+                                                                          notifySuccess();
+                                                                          if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
+                                                                              window.AndroidPlayer.onPlayerState(1, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
+                                                                          }
+                                                                      });
+                                                                      jw.on('firstFrame', notifySuccess);
+                                                                      jw.on('time', function(e) {
+                                                                          if (e && e.currentTime > 0.3) {
+                                                                              notifySuccess();
+                                                                              if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
+                                                                                  window.AndroidPlayer.onPlayerState(1, e.currentTime, e.duration || (jw.getDuration ? jw.getDuration() : 0));
+                                                                              }
+                                                                          }
+                                                                      });
+                                                                      jw.on('pause', function() {
+                                                                          if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
+                                                                              window.AndroidPlayer.onPlayerState(2, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
+                                                                          }
+                                                                      });
+                                                                  }
+                                                              }
+                                                          }
+                                                      } catch(e){}
+
+                                                      // Direct hook for video/audio elements inside child iframe
+                                                      try {
+                                                          var vids = doc.querySelectorAll('video, audio');
+                                                          for (var vi = 0; vi < vids.length; vi++) {
+                                                              var vid = vids[vi];
+                                                              if (vid) {
+                                                                  if (!vid._cleanHooked) {
+                                                                      vid._cleanHooked = true;
+                                                                      vid.addEventListener('play', function() {
+                                                                          if (window.AndroidPlayer && window.AndroidPlayer.notifyVideoPlaying) {
+                                                                              window.AndroidPlayer.notifyVideoPlaying();
+                                                                          }
+                                                                          if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
+                                                                              window.AndroidPlayer.onPlayerState(1, this.currentTime || 0.1, this.duration || 0);
+                                                                          }
+                                                                      });
+                                                                      vid.addEventListener('timeupdate', function() {
+                                                                          if (this.currentTime > 0.3) {
+                                                                              if (window.AndroidPlayer && window.AndroidPlayer.notifyVideoPlaying) {
+                                                                                  window.AndroidPlayer.notifyVideoPlaying();
+                                                                              }
+                                                                              if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
+                                                                                  window.AndroidPlayer.onPlayerState(1, this.currentTime, this.duration || 0);
+                                                                              }
+                                                                          }
+                                                                      });
+                                                                      vid.addEventListener('pause', function() {
+                                                                          if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
+                                                                              window.AndroidPlayer.onPlayerState(2, this.currentTime || 0.1, this.duration || 0);
+                                                                          }
+                                                                      });
+                                                                  }
+                                                                  if (!vid.paused && (vid.currentTime > 0.3 || vid.readyState >= 2)) {
+                                                                      if (window.AndroidPlayer && window.AndroidPlayer.notifyVideoPlaying) {
+                                                                          window.AndroidPlayer.notifyVideoPlaying();
+                                                                      }
+                                                                  }
+                                                              }
+                                                          }
+                                                      } catch(e){}
+
                                                   } catch(e) {}
                                               };
                                               var f = document.getElementById('playerFrame');
                                               if (f) {
                                                   f.addEventListener('load', cleanIframe);
                                               }
-                                              cleanIframe();
+                                                                                            cleanIframe();
                                               setInterval(cleanIframe, 100);
                                           })();
                                           </script>
