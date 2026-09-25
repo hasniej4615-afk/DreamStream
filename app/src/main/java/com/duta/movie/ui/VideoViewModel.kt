@@ -1756,22 +1756,22 @@ class VideoViewModel @Inject constructor(
                     }
                     if (isEpisodeUrl || targetEpisode != null) {
                         val primaryTargetUrl = if (isEpisodeUrl) episodeUrl!! else targetEpisode!!.url
-                        val primarySlug = VideoExtractor.extractStableId(primaryTargetUrl)
+                        val primarySlug = VideoExtractor.extractCleanSlug(primaryTargetUrl)
                         val matchingEp = filteredEps.find { 
-                            val epSlug = VideoExtractor.extractStableId(it.url)
+                            val epSlug = VideoExtractor.extractCleanSlug(it.url)
                             epSlug == primarySlug || (primaryTargetUrl.contains(epSlug) && epSlug.length > 5) || (it.url.contains(primarySlug) && primarySlug.length > 5)
                         }
                         if (matchingEp != null) _currentEpisode.value = matchingEp
                     } else if (_currentEpisode.value == null && filteredEps.isNotEmpty()) {
-                        val videoSlug = VideoExtractor.extractStableId(video!!.videoUrl).removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_").removePrefix("dfw_")
-                        val idSlug = videoId.removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_").removePrefix("dfw_")
+                        val videoSlug = VideoExtractor.extractCleanSlug(video!!.videoUrl)
+                        val idSlug = VideoExtractor.stripSourcePrefix(videoId)
                         val matchingEp = filteredEps.find { ep ->
-                            val epSlug = VideoExtractor.extractStableId(ep.url).removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_").removePrefix("dfw_")
+                            val epSlug = VideoExtractor.extractCleanSlug(ep.url)
                             epSlug == videoSlug || epSlug == idSlug ||
                             (videoSlug.length > 5 && (epSlug.contains(videoSlug) || videoSlug.contains(epSlug))) ||
                             (idSlug.length > 5 && (epSlug.contains(idSlug) || idSlug.contains(epSlug)))
                         }
-                        if (matchingEp != null) _currentEpisode.value = matchingEp
+                        _currentEpisode.value = matchingEp ?: filteredEps.firstOrNull() ?: video!!.episodes.firstOrNull()
                     }
                 }
 
@@ -2260,10 +2260,10 @@ class VideoViewModel @Inject constructor(
                         val matchesSeason = targetSeasonNum == null || epSeasonNum == null || epSeasonNum == targetSeasonNum
                         notMeta && matchesSeason
                     }
-                    val videoSlug = VideoExtractor.extractStableId(video!!.videoUrl).removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_").removePrefix("dfw_")
-                    val idSlug = videoId.removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_").removePrefix("dfw_")
+                    val videoSlug = VideoExtractor.extractCleanSlug(video!!.videoUrl)
+                    val idSlug = VideoExtractor.stripSourcePrefix(videoId)
                     val matched = filteredEps.find { ep ->
-                        val epSlug = VideoExtractor.extractStableId(ep.url).removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_").removePrefix("dfw_")
+                        val epSlug = VideoExtractor.extractCleanSlug(ep.url)
                         epSlug == videoSlug || epSlug == idSlug ||
                         (videoSlug.length > 5 && (epSlug.contains(videoSlug) || videoSlug.contains(epSlug))) ||
                         (idSlug.length > 5 && (epSlug.contains(idSlug) || idSlug.contains(epSlug)))
@@ -2356,9 +2356,9 @@ class VideoViewModel @Inject constructor(
                         !low.contains("episode list") && !low.contains("daftar episode")
                     }
                     
-                    val primarySlug = com.duta.movie.util.VideoExtractor.extractStableId(primaryUrl)
+                    val primarySlug = com.duta.movie.util.VideoExtractor.extractCleanSlug(primaryUrl)
                     val matchingEp = filteredEps.find { 
-                        val epSlug = com.duta.movie.util.VideoExtractor.extractStableId(it.url)
+                        val epSlug = com.duta.movie.util.VideoExtractor.extractCleanSlug(it.url)
                         epSlug == primarySlug || (primaryUrl.contains(epSlug) && epSlug.length > 5) || (it.url.contains(primarySlug) && primarySlug.length > 5)
                     }
                     
@@ -2385,7 +2385,7 @@ class VideoViewModel @Inject constructor(
                                  lowMirror.contains("bilibili.com") || lowMirror.contains("bilibili.tv")
                 if (isWebEmbed) {
                     addResolutionLog("Web Embed Identified ($mirrorToResolve). Instant Handshake engaged.")
-                    withContext(Dispatchers.Main) {
+                    withContext(Dispatchers.Main) { 
                         _currentServerUrl.value = mirrorToResolve
                         _resolvedUrl.value = mirrorToResolve
                         _resolutionProgress.value = null
@@ -2422,7 +2422,7 @@ class VideoViewModel @Inject constructor(
                 }
 
                 val mirrorsFromMetadata = sortedServers.map { it.url }.toSet()
-                val primarySlug = com.duta.movie.util.VideoExtractor.extractStableId(primaryUrl)
+                val primarySlug = com.duta.movie.util.VideoExtractor.extractCleanSlug(primaryUrl)
                 
                 val baseList = if (mirrorsFromMetadata.isEmpty()) listOf(mirrorToResolve, primaryUrl) else listOf(mirrorToResolve)
                 
@@ -2436,9 +2436,9 @@ class VideoViewModel @Inject constructor(
                         val host = try { android.net.Uri.parse(url).host?.lowercase() ?: java.net.URI(url).host?.lowercase() } catch(_: Throwable) { null }
                         val isVideoHost = com.duta.movie.util.VideoExtractor.isProbablyVideoHost(url)
                         val isSameEp = !isSeries || isVideoHost ||
-                                       com.duta.movie.util.VideoExtractor.extractStableId(url) == primarySlug || 
+                                       com.duta.movie.util.VideoExtractor.extractCleanSlug(url) == primarySlug || 
                                        url.contains(primarySlug) || 
-                                       primaryUrl.contains(com.duta.movie.util.VideoExtractor.extractStableId(url))
+                                       primaryUrl.contains(com.duta.movie.util.VideoExtractor.extractCleanSlug(url))
                         val isHostWhitelisted = com.duta.movie.util.VideoExtractor.isWhitelistedHost(host)
                         !low.contains("listeamed") && (host == null || !deadMirrors.contains(host) || isHostWhitelisted) && !deadMirrors.contains(url) && !hardDeadMirrors.contains(url) && !exhaustedServerUrls.contains(url) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(url) && isSameEp
                     }

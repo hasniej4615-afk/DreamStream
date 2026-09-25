@@ -1697,8 +1697,19 @@ object VideoExtractor {
                 if (currPage > 1) "$eff?page=$currPage" else eff
             }
         }
+        if (path.startsWith("/explore") || path.startsWith("explore")) {
+            val eff = "$cleanBase/${path.trimStart('/')}".removeSuffix("/")
+            return if (eff.contains("?")) {
+                if (currPage > 1) "$eff&page=$currPage" else eff
+            } else {
+                if (currPage > 1) "$eff?page=$currPage" else eff
+            }
+        }
         val norm = normalizePath(path).removePrefix("/").removeSuffix("/")
         return when {
+            norm == "series" || norm == "tv" || norm == "tv-series" -> {
+                if (currPage > 1) "$cleanBase/explore?media_type=tv&page=$currPage" else "$cleanBase/explore?media_type=tv"
+            }
             norm.contains("dutafilm") || norm.isEmpty() || norm == "movies" -> {
                 if (currPage > 1) "$cleanBase/explore?media_type=movie&page=$currPage" else "$cleanBase/explore?media_type=movie"
             }
@@ -1785,7 +1796,7 @@ object VideoExtractor {
                     views = rating,
                     date = releaseYear,
                     quality = quality,
-                    isSeries = slug.contains("season-") || slug.contains("-series")
+                    isSeries = slug.contains("season-") || slug.contains("-series") || baseUrl.contains("media_type=tv")
                 )
             )
         }
@@ -1964,12 +1975,16 @@ object VideoExtractor {
 
         val dutaWebDeferred = if (path.contains("country/indonesia", ignoreCase = true)) {
             async(Dispatchers.IO) { fetchDutaFilmWebVideos("/explore?country=indonesia", page, count) }
+        } else if (isSeriesCategory) {
+            async(Dispatchers.IO) { fetchDutaFilmWebVideos("/explore?media_type=tv", page, count) }
         } else null
 
         val dutaVideos = dutaDeferred.await()
         val pencuriVideos = pencuriDeferred.await()
         val bullerswoodVideos = bullerswoodDeferred?.await() ?: emptyList()
-        val dutaWebVideos = dutaWebDeferred?.await() ?: emptyList()
+        val dutaWebVideos = dutaWebDeferred?.await()?.let { list ->
+            if (isSeriesCategory) list.map { it.copy(isSeries = true) } else list
+        } ?: emptyList()
 
         Log.i(TAG, "Unified Category Fetch for $path (Page $page, Requested $count): Duta=${dutaVideos.size}, Pencuri=${pencuriVideos.size}, Bullerswood=${bullerswoodVideos.size}, DutaWeb=${dutaWebVideos.size}")
 
@@ -4055,6 +4070,18 @@ object VideoExtractor {
         }
     }
 
+    fun stripSourcePrefix(id: String): String {
+        return id.removePrefix("kb_")
+            .removePrefix("pm_")
+            .removePrefix("bw_")
+            .removePrefix("df_")
+            .removePrefix("dfw_")
+    }
+
+    fun extractCleanSlug(url: String): String {
+        return stripSourcePrefix(extractStableId(url))
+    }
+
     fun cleanTitle(title: String): String {
         return title.replace("Permalink ke:", "", ignoreCase = true)
                     .replace("Error (", "(", ignoreCase = true)
@@ -4773,7 +4800,7 @@ object VideoExtractor {
         val isEpisodePage = videoUrl.contains("/eps/") || videoUrl.contains("/episode/") || videoUrl.contains("-episode-") ||
                             videoUrl.contains("/episod/") || videoUrl.contains("-episod-") || videoUrl.contains("-epi-")
         
-        val rawSlug = extractStableId(videoUrl).removePrefix("pm_")
+        val rawSlug = extractCleanSlug(videoUrl)
         val seriesSlug = rawSlug
             .replace(Regex("""[-_](?:episod[e]?|eps|ep)[-_]\d+.*""", RegexOption.IGNORE_CASE), "")
             .replace(Regex("""[-_]s(?:eason)?[-_]?\d+[-_]ep(?:isod[e]?)?[-_]?\d+.*""", RegexOption.IGNORE_CASE), "")
@@ -4843,9 +4870,11 @@ object VideoExtractor {
         if (finalIsSeries && discoveredServers.isEmpty() && episodes.isNotEmpty() && !isRecursive && !isEpisodePage) {
             val firstEp = episodes.first()
             val cleanSeriesSlug = seriesSlug.replace(Regex("""[-_]s(?:eason)?[-_]?\d+""", RegexOption.IGNORE_CASE), "")
+            val firstEpSlug = extractCleanSlug(firstEp.url)
             val isSafeProbe = cleanSeriesSlug.isEmpty() || 
                               firstEp.url.contains(cleanSeriesSlug, ignoreCase = true) || 
-                              cleanSeriesSlug.contains(extractStableId(firstEp.url)) ||
+                              cleanSeriesSlug.contains(firstEpSlug) ||
+                              firstEpSlug.contains(cleanSeriesSlug) ||
                               (cleanSlugNoYear.length >= 3 && firstEp.url.contains(cleanSlugNoYear, ignoreCase = true))
             if (isSafeProbe) {
                 Log.d(TAG, "Series mirrors missing. Speculative Probe engaged for: ${firstEp.name}")
@@ -5067,7 +5096,7 @@ object VideoExtractor {
         val containers = doc.select(".gmr-listseries, .muvipro-listepisode, .list-episode, .episodios, .eps-item, .list-eps, .list-series, [class*='listseries'], .episode-list-container, .episodes-grid, .tvseason")
         val searchScope = if (containers.isNotEmpty()) containers else doc.select("body").ifEmpty { doc.select("*") }
 
-        val rawSlug = extractStableId(videoUrl).removePrefix("pm_")
+        val rawSlug = extractCleanSlug(videoUrl)
         val seriesSlug = rawSlug
             .replace(Regex("""[-_](?:episod[e]?|eps|ep)[-_]\d+.*""", RegexOption.IGNORE_CASE), "")
             .replace(Regex("""[-_]s(?:eason)?[-_]?\d+[-_]ep(?:isod[e]?)?[-_]?\d+.*""", RegexOption.IGNORE_CASE), "")
@@ -5101,7 +5130,8 @@ object VideoExtractor {
                                           (cleanSlugNoYear.length >= 3 && lowUrl.contains(cleanSlugNoYear)) ||
                                           epTitle.contains(cleanSlugBase.replace("-", " ")) ||
                                           epAria.contains(cleanSlugBase.replace("-", " ")) ||
-                                          (cleanSlugNoYear.length >= 3 && epTitle.contains(cleanSlugNoYear.replace("-", " ")))
+                                          (cleanSlugNoYear.length >= 3 && epTitle.contains(cleanSlugNoYear.replace("-", " "))) ||
+                                          isContainerDedicated
                     if (!belongsToSeries) {
                         return@forEach
                     }
