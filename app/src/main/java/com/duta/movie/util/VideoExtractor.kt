@@ -62,6 +62,16 @@ object VideoExtractor {
 
     private var PENCURI_BASE_URL = "https://ww44.pencurimovie.baby"
     const val DUTAFILM_BASE_URL = "http://159.89.249.45"
+    const val DUTAFILM_WEB_BASE_URL = "https://df31.mantab.men"
+    private var activeDutaFilmWebBaseUrl: String = DUTAFILM_WEB_BASE_URL
+
+    fun getDutaFilmWebBaseUrl(): String = activeDutaFilmWebBaseUrl
+
+    fun setDutaFilmWebBaseUrl(url: String) {
+        val trimmed = url.trimEnd('/')
+        if (trimmed.isNotBlank()) activeDutaFilmWebBaseUrl = trimmed
+    }
+
     const val BULLERSWOOD_BASE_URL = "https://bullerswood.org"
     private var activeBullerswoodBaseUrl: String = BULLERSWOOD_BASE_URL
 
@@ -113,7 +123,7 @@ object VideoExtractor {
     fun isClusterSite(urlOrHost: String?): Boolean {
         if (urlOrHost.isNullOrBlank()) return false
         val low = urlOrHost.lowercase()
-        return CLUSTER_HOSTS.any { low.contains(it) } || low.contains("dutafilm")
+        return CLUSTER_HOSTS.any { low.contains(it) } || low.contains("dutafilm") || low.contains("mantab.men") || low.contains("df31")
     }
 
     private var onPencuriDomainLearned: ((String) -> Unit)? = null
@@ -263,6 +273,7 @@ object VideoExtractor {
         if (path.contains("p-ramlee", ignoreCase = true) || path.contains("FilemP.ramlee", ignoreCase = true) || pClean.equals("p-ramlee", ignoreCase = true)) return "/category/p-ramlee/"
         if (path.contains("country/indonesia", ignoreCase = true) || path.contains("country/indonesian", ignoreCase = true) || pClean.equals("indonesia", ignoreCase = true) || pClean.equals("indonesian", ignoreCase = true)) return "/country/indonesia/"
         if (path.contains("bullerswood", ignoreCase = true) || pClean.equals("bullerswood", ignoreCase = true) || path.contains("lk21", ignoreCase = true) || pClean.equals("lk21", ignoreCase = true) || pClean.equals("layarkaca21", ignoreCase = true)) return "/source/bullerswood/"
+        if (path.contains("dutafilm", ignoreCase = true) || pClean.equals("dutafilm", ignoreCase = true) || path.contains("mantab.men", ignoreCase = true) || path.contains("df31", ignoreCase = true)) return "/source/dutafilm/"
         if (path.contains("country/south-korea", ignoreCase = true) || path.contains("country/korea", ignoreCase = true) || pClean.equals("korea", ignoreCase = true) || pClean.equals("south-korea", ignoreCase = true)) return "/country/korea/"
         if (path.contains("country/united-kingdom", ignoreCase = true) || path.contains("country/uk", ignoreCase = true) || pClean.equals("united-kingdom", ignoreCase = true) || pClean.equals("uk", ignoreCase = true)) return "/country/united-kingdom/"
         if (path.contains("country/united-states", ignoreCase = true) || path.contains("country/usa", ignoreCase = true) || pClean.equals("united-states", ignoreCase = true) || pClean.equals("usa", ignoreCase = true)) return "/country/usa/"
@@ -362,12 +373,23 @@ object VideoExtractor {
         }
         return when {
             cleanId.startsWith("pm_") -> "${getPencuriBaseUrl()}/${cleanId.removePrefix("pm_").trim('/')}/"
+            cleanId.startsWith("dfw_") -> "${getDutaFilmWebBaseUrl()}/watch/${cleanId.removePrefix("dfw_").removeSuffix(".html")}.html"
             cleanId.startsWith("df_") -> "$DUTAFILM_BASE_URL/${cleanId.removePrefix("df_").trim('/')}/"
             cleanId.startsWith("bw_") -> "${getBullerswoodBaseUrl()}/${cleanId.removePrefix("bw_").trim('/')}/"
             cleanId.startsWith("kb_") || cleanId.startsWith("ia_pramlee") ||
             cleanId.startsWith("yt_") || cleanId.startsWith("bili_") || cleanId.startsWith("dm_") -> ""
             else -> "${getBaseUrl()}/$cleanId/"
         }
+    }
+
+    /**
+     * Identifies if a video or server belongs to DutaFilm Web (df31.mantab.men) source.
+     */
+    fun isDutaFilmWeb(videoId: String? = null, videoUrl: String? = null, streamUrl: String? = null): Boolean {
+        if (videoId?.startsWith("dfw_") == true) return true
+        if (videoUrl?.contains("mantab.men", ignoreCase = true) == true || videoUrl?.contains("df31", ignoreCase = true) == true) return true
+        if (streamUrl?.contains("mantab.men", ignoreCase = true) == true || streamUrl?.contains("df31", ignoreCase = true) == true) return true
+        return false
     }
 
     /**
@@ -401,15 +423,17 @@ object VideoExtractor {
     }
 
     /**
-     * Identifies if a video or server belongs to DutaFilm (159.89.249.45) source.
+     * Identifies if a video or server belongs to DutaFilm (159.89.249.45 / mantab.men) source.
      */
     fun isDutaFilm(videoId: String? = null, videoUrl: String? = null, streamUrl: String? = null): Boolean {
-        if (videoId?.startsWith("df_") == true) return true
+        if (videoId?.startsWith("df_") == true || videoId?.startsWith("dfw_") == true) return true
         if (videoUrl != null && isClusterSite(videoUrl)) return true
         if (streamUrl != null && isClusterSite(streamUrl)) return true
         if (videoUrl?.contains("159.89.249.45", ignoreCase = true) == true) return true
         if (videoUrl?.contains("dutafilm", ignoreCase = true) == true) return true
+        if (videoUrl?.contains("mantab.men", ignoreCase = true) == true) return true
         if (streamUrl?.contains("159.89.249.45", ignoreCase = true) == true) return true
+        if (streamUrl?.contains("mantab.men", ignoreCase = true) == true) return true
         return false
     }
 
@@ -1468,7 +1492,7 @@ object VideoExtractor {
         if (pencuriHost != null && (low == pencuriHost || low.contains(pencuriHost))) return true
         if (isClusterSite(low)) return true
         return low.contains("archive.org") || low.contains("bullerswood") || low.contains("pencurimovie") || low.contains("pencurifilm") ||
-            low.contains("159.89.249.45") || low.contains("dutafilm") ||
+            low.contains("159.89.249.45") || low.contains("dutafilm") || low.contains("mantab.men") || low.contains("df31") ||
             low.contains("dutamovie") ||
             low.contains("algarvebuzz") || low.contains("actors-pictures") ||
             low.contains("playsobat") || low.contains("asiastream") || low.contains("asiatik") || low.contains("streamsobat") ||
@@ -1663,7 +1687,192 @@ object VideoExtractor {
         filterAndSortByRelevance(results, query).take(count)
     }
 
+    fun buildDutaFilmWebCategoryUrl(path: String, currPage: Int): String {
+        val cleanBase = getDutaFilmWebBaseUrl().trimEnd('/')
+        if (path.startsWith("http")) {
+            val eff = path.removeSuffix("/")
+            return if (eff.contains("?")) {
+                if (currPage > 1) "$eff&page=$currPage" else eff
+            } else {
+                if (currPage > 1) "$eff?page=$currPage" else eff
+            }
+        }
+        val norm = normalizePath(path).removePrefix("/").removeSuffix("/")
+        return when {
+            norm.contains("dutafilm") || norm.isEmpty() || norm == "movies" -> {
+                if (currPage > 1) "$cleanBase/explore?media_type=movie&page=$currPage" else "$cleanBase/explore?media_type=movie"
+            }
+            norm.startsWith("country/") -> {
+                val country = norm.substringAfter('/')
+                if (currPage > 1) "$cleanBase/explore?country=$country&page=$currPage" else "$cleanBase/explore?country=$country"
+            }
+            norm.startsWith("genre/") -> {
+                val genre = norm.substringAfter('/')
+                if (currPage > 1) "$cleanBase/explore?genre=$genre&page=$currPage" else "$cleanBase/explore?genre=$genre"
+            }
+            norm.startsWith("release-year/") || norm.startsWith("year/") -> {
+                val year = norm.substringAfter('/')
+                if (currPage > 1) "$cleanBase/explore?year=$year&page=$currPage" else "$cleanBase/explore?year=$year"
+            }
+            norm == "top-imdb" || norm == "best-rating" -> {
+                if (currPage > 1) "$cleanBase/explore?sort=rating&page=$currPage" else "$cleanBase/explore?sort=rating"
+            }
+            norm == "most-viewed" -> {
+                if (currPage > 1) "$cleanBase/explore?sort=views&page=$currPage" else "$cleanBase/explore?sort=views"
+            }
+            else -> {
+                if (currPage > 1) "$cleanBase/explore?$norm&page=$currPage" else "$cleanBase/explore?$norm"
+            }
+        }
+    }
+
+    fun scrapeDutaFilmWebHtml(html: String, baseUrl: String): List<Video> {
+        val results = mutableListOf<Video>()
+        val seen = mutableSetOf<String>()
+        val doc = Jsoup.parse(html, baseUrl)
+
+        val movieElements = doc.select("a[href*='/watch/'], .mv")
+        for (el in movieElements) {
+            val anchor = if (el.tagName() == "a" && el.attr("href").contains("/watch/")) el else el.selectFirst("a[href*='/watch/']") ?: continue
+            val href = anchor.attr("abs:href").ifEmpty {
+                val rel = anchor.attr("href")
+                if (rel.startsWith("http")) rel else "${getDutaFilmWebBaseUrl()}/${rel.trimStart('/')}"
+            }
+            if (href.isBlank()) continue
+            val slug = href.substringBefore('?').trimEnd('/').substringAfterLast('/').removeSuffix(".html")
+            val id = "dfw_$slug"
+            if (!seen.add(id)) continue
+
+            val rawTitle = anchor.attr("title").ifEmpty {
+                anchor.select(".mv-title, .title, h2, h3, .name").text()
+            }.ifEmpty {
+                anchor.select("img").attr("alt")
+            }.ifEmpty {
+                slug.replace("-", " ")
+            }
+            val title = cleanTitle(rawTitle)
+
+            var poster = anchor.select("img.mv-poster, img").firstOrNull()?.let { img ->
+                img.attr("src").ifEmpty { img.attr("data-src") }.ifEmpty { img.attr("abs:src") }
+            } ?: ""
+            if (poster.startsWith("//")) poster = "https:$poster"
+            else if (poster.startsWith("/")) poster = "${getDutaFilmWebBaseUrl()}$poster"
+            poster = getHighResImage(poster)
+
+            val rating = anchor.select(".mv-ratdur, .rating, .score").text().let { text ->
+                val m = Regex("""(\d+(?:\.\d+)?)""").find(text)
+                m?.groupValues?.get(1) ?: "7.0"
+            }
+
+            val duration = anchor.select(".mv-ratdur, .duration").text().let { text ->
+                val m = Regex("""(\d+m|\d+:\d+(?::\d+)?)""").find(text)
+                m?.groupValues?.get(1) ?: ""
+            }
+
+            val quality = anchor.select(".mv-qual, .quality, .qualz").text().trim().ifEmpty { "HD" }
+
+            val yearMatch = Regex("""\b(19\d{2}|20\d{2})\b""").find(title + " " + slug)
+            val releaseYear = yearMatch?.groupValues?.get(1) ?: ""
+
+            results.add(
+                Video(
+                    id = id,
+                    title = title,
+                    thumbnailUrl = poster,
+                    backdropUrl = poster,
+                    videoUrl = href,
+                    duration = duration,
+                    views = rating,
+                    date = releaseYear,
+                    quality = quality,
+                    isSeries = slug.contains("season-") || slug.contains("-series")
+                )
+            )
+        }
+        return results
+    }
+
+    suspend fun fetchDutaFilmWebVideos(path: String, page: Int = 1, count: Int = 20): List<Video> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<Video>()
+        val seen = mutableSetOf<String>()
+        val pagesToFetch = when {
+            count >= 100 -> 4
+            count >= 40 -> 3
+            count >= 20 -> 2
+            else -> 1
+        }
+        val pageJobs = (0 until pagesToFetch).map { offset ->
+            async(Dispatchers.IO) {
+                val currPage = page + offset
+                val url = buildDutaFilmWebCategoryUrl(path, currPage)
+                try {
+                    val html = fetchHtml(url)
+                    if (!html.isNullOrEmpty()) {
+                        scrapeDutaFilmWebHtml(html, url)
+                    } else emptyList()
+                } catch (e: Exception) {
+                    Log.w(TAG, "DutaFilm Web category fetch failed for $path p$currPage: ${e.message}")
+                    emptyList()
+                }
+            }
+        }
+        pageJobs.awaitAll().flatten().forEach { video ->
+            if (seen.add(video.id)) results.add(video)
+        }
+        sortVideosByNewestRelease(results).take(count)
+    }
+
+    suspend fun searchDutaFilmWeb(query: String, page: Int = 1, count: Int = 20): List<Video> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<Video>()
+        val seen = mutableSetOf<String>()
+        val cleanBase = getDutaFilmWebBaseUrl().trimEnd('/')
+        val encodedQuery = encodeQuery(query)
+
+        // 1. Instant /suggest API if page == 1
+        if (page <= 1) {
+            try {
+                val suggestUrl = "$cleanBase/suggest?val=$encodedQuery"
+                val json = fetchHtml(suggestUrl)
+                if (!json.isNullOrEmpty() && json.trim().startsWith("[")) {
+                    val root = org.json.JSONArray(json)
+                    for (i in 0 until root.length()) {
+                        val item = root.optJSONObject(i) ?: continue
+                        val dataHtml = item.optString("data", "")
+                        if (dataHtml.isNotBlank()) {
+                            val parsed = scrapeDutaFilmWebHtml(dataHtml, cleanBase)
+                            parsed.forEach { v ->
+                                if (seen.add(v.id)) results.add(v)
+                            }
+                        }
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "DutaFilm Web suggest search error for '$query': ${e.message}")
+            }
+        }
+
+        // 2. Query /explore?q= for comprehensive results
+        try {
+            val exploreUrl = if (page <= 1) "$cleanBase/explore?q=$encodedQuery" else "$cleanBase/explore?q=$encodedQuery&page=$page"
+            val html = fetchHtml(exploreUrl)
+            if (!html.isNullOrEmpty()) {
+                val parsed = scrapeDutaFilmWebHtml(html, exploreUrl)
+                parsed.forEach { v ->
+                    if (seen.add(v.id)) results.add(v)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "DutaFilm Web explore search error for '$query': ${e.message}")
+        }
+
+        filterAndSortByRelevance(results, query).take(count)
+    }
+
     suspend fun fetchVideosBySection(path: String, page: Int, count: Int): List<Video> = withContext(Dispatchers.IO) {
+        if (path.contains("dutafilm", ignoreCase = true) || path.contains("mantab.men", ignoreCase = true) || path.contains("df31", ignoreCase = true)) {
+            return@withContext fetchDutaFilmWebVideos(path, page, count)
+        }
+
         if (path.contains("bullerswood", ignoreCase = true) || path.contains("lk21", ignoreCase = true)) {
             return@withContext fetchBullerswoodVideos(path, page, count)
         }
@@ -1753,16 +1962,24 @@ object VideoExtractor {
             async(Dispatchers.IO) { fetchBullerswoodVideos("/country/indonesia/", page, count) }
         } else null
 
+        val dutaWebDeferred = if (path.contains("country/indonesia", ignoreCase = true)) {
+            async(Dispatchers.IO) { fetchDutaFilmWebVideos("/explore?country=indonesia", page, count) }
+        } else null
+
         val dutaVideos = dutaDeferred.await()
         val pencuriVideos = pencuriDeferred.await()
         val bullerswoodVideos = bullerswoodDeferred?.await() ?: emptyList()
+        val dutaWebVideos = dutaWebDeferred?.await() ?: emptyList()
 
-        Log.i(TAG, "Unified Category Fetch for $path (Page $page, Requested $count): Duta=${dutaVideos.size}, Pencuri=${pencuriVideos.size}, Bullerswood=${bullerswoodVideos.size}")
+        Log.i(TAG, "Unified Category Fetch for $path (Page $page, Requested $count): Duta=${dutaVideos.size}, Pencuri=${pencuriVideos.size}, Bullerswood=${bullerswoodVideos.size}, DutaWeb=${dutaWebVideos.size}")
 
-        val totalAvailable = dutaVideos.size + pencuriVideos.size + bullerswoodVideos.size
+        val totalAvailable = dutaVideos.size + pencuriVideos.size + bullerswoodVideos.size + dutaWebVideos.size
         var merged = mergeAndInterleave(dutaVideos, pencuriVideos, if (count > totalAvailable) count else totalAvailable)
         if (bullerswoodVideos.isNotEmpty()) {
             merged = mergeAndInterleave(merged, bullerswoodVideos, if (count > totalAvailable) count else totalAvailable)
+        }
+        if (dutaWebVideos.isNotEmpty()) {
+            merged = mergeAndInterleave(merged, dutaWebVideos, if (count > totalAvailable) count else totalAvailable)
         }
         val sorted = sortVideosByNewestRelease(merged)
 
@@ -1787,15 +2004,17 @@ object VideoExtractor {
         val isKb = isKepalaBergetar(videoId = video.id, videoUrl = video.videoUrl)
         val isDf = isDutaFilm(videoId = video.id, videoUrl = video.videoUrl)
         val isBw = isBullerswood(videoId = video.id, videoUrl = video.videoUrl)
+        val isDfw = isDutaFilmWeb(videoId = video.id, videoUrl = video.videoUrl)
         val partners = when {
-            isPm -> listOf(DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21")
-            isDf -> listOf(getPencuriBaseUrl() to "Pencuri", getBullerswoodBaseUrl() to "LK21")
-            isBw -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm")
-            isKb -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21")
-            else -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21")
+            isPm -> listOf(DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb")
+            isDfw -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21")
+            isDf -> listOf(getPencuriBaseUrl() to "Pencuri", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb")
+            isBw -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getDutaFilmWebBaseUrl() to "DutaFilmWeb")
+            isKb -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb")
+            else -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb")
         }
 
-        Log.i(TAG, "Finding alternative sources for '${video.title}' (isPm=$isPm, isDf=$isDf, isKb=$isKb, isBw=$isBw)...")
+        Log.i(TAG, "Finding alternative sources for '${video.title}' (isPm=$isPm, isDf=$isDf, isKb=$isKb, isBw=$isBw, isDfw=$isDfw)...")
 
         val distinctQueries = buildAlternativeSearchQueries(video.title)
         val altServers = mutableListOf<VideoServer>()
@@ -1807,6 +2026,7 @@ object VideoExtractor {
                     val partnerServers = mutableListOf<VideoServer>()
                     for (q in distinctQueries) {
                         var searchResults = when (partnerTag) {
+                            "DutaFilmWeb" -> searchDutaFilmWeb(q, page = 1, count = 20)
                             "DutaFilm" -> searchClusterMirrors(q, page = 1, count = 20)
                             "LK21" -> searchBullerswood(q, page = 1, count = 20)
                             else -> {
@@ -3683,6 +3903,10 @@ object VideoExtractor {
 
     suspend fun searchVideos(query: String, page: Int, count: Int, categoryPath: String? = null): List<Video> = withContext(Dispatchers.IO) {
         if (categoryPath != null) {
+            if (categoryPath.contains("dutafilm", ignoreCase = true) || categoryPath.contains("mantab.men", ignoreCase = true) || categoryPath.contains("df31", ignoreCase = true)) {
+                return@withContext searchDutaFilmWeb(query, page, count)
+            }
+
             if (categoryPath.contains("bullerswood", ignoreCase = true) || categoryPath.contains("lk21", ignoreCase = true)) {
                 return@withContext searchBullerswood(query, page, count)
             }
@@ -3699,10 +3923,12 @@ object VideoExtractor {
                     fetchHtml(url)?.let { scrapeVideosFromHtml(it, url) } ?: emptyList()
                 }
                 val bullerswoodDeferred = async { searchBullerswood(query, page, count) }
+                val dutaWebDeferred = async { searchDutaFilmWeb(query, page, count) }
                 val duta = dutaDeferred.await()
                 val pencuri = pencuriDeferred.await()
                 val bullerswood = bullerswoodDeferred.await()
-                val merged = mergeAndInterleave(mergeAndInterleave(duta, pencuri, count), bullerswood, count)
+                val dutaWeb = dutaWebDeferred.await()
+                val merged = mergeAndInterleave(mergeAndInterleave(mergeAndInterleave(duta, pencuri, count), bullerswood, count), dutaWeb, count)
                 return@withContext filterAndSortByRelevance(merged.distinctBy { it.id }, query).take(count)
             }
 
@@ -3768,9 +3994,10 @@ object VideoExtractor {
         }
 
         // GLOBAL SEARCH: Concurrently query all platforms simultaneously:
-        // PencuriMovie, Bullerswood (LK21), Primary Cluster Mirrors (27 sites), KepalaBergetar, P.Ramlee Archive, YouTube, Bilibili, and Dailymotion
+        // PencuriMovie, Bullerswood (LK21), DutaFilm Web (df31.mantab.men), Primary Cluster Mirrors (27 sites), KepalaBergetar, P.Ramlee Archive, YouTube, Bilibili, and Dailymotion
         val pencuriDeferred = async { searchDomain(getPencuriBaseUrl(), query, page, count) }
         val bullerswoodDeferred = async { searchBullerswood(query, page, count) }
+        val dutaWebDeferred = async { searchDutaFilmWeb(query, page, count) }
         val clusterDeferred = async { searchClusterMirrors(query, page, count) }
         val kepalaDeferred = async { searchKepalaBergetar(query, page, count) }
         val pramleeDeferred = async {
@@ -3788,6 +4015,7 @@ object VideoExtractor {
 
         var pencuriResults = pencuriDeferred.await()
         val bullerswoodResults = bullerswoodDeferred.await()
+        val dutaWebResults = dutaWebDeferred.await()
         val clusterResults = clusterDeferred.await()
         val kepalaResults = kepalaDeferred.await()
         val pramleeResults = pramleeDeferred.await()
@@ -3807,9 +4035,9 @@ object VideoExtractor {
             }
         }
 
-        Log.i(TAG, "Simultaneous search completed: Pencuri=${pencuriResults.size}, Bullerswood=${bullerswoodResults.size}, Cluster=${clusterResults.size}, Kepala=${kepalaResults.size}, PRamlee=${pramleeResults.size}, YT=${ytResults.size}, Bili=${biliResults.size}, DM=${dmResults.size}")
+        Log.i(TAG, "Simultaneous search completed: Pencuri=${pencuriResults.size}, Bullerswood=${bullerswoodResults.size}, DutaWeb=${dutaWebResults.size}, Cluster=${clusterResults.size}, Kepala=${kepalaResults.size}, PRamlee=${pramleeResults.size}, YT=${ytResults.size}, Bili=${biliResults.size}, DM=${dmResults.size}")
 
-        val allMerged = (pencuriResults + bullerswoodResults + clusterResults + kepalaResults + pramleeResults + ytResults + biliResults + dmResults)
+        val allMerged = (pencuriResults + bullerswoodResults + dutaWebResults + clusterResults + kepalaResults + pramleeResults + ytResults + biliResults + dmResults)
             .distinctBy { it.id }
 
         val relevantResults = filterAndSortByRelevance(allMerged, query)
@@ -3819,6 +4047,7 @@ object VideoExtractor {
     fun extractStableId(url: String): String {
         val slug = url.substringBefore('?').trimEnd('/').substringAfterLast('/')
         return when {
+            url.contains("mantab.men", ignoreCase = true) || url.contains("df31", ignoreCase = true) -> "dfw_${slug.removeSuffix(".html")}"
             url.contains("bullerswood", ignoreCase = true) || url.contains("lk21", ignoreCase = true) -> "bw_$slug"
             url.contains("pencurimovie", ignoreCase = true) || url.contains("pencurifilm", ignoreCase = true) -> "pm_$slug"
             isClusterSite(url) || url.contains("159.89.249.45") || url.contains("dutafilm", ignoreCase = true) -> "df_$slug"
@@ -4222,13 +4451,13 @@ object VideoExtractor {
         }
         if (html == null) return@withContext null
         val doc = Jsoup.parse(html, effectiveUrl)
-        val domTitle = doc.select("h1.entry-title, .entry-title, h1, .sheader .data h3, .data h3, .data h2, .data h1, .info-header h3, .entry-header h3, article h3").firstOrNull()?.text()?.trim()
+        val domTitle = doc.select(".vid-details-right h3, h1.entry-title, .entry-title, h1, .sheader .data h3, .data h3, .data h2, .data h1, .info-header h3, .entry-header h3, article h3").firstOrNull()?.text()?.trim()
         val rawTitle = if (!domTitle.isNullOrEmpty()) domTitle else {
             doc.select("meta[property='og:title']").firstOrNull()?.attr("content")?.trim() ?: "Unknown"
         }
         val title = cleanTitle(rawTitle)
         
-        val poster = getHighResImage(doc.select("meta[property=\"og:image\"], .poster img").firstOrNull()?.let { it.attr("content").ifEmpty { it.attr("abs:src") } } ?: "")
+        val poster = getHighResImage(doc.select("meta[property=\"og:image\"], .poster img, .vid-details-left img").firstOrNull()?.let { it.attr("content").ifEmpty { it.attr("abs:src") } } ?: "")
         val backdrop = getHighResImage(doc.select(".backdrop img, #background img").firstOrNull()?.attr("abs:src") ?: "")
         
         val descriptions = doc.select(".synopsis p, .description p, .entry-content p, .desc p, .synopsis, .description, .plot, #muvipro_player_content_id p, article.item p")
@@ -4257,6 +4486,21 @@ object VideoExtractor {
         }
 
         val rawServers = mutableListOf<VideoServer>()
+
+        if (effectiveUrl.contains("mantab.men") || effectiveUrl.contains("df31") || isDutaFilmWeb(videoUrl = effectiveUrl)) {
+            val svxButtons = doc.select("a.episode.btn-svx, .btn-svx")
+            if (svxButtons.isNotEmpty()) {
+                svxButtons.forEach { btn ->
+                    val btnText = btn.text().trim()
+                    if (btnText.isNotBlank()) {
+                        val serverId = btn.id().ifBlank { btn.attr("href") }
+                        rawServers.add(VideoServer("DutaFilm Web ($btnText)", "$effectiveUrl#$serverId"))
+                    }
+                }
+            } else {
+                rawServers.add(VideoServer("DutaFilm Web (VIP)", effectiveUrl))
+            }
+        }
         
         // OWL'S EYE: High-accuracy mirror detection
         val serverContainers = doc.select(".muvipro-player-tabs, .player-tabs, .gmr-player-nav, .gmr-server-wrap, #player-option-1, #player-option-2, #player-option-3, .server-list, .list-server, .source-box, .sources-list, .mirror-list, .list-server-items, .server-wrap, .player-options")

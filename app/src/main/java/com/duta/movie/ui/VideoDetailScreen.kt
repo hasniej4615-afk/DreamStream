@@ -603,11 +603,11 @@ fun VideoDetailInfo(
             if (video.episodes.isEmpty()) null
             else {
                 val targetSlug = com.duta.movie.util.VideoExtractor.extractStableId(video.videoUrl)
-                    .removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_")
-                val idSlug = video.id.removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_")
+                    .removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_").removePrefix("dfw_")
+                val idSlug = video.id.removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_").removePrefix("dfw_")
                 video.episodes.find { ep ->
                     val epSlug = com.duta.movie.util.VideoExtractor.extractStableId(ep.url)
-                        .removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_")
+                        .removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_").removePrefix("dfw_")
                     epSlug == targetSlug || epSlug == idSlug ||
                     (targetSlug.length > 5 && ep.url.contains(targetSlug)) ||
                     (idSlug.length > 5 && ep.url.contains(idSlug)) ||
