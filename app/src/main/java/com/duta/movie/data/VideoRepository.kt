@@ -113,12 +113,17 @@ class VideoRepository @Inject constructor(
         }
     }
 
-    suspend fun getCachedVideosByCategory(cat: String): List<Video> = videoDao.getCachedVideosByCategory(cat).map { it.toDomain().also { v -> videoCache[v.id] = v } }
+    suspend fun getCachedVideosByCategory(cat: String): List<Video> = 
+        VideoExtractor.sortVideosByNewestRelease(
+            videoDao.getCachedVideosByCategory(cat).map { it.toDomain().also { v -> videoCache[v.id] = v } }
+        )
 
     suspend fun fetchVideosBySection(cat: String, page: Int, count: Int): List<Video> = coroutineScope {
         val results = VideoExtractor.fetchVideosBySection(cat, page, count)
         val dbItems = videoDao.getVideosByIds(results.map { it.id }).associateBy { it.id }
-        val videos = results.map { mergeVideos(it, dbItems[it.id]?.toDomain()).also { v -> videoCache[v.id] = v } }
+        val videos = VideoExtractor.sortVideosByNewestRelease(
+            results.map { mergeVideos(it, dbItems[it.id]?.toDomain()).also { v -> videoCache[v.id] = v } }
+        )
         if (page == 1) videoDao.updateCategoryCache(cat, videos.map { it.toEntity() })
         else videoDao.insertOrUpdateVideos(videos.map { it.toEntity() })
         videos

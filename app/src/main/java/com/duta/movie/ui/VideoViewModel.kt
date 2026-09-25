@@ -820,7 +820,9 @@ class VideoViewModel @Inject constructor(
         if (latestMovies.isNotEmpty()) fullMap[moviePath] = latestMovies
         if (latestSeries.isNotEmpty()) fullMap[seriesPath] = latestSeries
         
-        fullMap.mapValues { (_, list) -> list.map { applyMetadata(it) } }
+        fullMap.mapValues { (_, list) -> 
+            VideoExtractor.sortVideosByNewestRelease(list.map { applyMetadata(it) })
+        }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(15000), emptyMap())
 
     val videos: StateFlow<List<Video>> = combine(
@@ -872,9 +874,7 @@ class VideoViewModel @Inject constructor(
             when (sort) {
                 SearchSort.RELEVANCE -> filtered
                 SearchSort.NEWEST -> filtered.sortedByDescending { 
-                    val yearMatch = Regex("""\b(19\d{2}|20\d{2})\b""").find(it.title)?.value?.toIntOrNull()
-                    val dateYear = Regex("""\b(19\d{2}|20\d{2})\b""").find(it.date)?.value?.toIntOrNull()
-                    yearMatch ?: dateYear ?: 0
+                    VideoExtractor.extractReleaseYear(it.title, it.date, it.videoUrl)
                 }
                 SearchSort.RATING -> filtered.sortedByDescending {
                     val viewsCount = it.views.filter { ch -> ch.isDigit() }.toLongOrNull() ?: 0L
@@ -885,7 +885,10 @@ class VideoViewModel @Inject constructor(
             val activeList = if (category != null) categoryResults else browse
             if (activeList.isEmpty()) return@combine emptyList<Video>()
             val processedList = activeList.map { applyMetadata(it) }
-            processedList.sortedWith(compareByDescending<Video> { it.id == headliner?.id }.thenByDescending { it.date }.thenByDescending { it.views })
+            processedList.sortedWith(
+                compareByDescending<Video> { it.id == headliner?.id }
+                    .thenByDescending { VideoExtractor.extractReleaseYear(it.title, it.date, it.videoUrl) }
+            )
         }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -1363,9 +1366,10 @@ class VideoViewModel @Inject constructor(
             try { 
                 val results = videoRepository.fetchVideosBySection(category, page = 1, count = 250) 
                 if (results.isNotEmpty()) { 
-                    updateMetadataCache(results) 
-                    prefetchThumbnails(results)
-                    _resultVideos.value = results 
+                    val sorted = VideoExtractor.sortVideosByNewestRelease(results)
+                    updateMetadataCache(sorted) 
+                    prefetchThumbnails(sorted)
+                    _resultVideos.value = sorted 
                     currentPage = 6 
                 } else _error.value = "No videos found" 
             } catch (e: Exception) { 
@@ -1389,9 +1393,7 @@ class VideoViewModel @Inject constructor(
                     prefetchThumbnails(moreVideos)
                     val currentIds = _resultVideos.value.asSequence().map { it.id }.toSet()
                     val combined = _resultVideos.value + moreVideos.filter { it.id !in currentIds }
-                    val sorted = if (category.contains("country/malaysia", ignoreCase = true)) {
-                        VideoExtractor.sortVideosByNewestRelease(combined)
-                    } else combined
+                    val sorted = VideoExtractor.sortVideosByNewestRelease(combined)
                     _resultVideos.value = sorted
                     currentPage = nextPage + 5
                     loadBackgroundDetails(moreVideos) 
@@ -2986,16 +2988,14 @@ class VideoViewModel @Inject constructor(
             try {
                 val cached = withContext(Dispatchers.IO) { videoRepository.getCachedVideosByCategory(category) }
                 if (cached.isNotEmpty() && !_isPlayerActive.value) {
-                    val displayCached = if (category.contains("country/malaysia", ignoreCase = true)) {
-                        VideoExtractor.sortVideosByNewestRelease(cached)
-                    } else cached
+                    val displayCached = VideoExtractor.sortVideosByNewestRelease(cached)
                     _categoryVideos.update { it + (category to displayCached) }
                     prefetchThumbnails(displayCached)
                     if (category == moviePath) {
-                        _latestMovies.value = cached
-                        _headlinerVideo.value = cached.firstOrNull()
+                        _latestMovies.value = displayCached
+                        _headlinerVideo.value = displayCached.firstOrNull()
                     }
-                    if (category == seriesPath) _latestTVSeries.value = cached
+                    if (category == seriesPath) _latestTVSeries.value = displayCached
                 }
             } catch (e: Exception) { android.util.Log.e("VideoViewModel", "Cache load failed", e) }
 
@@ -3003,17 +3003,18 @@ class VideoViewModel @Inject constructor(
                 val results = withContext(Dispatchers.IO) { videoRepository.fetchVideosBySection(category, page = 1, count = 250) }
                 if (results.isNotEmpty()) { 
                     if (!_isPlayerActive.value) {
-                        updateMetadataCache(results, triggerBackground = false)
-                        prefetchThumbnails(results)
-                        _categoryVideos.update { it + (category to results) }
+                        val sortedResults = VideoExtractor.sortVideosByNewestRelease(results)
+                        updateMetadataCache(sortedResults, triggerBackground = false)
+                        prefetchThumbnails(sortedResults)
+                        _categoryVideos.update { it + (category to sortedResults) }
                         categoryPages[category] = 6 
                         
                         // SYNC: Update specific state flows for headliner/UI stability
                         if (category == moviePath) {
-                            _latestMovies.value = results
-                            _headlinerVideo.value = results.firstOrNull()
+                            _latestMovies.value = sortedResults
+                            _headlinerVideo.value = sortedResults.firstOrNull()
                         }
-                        if (category == seriesPath) _latestTVSeries.value = results
+                        if (category == seriesPath) _latestTVSeries.value = sortedResults
                     }
                 }
                 else if (results.isEmpty() && category == moviePath) {
@@ -3036,9 +3037,7 @@ class VideoViewModel @Inject constructor(
                         val existing = current[category] ?: emptyList()
                         val ids = existing.map { it.id }.toSet()
                         val combined = existing + more.filter { it.id !in ids }
-                        val sorted = if (category.contains("country/malaysia", ignoreCase = true)) {
-                            VideoExtractor.sortVideosByNewestRelease(combined)
-                        } else combined
+                        val sorted = VideoExtractor.sortVideosByNewestRelease(combined)
                         current + (category to sorted)
                     }
                     categoryPages[category] = page + 6 

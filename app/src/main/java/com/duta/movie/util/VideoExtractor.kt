@@ -72,6 +72,9 @@ object VideoExtractor {
         if (trimmed.isNotBlank()) activeBullerswoodBaseUrl = trimmed
     }
 
+    private val YEAR_PAREN_REGEX = Regex("""[\(\[]\s*(19\d{2}|20\d{2})\s*[\)\]]""")
+    private val YEAR_WORD_REGEX = Regex("""\b(19\d{2}|20\d{2})\b""")
+
     val CLUSTER_MIRROR_URLS = listOf(
         "http://165.227.237.129",
         "http://168.144.209.219",
@@ -1634,7 +1637,7 @@ object VideoExtractor {
         pageJobs.awaitAll().flatten().forEach { video ->
             if (seen.add(video.id)) results.add(video)
         }
-        results.take(count)
+        sortVideosByNewestRelease(results).take(count)
     }
 
     suspend fun searchBullerswood(query: String, page: Int = 1, count: Int = 20): List<Video> = withContext(Dispatchers.IO) {
@@ -1666,7 +1669,7 @@ object VideoExtractor {
         }
 
         if (path.contains("p-ramlee", ignoreCase = true) || path.contains("FilemP.ramlee", ignoreCase = true)) {
-            val all = fetchArchivePramleeVideos()
+            val all = sortVideosByNewestRelease(fetchArchivePramleeVideos())
             val start = (page - 1) * count
             if (start >= all.size) return@withContext emptyList()
             return@withContext all.drop(start).take(count)
@@ -1761,9 +1764,7 @@ object VideoExtractor {
         if (bullerswoodVideos.isNotEmpty()) {
             merged = mergeAndInterleave(merged, bullerswoodVideos, if (count > totalAvailable) count else totalAvailable)
         }
-        val sorted = if (path.contains("country/malaysia", ignoreCase = true)) {
-            sortVideosByNewestRelease(merged)
-        } else merged
+        val sorted = sortVideosByNewestRelease(merged)
 
         sorted.take(count)
     }
@@ -2845,22 +2846,25 @@ object VideoExtractor {
     }
 
     /**
-     * Extracts the 4-digit release year from a movie title or date.
-     * Prioritizes bracketed release years e.g. "(2026)", then video.date, then trailing 4-digit year.
+     * Extracts the 4-digit release year from a movie title, date, or URL slug.
+     * Prioritizes bracketed release years e.g. "(2026)", then video.date, then trailing 4-digit year in title, then url.
      */
-    fun extractReleaseYear(title: String, date: String? = null): Int {
-        val parenMatches = Regex("""[\(\[]\s*(19\d{2}|20\d{2})\s*[\)\]]""").findAll(title)
+    fun extractReleaseYear(title: String, date: String? = null, url: String? = null): Int {
+        val parenMatches = YEAR_PAREN_REGEX.findAll(title)
         val lastParen = parenMatches.lastOrNull()
         if (lastParen != null) {
             lastParen.groupValues[1].toIntOrNull()?.let { return it }
         }
         if (!date.isNullOrBlank()) {
-            Regex("""\b(19\d{2}|20\d{2})\b""").find(date)?.groupValues?.get(1)?.toIntOrNull()?.let { return it }
+            YEAR_WORD_REGEX.find(date)?.groupValues?.get(1)?.toIntOrNull()?.let { return it }
         }
-        val allYears = Regex("""\b(19\d{2}|20\d{2})\b""").findAll(title)
+        val allYears = YEAR_WORD_REGEX.findAll(title)
         val lastYear = allYears.lastOrNull()
         if (lastYear != null) {
             lastYear.groupValues[1].toIntOrNull()?.let { return it }
+        }
+        if (!url.isNullOrBlank()) {
+            YEAR_WORD_REGEX.find(url)?.groupValues?.get(1)?.toIntOrNull()?.let { return it }
         }
         return 0
     }
@@ -2871,7 +2875,7 @@ object VideoExtractor {
      */
     fun sortVideosByNewestRelease(videos: List<Video>): List<Video> {
         return videos.sortedWith(
-            compareByDescending<Video> { extractReleaseYear(it.title, it.date) }
+            compareByDescending<Video> { extractReleaseYear(it.title, it.date, it.videoUrl) }
         )
     }
 
@@ -3645,6 +3649,7 @@ object VideoExtractor {
                                     val duration = el.select(".gmr-duration-item").text().trim()
                                     val quality = el.select(".gmr-quality-item, .quality").text().trim()
                                     val rating = el.select(".gmr-rating-item, .rating").text().trim()
+                                    val rawDate = el.select("time, .date, .posted-on, .post-date, .entry-date, .gmr-year-item, .year").text().trim()
                                     val slug = link.trimEnd('/').substringAfterLast('/')
 
                                     Video(
@@ -3655,6 +3660,7 @@ object VideoExtractor {
                                         duration = duration,
                                         quality = quality.ifEmpty { "HD" },
                                         views = rating,
+                                        date = rawDate,
                                         isSeries = link.contains("/series/") || link.contains("/tv/") || link.contains("/episode/") || title.contains("Season", ignoreCase = true)
                                     )
                                 }.toList()
@@ -3917,8 +3923,9 @@ object VideoExtractor {
                 val quality = el.select(".quality, .gmr-quality-item, .res, .resolution, .status").text().trim()
                 val rawRating = el.select(".imdb-rating, .rating, .score, .gmr-rating-item, .post-ratings").text()
                 val rating = Regex("""\d+(?:\.\d+)?""").find(rawRating)?.value ?: ""
+                val rawDate = el.select("time, .date, .posted-on, .post-date, .entry-date, .gmr-year-item, .year").text().trim()
                 
-                Video(id = extractStableId(link), title = title, thumbnailUrl = img, videoUrl = link, duration = "", quality = quality, views = rating)
+                Video(id = extractStableId(link), title = title, thumbnailUrl = img, videoUrl = link, duration = "", quality = quality, views = rating, date = rawDate)
             } else null
         }.distinctBy { it.id }.toList()
     }
