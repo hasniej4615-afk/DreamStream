@@ -332,12 +332,12 @@ class VideoRepository @Inject constructor(
             season = resolvedSeason,
             description = if (isPramlee && new.description.isNotEmpty()) new.description else if (new.description.length > old.description.length) new.description else old.description,
             previewUrl = if (new.previewUrl.isNotEmpty()) new.previewUrl else old.previewUrl,
-            servers = (if (isPramlee) new.servers else (old.servers + new.servers).distinctBy { it.url.trimEnd('/') }).filter {
+            servers = (if (isPramlee) new.servers else (new.servers + old.servers).distinctBy { it.url.trimEnd('/') }).filter {
                 val lowU = it.url.lowercase()
                 val lowN = it.name.lowercase()
                 !lowU.contains("google.com") && !lowU.contains("pagead") && !lowU.contains("/aclk") &&
                 !lowN.contains("google.com") && !lowN.contains("pagead")
-            },
+            }.sortedByDescending { VideoExtractor.getProviderPriority(it.name, it.url) },
             episodes = resolvedEpisodes,
             isSeries = resolvedIsSeries,
             imdbId = if (new.imdbId?.isNotEmpty() == true) new.imdbId else old.imdbId

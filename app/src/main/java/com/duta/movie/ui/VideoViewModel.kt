@@ -1569,6 +1569,9 @@ class VideoViewModel @Inject constructor(
             deadMirrors.add(host)
             hardDeadMirrors.add(host)
         }
+        val isWhitelisted = host != null && com.duta.movie.util.VideoExtractor.isWhitelistedHost(host)
+        if (isWhitelisted) return // Never purge whitelisted embed mirrors from persistent DB
+
         val video = _videoMetadata.value?.takeIf { it.id == videoId } ?: getVideo(videoId)
         if (video != null) {
             val filtered = video.servers.filter { 
@@ -1948,10 +1951,9 @@ class VideoViewModel @Inject constructor(
                 }
 
                 // Cleanse expired/ephemeral direct streams from persistent video servers list
+                // NOTE: Do not delete persistent embed mirrors from DB due to session-level dead flags
                 val sanitizedServers = baseVideoServers.filter { 
-                    !com.duta.movie.util.VideoExtractor.isEphemeralOrExpiredStream(it.url) &&
-                    !hardDeadMirrors.contains(it.url) &&
-                    !com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url)
+                    !com.duta.movie.util.VideoExtractor.isEphemeralOrExpiredStream(it.url)
                 }
                 if (sanitizedServers.size != baseVideoServers.size && video != null) {
                     val cleanedVideo = video!!.copy(servers = sanitizedServers)
@@ -2207,7 +2209,17 @@ class VideoViewModel @Inject constructor(
                     epSeasonNum != null && epSeasonNum != targetSeasonNum
                 } == true
 
-                if (video == null || (video!!.isSeries == true && (video!!.episodes.isEmpty() || hasMismatchedSeason))) {
+                val allMirrorsDead = video?.servers.isNullOrEmpty() || video!!.servers.all {
+                    deadMirrors.contains(it.url) || hardDeadMirrors.contains(it.url) || com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url)
+                }
+                val needsDetailFetch = video == null || 
+                    forceReset ||
+                    video!!.servers.isEmpty() ||
+                    (video!!.isSeries != true && video!!.servers.size <= 1) ||
+                    allMirrorsDead ||
+                    (video!!.isSeries == true && (video!!.episodes.isEmpty() || hasMismatchedSeason))
+
+                if (needsDetailFetch) {
                     videoRepository.fetchVideoDetails(videoId)?.let { detailed -> 
                         metadataCache[videoId] = detailed
                         video = detailed
@@ -2316,8 +2328,9 @@ class VideoViewModel @Inject constructor(
                     }
 
                 val mirrorToResolve = if (isEpisodeUrl && sortedServers.isNotEmpty()) sortedServers.first().url
-                                     else if (serverUrl != null && !isEpisodeUrl) serverUrl
-                                     else sortedServers.firstOrNull()?.url ?: video!!.videoUrl
+                                     else if (serverUrl != null && !isEpisodeUrl && !deadMirrors.contains(serverUrl) && !hardDeadMirrors.contains(serverUrl) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(serverUrl)) serverUrl
+                                     else sortedServers.firstOrNull { !deadMirrors.contains(it.url) && !hardDeadMirrors.contains(it.url) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url) }?.url 
+                                          ?: sortedServers.firstOrNull()?.url ?: video!!.videoUrl
 
                 val primaryUrl = episodePageUrl ?: mirrorToResolve
                 
@@ -3117,6 +3130,25 @@ class VideoViewModel @Inject constructor(
                         addResolutionLog("No mirrors in state. Retrying episode page resolution.")
                         playTVSeries(effectiveVideoId, epUrl, forceReset = false, isRotation = true)
                      } else {
+                        // 1. Primary host recovery attempt before partner search
+                        val freshPrimary = videoRepository.fetchVideoDetails(effectiveVideoId)
+                        if (freshPrimary != null && freshPrimary.servers.isNotEmpty()) {
+                            val unexhaustedPrimary = freshPrimary.servers.filter {
+                                !deadMirrors.contains(it.url) && !hardDeadMirrors.contains(it.url) && !exhaustedServerUrls.contains(it.url) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url)
+                            }
+                            if (unexhaustedPrimary.isNotEmpty()) {
+                                addResolutionLog("Recovered ${unexhaustedPrimary.size} mirror(s) from primary source! Resuming...")
+                                metadataCache[effectiveVideoId] = freshPrimary
+                                withContext(Dispatchers.Main) { _videoMetadata.value = freshPrimary }
+                                viewModelScope.launch { videoRepository.updateVideoInDb(freshPrimary) }
+                                rotationCount = 0
+                                isRotationLocked = false
+                                val bestServer = unexhaustedPrimary.sortedByDescending { com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) }.first()
+                                playMovie(effectiveVideoId, bestServer.url, forceReset = false, isRotation = false)
+                                return@launch
+                            }
+                        }
+
                         if (!hasAttemptedAltHealing) {
                             hasAttemptedAltHealing = true
                             addResolutionLog("No mirrors available. Searching partner aggregators for alternative sources...")
@@ -3133,7 +3165,11 @@ class VideoViewModel @Inject constructor(
                                 viewModelScope.launch { videoRepository.updateVideoInDb(updatedVideo) }
                                 rotationCount = 0
                                 isRotationLocked = false
-                                playMovie(effectiveVideoId, altServers.first().url, forceReset = false, isRotation = false)
+                                val sortedCombined = combinedServers.filter {
+                                    !deadMirrors.contains(it.url) && !hardDeadMirrors.contains(it.url) && !exhaustedServerUrls.contains(it.url) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url)
+                                }.sortedByDescending { com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) }
+                                val bestAlt = sortedCombined.firstOrNull() ?: altServers.first()
+                                playMovie(effectiveVideoId, bestAlt.url, forceReset = false, isRotation = false)
                                 return@launch
                             }
                         }
@@ -3180,6 +3216,33 @@ class VideoViewModel @Inject constructor(
                 }
 
                 if (candidateServers.isEmpty()) {
+                    // 1. Primary host recovery attempt before partner search
+                    val freshPrimary = videoRepository.fetchVideoDetails(effectiveVideoId)
+                    if (freshPrimary != null && freshPrimary.servers.isNotEmpty()) {
+                        val unexhaustedPrimary = freshPrimary.servers.filter {
+                            !deadMirrors.contains(it.url) && !hardDeadMirrors.contains(it.url) && !exhaustedServerUrls.contains(it.url) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url)
+                        }
+                        if (unexhaustedPrimary.isNotEmpty()) {
+                            addResolutionLog("Recovered ${unexhaustedPrimary.size} unexhausted mirror(s) from primary source! Resuming...")
+                            val combined = (video.servers + freshPrimary.servers).distinctBy { it.url }
+                                .sortedByDescending { com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) }
+                            val updatedVideo = video.copy(servers = combined)
+                            metadataCache[effectiveVideoId] = updatedVideo
+                            withContext(Dispatchers.Main) { _videoMetadata.value = updatedVideo }
+                            viewModelScope.launch { videoRepository.updateVideoInDb(updatedVideo) }
+                            rotationCount = 0
+                            isRotationLocked = false
+                            val bestServer = unexhaustedPrimary.sortedByDescending { com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) }.first()
+                            val isRealSeries = video.isSeries == true && (video.episodes.isNotEmpty() || _currentEpisode.value != null)
+                            if (isRealSeries) {
+                                playTVSeries(effectiveVideoId, bestServer.url, forceReset = false, targetEpisode = _currentEpisode.value, isRotation = false)
+                            } else {
+                                playMovie(effectiveVideoId, bestServer.url, forceReset = false, isRotation = false)
+                            }
+                            return@launch
+                        }
+                    }
+
                     if (!hasAttemptedAltHealing) {
                         hasAttemptedAltHealing = true
                         addResolutionLog("All mirrors failed. Searching partner aggregators for alternative sources...")
@@ -3197,11 +3260,15 @@ class VideoViewModel @Inject constructor(
                             rotationCount = 0
                             consecutiveAllBlacklistedCount = 0
                             isRotationLocked = false
+                            val sortedAlt = combinedServers.filter {
+                                !deadMirrors.contains(it.url) && !hardDeadMirrors.contains(it.url) && !exhaustedServerUrls.contains(it.url) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url)
+                            }.sortedByDescending { com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) }
+                            val bestAlt = sortedAlt.firstOrNull() ?: altServers.first()
                             val isRealSeries = video.isSeries == true && (video.episodes.isNotEmpty() || _currentEpisode.value != null)
                             if (isRealSeries) {
-                                playTVSeries(effectiveVideoId, altServers.first().url, forceReset = false, targetEpisode = _currentEpisode.value, isRotation = false)
+                                playTVSeries(effectiveVideoId, bestAlt.url, forceReset = false, targetEpisode = _currentEpisode.value, isRotation = false)
                             } else {
-                                playMovie(effectiveVideoId, altServers.first().url, forceReset = false, isRotation = false)
+                                playMovie(effectiveVideoId, bestAlt.url, forceReset = false, isRotation = false)
                             }
                             return@launch
                         } else {
@@ -3210,8 +3277,7 @@ class VideoViewModel @Inject constructor(
                     }
 
                     val allServersDead = serversToUse.isEmpty() || serversToUse.all { s ->
-                        hardDeadMirrors.contains(s.url) || deadMirrors.contains(s.url) ||
-                        exhaustedServerUrls.contains(s.url) ||
+                        hardDeadMirrors.contains(s.url) ||
                         com.duta.movie.util.VideoExtractor.isConfirmedDead(s.url)
                     }
                     val isSingleServer = serversToUse.size <= 1
