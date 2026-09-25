@@ -50,7 +50,8 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
             "/series/",
             "/top-imdb/",
             "/country/malaysia/",
-            "/category/p-ramlee/"
+            "/category/p-ramlee/",
+            "/source/bullerswood/"
         ).map { com.duta.movie.util.VideoExtractor.normalizePath(it) }.toSet()
     }
 

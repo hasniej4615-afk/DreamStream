@@ -62,6 +62,15 @@ object VideoExtractor {
 
     private var PENCURI_BASE_URL = "https://ww44.pencurimovie.baby"
     const val DUTAFILM_BASE_URL = "http://159.89.249.45"
+    const val BULLERSWOOD_BASE_URL = "https://bullerswood.org"
+    private var activeBullerswoodBaseUrl: String = BULLERSWOOD_BASE_URL
+
+    fun getBullerswoodBaseUrl(): String = activeBullerswoodBaseUrl
+
+    fun setBullerswoodBaseUrl(url: String) {
+        val trimmed = url.trimEnd('/')
+        if (trimmed.isNotBlank()) activeBullerswoodBaseUrl = trimmed
+    }
 
     val CLUSTER_MIRROR_URLS = listOf(
         "http://165.227.237.129",
@@ -250,6 +259,7 @@ object VideoExtractor {
         if (path.contains("country/malaysia", ignoreCase = true) || pClean.equals("malaysia", ignoreCase = true)) return "/country/malaysia/"
         if (path.contains("p-ramlee", ignoreCase = true) || path.contains("FilemP.ramlee", ignoreCase = true) || pClean.equals("p-ramlee", ignoreCase = true)) return "/category/p-ramlee/"
         if (path.contains("country/indonesia", ignoreCase = true) || path.contains("country/indonesian", ignoreCase = true) || pClean.equals("indonesia", ignoreCase = true) || pClean.equals("indonesian", ignoreCase = true)) return "/country/indonesia/"
+        if (path.contains("bullerswood", ignoreCase = true) || pClean.equals("bullerswood", ignoreCase = true) || path.contains("lk21", ignoreCase = true) || pClean.equals("lk21", ignoreCase = true) || pClean.equals("layarkaca21", ignoreCase = true)) return "/source/bullerswood/"
         if (path.contains("country/south-korea", ignoreCase = true) || path.contains("country/korea", ignoreCase = true) || pClean.equals("korea", ignoreCase = true) || pClean.equals("south-korea", ignoreCase = true)) return "/country/korea/"
         if (path.contains("country/united-kingdom", ignoreCase = true) || path.contains("country/uk", ignoreCase = true) || pClean.equals("united-kingdom", ignoreCase = true) || pClean.equals("uk", ignoreCase = true)) return "/country/united-kingdom/"
         if (path.contains("country/united-states", ignoreCase = true) || path.contains("country/usa", ignoreCase = true) || pClean.equals("united-states", ignoreCase = true) || pClean.equals("usa", ignoreCase = true)) return "/country/usa/"
@@ -350,10 +360,21 @@ object VideoExtractor {
         return when {
             cleanId.startsWith("pm_") -> "${getPencuriBaseUrl()}/${cleanId.removePrefix("pm_").trim('/')}/"
             cleanId.startsWith("df_") -> "$DUTAFILM_BASE_URL/${cleanId.removePrefix("df_").trim('/')}/"
+            cleanId.startsWith("bw_") -> "${getBullerswoodBaseUrl()}/${cleanId.removePrefix("bw_").trim('/')}/"
             cleanId.startsWith("kb_") || cleanId.startsWith("ia_pramlee") ||
             cleanId.startsWith("yt_") || cleanId.startsWith("bili_") || cleanId.startsWith("dm_") -> ""
             else -> "${getBaseUrl()}/$cleanId/"
         }
+    }
+
+    /**
+     * Identifies if a video or server belongs to LK21 / Bullerswood source.
+     */
+    fun isBullerswood(videoId: String? = null, videoUrl: String? = null, streamUrl: String? = null): Boolean {
+        if (videoId?.startsWith("bw_") == true) return true
+        if (videoUrl?.contains("bullerswood.org", ignoreCase = true) == true) return true
+        if (streamUrl?.contains("bullerswood.org", ignoreCase = true) == true) return true
+        return false
     }
 
     /**
@@ -1443,7 +1464,7 @@ object VideoExtractor {
         if (activeBaseHost != null && (low == activeBaseHost || low.contains(activeBaseHost))) return true
         if (pencuriHost != null && (low == pencuriHost || low.contains(pencuriHost))) return true
         if (isClusterSite(low)) return true
-        return low.contains("archive.org") || low.contains("pencurimovie") || low.contains("pencurifilm") ||
+        return low.contains("archive.org") || low.contains("bullerswood") || low.contains("pencurimovie") || low.contains("pencurifilm") ||
             low.contains("159.89.249.45") || low.contains("dutafilm") ||
             low.contains("dutamovie") ||
             low.contains("algarvebuzz") || low.contains("actors-pictures") ||
@@ -1554,7 +1575,96 @@ object VideoExtractor {
         }
     }
 
+    fun buildBullerswoodCategoryUrl(path: String, currPage: Int): String {
+        val cleanBase = getBullerswoodBaseUrl().trimEnd('/')
+        if (path.startsWith("http")) {
+            val eff = path.removeSuffix("/")
+            return if (currPage > 1) "$eff/page/$currPage/" else "$eff/"
+        }
+        val norm = normalizePath(path).removePrefix("/").removeSuffix("/")
+        return when {
+            norm.contains("bullerswood") || norm.contains("lk21") || norm.isEmpty() || norm == "movies" -> {
+                if (currPage > 1) "$cleanBase/page/$currPage/" else "$cleanBase/"
+            }
+            norm == "top-imdb" || norm == "most-viewed" || norm == "best-rating" -> {
+                if (currPage > 1) "$cleanBase/best-rating/page/$currPage/" else "$cleanBase/best-rating/"
+            }
+            norm.startsWith("release-year/") || norm.startsWith("year/") -> {
+                val year = norm.substringAfter('/')
+                if (currPage > 1) "$cleanBase/year/$year/page/$currPage/" else "$cleanBase/year/$year/"
+            }
+            norm.startsWith("country/") -> {
+                val country = norm.substringAfter('/')
+                if (currPage > 1) "$cleanBase/country/$country/page/$currPage/" else "$cleanBase/country/$country/"
+            }
+            norm.startsWith("genre/") -> {
+                val genre = norm.substringAfter('/')
+                if (currPage > 1) "$cleanBase/$genre/page/$currPage/" else "$cleanBase/$genre/"
+            }
+            else -> {
+                if (currPage > 1) "$cleanBase/$norm/page/$currPage/" else "$cleanBase/$norm/"
+            }
+        }
+    }
+
+    suspend fun fetchBullerswoodVideos(path: String, page: Int = 1, count: Int = 20): List<Video> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<Video>()
+        val seen = mutableSetOf<String>()
+        val pagesToFetch = when {
+            count >= 100 -> 4
+            count >= 40 -> 3
+            count >= 20 -> 2
+            else -> 1
+        }
+        val pageJobs = (0 until pagesToFetch).map { offset ->
+            async(Dispatchers.IO) {
+                val currPage = page + offset
+                val url = buildBullerswoodCategoryUrl(path, currPage)
+                try {
+                    val html = fetchHtml(url)
+                    if (!html.isNullOrEmpty()) {
+                        scrapeVideosFromHtml(html, url)
+                    } else emptyList()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Bullerswood category fetch failed for $path p$currPage: ${e.message}")
+                    emptyList()
+                }
+            }
+        }
+        pageJobs.awaitAll().flatten().forEach { video ->
+            if (seen.add(video.id)) results.add(video)
+        }
+        results.take(count)
+    }
+
+    suspend fun searchBullerswood(query: String, page: Int = 1, count: Int = 20): List<Video> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<Video>()
+        val seen = mutableSetOf<String>()
+        val encodedQuery = encodeQuery(query)
+        val url = if (page <= 1) {
+            "${getBullerswoodBaseUrl()}/?s=$encodedQuery"
+        } else {
+            "${getBullerswoodBaseUrl()}/page/$page/?s=$encodedQuery"
+        }
+        try {
+            val html = fetchHtml(url)
+            if (!html.isNullOrEmpty()) {
+                val scraped = scrapeVideosFromHtml(html, url)
+                scraped.forEach { video ->
+                    if (seen.add(video.id)) results.add(video)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Bullerswood search failed for '$query' p$page: ${e.message}")
+        }
+        filterAndSortByRelevance(results, query).take(count)
+    }
+
     suspend fun fetchVideosBySection(path: String, page: Int, count: Int): List<Video> = withContext(Dispatchers.IO) {
+        if (path.contains("bullerswood", ignoreCase = true) || path.contains("lk21", ignoreCase = true)) {
+            return@withContext fetchBullerswoodVideos(path, page, count)
+        }
+
         if (path.contains("p-ramlee", ignoreCase = true) || path.contains("FilemP.ramlee", ignoreCase = true)) {
             val all = fetchArchivePramleeVideos()
             val start = (page - 1) * count
@@ -1636,12 +1746,21 @@ object VideoExtractor {
             results
         }
 
+        val bullerswoodDeferred = if (path.contains("country/indonesia", ignoreCase = true)) {
+            async(Dispatchers.IO) { fetchBullerswoodVideos("/country/indonesia/", page, count) }
+        } else null
+
         val dutaVideos = dutaDeferred.await()
         val pencuriVideos = pencuriDeferred.await()
-        Log.i(TAG, "Unified Category Fetch for $path (Page $page, Requested $count): Duta=${dutaVideos.size}, Pencuri=${pencuriVideos.size}")
+        val bullerswoodVideos = bullerswoodDeferred?.await() ?: emptyList()
 
-        val totalAvailable = dutaVideos.size + pencuriVideos.size
-        val merged = mergeAndInterleave(dutaVideos, pencuriVideos, if (count > totalAvailable) count else totalAvailable)
+        Log.i(TAG, "Unified Category Fetch for $path (Page $page, Requested $count): Duta=${dutaVideos.size}, Pencuri=${pencuriVideos.size}, Bullerswood=${bullerswoodVideos.size}")
+
+        val totalAvailable = dutaVideos.size + pencuriVideos.size + bullerswoodVideos.size
+        var merged = mergeAndInterleave(dutaVideos, pencuriVideos, if (count > totalAvailable) count else totalAvailable)
+        if (bullerswoodVideos.isNotEmpty()) {
+            merged = mergeAndInterleave(merged, bullerswoodVideos, if (count > totalAvailable) count else totalAvailable)
+        }
         val sorted = if (path.contains("country/malaysia", ignoreCase = true)) {
             sortVideosByNewestRelease(merged)
         } else merged
@@ -1666,12 +1785,16 @@ object VideoExtractor {
         val isPm = isPencuriMovie(videoId = video.id, videoUrl = video.videoUrl)
         val isKb = isKepalaBergetar(videoId = video.id, videoUrl = video.videoUrl)
         val isDf = isDutaFilm(videoId = video.id, videoUrl = video.videoUrl)
-        val partners = if (isPm) listOf(DUTAFILM_BASE_URL to "DutaFilm")
-                       else if (isDf) listOf(getPencuriBaseUrl() to "Pencuri")
-                       else if (isKb) listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm")
-                       else listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm")
+        val isBw = isBullerswood(videoId = video.id, videoUrl = video.videoUrl)
+        val partners = when {
+            isPm -> listOf(DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21")
+            isDf -> listOf(getPencuriBaseUrl() to "Pencuri", getBullerswoodBaseUrl() to "LK21")
+            isBw -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm")
+            isKb -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21")
+            else -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21")
+        }
 
-        Log.i(TAG, "Finding alternative sources for '${video.title}' (isPm=$isPm, isDf=$isDf, isKb=$isKb)...")
+        Log.i(TAG, "Finding alternative sources for '${video.title}' (isPm=$isPm, isDf=$isDf, isKb=$isKb, isBw=$isBw)...")
 
         val distinctQueries = buildAlternativeSearchQueries(video.title)
         val altServers = mutableListOf<VideoServer>()
@@ -1682,17 +1805,19 @@ object VideoExtractor {
                 async(Dispatchers.IO) {
                     val partnerServers = mutableListOf<VideoServer>()
                     for (q in distinctQueries) {
-                        var searchResults = if (partnerTag == "DutaFilm") {
-                            searchClusterMirrors(q, page = 1, count = 20)
-                        } else {
-                            var res = searchDomain(partnerDomain, q, startPage = 1, maxCount = 20)
-                            if (res.isEmpty() && partnerTag == "Pencuri") {
-                                // If PencuriMovie returned nothing, probe active domain and retry
-                                probePencuriDomain()?.let { liveDomain ->
-                                    res = searchDomain(liveDomain, q, startPage = 1, maxCount = 20)
+                        var searchResults = when (partnerTag) {
+                            "DutaFilm" -> searchClusterMirrors(q, page = 1, count = 20)
+                            "LK21" -> searchBullerswood(q, page = 1, count = 20)
+                            else -> {
+                                var res = searchDomain(partnerDomain, q, startPage = 1, maxCount = 20)
+                                if (res.isEmpty() && partnerTag == "Pencuri") {
+                                    // If PencuriMovie returned nothing, probe active domain and retry
+                                    probePencuriDomain()?.let { liveDomain ->
+                                        res = searchDomain(liveDomain, q, startPage = 1, maxCount = 20)
+                                    }
                                 }
+                                res
                             }
-                            res
                         }
 
                         val matched = searchResults.find { isCrossProviderMovieMatch(video, it) }
@@ -3552,6 +3677,29 @@ object VideoExtractor {
 
     suspend fun searchVideos(query: String, page: Int, count: Int, categoryPath: String? = null): List<Video> = withContext(Dispatchers.IO) {
         if (categoryPath != null) {
+            if (categoryPath.contains("bullerswood", ignoreCase = true) || categoryPath.contains("lk21", ignoreCase = true)) {
+                return@withContext searchBullerswood(query, page, count)
+            }
+
+            if (categoryPath.contains("country/indonesia", ignoreCase = true)) {
+                val encodedQuery = encodeQuery(query)
+                val dutaDeferred = async {
+                    val url = if (page > 1) "$BASE_URL/country/indonesia/page/$page/?s=$encodedQuery" else "$BASE_URL/country/indonesia/?s=$encodedQuery"
+                    fetchHtml(url)?.let { scrapeVideosFromHtml(it, url) } ?: emptyList()
+                }
+                val pencuriDeferred = async {
+                    val pencuriBase = getPencuriBaseUrl()
+                    val url = if (page > 1) "$pencuriBase/country/indonesia/page/$page/?s=$encodedQuery" else "$pencuriBase/country/indonesia/?s=$encodedQuery"
+                    fetchHtml(url)?.let { scrapeVideosFromHtml(it, url) } ?: emptyList()
+                }
+                val bullerswoodDeferred = async { searchBullerswood(query, page, count) }
+                val duta = dutaDeferred.await()
+                val pencuri = pencuriDeferred.await()
+                val bullerswood = bullerswoodDeferred.await()
+                val merged = mergeAndInterleave(mergeAndInterleave(duta, pencuri, count), bullerswood, count)
+                return@withContext filterAndSortByRelevance(merged.distinctBy { it.id }, query).take(count)
+            }
+
             if (categoryPath.contains("country/malaysia", ignoreCase = true)) {
                 val encodedQuery = encodeQuery(query)
                 val dutaDeferred = async {
@@ -3614,8 +3762,9 @@ object VideoExtractor {
         }
 
         // GLOBAL SEARCH: Concurrently query all platforms simultaneously:
-        // PencuriMovie, Primary Cluster Mirrors (27 sites), KepalaBergetar, P.Ramlee Archive, YouTube, Bilibili, and Dailymotion
+        // PencuriMovie, Bullerswood (LK21), Primary Cluster Mirrors (27 sites), KepalaBergetar, P.Ramlee Archive, YouTube, Bilibili, and Dailymotion
         val pencuriDeferred = async { searchDomain(getPencuriBaseUrl(), query, page, count) }
+        val bullerswoodDeferred = async { searchBullerswood(query, page, count) }
         val clusterDeferred = async { searchClusterMirrors(query, page, count) }
         val kepalaDeferred = async { searchKepalaBergetar(query, page, count) }
         val pramleeDeferred = async {
@@ -3632,6 +3781,7 @@ object VideoExtractor {
         val dmDeferred = async { if (page == 1) searchDailymotionAsVideos(query) else emptyList() }
 
         var pencuriResults = pencuriDeferred.await()
+        val bullerswoodResults = bullerswoodDeferred.await()
         val clusterResults = clusterDeferred.await()
         val kepalaResults = kepalaDeferred.await()
         val pramleeResults = pramleeDeferred.await()
@@ -3651,9 +3801,9 @@ object VideoExtractor {
             }
         }
 
-        Log.i(TAG, "Simultaneous search completed: Pencuri=${pencuriResults.size}, Cluster=${clusterResults.size}, Kepala=${kepalaResults.size}, PRamlee=${pramleeResults.size}, YT=${ytResults.size}, Bili=${biliResults.size}, DM=${dmResults.size}")
+        Log.i(TAG, "Simultaneous search completed: Pencuri=${pencuriResults.size}, Bullerswood=${bullerswoodResults.size}, Cluster=${clusterResults.size}, Kepala=${kepalaResults.size}, PRamlee=${pramleeResults.size}, YT=${ytResults.size}, Bili=${biliResults.size}, DM=${dmResults.size}")
 
-        val allMerged = (pencuriResults + clusterResults + kepalaResults + pramleeResults + ytResults + biliResults + dmResults)
+        val allMerged = (pencuriResults + bullerswoodResults + clusterResults + kepalaResults + pramleeResults + ytResults + biliResults + dmResults)
             .distinctBy { it.id }
 
         val relevantResults = filterAndSortByRelevance(allMerged, query)
@@ -3663,6 +3813,7 @@ object VideoExtractor {
     fun extractStableId(url: String): String {
         val slug = url.substringBefore('?').trimEnd('/').substringAfterLast('/')
         return when {
+            url.contains("bullerswood", ignoreCase = true) || url.contains("lk21", ignoreCase = true) -> "bw_$slug"
             url.contains("pencurimovie", ignoreCase = true) || url.contains("pencurifilm", ignoreCase = true) -> "pm_$slug"
             isClusterSite(url) || url.contains("159.89.249.45") || url.contains("dutafilm", ignoreCase = true) -> "df_$slug"
             else -> slug

@@ -396,6 +396,7 @@ class VideoViewModel @Inject constructor(
             "/category/p-ramlee/",
             "/country/vietnam/",
             "/country/indonesia/",
+            "/source/bullerswood/",
             "/country/korea/",
             "/country/thailand/",
             "/country/japan/",
@@ -447,8 +448,8 @@ class VideoViewModel @Inject constructor(
                 normPath == "/" || lowPath.contains("/movie") || lowPath.contains("/series") || lowPath.contains("/serial-tv") || lowPath.contains("/tv") || lowPath.contains("box-office") || lowPath.contains("top-imdb") || lowPath.contains("most-viewed") ||
                 lowName in listOf("newly updated", "movies", "movie", "tv series", "serial tv", "series", "box-office", "top imdb", "most viewed") -> CategoryGroup.CORE
 
-                lowPath.startsWith("/country/") || lowPath.contains("p-ramlee") ||
-                lowName in listOf("malaysia", "p.ramlee", "viet nam", "vietnam", "indonesia", "indonesian", "korea", "south korea", "thailand", "japan", "china", "hong kong", "india", "usa", "united states", "united kingdom", "uk", "australia", "canada", "france", "germany", "italy", "philippines", "spain", "taiwan", "russia", "netherlands") -> CategoryGroup.REGIONAL
+                lowPath.startsWith("/country/") || lowPath.contains("p-ramlee") || lowPath.contains("bullerswood") || lowPath.contains("lk21") ||
+                lowName in listOf("malaysia", "p.ramlee", "viet nam", "vietnam", "indonesia", "indonesian", "lk21", "layarkaca21", "bullerswood", "korea", "south korea", "thailand", "japan", "china", "hong kong", "india", "usa", "united states", "united kingdom", "uk", "australia", "canada", "france", "germany", "italy", "philippines", "spain", "taiwan", "russia", "netherlands") -> CategoryGroup.REGIONAL
 
                 lowPath.startsWith("/network/") ||
                 lowName in listOf("netflix", "disney+", "disney", "apple tv+", "apple tv", "hbo", "hbo max", "amazon prime", "amazon", "paramount+", "hulu", "peacock") -> CategoryGroup.STREAMING
@@ -488,14 +489,15 @@ class VideoViewModel @Inject constructor(
                             lowName.contains("p-ramlee") || lowName.contains("p.ramlee") -> 1
                             lowName.contains("viet") -> 2
                             lowName.contains("indonesia") -> 3
-                            lowName.contains("korea") -> 4
-                            lowName.contains("thailand") -> 5
-                            lowName.contains("japan") -> 6
-                            lowName.contains("china") -> 7
-                            lowName.contains("hong kong") -> 8
-                            lowName.contains("india") -> 9
-                            lowName.contains("usa") || lowName.contains("united states") -> 10
-                            lowName.contains("united kingdom") || lowName == "uk" -> 11
+                            lowName.contains("lk21") || lowName.contains("layarkaca21") || normPath.contains("bullerswood") -> 4
+                            lowName.contains("korea") -> 5
+                            lowName.contains("thailand") -> 6
+                            lowName.contains("japan") -> 7
+                            lowName.contains("china") -> 8
+                            lowName.contains("hong kong") -> 9
+                            lowName.contains("india") -> 10
+                            lowName.contains("usa") || lowName.contains("united states") -> 11
+                            lowName.contains("united kingdom") || lowName == "uk" -> 12
                             else -> 500
                         }
                     }
@@ -724,6 +726,7 @@ class VideoViewModel @Inject constructor(
             mapOf("name" to "Malaysia", "path" to "/country/malaysia/"),
             mapOf("name" to "P.Ramlee", "path" to "/category/p-ramlee/"),
             mapOf("name" to "Indonesia", "path" to "/country/indonesia/"),
+            mapOf("name" to "LK21", "path" to "/source/bullerswood/"),
             mapOf("name" to "Korea", "path" to "/country/korea/"),
             mapOf("name" to "Thailand", "path" to "/country/thailand/"),
             mapOf("name" to "Vietnam", "path" to "/country/vietnam/"),
@@ -1755,10 +1758,10 @@ class VideoViewModel @Inject constructor(
                         }
                         if (matchingEp != null) _currentEpisode.value = matchingEp
                     } else if (_currentEpisode.value == null && filteredEps.isNotEmpty()) {
-                        val videoSlug = VideoExtractor.extractStableId(video!!.videoUrl).removePrefix("kb_").removePrefix("pm_")
-                        val idSlug = videoId.removePrefix("kb_").removePrefix("pm_")
+                        val videoSlug = VideoExtractor.extractStableId(video!!.videoUrl).removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_")
+                        val idSlug = videoId.removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_")
                         val matchingEp = filteredEps.find { ep ->
-                            val epSlug = VideoExtractor.extractStableId(ep.url).removePrefix("kb_").removePrefix("pm_")
+                            val epSlug = VideoExtractor.extractStableId(ep.url).removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_")
                             epSlug == videoSlug || epSlug == idSlug ||
                             (videoSlug.length > 5 && (epSlug.contains(videoSlug) || videoSlug.contains(epSlug))) ||
                             (idSlug.length > 5 && (epSlug.contains(idSlug) || idSlug.contains(epSlug)))
@@ -2252,10 +2255,10 @@ class VideoViewModel @Inject constructor(
                         val matchesSeason = targetSeasonNum == null || epSeasonNum == null || epSeasonNum == targetSeasonNum
                         notMeta && matchesSeason
                     }
-                    val videoSlug = VideoExtractor.extractStableId(video!!.videoUrl).removePrefix("kb_").removePrefix("pm_")
-                    val idSlug = videoId.removePrefix("kb_").removePrefix("pm_")
+                    val videoSlug = VideoExtractor.extractStableId(video!!.videoUrl).removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_")
+                    val idSlug = videoId.removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_")
                     val matched = filteredEps.find { ep ->
-                        val epSlug = VideoExtractor.extractStableId(ep.url).removePrefix("kb_").removePrefix("pm_")
+                        val epSlug = VideoExtractor.extractStableId(ep.url).removePrefix("kb_").removePrefix("pm_").removePrefix("bw_").removePrefix("df_")
                         epSlug == videoSlug || epSlug == idSlug ||
                         (videoSlug.length > 5 && (epSlug.contains(videoSlug) || videoSlug.contains(epSlug))) ||
                         (idSlug.length > 5 && (epSlug.contains(idSlug) || idSlug.contains(epSlug)))
