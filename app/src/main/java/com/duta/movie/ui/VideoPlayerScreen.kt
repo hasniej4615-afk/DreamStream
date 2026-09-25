@@ -122,12 +122,18 @@ fun sanitizeAbyssHtml(rawHtml: String, nukerScript: String): String {
     if (html.isEmpty()) return html
 
     // 1. Defeat anti-framing / anti-direct redirect
-    html = html.replace("if(top.location == self.location", "if(false && top.location == self.location")
-    html = html.replace("if(top.location!=self.location", "if(true || top.location!=self.location")
-    html = html.replace("window.location = \"https://abyss.to\";", "/* blocked redirect */;")
-    html = html.replace("window.location=\"https://abyss.to\";", "/* blocked redirect */;")
-    html = html.replace("window.location.href = \"https://abyss.to\";", "/* blocked redirect */;")
-    html = html.replace("window.location.replace(\"https://abyss.to\");", "/* blocked redirect */;")
+    html = html.replace(Regex("""if\s*\(\s*(?:window\.)?top\.location\s*===\s*(?:window\.)?self\.location"""), "if(false && top.location === self.location")
+    html = html.replace(Regex("""if\s*\(\s*(?:window\.)?top\.location\s*==\s*(?:window\.)?self\.location"""), "if(false && top.location == self.location")
+    html = html.replace(Regex("""if\s*\(\s*(?:window\.)?top\.location\s*!==\s*(?:window\.)?self\.location"""), "if(true || top.location !== self.location")
+    html = html.replace(Regex("""if\s*\(\s*(?:window\.)?top\.location\s*!=\s*(?:window\.)?self\.location"""), "if(true || top.location != self.location")
+    html = html.replace(Regex("""if\s*\(\s*(?:window\.)?top\s*===\s*(?:window\.)?self"""), "if(false && top === self")
+    html = html.replace(Regex("""if\s*\(\s*(?:window\.)?top\s*==\s*(?:window\.)?self"""), "if(false && top == self")
+    html = html.replace(Regex("""if\s*\(\s*(?:window\.)?top\s*!==\s*(?:window\.)?self"""), "if(true || top !== self")
+    html = html.replace(Regex("""if\s*\(\s*(?:window\.)?top\s*!=\s*(?:window\.)?self"""), "if(true || top != self")
+    html = html.replace(Regex("""(?:window\.)?(?:top\.)?location(?:\.href)?\s*=\s*['"]https?://[^'"]*abyss\.to/?['"]"""), "/* blocked redirect */;")
+    html = html.replace(Regex("""(?:window\.)?(?:top\.)?location\.replace\s*\(\s*['"]https?://[^'"]*abyss\.to/?['"]\s*\)"""), "/* blocked redirect */;")
+    html = html.replace(Regex("""(?:window\.)?(?:top\.)?location(?:\.href)?\s*=\s*['"]https?://[^'"]*bond\.to/?['"]"""), "/* blocked redirect */;")
+    html = html.replace(Regex("""(?:window\.)?(?:top\.)?location\.replace\s*\(\s*['"]https?://[^'"]*bond\.to/?['"]\s*\)"""), "/* blocked redirect */;")
     
     // 2. Eradicate overlay and playback elements from HTML
     html = Pattern.compile("<div[^>]*id=[\"']overlay[\"'].*?</div>\\s*</div>", Pattern.DOTALL).matcher(html).replaceAll("")
@@ -136,6 +142,7 @@ fun sanitizeAbyssHtml(rawHtml: String, nukerScript: String): String {
     // 3. Eradicate SVG play button triangles completely from HTML
     html = Pattern.compile("<svg[^>]*viewBox=[\"']0 0 24 24[\"'][^>]*>.*?</svg>", Pattern.DOTALL).matcher(html).replaceAll("")
     html = Pattern.compile("<svg[^>]*viewBox=[\"']0 0 240 240[\"'][^>]*>.*?</svg>", Pattern.DOTALL).matcher(html).replaceAll("")
+    html = Pattern.compile("<svg[^>]*class=[\"'][^\"']*jw-svg-icon-play[^\"']*[\"'][^>]*>.*?</svg>", Pattern.DOTALL).matcher(html).replaceAll("")
     
     // 4. Neutralize CSS styles within the page
     html = html.replace("width: 50%; height: 50%;", "width: 0 !important; height: 0 !important; display: none !important;")
@@ -150,11 +157,11 @@ fun sanitizeAbyssHtml(rawHtml: String, nukerScript: String): String {
     html = html.replace("overlay.ontouchend = ra;", "if(overlay)overlay.remove();")
 
     // 6. Inject CSS in <head>
-    val css = "<style>html, body, .stage, .wrap, #player { background: #000 !important; background-color: #000 !important; } #overlay, #playback, #overlay *, #playback *, div#overlay, div#playback, .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .jw-flag-fullscreen .jw-display-icon-display, .vjs-big-play-button, .vjs-big-play-button-mobile, .play-button, #play-button, .play-btn, #play-btn, .big-play, .big-play-btn, .big-play-button, .large-play-button, .ytp-large-play-button, .play-overlay, #videoInfo, .video-info, [id*=\"videoInfo\"], [class*=\"video-info\"], .video-info-title, .video-info-hint, .video-info-close, svg, svg[viewBox=\"0 0 24 24\"], svg[viewBox=\"0 0 240 240\"] { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; width: 0 !important; height: 0 !important; max-width: 0 !important; max-height: 0 !important; z-index: -99999 !important; }</style>"
+    val css = "<style>html, body, .stage, .wrap, #player { background: #000 !important; background-color: #000 !important; } #overlay, #playback, #overlay *, #playback *, div#overlay, div#playback, .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .jw-flag-fullscreen .jw-display-icon-display, .jw-button-color, .vjs-big-play-button, .vjs-big-play-button-mobile, .play-button, #play-button, .play-btn, #play-btn, .big-play, .big-play-btn, .big-play-button, .large-play-button, .ytp-large-play-button, .play-overlay, #videoInfo, .video-info, [id*=\"videoInfo\"], [class*=\"video-info\"], .video-info-title, .video-info-hint, .video-info-close, svg, svg[viewBox=\"0 0 24 24\"], svg[viewBox=\"0 0 240 240\"], #playback svg, #overlay svg { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; width: 0 !important; height: 0 !important; max-width: 0 !important; max-height: 0 !important; z-index: -99999 !important; }</style>"
     html = if (html.contains("</head>")) html.replace("</head>", "$css</head>") else css + html
     
     // 7. Inject immediate DOM killer script and Nuker script directly into player frame
-    val remover = "<script>(function(){ var ensureBlack = function() { try { if (document.documentElement) { document.documentElement.style.setProperty('background', '#000', 'important'); document.documentElement.style.setProperty('background-color', '#000', 'important'); } if (document.body) { document.body.style.setProperty('background', '#000', 'important'); document.body.style.setProperty('background-color', '#000', 'important'); } } catch(e){} }; ensureBlack(); var kill = function(){ ensureBlack(); var o=document.getElementById('overlay'); if(o){ o.style.display='none'; try{o.remove();}catch(e){} } var p=document.getElementById('playback'); if(p){ p.style.display='none'; try{p.remove();}catch(e){} } var bads=document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*=\"videoInfo\"], [class*=\"video-info\"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg, svg[viewBox=\"0 0 24 24\"], svg[viewBox=\"0 0 240 240\"]'); for(var i=0;i<bads.length;i++){ bads[i].style.setProperty('display', 'none', 'important'); bads[i].style.setProperty('opacity', '0', 'important'); bads[i].style.setProperty('visibility', 'hidden', 'important'); bads[i].style.setProperty('pointer-events', 'none', 'important'); bads[i].style.setProperty('width', '0', 'important'); bads[i].style.setProperty('height', '0', 'important'); try{bads[i].remove();}catch(e){} } if(typeof window.closeVideoInfo==='function'){ try{window.closeVideoInfo();}catch(e){} } }; kill(); setInterval(kill, 200); })();</script><script type=\"text/javascript\">$nukerScript</script>"
+    val remover = "<script>(function(){ var ensureBlack = function() { try { if (document.documentElement) { document.documentElement.style.setProperty('background', '#000', 'important'); document.documentElement.style.setProperty('background-color', '#000', 'important'); } if (document.body) { document.body.style.setProperty('background', '#000', 'important'); document.body.style.setProperty('background-color', '#000', 'important'); } } catch(e){} }; ensureBlack(); var kill = function(){ ensureBlack(); var o=document.getElementById('overlay'); if(o){ o.style.display='none'; try{o.remove();}catch(e){} } var p=document.getElementById('playback'); if(p){ p.style.display='none'; try{p.remove();}catch(e){} } var bads=document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*=\"videoInfo\"], [class*=\"video-info\"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg, svg[viewBox=\"0 0 24 24\"], svg[viewBox=\"0 0 240 240\"]'); for(var i=0;i<bads.length;i++){ bads[i].style.setProperty('display', 'none', 'important'); bads[i].style.setProperty('opacity', '0', 'important'); bads[i].style.setProperty('visibility', 'hidden', 'important'); bads[i].style.setProperty('pointer-events', 'none', 'important'); bads[i].style.setProperty('width', '0', 'important'); bads[i].style.setProperty('height', '0', 'important'); try{bads[i].remove();}catch(e){} } if(typeof window.closeVideoInfo==='function'){ try{window.closeVideoInfo();}catch(e){} } }; kill(); setInterval(kill, 100); })();</script><script type=\"text/javascript\">$nukerScript</script>"
     html = if (html.contains("</body>")) html.replace("</body>", "$remover</body>") else html + remover
     
     return html
@@ -3051,18 +3058,39 @@ fun VideoPlayerWebView(
                                 try {
                                     window.successNotified = true;
                                     window.videoFound = true;
-                                    if (document.body) {
-                                        document.body.classList.add('video-active', 'video-playing');
-                                    }
-                                    var bads = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
-                                    for (var i = 0; i < bads.length; i++) {
-                                        bads[i].style.setProperty('display', 'none', 'important');
-                                        bads[i].style.setProperty('opacity', '0', 'important');
-                                        bads[i].style.setProperty('visibility', 'hidden', 'important');
-                                        bads[i].style.setProperty('pointer-events', 'none', 'important');
-                                        bads[i].style.setProperty('width', '0', 'important');
-                                        bads[i].style.setProperty('height', '0', 'important');
-                                        try { bads[i].remove(); } catch(e){}
+                                    var cleanDoc = function(doc) {
+                                        if (!doc) return;
+                                        try {
+                                            if (doc.documentElement) {
+                                                doc.documentElement.style.setProperty('background', '#000', 'important');
+                                                doc.documentElement.style.setProperty('background-color', '#000', 'important');
+                                            }
+                                            if (doc.body) {
+                                                doc.body.style.setProperty('background', '#000', 'important');
+                                                doc.body.style.setProperty('background-color', '#000', 'important');
+                                                doc.body.classList.add('video-active', 'video-playing');
+                                            }
+                                            var bads = doc.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
+                                            for (var i = 0; i < bads.length; i++) {
+                                                bads[i].style.setProperty('display', 'none', 'important');
+                                                bads[i].style.setProperty('opacity', '0', 'important');
+                                                bads[i].style.setProperty('visibility', 'hidden', 'important');
+                                                bads[i].style.setProperty('pointer-events', 'none', 'important');
+                                                bads[i].style.setProperty('width', '0', 'important');
+                                                bads[i].style.setProperty('height', '0', 'important');
+                                                try { bads[i].remove(); } catch(e){}
+                                            }
+                                            if (typeof doc.defaultView !== 'undefined' && typeof doc.defaultView.closeVideoInfo === 'function') {
+                                                try { doc.defaultView.closeVideoInfo(); } catch(e){}
+                                            }
+                                        } catch(e){}
+                                    };
+                                    cleanDoc(document);
+                                    var iframes = document.querySelectorAll('iframe');
+                                    for (var j = 0; j < iframes.length; j++) {
+                                        try {
+                                            cleanDoc(iframes[j].contentDocument || (iframes[j].contentWindow && iframes[j].contentWindow.document));
+                                        } catch(e){}
                                     }
                                 } catch(e){}
                             """.trimIndent())
@@ -3389,27 +3417,46 @@ fun VideoPlayerWebView(
                                     };
                                     ensureBlack();
                                     var kill = function() {
-                                        ensureBlack();
-                                        var o = document.getElementById('overlay');
-                                        if (o) { o.style.display = 'none'; try { o.remove(); } catch(e){} }
-                                        var p = document.getElementById('playback');
-                                        if (p) { p.style.display = 'none'; try { p.remove(); } catch(e){} }
-                                        var bads = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
-                                        for (var i = 0; i < bads.length; i++) {
-                                            bads[i].style.setProperty('display', 'none', 'important');
-                                            bads[i].style.setProperty('opacity', '0', 'important');
-                                            bads[i].style.setProperty('visibility', 'hidden', 'important');
-                                            bads[i].style.setProperty('pointer-events', 'none', 'important');
-                                            bads[i].style.setProperty('width', '0', 'important');
-                                            bads[i].style.setProperty('height', '0', 'important');
-                                            try { bads[i].remove(); } catch(e){}
-                                        }
-                                        if (typeof window.closeVideoInfo === 'function') {
-                                            try { window.closeVideoInfo(); } catch(e){}
+                                        var cleanDoc = function(doc) {
+                                            if (!doc) return;
+                                            try {
+                                                if (doc.documentElement) {
+                                                    doc.documentElement.style.setProperty('background', '#000', 'important');
+                                                    doc.documentElement.style.setProperty('background-color', '#000', 'important');
+                                                }
+                                                if (doc.body) {
+                                                    doc.body.style.setProperty('background', '#000', 'important');
+                                                    doc.body.style.setProperty('background-color', '#000', 'important');
+                                                }
+                                                var o = doc.getElementById('overlay');
+                                                if (o) { o.style.display = 'none'; try { o.remove(); } catch(e){} }
+                                                var p = doc.getElementById('playback');
+                                                if (p) { p.style.display = 'none'; try { p.remove(); } catch(e){} }
+                                                var bads = doc.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
+                                                for (var i = 0; i < bads.length; i++) {
+                                                    bads[i].style.setProperty('display', 'none', 'important');
+                                                    bads[i].style.setProperty('opacity', '0', 'important');
+                                                    bads[i].style.setProperty('visibility', 'hidden', 'important');
+                                                    bads[i].style.setProperty('pointer-events', 'none', 'important');
+                                                    bads[i].style.setProperty('width', '0', 'important');
+                                                    bads[i].style.setProperty('height', '0', 'important');
+                                                    try { bads[i].remove(); } catch(e){}
+                                                }
+                                                if (typeof doc.defaultView !== 'undefined' && typeof doc.defaultView.closeVideoInfo === 'function') {
+                                                    try { doc.defaultView.closeVideoInfo(); } catch(e){}
+                                                }
+                                            } catch(e){}
+                                        };
+                                        cleanDoc(document);
+                                        var iframes = document.querySelectorAll('iframe');
+                                        for (var j = 0; j < iframes.length; j++) {
+                                            try {
+                                                cleanDoc(iframes[j].contentDocument || (iframes[j].contentWindow && iframes[j].contentWindow.document));
+                                            } catch(e){}
                                         }
                                     };
                                     kill();
-                                    setInterval(kill, 250);
+                                    setInterval(kill, 150);
                                 } catch(e) {}
                             })();
                         """.trimIndent()
@@ -3499,7 +3546,7 @@ fun VideoPlayerWebView(
                                 resp.use { response ->
                                     if (response.isSuccessful) {
                                         val rawHtml = response.body?.string() ?: ""
-                                        if (rawHtml.isNotEmpty() && rawHtml.contains("SoTrym")) {
+                                        if (rawHtml.isNotEmpty() && (rawHtml.contains("SoTrym") || rawHtml.contains("playback") || rawHtml.contains("overlay") || rawHtml.contains("jwplayer") || rawHtml.contains("eval(function(p,a,c,k,e,d)"))) {
                                             val sanitized = sanitizeAbyssHtml(rawHtml, nukerScript)
                                             Log.d("VideoPlayerTurbo", "Neutralized Abyss/Bond/Playsobat player page overlay & redirect: $u")
                                             return android.webkit.WebResourceResponse("text/html", "UTF-8", java.io.ByteArrayInputStream(sanitized.toByteArray(Charsets.UTF_8)))
@@ -3659,7 +3706,7 @@ fun VideoPlayerWebView(
                                   .build()
                               val resp = com.duta.movie.util.NetworkConfig.permissiveOkHttpClient.newCall(req).execute()
                               val rawHtml = resp.use { if (it.isSuccessful) it.body?.string() else null }
-                              if (!rawHtml.isNullOrEmpty() && rawHtml.contains("SoTrym")) {
+                              if (!rawHtml.isNullOrEmpty() && (rawHtml.contains("SoTrym") || rawHtml.contains("playback") || rawHtml.contains("overlay") || rawHtml.contains("jwplayer") || rawHtml.contains("eval(function(p,a,c,k,e,d)"))) {
                                   val sanitized = sanitizeAbyssHtml(rawHtml, nukerScript)
                                   withContext(Dispatchers.Main) {
                                       if (view.getTag(R.id.active_url) == url) {
@@ -3673,13 +3720,20 @@ fun VideoPlayerWebView(
                               Log.w("VideoPlayerTurbo", "Direct Abyss pre-fetch failed: ${e.message}")
                           }
                           // Fallback when pre-fetch fails or returns challenge:
-                          // Load via a pitch-black iframe wrapper with base URL set to referer.
+                          // Load via a pitch-black iframe wrapper with base URL set to playerOrigin.
                           // An iframe wrapper is CRITICAL because Abyss has native JS:
                           // if(top.location == self.location && !/^(.+?)\.abyss\.to$/.test(document.location.hostname)) { window.location = "https://abyss.to"; }
                           // Loading in an iframe ensures top.location !== self.location, preventing the anti-framing redirect to white abyss.to!
+                          // Using playerOrigin makes the wrapper same-origin with the iframe, granting full DOM access to purge the play icon.
                           withContext(Dispatchers.Main) {
                               if (view.getTag(R.id.active_url) == url) {
-                                  Log.d("VideoPlayerTurbo", "Loading Abyss in black iframe wrapper: $url")
+                                  val playerOrigin = try {
+                                      val u = android.net.Uri.parse(url)
+                                      "${u.scheme}://${u.host}"
+                                  } catch (e: Exception) {
+                                      referer
+                                  }
+                                  Log.d("VideoPlayerTurbo", "Loading Abyss in black same-origin iframe wrapper (origin: $playerOrigin): $url")
                                   val iframeHtml = """
                                       <!DOCTYPE html>
                                       <html style="background:#000!important;background-color:#000!important;">
@@ -3691,11 +3745,58 @@ fun VideoPlayerWebView(
                                           </style>
                                       </head>
                                       <body style="background:#000!important;background-color:#000!important;">
-                                          <iframe src="$url" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen style="background:#000!important;background-color:#000!important;"></iframe>
+                                          <iframe id="playerFrame" src="$url" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen style="background:#000!important;background-color:#000!important;"></iframe>
+                                          <script>
+                                          (function() {
+                                              var cleanIframe = function() {
+                                                  try {
+                                                      var f = document.getElementById('playerFrame');
+                                                      if (!f) return;
+                                                      var doc = f.contentDocument || (f.contentWindow && f.contentWindow.document);
+                                                      if (!doc) return;
+                                                      if (doc.documentElement) {
+                                                          doc.documentElement.style.setProperty('background', '#000', 'important');
+                                                          doc.documentElement.style.setProperty('background-color', '#000', 'important');
+                                                      }
+                                                      if (doc.body) {
+                                                          doc.body.style.setProperty('background', '#000', 'important');
+                                                          doc.body.style.setProperty('background-color', '#000', 'important');
+                                                          doc.body.classList.add('video-active', 'video-playing');
+                                                      }
+                                                      if (!doc.getElementById('abyss-cleaner-style')) {
+                                                          var s = doc.createElement('style');
+                                                          s.id = 'abyss-cleaner-style';
+                                                          s.textContent = 'html, body, .stage, .wrap, #player { background: #000 !important; background-color: #000 !important; } #overlay, #playback, #overlay *, #playback *, div#overlay, div#playback, .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .jw-flag-fullscreen .jw-display-icon-display, .jw-button-color, .vjs-big-play-button, .vjs-big-play-button-mobile, .play-button, #play-button, .play-btn, #play-btn, .big-play, .big-play-btn, .big-play-button, .large-play-button, .ytp-large-play-button, .play-overlay, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .video-info-title, .video-info-hint, .video-info-close, svg, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"], #playback svg, #overlay svg { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; width: 0 !important; height: 0 !important; max-width: 0 !important; max-height: 0 !important; z-index: -99999 !important; }';
+                                                          if (doc.head) doc.head.appendChild(s);
+                                                          else if (doc.body) doc.body.appendChild(s);
+                                                      }
+                                                      var bads = doc.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
+                                                      for (var i = 0; i < bads.length; i++) {
+                                                          bads[i].style.setProperty('display', 'none', 'important');
+                                                          bads[i].style.setProperty('opacity', '0', 'important');
+                                                          bads[i].style.setProperty('visibility', 'hidden', 'important');
+                                                          bads[i].style.setProperty('pointer-events', 'none', 'important');
+                                                          bads[i].style.setProperty('width', '0', 'important');
+                                                          bads[i].style.setProperty('height', '0', 'important');
+                                                          try { bads[i].remove(); } catch(e) {}
+                                                      }
+                                                      if (typeof f.contentWindow.closeVideoInfo === 'function') {
+                                                          try { f.contentWindow.closeVideoInfo(); } catch(e) {}
+                                                      }
+                                                  } catch(e) {}
+                                              };
+                                              var f = document.getElementById('playerFrame');
+                                              if (f) {
+                                                  f.addEventListener('load', cleanIframe);
+                                              }
+                                              cleanIframe();
+                                              setInterval(cleanIframe, 100);
+                                          })();
+                                          </script>
                                       </body>
                                       </html>
                                   """.trimIndent()
-                                  view.loadDataWithBaseURL(referer, iframeHtml, "text/html", "UTF-8", null)
+                                  view.loadDataWithBaseURL(playerOrigin, iframeHtml, "text/html", "UTF-8", null)
                               }
                           }
                       }

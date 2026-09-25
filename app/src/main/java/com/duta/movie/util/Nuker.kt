@@ -45,6 +45,22 @@ object Nuker {
                                 document.body.style.setProperty('background', '#000', 'important');
                                 document.body.style.setProperty('background-color', '#000', 'important');
                             }
+                            var fms = document.querySelectorAll('iframe');
+                            for (var fi = 0; fi < fms.length; fi++) {
+                                try {
+                                    var fDoc = fms[fi].contentDocument || (fms[fi].contentWindow && fms[fi].contentWindow.document);
+                                    if (fDoc) {
+                                        if (fDoc.documentElement) {
+                                            fDoc.documentElement.style.setProperty('background', '#000', 'important');
+                                            fDoc.documentElement.style.setProperty('background-color', '#000', 'important');
+                                        }
+                                        if (fDoc.body) {
+                                            fDoc.body.style.setProperty('background', '#000', 'important');
+                                            fDoc.body.style.setProperty('background-color', '#000', 'important');
+                                        }
+                                    }
+                                } catch(e) {}
+                            }
                         } catch(e) {}
                     };
                     ensureBlackBackground();
@@ -882,18 +898,31 @@ object Nuker {
                                   } catch(e){} 
                               });
                               try {
-                                  if (typeof window.closeVideoInfo === 'function') {
-                                      try { window.closeVideoInfo(); } catch(e){}
-                                  }
-                                  var badOverlays = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"]');
-                                  for (var bo = 0; bo < badOverlays.length; bo++) {
-                                      badOverlays[bo].style.setProperty('display', 'none', 'important');
-                                      badOverlays[bo].style.setProperty('opacity', '0', 'important');
-                                      badOverlays[bo].style.setProperty('visibility', 'hidden', 'important');
-                                      badOverlays[bo].style.setProperty('pointer-events', 'none', 'important');
-                                      badOverlays[bo].style.setProperty('width', '0', 'important');
-                                      badOverlays[bo].style.setProperty('height', '0', 'important');
-                                      try { badOverlays[bo].remove(); } catch(e){}
+                                  var killBadInDoc = function(d) {
+                                      if (!d) return;
+                                      try {
+                                          if (typeof d.defaultView !== 'undefined' && typeof d.defaultView.closeVideoInfo === 'function') {
+                                              try { d.defaultView.closeVideoInfo(); } catch(e){}
+                                          }
+                                          var badOverlays = d.querySelectorAll('#overlay, #playback, div#overlay, div#playback, .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
+                                          for (var bo = 0; bo < badOverlays.length; bo++) {
+                                              badOverlays[bo].style.setProperty('display', 'none', 'important');
+                                              badOverlays[bo].style.setProperty('opacity', '0', 'important');
+                                              badOverlays[bo].style.setProperty('visibility', 'hidden', 'important');
+                                              badOverlays[bo].style.setProperty('pointer-events', 'none', 'important');
+                                              badOverlays[bo].style.setProperty('width', '0', 'important');
+                                              badOverlays[bo].style.setProperty('height', '0', 'important');
+                                              try { badOverlays[bo].remove(); } catch(e){}
+                                          }
+                                      } catch(e){}
+                                  };
+                                  killBadInDoc(document);
+                                  var frames = document.querySelectorAll('iframe');
+                                  for (var fIdx = 0; fIdx < frames.length; fIdx++) {
+                                      try {
+                                          var fDoc = frames[fIdx].contentDocument || (frames[fIdx].contentWindow && frames[fIdx].contentWindow.document);
+                                          killBadInDoc(fDoc);
+                                      } catch(e){}
                                   }
                               } catch(e) {}
                               
@@ -970,6 +999,22 @@ object Nuker {
                             if (document.body) {
                                 document.body.style.setProperty('background', '#000', 'important');
                                 document.body.style.setProperty('background-color', '#000', 'important');
+                            }
+                            var fms = document.querySelectorAll('iframe');
+                            for (var fi = 0; fi < fms.length; fi++) {
+                                try {
+                                    var fDoc = fms[fi].contentDocument || (fms[fi].contentWindow && fms[fi].contentWindow.document);
+                                    if (fDoc) {
+                                        if (fDoc.documentElement) {
+                                            fDoc.documentElement.style.setProperty('background', '#000', 'important');
+                                            fDoc.documentElement.style.setProperty('background-color', '#000', 'important');
+                                        }
+                                        if (fDoc.body) {
+                                            fDoc.body.style.setProperty('background', '#000', 'important');
+                                            fDoc.body.style.setProperty('background-color', '#000', 'important');
+                                        }
+                                    }
+                                } catch(e) {}
                             }
                         } catch(e) {}
                     };

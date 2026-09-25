@@ -515,15 +515,32 @@ object NetworkConfig {
                     }
                 }
 
+                val isHtmlPage = request.header("Accept")?.contains("text/html") == true ||
+                                 (!urlString.contains(".m3u8") && !urlString.contains(".mp4") && !urlString.contains(".ts") && !urlString.contains(".mkv") && !urlString.contains(".webm") && (urlString.contains("abyss") || urlString.contains("bond") || urlString.contains("playsobat") || urlString.contains("hydrax")))
+                if (isHtmlPage) {
+                    requestBuilder.removeHeader("Origin")
+                    if (currentReferer != null) {
+                        requestBuilder.header("Referer", currentReferer)
+                    }
+                }
+
                 // SEC FETCH HEADERS (Anti-Bot Bypassing)
                 if (profile == HeaderProfile.AGGRESSIVE_SPOOF || profile == HeaderProfile.MOBILE) {
                     val isMobile = profile == HeaderProfile.MOBILE || profile == HeaderProfile.AGGRESSIVE_SPOOF
                     requestBuilder.header("Sec-Ch-Ua", if (isMobile) "\"Not A(Brand\";v=\"8\", \"Chromium\";v=\"132\", \"Android WebView\";v=\"132\"" else "\"Not A(Brand\";v=\"8\", \"Chromium\";v=\"132\", \"Google Chrome\";v=\"132\"")
                     requestBuilder.header("Sec-Ch-Ua-Mobile", if (isMobile) "?1" else "?0")
                     requestBuilder.header("Sec-Ch-Ua-Platform", if (isMobile) "\"Android\"" else "\"Windows\"")
-                    requestBuilder.header("Sec-Fetch-Dest", if (urlString.contains(".m3u8")) "empty" else "video")
-                    requestBuilder.header("Sec-Fetch-Mode", if (urlString.contains(".m3u8")) "cors" else "no-cors")
-                    requestBuilder.header("Sec-Fetch-Site", "cross-site")
+                    if (isHtmlPage) {
+                        requestBuilder.header("Sec-Fetch-Dest", "document")
+                        requestBuilder.header("Sec-Fetch-Mode", "navigate")
+                        requestBuilder.header("Sec-Fetch-Site", "cross-site")
+                        requestBuilder.header("Sec-Fetch-User", "?1")
+                        requestBuilder.header("Upgrade-Insecure-Requests", "1")
+                    } else {
+                        requestBuilder.header("Sec-Fetch-Dest", if (urlString.contains(".m3u8")) "empty" else "video")
+                        requestBuilder.header("Sec-Fetch-Mode", if (urlString.contains(".m3u8")) "cors" else "no-cors")
+                        requestBuilder.header("Sec-Fetch-Site", "cross-site")
+                    }
                 }
                 
                 val finalReq = requestBuilder.build()
