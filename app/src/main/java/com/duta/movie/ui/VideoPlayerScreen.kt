@@ -3474,25 +3474,15 @@ fun VideoPlayerWebView(
                                 resp.use { response ->
                                     if (response.isSuccessful) {
                                         val rawHtml = response.body?.string() ?: ""
-                                        if (rawHtml.isNotEmpty()) {
-                                            // Only treat as Cloudflare challenge if it's a genuine challenge page and NOT an actual player page
-                                            val isRealChallenge = (rawHtml.contains("<title>Just a moment...</title>") || 
-                                                                   rawHtml.contains("cf-browser-verification") || 
-                                                                   rawHtml.contains("cf-please-wait") || 
-                                                                   rawHtml.contains("action=\"/?__cf_chl_f_tk=")) &&
-                                                                  !rawHtml.contains("id=\"player\"") && 
-                                                                  !rawHtml.contains("id=\"overlay\"") && 
-                                                                  !rawHtml.contains("jwplayer") && 
-                                                                  !rawHtml.contains("SoTrym")
-                                            if (isRealChallenge) {
-                                                Log.d("VideoPlayerTurbo", "Cloudflare challenge detected on Abyss page, delegating to WebView: $u")
-                                                return null
-                                            }
-
+                                        if (rawHtml.isNotEmpty() && rawHtml.contains("SoTrym")) {
                                             val sanitized = sanitizeAbyssHtml(rawHtml, nukerScript)
                                             Log.d("VideoPlayerTurbo", "Neutralized Abyss/Bond/Playsobat player page overlay & redirect: $u")
                                             return android.webkit.WebResourceResponse("text/html", "UTF-8", java.io.ByteArrayInputStream(sanitized.toByteArray(Charsets.UTF_8)))
                                         }
+                                        // Got 200 but not a real player page (challenge page served as 200, or empty) -- let WebView handle
+                                        Log.d("VideoPlayerTurbo", "Abyss 200 but not a player page (len=${rawHtml.length}), delegating to WebView: $u")
+                                    } else {
+                                        Log.d("VideoPlayerTurbo", "Abyss returned HTTP ${response.code} (Cloudflare?), delegating to WebView: $u")
                                     }
                                 }
                             } catch (e: Exception) {
@@ -3641,7 +3631,7 @@ fun VideoPlayerWebView(
                                   .build()
                               val resp = com.duta.movie.util.NetworkConfig.permissiveOkHttpClient.newCall(req).execute()
                               val rawHtml = resp.use { if (it.isSuccessful) it.body?.string() else null }
-                              if (!rawHtml.isNullOrEmpty()) {
+                              if (!rawHtml.isNullOrEmpty() && rawHtml.contains("SoTrym")) {
                                   val sanitized = sanitizeAbyssHtml(rawHtml, nukerScript)
                                   withContext(Dispatchers.Main) {
                                       if (view.getTag(R.id.active_url) == url) {
@@ -3654,24 +3644,12 @@ fun VideoPlayerWebView(
                           } catch (e: Exception) {
                               Log.w("VideoPlayerTurbo", "Direct Abyss pre-fetch failed: ${e.message}")
                           }
+                          // Cloudflare blocked OkHttp -- load URL directly into WebView so it can solve the challenge.
+                          // onPageFinished will inject overlay-removal scripts since the page is now top-level (not in a cross-origin iframe).
                           withContext(Dispatchers.Main) {
                               if (view.getTag(R.id.active_url) == url) {
-                                  val iframeHtml = """
-                                      <!DOCTYPE html>
-                                      <html>
-                                      <head>
-                                          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-                                          <style>
-                                              html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background-color: #000; }
-                                              iframe { border: none; width: 100%; height: 100%; display: block; }
-                                          </style>
-                                      </head>
-                                      <body>
-                                          <iframe src="$url" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen></iframe>
-                                      </body>
-                                      </html>
-                                  """.trimIndent()
-                                  view.loadDataWithBaseURL(referer, iframeHtml, "text/html", "UTF-8", null)
+                                  Log.d("VideoPlayerTurbo", "Loading Abyss directly into WebView (Cloudflare protected): $url")
+                                  view.loadUrl(url, mutableMapOf("Referer" to referer))
                               }
                           }
                       }
