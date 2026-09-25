@@ -35,6 +35,20 @@ object Nuker {
                         window.show_popup = noop; window._top = window; window.open = noop;
                     })();
 
+                    var ensureBlackBackground = function() {
+                        try {
+                            if (document.documentElement) {
+                                document.documentElement.style.setProperty('background', '#000', 'important');
+                                document.documentElement.style.setProperty('background-color', '#000', 'important');
+                            }
+                            if (document.body) {
+                                document.body.style.setProperty('background', '#000', 'important');
+                                document.body.style.setProperty('background-color', '#000', 'important');
+                            }
+                        } catch(e) {}
+                    };
+                    ensureBlackBackground();
+
                     var isLandingPageGate = function() {
                         try {
                             if (window.location.href.toLowerCase().indexOf('login') !== -1 || 
@@ -897,6 +911,7 @@ object Nuker {
                              document.body.classList.add('video-active');
                              unhidePlayerAncestors();
                          }
+                         ensureBlackBackground();
                      };
                      setInterval(runNuker, $intervalMs);
                  } catch(e) {}
@@ -945,6 +960,20 @@ object Nuker {
                         window.ad_show = noop; window.ad_count = 0; window.open_pop = noop;
                         window.show_popup = noop; window._top = window; window.open = noop;
                     })();
+
+                    var ensureBlackBackground = function() {
+                        try {
+                            if (document.documentElement) {
+                                document.documentElement.style.setProperty('background', '#000', 'important');
+                                document.documentElement.style.setProperty('background-color', '#000', 'important');
+                            }
+                            if (document.body) {
+                                document.body.style.setProperty('background', '#000', 'important');
+                                document.body.style.setProperty('background-color', '#000', 'important');
+                            }
+                        } catch(e) {}
+                    };
+                    ensureBlackBackground();
 
                                         var isLandingPageGate = function() {
                         try {
@@ -1611,6 +1640,7 @@ object Nuker {
                                 }
                             }
                         }
+                        ensureBlackBackground();
                     };
 
                     setInterval(runPmNuker, $intervalMs);

@@ -124,6 +124,10 @@ fun sanitizeAbyssHtml(rawHtml: String, nukerScript: String): String {
     // 1. Defeat anti-framing / anti-direct redirect
     html = html.replace("if(top.location == self.location", "if(false && top.location == self.location")
     html = html.replace("if(top.location!=self.location", "if(true || top.location!=self.location")
+    html = html.replace("window.location = \"https://abyss.to\";", "/* blocked redirect */;")
+    html = html.replace("window.location=\"https://abyss.to\";", "/* blocked redirect */;")
+    html = html.replace("window.location.href = \"https://abyss.to\";", "/* blocked redirect */;")
+    html = html.replace("window.location.replace(\"https://abyss.to\");", "/* blocked redirect */;")
     
     // 2. Eradicate overlay and playback elements from HTML
     html = Pattern.compile("<div[^>]*id=[\"']overlay[\"'].*?</div>\\s*</div>", Pattern.DOTALL).matcher(html).replaceAll("")
@@ -146,11 +150,11 @@ fun sanitizeAbyssHtml(rawHtml: String, nukerScript: String): String {
     html = html.replace("overlay.ontouchend = ra;", "if(overlay)overlay.remove();")
 
     // 6. Inject CSS in <head>
-    val css = "<style>#overlay, #playback, #overlay *, #playback *, div#overlay, div#playback, .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .jw-flag-fullscreen .jw-display-icon-display, .vjs-big-play-button, .vjs-big-play-button-mobile, .play-button, #play-button, .play-btn, #play-btn, .big-play, .big-play-btn, .big-play-button, .large-play-button, .ytp-large-play-button, .play-overlay, #videoInfo, .video-info, [id*=\"videoInfo\"], [class*=\"video-info\"], .video-info-title, .video-info-hint, .video-info-close, svg, svg[viewBox=\"0 0 24 24\"], svg[viewBox=\"0 0 240 240\"] { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; width: 0 !important; height: 0 !important; max-width: 0 !important; max-height: 0 !important; z-index: -99999 !important; }</style>"
+    val css = "<style>html, body, .stage, .wrap, #player { background: #000 !important; background-color: #000 !important; } #overlay, #playback, #overlay *, #playback *, div#overlay, div#playback, .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .jw-flag-fullscreen .jw-display-icon-display, .vjs-big-play-button, .vjs-big-play-button-mobile, .play-button, #play-button, .play-btn, #play-btn, .big-play, .big-play-btn, .big-play-button, .large-play-button, .ytp-large-play-button, .play-overlay, #videoInfo, .video-info, [id*=\"videoInfo\"], [class*=\"video-info\"], .video-info-title, .video-info-hint, .video-info-close, svg, svg[viewBox=\"0 0 24 24\"], svg[viewBox=\"0 0 240 240\"] { display: none !important; opacity: 0 !important; visibility: hidden !important; pointer-events: none !important; width: 0 !important; height: 0 !important; max-width: 0 !important; max-height: 0 !important; z-index: -99999 !important; }</style>"
     html = if (html.contains("</head>")) html.replace("</head>", "$css</head>") else css + html
     
     // 7. Inject immediate DOM killer script and Nuker script directly into player frame
-    val remover = "<script>(function(){ var kill = function(){ var o=document.getElementById('overlay'); if(o){ o.style.display='none'; try{o.remove();}catch(e){} } var p=document.getElementById('playback'); if(p){ p.style.display='none'; try{p.remove();}catch(e){} } var bads=document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*=\"videoInfo\"], [class*=\"video-info\"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg, svg[viewBox=\"0 0 24 24\"], svg[viewBox=\"0 0 240 240\"]'); for(var i=0;i<bads.length;i++){ bads[i].style.setProperty('display', 'none', 'important'); bads[i].style.setProperty('opacity', '0', 'important'); bads[i].style.setProperty('visibility', 'hidden', 'important'); bads[i].style.setProperty('pointer-events', 'none', 'important'); bads[i].style.setProperty('width', '0', 'important'); bads[i].style.setProperty('height', '0', 'important'); try{bads[i].remove();}catch(e){} } if(typeof window.closeVideoInfo==='function'){ try{window.closeVideoInfo();}catch(e){} } }; kill(); setInterval(kill, 200); })();</script><script type=\"text/javascript\">$nukerScript</script>"
+    val remover = "<script>(function(){ var ensureBlack = function() { try { if (document.documentElement) { document.documentElement.style.setProperty('background', '#000', 'important'); document.documentElement.style.setProperty('background-color', '#000', 'important'); } if (document.body) { document.body.style.setProperty('background', '#000', 'important'); document.body.style.setProperty('background-color', '#000', 'important'); } } catch(e){} }; ensureBlack(); var kill = function(){ ensureBlack(); var o=document.getElementById('overlay'); if(o){ o.style.display='none'; try{o.remove();}catch(e){} } var p=document.getElementById('playback'); if(p){ p.style.display='none'; try{p.remove();}catch(e){} } var bads=document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*=\"videoInfo\"], [class*=\"video-info\"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg, svg[viewBox=\"0 0 24 24\"], svg[viewBox=\"0 0 240 240\"]'); for(var i=0;i<bads.length;i++){ bads[i].style.setProperty('display', 'none', 'important'); bads[i].style.setProperty('opacity', '0', 'important'); bads[i].style.setProperty('visibility', 'hidden', 'important'); bads[i].style.setProperty('pointer-events', 'none', 'important'); bads[i].style.setProperty('width', '0', 'important'); bads[i].style.setProperty('height', '0', 'important'); try{bads[i].remove();}catch(e){} } if(typeof window.closeVideoInfo==='function'){ try{window.closeVideoInfo();}catch(e){} } }; kill(); setInterval(kill, 200); })();</script><script type=\"text/javascript\">$nukerScript</script>"
     html = if (html.contains("</body>")) html.replace("</body>", "$remover</body>") else html + remover
     
     return html
@@ -2986,7 +2990,7 @@ fun VideoPlayerWebView(
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT
                     )
                     webViewRef.value = this
-                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+                    setBackgroundColor(android.graphics.Color.BLACK)
                 
                 // TV FOCUS FIX: Prevent WebView from stealing DPAD focus from Compose controls
                 val isTVDevice = isTV || com.duta.movie.util.DeviceUtils.isTvDevice(ctx)
@@ -3336,11 +3340,13 @@ fun VideoPlayerWebView(
                                            !u.contains("?") // OWL'S EYE: Don't block query-heavy mirror pages
                         
                         // Strict domain landing page block
-                        val isRootDomain = (low.endsWith(".org/") || low.endsWith(".com/") || low.endsWith(".link/") || low.endsWith(".xyz/")) &&
+                        val isRootDomain = (low.endsWith(".org/") || low.endsWith(".com/") || low.endsWith(".link/") || low.endsWith(".xyz/") || low.endsWith(".to/") || low.endsWith(".to")) &&
                                           low.split("/").size <= 4 
+                        val isAbyssLanding = low == "https://abyss.to" || low == "https://abyss.to/" || low == "https://bond.to" || low == "https://bond.to/" ||
+                                             low.startsWith("https://abyss.to/?") || low.startsWith("https://bond.to/?")
                         
                         val isMainFrame = r.isForMainFrame
-                        if (isMainFrame && (!isSafe || isLandingPage || isRootDomain)) {
+                        if (isMainFrame && (!isSafe || isLandingPage || isRootDomain || isAbyssLanding)) {
                              Log.d("VideoPlayerWebView", "Blocking unsafe mainframe navigation to: $u")
                              return true
                         }
@@ -3358,6 +3364,10 @@ fun VideoPlayerWebView(
                         
                         return !isSafe
                     }
+                    override fun onPageStarted(v: android.webkit.WebView?, u: String?, favicon: android.graphics.Bitmap?) {
+                        super.onPageStarted(v, u, favicon)
+                        safeEvaluateJavascript(v, "try{document.documentElement.style.setProperty('background','#000','important');document.documentElement.style.setProperty('background-color','#000','important');if(document.body){document.body.style.setProperty('background','#000','important');document.body.style.setProperty('background-color','#000','important');}}catch(e){}")
+                    }
                     override fun onPageFinished(v: android.webkit.WebView?, u: String?) {
                         if (v?.getTag(R.id.is_destroyed) == true) return
                         Log.d("VideoPlayerSniffer", "Injecting Nuker SCRIPT via onPageFinished")
@@ -3365,12 +3375,26 @@ fun VideoPlayerWebView(
                         val removePopupScript = """
                             (function() {
                                 try {
+                                    var ensureBlack = function() {
+                                        try {
+                                            if (document.documentElement) {
+                                                document.documentElement.style.setProperty('background', '#000', 'important');
+                                                document.documentElement.style.setProperty('background-color', '#000', 'important');
+                                            }
+                                            if (document.body) {
+                                                document.body.style.setProperty('background', '#000', 'important');
+                                                document.body.style.setProperty('background-color', '#000', 'important');
+                                            }
+                                        } catch(e) {}
+                                    };
+                                    ensureBlack();
                                     var kill = function() {
+                                        ensureBlack();
                                         var o = document.getElementById('overlay');
                                         if (o) { o.style.display = 'none'; try { o.remove(); } catch(e){} }
                                         var p = document.getElementById('playback');
                                         if (p) { p.style.display = 'none'; try { p.remove(); } catch(e){} }
-                                        var bads = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
+                                        var bads = document.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                         for (var i = 0; i < bads.length; i++) {
                                             bads[i].style.setProperty('display', 'none', 'important');
                                             bads[i].style.setProperty('opacity', '0', 'important');
@@ -3451,7 +3475,8 @@ fun VideoPlayerWebView(
                         if (isAbyssPlayerPage) {
                             try {
                                 val reqBuilder = okhttp3.Request.Builder().url(u)
-                                reqBuilder.header("User-Agent", com.duta.movie.util.NetworkConfig.SHARED_USER_AGENT)
+                                val ua = r.requestHeaders["User-Agent"] ?: view.settings.userAgentString ?: com.duta.movie.util.NetworkConfig.MOBILE_USER_AGENT
+                                reqBuilder.header("User-Agent", ua)
                                 val referer = r.requestHeaders["Referer"] ?: lastReferer ?: "${com.duta.movie.util.VideoExtractor.getBaseUrl()}/"
                                 reqBuilder.header("Referer", referer)
                                 val cookieManager = android.webkit.CookieManager.getInstance()
@@ -3622,12 +3647,15 @@ fun VideoPlayerWebView(
                       view.setTag(R.id.active_content_key, activeContentKey)
                       view.setTag(R.id.active_url, url)
                       val referer = lastReferer ?: "${com.duta.movie.util.VideoExtractor.getBaseUrl()}/"
+                      val ua = view.settings.userAgentString ?: com.duta.movie.util.NetworkConfig.MOBILE_USER_AGENT
                       scope.launch(Dispatchers.IO) {
                           try {
                               val req = okhttp3.Request.Builder()
                                   .url(url)
-                                  .header("User-Agent", com.duta.movie.util.NetworkConfig.SHARED_USER_AGENT)
+                                  .header("User-Agent", ua)
                                   .header("Referer", referer)
+                                  .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8")
+                                  .header("Accept-Language", "en-US,en;q=0.9")
                                   .build()
                               val resp = com.duta.movie.util.NetworkConfig.permissiveOkHttpClient.newCall(req).execute()
                               val rawHtml = resp.use { if (it.isSuccessful) it.body?.string() else null }
@@ -3644,12 +3672,30 @@ fun VideoPlayerWebView(
                           } catch (e: Exception) {
                               Log.w("VideoPlayerTurbo", "Direct Abyss pre-fetch failed: ${e.message}")
                           }
-                          // Cloudflare blocked OkHttp -- load URL directly into WebView so it can solve the challenge.
-                          // onPageFinished will inject overlay-removal scripts since the page is now top-level (not in a cross-origin iframe).
+                          // Fallback when pre-fetch fails or returns challenge:
+                          // Load via a pitch-black iframe wrapper with base URL set to referer.
+                          // An iframe wrapper is CRITICAL because Abyss has native JS:
+                          // if(top.location == self.location && !/^(.+?)\.abyss\.to$/.test(document.location.hostname)) { window.location = "https://abyss.to"; }
+                          // Loading in an iframe ensures top.location !== self.location, preventing the anti-framing redirect to white abyss.to!
                           withContext(Dispatchers.Main) {
                               if (view.getTag(R.id.active_url) == url) {
-                                  Log.d("VideoPlayerTurbo", "Loading Abyss directly into WebView (Cloudflare protected): $url")
-                                  view.loadUrl(url, mutableMapOf("Referer" to referer))
+                                  Log.d("VideoPlayerTurbo", "Loading Abyss in black iframe wrapper: $url")
+                                  val iframeHtml = """
+                                      <!DOCTYPE html>
+                                      <html style="background:#000!important;background-color:#000!important;">
+                                      <head>
+                                          <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+                                          <style>
+                                              html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000 !important; background-color: #000 !important; }
+                                              iframe { border: none; width: 100%; height: 100%; display: block; background: #000 !important; background-color: #000 !important; }
+                                          </style>
+                                      </head>
+                                      <body style="background:#000!important;background-color:#000!important;">
+                                          <iframe src="$url" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen style="background:#000!important;background-color:#000!important;"></iframe>
+                                      </body>
+                                      </html>
+                                  """.trimIndent()
+                                  view.loadDataWithBaseURL(referer, iframeHtml, "text/html", "UTF-8", null)
                               }
                           }
                       }
