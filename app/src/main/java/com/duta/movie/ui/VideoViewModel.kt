@@ -1738,7 +1738,7 @@ class VideoViewModel @Inject constructor(
 
                 withContext(Dispatchers.Main) { _videoMetadata.value = video }
                 
-                val isEpisodeUrl = episodeUrl?.let { (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || it.contains("/episod/") || it.contains("-episod-") || it.contains("-epi-") || it.contains("/ep-")) && !it.contains("player=") && !it.contains("mirror=") } ?: false
+                val isEpisodeUrl = episodeUrl?.let { (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || it.contains("/episod/") || it.contains("-episod-") || it.contains("-epi-") || it.contains("/ep-") || it.contains("epid=")) && !it.contains("player=") && !it.contains("mirror=") } ?: false
                 
                 // Re-check for matching episode after fetch
                 if (video?.isSeries == true) {
@@ -1776,7 +1776,9 @@ class VideoViewModel @Inject constructor(
                 }
 
                 val isExplicitSeries = video?.videoUrl?.let { it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") } ?: false
-                if (!isExplicitSeries || video?.isSeries == false || (video?.episodes?.isEmpty() == true && !isEpisodeUrl && targetEpisode == null)) {
+                val hasEpisodesOrSeriesFlag = video?.isSeries == true || (video?.episodes?.isNotEmpty() == true)
+                val isSeriesPlayback = isExplicitSeries || hasEpisodesOrSeriesFlag || isEpisodeUrl || targetEpisode != null
+                if (!isSeriesPlayback || video?.isSeries == false || (video?.episodes?.isEmpty() == true && !isEpisodeUrl && targetEpisode == null)) {
                     Log.i("VideoViewModel", "playTVSeries: Video is a movie or has no episodes. Redirecting to startMoviePlaybackResolution...")
                     startMoviePlaybackResolution(videoId, serverUrl = episodeUrl, forceReset = forceReset, isRotation = isRotation, clearBlacklist = clearBlacklist)
                     return@launch
