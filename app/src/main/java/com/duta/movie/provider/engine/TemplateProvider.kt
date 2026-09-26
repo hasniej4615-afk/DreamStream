@@ -115,7 +115,8 @@ class TemplateProvider(
                 "GENERIC_HTML" -> {
                     if (id.contains("pramlee", ignoreCase = true)) {
                         val all = VideoExtractor.sortVideosByNewestRelease(VideoExtractor.fetchArchivePramleeVideos())
-                        val start = (page - 1) * count
+                        val itemsPerPage = 15
+                        val start = (page - 1) * itemsPerPage
                         if (start >= all.size) emptyList() else all.drop(start).take(count)
                     } else {
                         VideoExtractor.fetchVideosBySection(path, page, count)

@@ -725,6 +725,7 @@ class VideoViewModel @Inject constructor(
     val deadMirrors = mutableSetOf<String>("listeamed.net", "ww1.listeamed.net", "listeamed")
     val hardDeadMirrors = mutableSetOf<String>("listeamed.net", "ww1.listeamed.net", "listeamed") // For gates and permanent bans
     val categoryPages = ConcurrentHashMap<String, Int>()
+    val categoryEndReached = ConcurrentHashMap<String, Boolean>()
     val discoveredAltServers = ConcurrentHashMap<String, List<com.duta.movie.model.VideoServer>>()
 
     fun cleanDeadMirrors() {
@@ -889,11 +890,11 @@ class VideoViewModel @Inject constructor(
 
     val categoryVideos: StateFlow<Map<String, List<Video>>> = combine(_categoryVideos, _latestMovies, _latestTVSeries, _metadataTrigger) { map, latestMovies, latestSeries, _ ->
         val fullMap = map.toMutableMap()
-        if (latestMovies.isNotEmpty()) fullMap[moviePath] = latestMovies
-        if (latestSeries.isNotEmpty()) fullMap[seriesPath] = latestSeries
+        if (latestMovies.isNotEmpty() && (fullMap[moviePath]?.size ?: 0) < latestMovies.size) fullMap[moviePath] = latestMovies
+        if (latestSeries.isNotEmpty() && (fullMap[seriesPath]?.size ?: 0) < latestSeries.size) fullMap[seriesPath] = latestSeries
         
         fullMap.mapValues { (_, list) -> 
-            VideoExtractor.sortVideosByNewestRelease(list.map { applyMetadata(it) })
+            list.map { applyMetadata(it) }
         }
     }.flowOn(Dispatchers.Default).stateIn(viewModelScope, SharingStarted.WhileSubscribed(15000), emptyMap())
 
@@ -3344,11 +3345,12 @@ class VideoViewModel @Inject constructor(
                 val results = withContext(Dispatchers.IO) { videoRepository.fetchVideosBySection(category, page = 1, count = count) }
                 if (results.isNotEmpty()) { 
                     if (!_isPlayerActive.value) {
-                        val sortedResults = VideoExtractor.sortVideosByNewestRelease(results)
+                        val sortedResults = VideoExtractor.sortVideosByNewestRelease(results.distinctBy { it.id })
                         updateMetadataCache(sortedResults, triggerBackground = false)
                         prefetchThumbnails(sortedResults)
                         _categoryVideos.update { it + (category to sortedResults) }
                         categoryPages[category] = 2 
+                        categoryEndReached[category] = false
                         
                         // SYNC: Update specific state flows for headliner/UI stability
                         if (category == moviePath) {
@@ -3367,23 +3369,46 @@ class VideoViewModel @Inject constructor(
     }
 
     fun loadMoreForCategoryRow(category: String) {
-        if (_categoryLoading.value[category] == true) return
+        if (_categoryLoading.value[category] == true || categoryEndReached[category] == true || _isPlayerActive.value) return
         viewModelScope.launch {
-            val page = categoryPages[category] ?: 1; _categoryLoading.update { it + (category to true) }
+            val lastPage = categoryPages[category] ?: 2
+            val nextPage = lastPage + 1
+            _categoryLoading.update { it + (category to true) }
             try { 
-                val more = videoRepository.fetchVideosBySection(category, page = page + 1, count = 40)
+                val more = withContext(Dispatchers.IO) {
+                    videoRepository.fetchVideosBySection(category, page = nextPage, count = 30)
+                }
                 if (more.isNotEmpty()) { 
                     updateMetadataCache(more, triggerBackground = false)
                     prefetchThumbnails(more)
+                    var newUniqueCount = 0
                     _categoryVideos.update { current -> 
                         val existing = current[category] ?: emptyList()
                         val ids = existing.map { it.id }.toSet()
-                        val combined = existing + more.filter { it.id !in ids }
-                        val sorted = VideoExtractor.sortVideosByNewestRelease(combined)
-                        current + (category to sorted)
+                        val newItems = more.distinctBy { it.id }.filter { it.id !in ids }
+                        newUniqueCount = newItems.size
+                        if (newItems.isNotEmpty()) {
+                            val combined = existing + newItems
+                            if (category == moviePath) {
+                                _latestMovies.value = combined
+                            } else if (category == seriesPath) {
+                                _latestTVSeries.value = combined
+                            }
+                            current + (category to combined)
+                        } else {
+                            current
+                        }
                     }
-                    categoryPages[category] = page + 2 
-                } 
+                    if (newUniqueCount == 0) {
+                        categoryEndReached[category] = true
+                    } else {
+                        categoryPages[category] = nextPage + 1 
+                    }
+                } else {
+                    categoryEndReached[category] = true
+                }
+            } catch (e: Exception) {
+                Log.e("VideoViewModel", "loadMoreForCategoryRow failed for $category", e)
             } finally { 
                 _categoryLoading.update { it + (category to false) } 
             }

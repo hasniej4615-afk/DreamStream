@@ -870,18 +870,17 @@ fun HorizontalVideoRow(
     val rowFirstItemFocusRequester = remember { FocusRequester() }
     var shimmerHadFocus by remember { mutableStateOf(false) }
 
-    val shouldLoadMore by remember(videos, isLoading) {
-        derivedStateOf {
+    LaunchedEffect(listState, categoryPath) {
+        if (categoryPath == null || viewModel == null) return@LaunchedEffect
+        snapshotFlow {
             val layoutInfo = listState.layoutInfo
-            val totalItemsCount = layoutInfo.totalItemsCount
-            val lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            !isLoading && totalItemsCount > 0 && lastVisibleItemIndex >= totalItemsCount - 5
-        }
-    }
-
-    LaunchedEffect(shouldLoadMore) {
-        if (shouldLoadMore && categoryPath != null && viewModel != null) {
-            viewModel.loadMoreForCategoryRow(categoryPath)
+            val totalItems = layoutInfo.totalItemsCount
+            val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            totalItems to lastVisible
+        }.collect { (totalItems, lastVisible) ->
+            if (totalItems > 0 && lastVisible >= totalItems - 8) {
+                viewModel.loadMoreForCategoryRow(categoryPath)
+            }
         }
     }
 
@@ -1013,10 +1012,21 @@ fun HorizontalVideoRow(
                     onVideoClick(video.id)
                 }
             }
-            if (isLoading) {
-                item {
-                    Box(Modifier.width(100.dp).height(150.dp), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = Color.Red, strokeWidth = 2.dp, modifier = Modifier.size(20.dp))
+            if (isLoading && videos.isNotEmpty()) {
+                item(key = "row_loading_indicator") {
+                    val loaderWidth = (if (isRealTV) 90 * thumbnailScale else if (isTV) 80 * thumbnailScale else 100f).dp
+                    val loaderHeight = (if (isRealTV) 210 * thumbnailScale else if (isTV) 195 * thumbnailScale else 245f).dp
+                    Box(
+                        modifier = Modifier
+                            .width(loaderWidth)
+                            .height(loaderHeight),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        CircularProgressIndicator(
+                            color = Color.Red,
+                            strokeWidth = 2.5.dp,
+                            modifier = Modifier.size(28.dp)
+                        )
                     }
                 }
             }

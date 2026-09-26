@@ -2153,7 +2153,8 @@ object VideoExtractor {
 
         if (path.contains("p-ramlee", ignoreCase = true) || path.contains("FilemP.ramlee", ignoreCase = true)) {
             val all = sortVideosByNewestRelease(fetchArchivePramleeVideos())
-            val start = (page - 1) * count
+            val itemsPerPage = 15
+            val start = (page - 1) * itemsPerPage
             if (start >= all.size) return@withContext emptyList()
             return@withContext all.drop(start).take(count)
         }
