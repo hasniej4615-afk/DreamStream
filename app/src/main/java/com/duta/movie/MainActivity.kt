@@ -138,28 +138,33 @@ class MainActivity : AppCompatActivity() {
             } catch(_: Exception) {}
         }
 
-        // Initialize CastContext on Main thread (required by Cast SDK), using async executor for heavy work
+        // Initialize CastContext when UI thread is idle (required by Cast SDK on Main thread), using async executor for heavy work
         if (!isTVMode) {
-            lifecycleScope.launch(Dispatchers.Main) {
-                try {
-                    if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this@MainActivity) == ConnectionResult.SUCCESS) {
-                        CastContext.getSharedInstance(applicationContext, java.util.concurrent.Executors.newSingleThreadExecutor())
+            android.os.Looper.myQueue().addIdleHandler {
+                lifecycleScope.launch(Dispatchers.Main) {
+                    try {
+                        if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this@MainActivity) == ConnectionResult.SUCCESS) {
+                            CastContext.getSharedInstance(applicationContext, java.util.concurrent.Executors.newSingleThreadExecutor())
+                        }
+                    } catch (e: Exception) {
+                        Log.e("MainActivity", "Safe Cast check error", e)
                     }
-                } catch (e: Exception) {
-                    Log.e("MainActivity", "Safe Cast check error", e)
                 }
+                false // Run once and remove from queue
             }
         }
         
-        // Run TV Channel Sync unconditionally
+        // Run TV Channel Sync only on TV devices
         // (Supports certified TV, Google TV, and uncertified AOSP TV boxes with TV launchers).
-        lifecycleScope.launch(Dispatchers.IO) {
-            try {
-                if (com.duta.movie.tv.TvChannelSyncWorker.isTvChannelSupported(this@MainActivity)) {
-                    com.duta.movie.tv.TvChannelSyncWorker.syncChannelDirectly(applicationContext)
+        if (isTVMode) {
+            lifecycleScope.launch(Dispatchers.IO) {
+                try {
+                    if (com.duta.movie.tv.TvChannelSyncWorker.isTvChannelSupported(this@MainActivity)) {
+                        com.duta.movie.tv.TvChannelSyncWorker.syncChannelDirectly(applicationContext)
+                    }
+                } catch (e: Exception) {
+                    Log.w("MainActivity", "Direct TV sync error: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.w("MainActivity", "Direct TV sync error: ${e.message}")
             }
         }
 
@@ -171,15 +176,20 @@ class MainActivity : AppCompatActivity() {
                 Log.w("MainActivity", "Install registration error: ${e.message}")
             }
         }
-        try {
-            val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.duta.movie.tv.TvChannelSyncWorker>().build()
-            androidx.work.WorkManager.getInstance(this).enqueueUniqueWork(
-                "TvChannelSync", 
-                androidx.work.ExistingWorkPolicy.REPLACE, 
-                syncRequest
-            )
-        } catch (e: Exception) {
-            Log.e("MainActivity", "Failed to enqueue TV sync", e)
+
+        if (isTVMode) {
+            try {
+                if (com.duta.movie.tv.TvChannelSyncWorker.isTvChannelSupported(this@MainActivity)) {
+                    val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.duta.movie.tv.TvChannelSyncWorker>().build()
+                    androidx.work.WorkManager.getInstance(this).enqueueUniqueWork(
+                        "TvChannelSync", 
+                        androidx.work.ExistingWorkPolicy.REPLACE, 
+                        syncRequest
+                    )
+                }
+            } catch (e: Exception) {
+                Log.e("MainActivity", "Failed to enqueue TV sync", e)
+            }
         }
 
         // Pre-warm Android System WebView on Activity context when UI thread is idle

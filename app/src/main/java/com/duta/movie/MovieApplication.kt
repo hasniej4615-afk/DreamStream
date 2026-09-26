@@ -31,16 +31,6 @@ class MovieApplication : Application(), ImageLoaderFactory {
                 }
             })
         } catch (_: Exception) {}
-
-        // Pre-warm Android System WebView to avoid main thread freeze during player launch
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            try {
-                android.webkit.WebView(this).destroy()
-                Log.i("MovieApplication", "WebView pre-warmed successfully")
-            } catch (e: Exception) {
-                Log.w("MovieApplication", "WebView pre-warm skipped: ${e.message}")
-            }
-        }, 1500)
     }
 
     override fun newImageLoader(): ImageLoader = imageLoader
