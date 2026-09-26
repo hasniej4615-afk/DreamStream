@@ -102,15 +102,33 @@ class VideoViewModel @Inject constructor(
         }
     }
 
-    fun uninstallProvider(id: String) {
+    fun uninstallProvider(id: String, onResult: ((Boolean, String) -> Unit)? = null) {
         viewModelScope.launch {
-            videoRepository.providerManager.uninstallProvider(id)
+            val res = videoRepository.providerManager.uninstallProvider(id)
+            res.fold(
+                onSuccess = { msg -> onResult?.invoke(true, msg) },
+                onFailure = { e -> onResult?.invoke(false, e.message ?: "Failed to uninstall provider") }
+            )
         }
     }
 
-    fun syncRepositories() {
+    fun deleteRepository(repoId: String, onResult: (Boolean, String) -> Unit) {
         viewModelScope.launch {
-            videoRepository.providerManager.syncWithSupabaseSilent()
+            val res = videoRepository.providerManager.deleteRepository(repoId)
+            res.fold(
+                onSuccess = { msg -> onResult(true, msg) },
+                onFailure = { e -> onResult(false, e.message ?: "Failed to delete repository") }
+            )
+        }
+    }
+
+    fun syncRepositories(onResult: ((Boolean, String) -> Unit)? = null) {
+        viewModelScope.launch {
+            val res = videoRepository.providerManager.syncAllRepositories()
+            res.fold(
+                onSuccess = { msg -> onResult?.invoke(true, msg) },
+                onFailure = { e -> onResult?.invoke(false, e.message ?: "Sync failed") }
+            )
         }
     }
 

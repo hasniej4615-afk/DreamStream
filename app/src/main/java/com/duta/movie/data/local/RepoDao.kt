@@ -8,6 +8,12 @@ interface RepoDao {
     @Query("SELECT * FROM installed_repos ORDER BY isOfficial DESC, name ASC")
     fun getAllRepos(): Flow<List<InstalledRepoEntity>>
 
+    @Query("SELECT * FROM installed_repos ORDER BY isOfficial DESC, name ASC")
+    suspend fun getAllReposSync(): List<InstalledRepoEntity>
+
+    @Query("SELECT * FROM installed_repos WHERE isOfficial = 0")
+    suspend fun getCustomReposSync(): List<InstalledRepoEntity>
+
     @Query("SELECT * FROM installed_repos WHERE id = :id")
     suspend fun getRepoById(id: String): InstalledRepoEntity?
 

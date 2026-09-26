@@ -6,7 +6,6 @@ import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -17,16 +16,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.duta.movie.data.local.InstalledProviderEntity
 import com.duta.movie.data.local.InstalledRepoEntity
+import com.duta.movie.provider.core.ProviderManager
 import com.duta.movie.provider.model.RemoteProviderManifest
 import com.duta.movie.ui.VideoViewModel
 
@@ -45,6 +43,8 @@ fun RepoManagerScreen(
     val context = LocalContext.current
     var selectedTab by remember { mutableStateOf(RepoTab.INSTALLED) }
     var showAddRepoDialog by remember { mutableStateOf(false) }
+    var repoToDelete by remember { mutableStateOf<InstalledRepoEntity?>(null) }
+    var providerToUninstall by remember { mutableStateOf<InstalledProviderEntity?>(null) }
 
     val installedProviders by viewModel.installedProviders.collectAsStateWithLifecycle()
     val installedRepos by viewModel.installedRepos.collectAsStateWithLifecycle()
@@ -79,8 +79,14 @@ fun RepoManagerScreen(
                 actions = {
                     IconButton(
                         onClick = {
-                            viewModel.syncRepositories()
                             Toast.makeText(context, "Syncing repositories...", Toast.LENGTH_SHORT).show()
+                            viewModel.syncRepositories { success, msg ->
+                                Toast.makeText(
+                                    context,
+                                    if (success) "Sync complete: $msg" else "Sync failed: $msg",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            }
                         }
                     ) {
                         if (isSyncing) {
@@ -128,7 +134,7 @@ fun RepoManagerScreen(
                             Text(
                                 text = when (tab) {
                                     RepoTab.INSTALLED -> "${tab.title} (${installedProviders.size})"
-                                    RepoTab.BROWSE -> tab.title
+                                    RepoTab.BROWSE -> "${tab.title} (${availableOnlineProviders.size})"
                                     RepoTab.REPOS -> "${tab.title} (${installedRepos.size})"
                                 },
                                 fontWeight = if (selectedTab == tab) FontWeight.Bold else FontWeight.Normal
@@ -144,9 +150,8 @@ fun RepoManagerScreen(
                     InstalledProvidersList(
                         providers = installedProviders,
                         onToggle = { id, enabled -> viewModel.toggleProvider(id, enabled) },
-                        onUninstall = { id ->
-                            viewModel.uninstallProvider(id)
-                            Toast.makeText(context, "Provider uninstalled", Toast.LENGTH_SHORT).show()
+                        onRequestUninstall = { provider ->
+                            providerToUninstall = provider
                         }
                     )
                 }
@@ -156,14 +161,17 @@ fun RepoManagerScreen(
                         installedProviders = installedProviders,
                         onInstall = { manifest ->
                             viewModel.installProvider(manifest)
-                            Toast.makeText(context, "Installed ${manifest.name}", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Installing ${manifest.displayName}...", Toast.LENGTH_SHORT).show()
                         }
                     )
                 }
                 RepoTab.REPOS -> {
                     RepositoriesList(
                         repos = installedRepos,
-                        onAddClick = { showAddRepoDialog = true }
+                        onAddClick = { showAddRepoDialog = true },
+                        onRequestDelete = { repo ->
+                            repoToDelete = repo
+                        }
                     )
                 }
             }
@@ -174,13 +182,92 @@ fun RepoManagerScreen(
         AddRepositoryDialog(
             onDismiss = { showAddRepoDialog = false },
             onAdd = { url ->
+                showAddRepoDialog = false
+                Toast.makeText(context, "Adding repository and fetching plugins...", Toast.LENGTH_SHORT).show()
                 viewModel.addCustomRepository(url) { success, msg ->
                     if (success) {
                         Toast.makeText(context, "Added repository: $msg", Toast.LENGTH_SHORT).show()
-                        showAddRepoDialog = false
                     } else {
                         Toast.makeText(context, "Failed: $msg", Toast.LENGTH_LONG).show()
                     }
+                }
+            }
+        )
+    }
+
+    // Delete Repository Confirmation Dialog
+    if (repoToDelete != null) {
+        val targetRepo = repoToDelete!!
+        AlertDialog(
+            onDismissRequest = { repoToDelete = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Warning,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("Delete Repository?") },
+            text = {
+                Text(
+                    "Are you sure you want to remove \"${targetRepo.name}\"?\n\nAll extensions installed from this repository will also be uninstalled and removed."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val repoId = targetRepo.id
+                        repoToDelete = null
+                        viewModel.deleteRepository(repoId) { success, msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Delete Repository")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { repoToDelete = null }) {
+                    Text("Cancel")
+                }
+            }
+        )
+    }
+
+    // Uninstall Provider Confirmation Dialog
+    if (providerToUninstall != null) {
+        val targetProvider = providerToUninstall!!
+        AlertDialog(
+            onDismissRequest = { providerToUninstall = null },
+            icon = {
+                Icon(
+                    imageVector = Icons.Default.Delete,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.error
+                )
+            },
+            title = { Text("Uninstall Extension?") },
+            text = {
+                Text("Are you sure you want to uninstall \"${targetProvider.displayName}\"?")
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val provId = targetProvider.id
+                        providerToUninstall = null
+                        viewModel.uninstallProvider(provId) { success, msg ->
+                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                        }
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
+                ) {
+                    Text("Uninstall")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { providerToUninstall = null }) {
+                    Text("Cancel")
                 }
             }
         )
@@ -191,7 +278,7 @@ fun RepoManagerScreen(
 fun InstalledProvidersList(
     providers: List<InstalledProviderEntity>,
     onToggle: (String, Boolean) -> Unit,
-    onUninstall: (String) -> Unit
+    onRequestUninstall: (InstalledProviderEntity) -> Unit
 ) {
     if (providers.isEmpty()) {
         Box(
@@ -214,7 +301,7 @@ fun InstalledProvidersList(
                 InstalledProviderCard(
                     provider = provider,
                     onToggle = { onToggle(provider.id, it) },
-                    onUninstall = { onUninstall(provider.id) }
+                    onUninstall = { onRequestUninstall(provider) }
                 )
             }
         }
@@ -228,6 +315,7 @@ fun InstalledProviderCard(
     onUninstall: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
+    val isOfficial = provider.repoId == ProviderManager.OFFICIAL_REPO_ID
 
     Card(
         modifier = Modifier
@@ -298,6 +386,20 @@ fun InstalledProviderCard(
                             color = MaterialTheme.colorScheme.onSecondaryContainer
                         )
                     }
+                    if (isOfficial) {
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = MaterialTheme.colorScheme.primaryContainer
+                        ) {
+                            Text(
+                                text = "Official",
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                color = MaterialTheme.colorScheme.onPrimaryContainer
+                            )
+                        }
+                    }
                 }
 
                 if (provider.description.isNotBlank()) {
@@ -313,17 +415,41 @@ fun InstalledProviderCard(
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     BadgeChip(text = provider.mediaType)
-                    BadgeChip(text = provider.templateType)
+                    BadgeChip(text = provider.engineType)
                 }
             }
 
             Spacer(modifier = Modifier.width(12.dp))
 
-            // Enable / Disable Switch
-            Switch(
-                checked = provider.isEnabled,
-                onCheckedChange = onToggle
-            )
+            // Controls: Switch and Delete button (or protected lock)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Switch(
+                    checked = provider.isEnabled,
+                    onCheckedChange = onToggle
+                )
+                if (!isOfficial) {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    IconButton(
+                        onClick = onUninstall,
+                        colors = IconButtonDefaults.iconButtonColors(
+                            contentColor = MaterialTheme.colorScheme.error
+                        )
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.DeleteOutline,
+                            contentDescription = "Uninstall"
+                        )
+                    }
+                } else {
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Icon(
+                        imageVector = Icons.Default.Lock,
+                        contentDescription = "Core Built-in Provider",
+                        tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                        modifier = Modifier.size(20.dp)
+                    )
+                }
+            }
         }
     }
 }
@@ -342,7 +468,7 @@ fun BrowseOnlineProvidersList(
             contentAlignment = Alignment.Center
         ) {
             Text(
-                text = "Connecting to Supabase repository...\nTap sync if no catalog appears.",
+                text = "Connecting to repository manifests...\nTap sync icon in top bar to refresh catalog.",
                 textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -369,6 +495,33 @@ fun BrowseOnlineProvidersList(
                             .padding(16.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
+                        // Icon
+                        if (manifest.iconUrl.isNotBlank()) {
+                            AsyncImage(
+                                model = manifest.iconUrl,
+                                contentDescription = manifest.name,
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                            )
+                            Spacer(modifier = Modifier.width(12.dp))
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(44.dp)
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .background(MaterialTheme.colorScheme.primaryContainer),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Extension,
+                                    contentDescription = null,
+                                    tint = MaterialTheme.colorScheme.onPrimaryContainer
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                        }
+
                         Column(modifier = Modifier.weight(1f)) {
                             Text(
                                 text = manifest.displayName,
@@ -379,15 +532,22 @@ fun BrowseOnlineProvidersList(
                                 Text(
                                     text = manifest.description,
                                     style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
                                 )
                             }
                             Spacer(modifier = Modifier.height(4.dp))
                             Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                                 BadgeChip(text = manifest.mediaType.name)
                                 BadgeChip(text = "v${manifest.versionName}")
+                                if (manifest.engineType.name.isNotBlank()) {
+                                    BadgeChip(text = manifest.engineType.name)
+                                }
                             }
                         }
+
+                        Spacer(modifier = Modifier.width(8.dp))
 
                         Button(
                             onClick = { onInstall(manifest) },
@@ -412,59 +572,114 @@ fun BrowseOnlineProvidersList(
 @Composable
 fun RepositoriesList(
     repos: List<InstalledRepoEntity>,
-    onAddClick: () -> Unit
+    onAddClick: () -> Unit,
+    onRequestDelete: (InstalledRepoEntity) -> Unit
 ) {
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
-    ) {
-        items(repos, key = { it.id }) { repo ->
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically
+    if (repos.isEmpty()) {
+        Box(
+            modifier = Modifier.fillMaxSize(),
+            contentAlignment = Alignment.Center
+        ) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(
+                    text = "No repositories installed.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Button(onClick = onAddClick) {
+                    Icon(imageVector = Icons.Default.Add, contentDescription = null)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text("Add Repository")
+                }
+            }
+        }
+    } else {
+        LazyColumn(
+            modifier = Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            items(repos, key = { it.id }) { repo ->
+                val isOfficial = repo.isOfficial || repo.id == ProviderManager.OFFICIAL_REPO_ID
+
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
                 ) {
-                    Icon(
-                        imageVector = if (repo.isOfficial) Icons.Default.Verified else Icons.Default.Source,
-                        contentDescription = null,
-                        tint = if (repo.isOfficial) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.size(36.dp)
-                    )
-                    Spacer(modifier = Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = repo.name,
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold
-                            )
-                            if (repo.isOfficial) {
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = MaterialTheme.colorScheme.primaryContainer
-                                ) {
-                                    Text(
-                                        text = "Official",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                                        color = MaterialTheme.colorScheme.onPrimaryContainer
-                                    )
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = if (isOfficial) Icons.Default.Verified else Icons.Default.Source,
+                            contentDescription = null,
+                            tint = if (isOfficial) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.secondary,
+                            modifier = Modifier.size(36.dp)
+                        )
+                        Spacer(modifier = Modifier.width(16.dp))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = repo.name,
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold
+                                )
+                                if (isOfficial) {
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = MaterialTheme.colorScheme.primaryContainer
+                                    ) {
+                                        Text(
+                                            text = "Official",
+                                            style = MaterialTheme.typography.labelSmall,
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                            color = MaterialTheme.colorScheme.onPrimaryContainer
+                                        )
+                                    }
                                 }
                             }
+                            if (repo.description.isNotBlank()) {
+                                Text(
+                                    text = repo.description,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            if (repo.url.isNotBlank()) {
+                                Text(
+                                    text = repo.url,
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = MaterialTheme.colorScheme.outline,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                            }
                         }
-                        if (repo.description.isNotBlank()) {
-                            Text(
-                                text = repo.description,
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
+
+                        if (!isOfficial) {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            IconButton(
+                                onClick = { onRequestDelete(repo) },
+                                colors = IconButtonDefaults.iconButtonColors(
+                                    contentColor = MaterialTheme.colorScheme.error
+                                )
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.DeleteOutline,
+                                    contentDescription = "Delete Repository"
+                                )
+                            }
+                        } else {
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Icon(
+                                imageVector = Icons.Default.Lock,
+                                contentDescription = "Protected Official Repository",
+                                tint = MaterialTheme.colorScheme.outline.copy(alpha = 0.4f),
+                                modifier = Modifier.size(20.dp)
                             )
                         }
                     }
@@ -495,6 +710,15 @@ fun AddRepositoryDialog(
     onAdd: (String) -> Unit
 ) {
     var urlInput by remember { mutableStateOf("") }
+    val quickSuggestions = remember {
+        listOf(
+            "cspr" to "Official CloudStream",
+            "megarepo" to "MegaRepo (Multi-source)",
+            "indostream" to "IndoStream (Malay / Indo)",
+            "storm" to "Storm Extensions",
+            "phisher" to "SuperStream (Phisher)"
+        )
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -502,17 +726,54 @@ fun AddRepositoryDialog(
         text = {
             Column {
                 Text(
-                    text = "Enter a CloudStream repository URL (repo.json) or Supabase repository manifest URL:",
+                    text = "Enter a CloudStream shortcode, GitHub repository URL, or raw repo.json URL:",
                     style = MaterialTheme.typography.bodyMedium
                 )
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(10.dp))
                 OutlinedTextField(
                     value = urlInput,
                     onValueChange = { urlInput = it },
-                    label = { Text("Repository URL") },
+                    label = { Text("Repository URL or Shortcode") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
+                Spacer(modifier = Modifier.height(14.dp))
+                Text(
+                    text = "Quick Presets:",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    quickSuggestions.forEach { (code, desc) ->
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { urlInput = code },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (urlInput == code) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = code,
+                                    style = MaterialTheme.typography.labelLarge,
+                                    fontWeight = FontWeight.Bold,
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                                Text(
+                                    text = desc,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                        }
+                    }
+                }
             }
         },
         confirmButton = {
@@ -520,7 +781,7 @@ fun AddRepositoryDialog(
                 onClick = { onAdd(urlInput.trim()) },
                 enabled = urlInput.isNotBlank()
             ) {
-                Text("Add")
+                Text("Add & Sync")
             }
         },
         dismissButton = {

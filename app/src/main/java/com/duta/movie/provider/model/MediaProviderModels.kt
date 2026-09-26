@@ -108,5 +108,26 @@ data class CloudStreamRepoManifest(
     val name: String = "",
     val description: String = "",
     val manifestVersion: Int = 1,
+    @SerialName("iconUrl")
+    val iconUrl: String = "",
     val pluginLists: List<String> = emptyList()
 )
+
+/**
+ * CloudStream plugin entry from plugins.json
+ */
+@Serializable
+data class CloudStreamPlugin(
+    val name: String,
+    val internalName: String? = null,
+    val description: String? = null,
+    val version: Int = 1,
+    val url: String = "",
+    val iconUrl: String? = null,
+    val authors: List<String>? = null,
+    val tvTypes: List<String>? = null,
+    val language: String? = null,
+    val status: Int? = null,
+    val repositoryUrl: String? = null
+)
+
