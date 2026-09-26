@@ -406,15 +406,6 @@ class MainActivity : AppCompatActivity() {
                                         }
 
                                         SidebarIcon(
-                                            icon = Icons.Default.Extension,
-                                            label = "Extensions",
-                                            isSelected = currentDestination?.hasRoute<Destination.RepoManager>() == true,
-                                            isExpanded = sidebarFocused,
-                                            isRealTV = isRealTV,
-                                            onClick = { navController.navigate(Destination.RepoManager) }
-                                        )
-
-                                        SidebarIcon(
                                             icon = Icons.Default.Settings,
                                             label = stringResource(R.string.settings),
                                             isSelected = currentDestination?.hasRoute<Destination.Settings>() == true,
@@ -447,8 +438,7 @@ class MainActivity : AppCompatActivity() {
                                         viewModel = videoViewModel,
                                         windowSizeClass = windowSizeClass,
                                         onVideoClick = { navController.navigate(Destination.VideoDetail(it)) },
-                                        onSettingsClick = { navController.navigate(Destination.Settings) },
-                                        onRepoManagerClick = { navController.navigate(Destination.RepoManager) }
+                                        onSettingsClick = { navController.navigate(Destination.Settings) }
                                     )
                                 }
                                 composable<Destination.Movies> {
