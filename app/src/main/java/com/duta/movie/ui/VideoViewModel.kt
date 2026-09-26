@@ -1501,6 +1501,9 @@ class VideoViewModel @Inject constructor(
                             // 3. Discover alternative sources across all partners and universal stream catalogues + installed providers
                             val altServers = com.duta.movie.util.VideoExtractor.findAlternativeSources(detailed)
                             val providerServers = videoRepository.providerManager.fetchServers(detailed)
+                            if (altServers.isNotEmpty()) {
+                                discoveredAltServers[detailed.id] = (discoveredAltServers[detailed.id].orEmpty() + altServers).distinctBy { it.url }
+                            }
                             val allDiscoveredServers = (altServers + providerServers).distinctBy { it.url.trimEnd('/') }
                             if (allDiscoveredServers.isNotEmpty()) {
                                 val current = _videoMetadata.value
@@ -3705,6 +3708,9 @@ class VideoViewModel @Inject constructor(
                 val healed = VideoExtractor.healVideoFromAlternativeSources(video)
                 val altServers = healed?.servers ?: VideoExtractor.findAlternativeSources(video)
                 if (altServers.isNotEmpty() || healed?.episodes?.isNotEmpty() == true) {
+                    if (altServers.isNotEmpty()) {
+                        discoveredAltServers[effectiveVideoId] = (discoveredAltServers[effectiveVideoId].orEmpty() + altServers).distinctBy { it.url }
+                    }
                     val combinedServers = (video.servers + altServers).distinctBy { it.url }
                     val resolvedEpisodes = if (video.episodes.isEmpty() && healed?.episodes?.isNotEmpty() == true) healed.episodes else video.episodes
                     val updatedVideo = video.copy(
@@ -3712,12 +3718,13 @@ class VideoViewModel @Inject constructor(
                         episodes = resolvedEpisodes,
                         isSeries = if (resolvedEpisodes.isNotEmpty()) true else video.isSeries
                     )
-                    metadataCache[effectiveVideoId] = updatedVideo
+                    val appliedVideo = applyMetadata(updatedVideo)
+                    metadataCache[effectiveVideoId] = appliedVideo
                     withContext(Dispatchers.Main) {
-                        _videoMetadata.value = updatedVideo
+                        _videoMetadata.value = appliedVideo
                     }
-                    viewModelScope.launch { videoRepository.updateVideoInDb(updatedVideo) }
-                    withContext(Dispatchers.Main) { onResult?.invoke(combinedServers.size) }
+                    viewModelScope.launch { videoRepository.updateVideoInDb(appliedVideo) }
+                    withContext(Dispatchers.Main) { onResult?.invoke(appliedVideo.servers.size) }
                 } else {
                     withContext(Dispatchers.Main) { onResult?.invoke(0) }
                 }

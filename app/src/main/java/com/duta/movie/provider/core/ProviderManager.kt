@@ -8,6 +8,7 @@ import com.duta.movie.data.local.RepoDao
 import com.duta.movie.data.remote.RepoService
 import com.duta.movie.model.Video
 import com.duta.movie.model.VideoServer
+import com.duta.movie.util.VideoExtractor
 import com.duta.movie.provider.engine.DexPluginProvider
 import com.duta.movie.provider.engine.TemplateProvider
 import com.duta.movie.provider.model.ProviderEngineType
@@ -422,20 +423,16 @@ class ProviderManager @Inject constructor(
      * Resolves streaming servers for a video via active providers
      */
     suspend fun fetchServers(video: Video): List<VideoServer> = withContext(Dispatchers.IO) {
-        val preferredProvider = activeProviderInstances.values.firstOrNull { p ->
-            video.id.startsWith("${p.id}_") || video.videoUrl.contains(p.id, ignoreCase = true)
+        val matchingProvider = activeProviderInstances.values.firstOrNull { p ->
+            video.id.startsWith("${p.id}_") ||
+            (p.id.contains("dutafilm") && VideoExtractor.isDutaFilmWeb(video.id, video.videoUrl)) ||
+            (p.id.contains("pencuri") && VideoExtractor.isPencuriMovie(video.id, video.videoUrl)) ||
+            (p.id.contains("lk21") && VideoExtractor.isBullerswood(video.id, video.videoUrl)) ||
+            (p.id.contains("pramlee") && video.id.startsWith("ia_pramlee"))
         }
-        if (preferredProvider != null) {
+        if (matchingProvider != null) {
             try {
-                val servers = preferredProvider.fetchServers(video)
-                if (servers.isNotEmpty()) return@withContext servers
-            } catch (_: Exception) {}
-        }
-
-        for (provider in activeProviderInstances.values) {
-            if (provider == preferredProvider) continue
-            try {
-                val servers = provider.fetchServers(video)
+                val servers = matchingProvider.fetchServers(video)
                 if (servers.isNotEmpty()) return@withContext servers
             } catch (_: Exception) {}
         }

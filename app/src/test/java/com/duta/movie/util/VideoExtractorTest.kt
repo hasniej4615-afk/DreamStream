@@ -909,6 +909,38 @@ class VideoExtractorTest {
     }
 
     @Test
+    fun testMoanaAndSingleTokenStrictMatching() {
+        val moanaMeta = VideoExtractor.parseMovieTitleMeta("Moana", "2026")
+        assert(moanaMeta.baseTokens == listOf("moana"))
+        assert(moanaMeta.year == 2026)
+
+        // 1. Must REJECT completely different movies that mention Moana in tags/clickbait
+        assert(!VideoExtractor.isYouTubeMovieMatch(moanaMeta, "Adnan Sempit Full Movie Moana")) {
+            "Must REJECT Adnan Sempit for Moana"
+        }
+        assert(!VideoExtractor.isYouTubeMovieMatch(moanaMeta, "Inception (2010) Full Movie")) {
+            "Must REJECT Inception for Moana"
+        }
+        assert(!VideoExtractor.isYouTubeMovieMatch(moanaMeta, "Cassandra - Angelina Jolie - New Fantasy Movie 2024 - Full Movie - 4K Ultra #actionmovies")) {
+            "Must REJECT Cassandra for Moana"
+        }
+        assert(!VideoExtractor.isYouTubeMovieMatch(moanaMeta, "Doppio Misto (Gigi e Andrea, Moana Pozzi, Tini Cansino) 2T")) {
+            "Must REJECT Doppio Misto for Moana"
+        }
+
+        // 2. Must ACCEPT legitimate Moana uploads
+        assert(VideoExtractor.isYouTubeMovieMatch(moanaMeta, "Moana 2026 Full Movie")) {
+            "Must ACCEPT Moana 2026 Full Movie"
+        }
+        assert(VideoExtractor.isYouTubeMovieMatch(moanaMeta, "Moana 2026 Full Movie | Full Short Drama | English Sub 2026")) {
+            "Must ACCEPT Moana 2026 English Sub"
+        }
+        assert(VideoExtractor.isYouTubeMovieMatch(moanaMeta, "Disney Moana Full Movie (2026)")) {
+            "Must ACCEPT Disney Moana with studio prefix"
+        }
+    }
+
+    @Test
     fun testCleanTitleKepalaBergetar() {
         val raw1 = "Hantu Van Sewa 2 Episod 9 Tonton Drama Video"
         assert(VideoExtractor.cleanTitle(raw1) == "Hantu Van Sewa 2 Episod 9") { "Expected 'Hantu Van Sewa 2 Episod 9', got '${VideoExtractor.cleanTitle(raw1)}'" }

@@ -54,17 +54,27 @@ object VideoExtractor {
     private val confirmedDeadMirrors = ConcurrentHashMap.newKeySet<String>()
 
     fun isConfirmedDead(url: String): Boolean {
-        val host = try { android.net.Uri.parse(url).host?.lowercase() } catch(_: Exception) { null }
-            ?: try { java.net.URI(url).host?.lowercase() } catch(_: Exception) { null }
-        if (isWhitelistedHost(host)) return false
+        val host = try { android.net.Uri.parse(url).host?.lowercase() } catch(_: Throwable) { null }
+            ?: try { java.net.URI(url).host?.lowercase() } catch(_: Throwable) { null }
+            ?: url.lowercase().substringBefore("/").substringBefore(":")
+        val path = try { android.net.Uri.parse(url).path } catch(_: Throwable) { null }
+            ?: try { java.net.URI(url).path } catch(_: Throwable) { null }
+            ?: ""
+        val isBareHost = path.isEmpty() || path == "/"
+        if (isBareHost && isWhitelistedHost(host)) return false
         val clean = url.trimEnd('/')
         return confirmedDeadMirrors.contains(clean) || confirmedDeadMirrors.contains(url)
     }
 
     fun markConfirmedDead(url: String) {
-        val host = try { android.net.Uri.parse(url).host?.lowercase() } catch(_: Exception) { null }
-            ?: try { java.net.URI(url).host?.lowercase() } catch(_: Exception) { null }
-        if (isWhitelistedHost(host)) return
+        val host = try { android.net.Uri.parse(url).host?.lowercase() } catch(_: Throwable) { null }
+            ?: try { java.net.URI(url).host?.lowercase() } catch(_: Throwable) { null }
+            ?: url.lowercase().substringBefore("/").substringBefore(":")
+        val path = try { android.net.Uri.parse(url).path } catch(_: Throwable) { null }
+            ?: try { java.net.URI(url).path } catch(_: Throwable) { null }
+            ?: ""
+        val isBareHost = path.isEmpty() || path == "/"
+        if (isBareHost && isWhitelistedHost(host)) return
         val clean = url.trimEnd('/')
         confirmedDeadMirrors.add(clean)
         confirmedDeadMirrors.add(url)
@@ -2383,9 +2393,14 @@ object VideoExtractor {
                 } catch (_: Exception) {}
             }
 
+            // Extract effective target release year from title, date, or URL slug
+            val targetYear = parseMovieTitleMeta(video.title, video.date).year
+                ?: Regex("""\b(19\d{2}|20\d{2})\b""").find(video.videoUrl)?.groupValues?.get(1)?.toIntOrNull()
+            val effectiveDate = targetYear?.toString() ?: video.date
+
             // Search YouTube Full Movie for modern Malaysian movies and titles whose filehosts are dead
             try {
-                val ytServers = searchYouTubeFullMovie(video.title, video.date)
+                val ytServers = searchYouTubeFullMovie(video.title, effectiveDate)
                 if (ytServers.isNotEmpty()) {
                     Log.i(TAG, "Discovered ${ytServers.size} YouTube Full Movie mirrors for '${video.title}'")
                     altServers.addAll(ytServers)
@@ -2396,7 +2411,7 @@ object VideoExtractor {
 
             // Search Bilibili Full Movie for anime, asian films, and full movies (ad-free & globally accessible)
             try {
-                val biliServers = searchBilibiliFullMovie(video.title, video.date)
+                val biliServers = searchBilibiliFullMovie(video.title, effectiveDate)
                 if (biliServers.isNotEmpty()) {
                     Log.i(TAG, "Discovered ${biliServers.size} Bilibili Full Movie mirrors for '${video.title}'")
                     altServers.addAll(biliServers)
@@ -2407,7 +2422,7 @@ object VideoExtractor {
 
             // Search Dailymotion Full Movie for user uploads, malay/indo films, and full movies
             try {
-                val dmServers = searchDailymotionFullMovie(video.title, video.date)
+                val dmServers = searchDailymotionFullMovie(video.title, effectiveDate)
                 if (dmServers.isNotEmpty()) {
                     Log.i(TAG, "Discovered ${dmServers.size} Dailymotion Full Movie mirrors for '${video.title}'")
                     altServers.addAll(dmServers)
@@ -2628,8 +2643,9 @@ object VideoExtractor {
 
         val stopWords = setOf(
             "the", "a", "an", "and", "or", "by", "of", "in", "on", "to", "for", "with", "from",
-            "part", "chapter", "season", "vol", "volume", "movie", "film", "malay", "malaysian",
+            "part", "chapter", "season", "vol", "volume", "movie", "film", "filem", "malay", "malaysian",
             "hd", "dubbed", "eng", "sub", "source", "director", "sutradara", "pemeran",
+            "full", "short", "drama", "video", "clip", "complete",
             "dailymotion", "youtube", "bilibili", "archive", "server", "phim", "tonton", "watch",
             "rebahin", "bioskopkeren", "indoxxi", "idlix"
         )
@@ -2848,8 +2864,49 @@ object VideoExtractor {
         // 1. Sequel matching: MUST strictly match (e.g. Part 1 vs Part 2)
         if (targetMeta.sequel != candMeta.sequel) return false
 
-        // 2. Year check: If candidate specifies a 4-digit year, it must match within +/- 1 year
-        val extraTokens = candMeta.baseTokens.size - targetMeta.baseTokens.size
+        // Common production studio or distributor prefixes that can precede movie title in uploads
+        val studioPrefixes = setOf(
+            "disney", "pixar", "marvel", "warner", "universal", "sony", "paramount",
+            "netflix", "astro", "tv3", "hbo", "dc", "mgm", "lionsgate", "shaw",
+            "filem", "film", "movie", "seram", "sinema", "cinema", "tayangan", "cerekarama", "telemovie"
+        )
+        val cleanCandTokens = candMeta.baseTokens.dropWhile { it in studioPrefixes }
+        val cleanTargetTokens = targetMeta.baseTokens.dropWhile { it in studioPrefixes }
+
+        if (cleanTargetTokens.isEmpty() || cleanCandTokens.isEmpty()) return false
+
+        // 2. Primary Title Alignment (Subject check):
+        // Candidate must start with the target movie title tokens
+        val startsWithTarget = cleanCandTokens.take(cleanTargetTokens.size).let { prefix ->
+            prefix.size == cleanTargetTokens.size &&
+            prefix.indices.all { idx ->
+                val ct = prefix[idx]
+                val tt = cleanTargetTokens[idx]
+                ct == tt || (ct.length >= 4 && tt.length >= 4 && ct.removeSuffix("s") == tt.removeSuffix("s"))
+            }
+        }
+
+        // For titles with <= 2 tokens (e.g. "Moana", "Inception", "KL Gangster"), candidate MUST start with target title!
+        // This instantly rejects clickbait like "Adnan Sempit Full Movie ... Moana" or "Cassandra 2024 ... Moana"
+        if (cleanTargetTokens.size <= 2 && !startsWithTarget) {
+            return false
+        }
+
+        val extraTokens = cleanCandTokens.size - cleanTargetTokens.size
+
+        // 3. Single-token title strictness (e.g. "Moana", "Inception", "Avatar", "Titanic")
+        if (cleanTargetTokens.size == 1) {
+            if (!startsWithTarget) return false
+            if (extraTokens > 4) return false
+            val candTokenSet = cleanCandTokens.toSet()
+            val matched = cleanTargetTokens.count { tt ->
+                candTokenSet.any { it == tt || (it.length >= 4 && tt.length >= 4 && it.removeSuffix("s") == tt.removeSuffix("s")) }
+            }
+            val precision = matched.toDouble() / cleanCandTokens.size.toDouble()
+            if (precision < 0.20) return false
+        }
+
+        // 4. Year check: If candidate specifies a 4-digit year, it must match within +/- 1 year
         if (targetMeta.year != null) {
             val y = targetMeta.year
             val candHasTargetYear = candidateTitle.contains(y.toString()) || 
@@ -2862,29 +2919,27 @@ object VideoExtractor {
                 if (!candHasTargetYear) {
                     // For standalone single-token generic titles without sequel (e.g. "The Guardian" -> ["guardian"]),
                     // candidate title MUST contain the target year (or +/- 1) to prevent false positives
-                    if (targetMeta.sequel == 1 && targetMeta.baseTokens.size == 1) return false
+                    if (targetMeta.sequel == 1 && cleanTargetTokens.size == 1) return false
 
                     // If candidate does not start with target tokens and has extra tokens, year is required
-                    val startsWithTarget = candMeta.baseTokens.take(targetMeta.baseTokens.size) == targetMeta.baseTokens
                     if (!startsWithTarget && extraTokens > 0) return false
                 }
             }
         }
 
-        // 3. Base tokens: Target base tokens must be present in candidate clean title
-        if (targetMeta.baseTokens.isEmpty()) return false
-        val candCleanLower = candMeta.baseTokens.toSet()
-        val matchedCount = targetMeta.baseTokens.count { bt ->
+        // 5. Base tokens matching: Target base tokens must be present in candidate clean title
+        val candCleanLower = cleanCandTokens.toSet()
+        val matchedCount = cleanTargetTokens.count { bt ->
             candCleanLower.any { it == bt || (it.length >= 4 && bt.length >= 4 && (it.removeSuffix("s") == bt.removeSuffix("s"))) }
         }
-        val requiredMatches = if (targetMeta.baseTokens.size <= 2) targetMeta.baseTokens.size else targetMeta.baseTokens.size - 1
+        val requiredMatches = if (cleanTargetTokens.size <= 2) cleanTargetTokens.size else cleanTargetTokens.size - 1
         if (matchedCount < requiredMatches) return false
 
-        // 4. Excess tokens check: Prevent matching clickbait titles, compilations, or unrelated movies
+        // 6. Excess tokens check: Prevent matching clickbait titles, compilations, or unrelated movies
         // e.g. "Trilogy of Terror ... VOODOO DOLL COMES ALIVE ... STUDENT VIDEOS PROFESSOR AND PAYS"
         if (extraTokens > 4) return false
-        if (candMeta.baseTokens.isNotEmpty()) {
-            val precision = matchedCount.toDouble() / candMeta.baseTokens.size.toDouble()
+        if (cleanCandTokens.isNotEmpty()) {
+            val precision = matchedCount.toDouble() / cleanCandTokens.size.toDouble()
             if (precision < 0.25) return false
         }
 
@@ -2958,9 +3013,9 @@ object VideoExtractor {
 
                     // Strict sequel, year, and title similarity check
                     if (isYouTubeMovieMatch(targetMeta, vTitle)) {
-                        val shortTitle = if (vTitle.length > 80) vTitle.take(77) + "..." else vTitle
+                        val serverName = if (results.isEmpty()) "YouTube HD (Full Movie)" else "YouTube HD (Mirror ${results.size + 1})"
                         val embedUrl = "https://www.youtube-nocookie.com/embed/$vid?autoplay=1&controls=0&playsinline=1&rel=0&enablejsapi=1&iv_load_policy=3&fs=0"
-                        results.add(VideoServer(name = "YouTube HD: $shortTitle", url = embedUrl))
+                        results.add(VideoServer(name = serverName, url = embedUrl))
                         if (results.size >= 3) break
                     }
                 }
@@ -3072,9 +3127,9 @@ object VideoExtractor {
 
                 // Strict sequel, year, and title matching check
                 if (isYouTubeMovieMatch(targetMeta, rawTitle)) {
-                    val shortTitle = if (rawTitle.length > 80) rawTitle.take(77) + "..." else rawTitle
+                    val serverName = if (results.isEmpty()) "Bilibili HD" else "Bilibili HD (Mirror ${results.size + 1})"
                     val embedUrl = "https://player.bilibili.com/player.html?bvid=$bvid&page=1&as_wide=1&high_quality=1&danmaku=0"
-                    results.add(VideoServer(name = "Bilibili HD: $shortTitle", url = embedUrl))
+                    results.add(VideoServer(name = serverName, url = embedUrl))
                     if (results.size >= 3) break
                 }
             }
@@ -3186,11 +3241,10 @@ object VideoExtractor {
 
                 // Strict sequel, year, and title matching check
                 if (isYouTubeMovieMatch(targetMeta, rawTitle)) {
-                    val cleanTitle = rawTitle.replace(Regex("""<[^>]+>"""), "").trim()
-                    val shortTitle = if (cleanTitle.length > 80) cleanTitle.take(77) + "..." else cleanTitle
                     val durMins = durSecs / 60
+                    val serverName = if (results.isEmpty()) "Dailymotion HD [${durMins}m]" else "Dailymotion HD Mirror ${results.size + 1} [${durMins}m]"
                     val embedUrl = "https://www.dailymotion.com/embed/video/$dmId?autoplay=1&mute=0&ui-logo=0&sharing-enable=0&ui-start-screen-info=0"
-                    results.add(VideoServer(name = "Dailymotion [${durMins}m]: $shortTitle", url = embedUrl))
+                    results.add(VideoServer(name = serverName, url = embedUrl))
                     if (results.size >= 3) break
                 }
             }
