@@ -48,40 +48,41 @@ object UpdateDownloader {
                 .header("User-Agent", "Mozilla/5.0 (Android) DutaMovie/Updater")
                 .build()
 
-            val response = client.newCall(request).execute()
-            if (!response.isSuccessful) {
-                return@withContext Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
-            }
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    return@withContext Result.failure(Exception("HTTP ${response.code}: ${response.message}"))
+                }
 
-            val body = response.body ?: return@withContext Result.failure(Exception("Empty response body"))
-            val totalBytes = body.contentLength()
-            var downloadedBytes = 0L
+                val body = response.body ?: return@withContext Result.failure(Exception("Empty response body"))
+                val totalBytes = body.contentLength()
+                var downloadedBytes = 0L
 
-            body.byteStream().use { input ->
-                FileOutputStream(apkFile).use { output ->
-                    val buffer = ByteArray(8192)
-                    var bytesRead: Int
-                    var lastReportTime = 0L
+                body.byteStream().use { input ->
+                    FileOutputStream(apkFile).use { output ->
+                        val buffer = ByteArray(8192)
+                        var bytesRead: Int
+                        var lastReportTime = 0L
 
-                    while (input.read(buffer).also { bytesRead = it } != -1) {
-                        output.write(buffer, 0, bytesRead)
-                        downloadedBytes += bytesRead
+                        while (input.read(buffer).also { bytesRead = it } != -1) {
+                            output.write(buffer, 0, bytesRead)
+                            downloadedBytes += bytesRead
 
-                        val now = System.currentTimeMillis()
-                        if (now - lastReportTime > 100 || downloadedBytes == totalBytes) {
-                            lastReportTime = now
-                            val progress = if (totalBytes > 0) downloadedBytes.toFloat() / totalBytes else -1f
-                            withContext(Dispatchers.Main) {
-                                onProgress(progress, downloadedBytes, totalBytes)
+                            val now = System.currentTimeMillis()
+                            if (now - lastReportTime > 100 || downloadedBytes == totalBytes) {
+                                lastReportTime = now
+                                val progress = if (totalBytes > 0) downloadedBytes.toFloat() / totalBytes else -1f
+                                withContext(Dispatchers.Main) {
+                                    onProgress(progress, downloadedBytes, totalBytes)
+                                }
                             }
                         }
+                        output.flush()
                     }
-                    output.flush()
                 }
-            }
 
-            if (apkFile.length() == 0L) {
-                return@withContext Result.failure(Exception("Downloaded file is empty"))
+                if (apkFile.length() == 0L) {
+                    return@withContext Result.failure(Exception("Downloaded file is empty"))
+                }
             }
 
             Result.success(apkFile)

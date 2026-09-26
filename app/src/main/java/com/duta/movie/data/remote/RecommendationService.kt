@@ -198,22 +198,21 @@ class RecommendationService @Inject constructor(
                         .post(jsonPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                         .build()
 
-                    val response = okHttpClient.newCall(request).execute()
-                    if (response.isSuccessful) {
-                        val responseBody = response.body?.string() ?: "[]"
-                        response.close()
-                        val list = json.decodeFromString<List<Recommendation>>(responseBody)
-                        val inserted = list.firstOrNull() ?: Recommendation(
-                            videoId = video.id,
-                            title = video.title,
-                            thumbnailUrl = video.thumbnailUrl,
-                            videoUrl = video.videoUrl,
-                            quality = video.quality,
-                            recommendCount = 1
-                        )
-                        return@withContext Result.success(inserted)
+                    okHttpClient.newCall(request).execute().use { response ->
+                        if (response.isSuccessful) {
+                            val responseBody = response.body?.string() ?: "[]"
+                            val list = json.decodeFromString<List<Recommendation>>(responseBody)
+                            val inserted = list.firstOrNull() ?: Recommendation(
+                                videoId = video.id,
+                                title = video.title,
+                                thumbnailUrl = video.thumbnailUrl,
+                                videoUrl = video.videoUrl,
+                                quality = video.quality,
+                                recommendCount = 1
+                            )
+                            return@withContext Result.success(inserted)
+                        }
                     }
-                    response.close()
                 } else if (knownExistingCount > 0) {
                     val newCount = if (isRecommending) knownExistingCount + 1 else (knownExistingCount - 1).coerceAtLeast(0)
                     val url = "${SupabaseConfig.PROJECT_URL.trimEnd('/')}/rest/v1/recommendations?video_id=eq.$encodedVideoId"
@@ -233,22 +232,21 @@ class RecommendationService @Inject constructor(
                         .patch(jsonPayload.toString().toRequestBody("application/json; charset=utf-8".toMediaType()))
                         .build()
 
-                    val response = okHttpClient.newCall(request).execute()
-                    if (response.isSuccessful) {
-                        val responseBody = response.body?.string() ?: "[]"
-                        response.close()
-                        val list = json.decodeFromString<List<Recommendation>>(responseBody)
-                        val updated = list.firstOrNull() ?: Recommendation(
-                            videoId = video.id,
-                            title = video.title,
-                            thumbnailUrl = video.thumbnailUrl,
-                            videoUrl = video.videoUrl,
-                            quality = video.quality,
-                            recommendCount = newCount
-                        )
-                        return@withContext Result.success(updated)
+                    okHttpClient.newCall(request).execute().use { response ->
+                        if (response.isSuccessful) {
+                            val responseBody = response.body?.string() ?: "[]"
+                            val list = json.decodeFromString<List<Recommendation>>(responseBody)
+                            val updated = list.firstOrNull() ?: Recommendation(
+                                videoId = video.id,
+                                title = video.title,
+                                thumbnailUrl = video.thumbnailUrl,
+                                videoUrl = video.videoUrl,
+                                quality = video.quality,
+                                recommendCount = newCount
+                            )
+                            return@withContext Result.success(updated)
+                        }
                     }
-                    response.close()
                 }
             }
 
