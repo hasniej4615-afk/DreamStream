@@ -613,4 +613,15 @@ object NetworkConfig {
             .callTimeout(7, TimeUnit.SECONDS)
             .build()
     }
+
+    // HTML CLIENT: Generous timeouts for large (200KB-500KB) Cloudflare HTML pages
+    val htmlOkHttpClient: OkHttpClient by lazy {
+        okHttpClient.newBuilder()
+            .connectTimeout(12, TimeUnit.SECONDS)
+            .readTimeout(18, TimeUnit.SECONDS)
+            .writeTimeout(12, TimeUnit.SECONDS)
+            .callTimeout(20, TimeUnit.SECONDS)
+            .build()
+    }
 }
+

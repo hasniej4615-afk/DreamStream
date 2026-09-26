@@ -54,11 +54,17 @@ object VideoExtractor {
     private val confirmedDeadMirrors = ConcurrentHashMap.newKeySet<String>()
 
     fun isConfirmedDead(url: String): Boolean {
+        val host = try { android.net.Uri.parse(url).host?.lowercase() } catch(_: Exception) { null }
+            ?: try { java.net.URI(url).host?.lowercase() } catch(_: Exception) { null }
+        if (isWhitelistedHost(host)) return false
         val clean = url.trimEnd('/')
         return confirmedDeadMirrors.contains(clean) || confirmedDeadMirrors.contains(url)
     }
 
     fun markConfirmedDead(url: String) {
+        val host = try { android.net.Uri.parse(url).host?.lowercase() } catch(_: Exception) { null }
+            ?: try { java.net.URI(url).host?.lowercase() } catch(_: Exception) { null }
+        if (isWhitelistedHost(host)) return
         val clean = url.trimEnd('/')
         confirmedDeadMirrors.add(clean)
         confirmedDeadMirrors.add(url)
@@ -97,9 +103,9 @@ object VideoExtractor {
         val candidates = listOf(activeDutaFilmWebBaseUrl) + DUTAFILM_WEB_FALLBACKS
         for (candidate in candidates.distinct()) {
             try {
-                val testUrl = "$candidate/explore?media_type=tv"
+                val testUrl = "$candidate/explore?media_type=movie"
                 val request = Request.Builder().url(testUrl).header("User-Agent", USER_AGENT).build()
-                NetworkConfig.fastOkHttpClient.newCall(request).execute().use { response ->
+                NetworkConfig.htmlOkHttpClient.newCall(request).execute().use { response ->
                     if (response.isSuccessful) {
                         val body = response.body?.string() ?: ""
                         if (body.contains("explore") || body.contains("df-") || body.contains("watch") || body.contains("movie")) {
@@ -633,7 +639,7 @@ object VideoExtractor {
                         .build()
 
                     val response = suspendCancellableCoroutine { continuation ->
-                        val call = NetworkConfig.fastOkHttpClient.newCall(request)
+                        val call = NetworkConfig.htmlOkHttpClient.newCall(request)
                         continuation.invokeOnCancellation { call.cancel() }
                         call.enqueue(object : okhttp3.Callback {
                             override fun onFailure(call: okhttp3.Call, e: java.io.IOException) { continuation.resumeWith(Result.failure(e)) }
@@ -642,9 +648,12 @@ object VideoExtractor {
                     }
                     response.use { resp ->
                         if (resp.code == 404 || resp.code == 410) {
-                            Log.w(TAG, "fetchHtml: Dead mirror ($url returned ${resp.code})")
-                            markConfirmedDead(url)
-                            return@withPermit null
+                            val host = try { resp.request.url.host.lowercase() } catch(_: Exception) { null }
+                            if (!isWhitelistedHost(host)) {
+                                Log.w(TAG, "fetchHtml: Dead mirror ($url returned ${resp.code})")
+                                markConfirmedDead(url)
+                                return@withPermit null
+                            }
                         }
                         val finalUrl = resp.request.url.toString()
                         val body = if (resp.isSuccessful) resp.body?.string() else null
@@ -687,12 +696,13 @@ object VideoExtractor {
                 } catch (e: Exception) {
                     if (e is java.net.SocketTimeoutException || e is java.net.ConnectException || e is java.io.InterruptedIOException) {
                         Log.w(TAG, "fetchHtml timeout on $url: ${e.message}")
-                        markConfirmedDead(url)
                         val errHost = try { android.net.Uri.parse(url).host?.lowercase() } catch(_: Exception) { null }
-                        if (errHost != null && !isWhitelistedHost(errHost)) {
-                            markConfirmedDead(errHost)
+                            ?: try { java.net.URI(url).host?.lowercase() } catch(_: Exception) { null }
+                        if (errHost == null || !isWhitelistedHost(errHost)) {
+                            markConfirmedDead(url)
+                            if (errHost != null) markConfirmedDead(errHost)
+                            break // Do not retry unreachable / timed out hosts
                         }
-                        break // Do not retry unreachable / timed out hosts
                     }
                 }
                 // TV Mode optimization: Reduce retry delay for faster instant load
@@ -1687,7 +1697,7 @@ object VideoExtractor {
         }
         val norm = normalizePath(path).removePrefix("/").removeSuffix("/")
         return when {
-            norm == "movies" || norm.isEmpty() -> {
+            norm == "movies" || norm.isEmpty() || norm.contains("dutafilm") -> {
                 if (currPage > 1) "$cleanBase/page/$currPage/" else "$cleanBase/"
             }
             norm == "series" -> {
@@ -2064,7 +2074,62 @@ object VideoExtractor {
 
     suspend fun fetchVideosBySection(path: String, page: Int, count: Int): List<Video> = withContext(Dispatchers.IO) {
         if (path.contains("dutafilm", ignoreCase = true) || path.contains("mantab.men", ignoreCase = true) || path.contains("df31", ignoreCase = true)) {
-            return@withContext fetchDutaFilmWebVideos(path, page, count)
+            val pagesToFetch = when {
+                count >= 100 -> 4
+                count >= 40 -> 3
+                count >= 20 -> 2
+                else -> 1
+            }
+            val dutaWebDeferred = async(Dispatchers.IO) {
+                try {
+                    fetchDutaFilmWebVideos(path, page, count)
+                } catch (e: Exception) {
+                    Log.w(TAG, "DutaFilm Web fetch failed: ${e.message}")
+                    emptyList()
+                }
+            }
+            val dutaIpDeferred = async(Dispatchers.IO) {
+                val results = mutableListOf<Video>()
+                val seen = mutableSetOf<String>()
+                val pageJobs = (0 until pagesToFetch).map { offset ->
+                    async(Dispatchers.IO) {
+                        val currPage = page + offset
+                        val url = buildDutaCategoryUrl(DUTAFILM_BASE_URL, path, currPage)
+                        try {
+                            var html = fetchHtml(url)
+                            if (html.isNullOrEmpty() && currPage == 1) {
+                                val liveDomain = probeForNewDomain()
+                                if (liveDomain != null && isClusterSite(liveDomain)) {
+                                    val retryUrl = buildDutaCategoryUrl(liveDomain, path, currPage)
+                                    html = fetchHtml(retryUrl)
+                                }
+                            }
+                            if (!html.isNullOrEmpty()) {
+                                scrapeVideosFromHtml(html, url)
+                            } else emptyList()
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Duta IP category fetch failed for $path p$currPage: ${e.message}")
+                            emptyList()
+                        }
+                    }
+                }
+                pageJobs.awaitAll().flatten().forEach { video ->
+                    if (seen.add(video.id)) results.add(video)
+                }
+                results
+            }
+
+            val webVideos = dutaWebDeferred.await()
+            val ipVideos = dutaIpDeferred.await()
+            Log.i(TAG, "DutaFilm Dual Fetch for $path (Page $page): IP=${ipVideos.size}, Web=${webVideos.size}")
+
+            val combined = when {
+                webVideos.isNotEmpty() && ipVideos.isNotEmpty() -> mergeAndInterleave(ipVideos, webVideos, count)
+                webVideos.isNotEmpty() -> webVideos
+                ipVideos.isNotEmpty() -> ipVideos
+                else -> emptyList()
+            }
+            return@withContext sortVideosByNewestRelease(combined).take(count)
         }
 
         if (path.contains("bullerswood", ignoreCase = true) || path.contains("lk21", ignoreCase = true)) {
@@ -2161,6 +2226,8 @@ object VideoExtractor {
             async(Dispatchers.IO) { fetchDutaFilmWebVideos("/explore?country=indonesia", page, count) }
         } else if (isSeriesCategory) {
             async(Dispatchers.IO) { fetchDutaFilmWebVideos("/explore?media_type=tv", page, count) }
+        } else if (isMoviesCategory) {
+            async(Dispatchers.IO) { fetchDutaFilmWebVideos("/explore?media_type=movie", page, count) }
         } else null
 
         val dutaVideos = dutaDeferred.await()
