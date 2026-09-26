@@ -11,6 +11,7 @@ import com.duta.movie.model.VideoServer
 import com.duta.movie.provider.engine.DexPluginProvider
 import com.duta.movie.provider.engine.TemplateProvider
 import com.duta.movie.provider.model.ProviderEngineType
+import com.duta.movie.provider.model.ProviderMediaType
 import com.duta.movie.provider.model.RemoteProviderManifest
 import com.duta.movie.provider.model.RemoteRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -34,6 +35,12 @@ class ProviderManager @Inject constructor(
     companion object {
         private const val TAG = "ProviderManager"
         const val OFFICIAL_REPO_ID = "dreamstream-official"
+        val CORE_PROVIDER_IDS = setOf(
+            "com.duta.provider.pencurimovie",
+            "com.duta.provider.dutafilm",
+            "com.duta.provider.lk21",
+            "com.duta.provider.pramlee"
+        )
     }
 
     private val coroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -336,10 +343,90 @@ class ProviderManager @Inject constructor(
     }
 
     /**
+     * Fetches category items from all enabled custom (non-core) providers.
+     * Merged into Home categories alongside official sources.
+     */
+    suspend fun fetchSectionAllCustom(categoryPath: String, page: Int = 1, count: Int = 30): List<Video> = coroutineScope {
+        val customProviders = activeProviderInstances.values.filter { provider ->
+            provider.isEnabled && provider.id !in CORE_PROVIDER_IDS
+        }
+        if (customProviders.isEmpty()) return@coroutineScope emptyList()
+
+        val isSeries = categoryPath.contains("series", ignoreCase = true) || categoryPath.contains("tv", ignoreCase = true)
+        val isMovie = categoryPath == "/" || categoryPath == "/movies/" || categoryPath.contains("movie", ignoreCase = true)
+
+        val deferredList: List<Deferred<List<Video>>> = customProviders.mapNotNull { provider ->
+            // Filter by media type if provider specializes strictly in Movies or Series
+            if (isSeries && provider.mediaType == ProviderMediaType.MOVIE) return@mapNotNull null
+            if (isMovie && provider.mediaType == ProviderMediaType.SERIES) return@mapNotNull null
+
+            async(Dispatchers.IO) {
+                try {
+                    withTimeoutOrNull(5000L) {
+                        provider.fetchSection(categoryPath, page, count)
+                    } ?: emptyList()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Section fetch failed for custom provider ${provider.name}: ${e.message}")
+                    emptyList()
+                }
+            }
+        }
+
+        val allResults: List<Video> = deferredList.awaitAll().flatten()
+        if (allResults.isEmpty()) return@coroutineScope emptyList()
+
+        // Clean and deduplicate
+        val seen = mutableSetOf<String>()
+        val distinctResults = mutableListOf<Video>()
+        for (v in allResults) {
+            val key = v.title.trim().lowercase()
+            if (seen.add(key) && seen.add(v.id)) {
+                distinctResults.add(v)
+            }
+        }
+        distinctResults
+    }
+
+    /**
+     * Resolves details for a video using active custom or preferred providers
+     */
+    suspend fun fetchVideoDetail(video: Video): Video? = withContext(Dispatchers.IO) {
+        val preferredProvider = activeProviderInstances.values.firstOrNull { p ->
+            video.id.startsWith("${p.id}_") || video.videoUrl.contains(p.id, ignoreCase = true)
+        }
+        if (preferredProvider != null) {
+            try {
+                val detailed = preferredProvider.fetchVideoDetail(video)
+                if (detailed != null) return@withContext detailed
+            } catch (_: Exception) {}
+        }
+
+        for (provider in activeProviderInstances.values) {
+            if (provider == preferredProvider) continue
+            try {
+                val detailed = provider.fetchVideoDetail(video)
+                if (detailed != null) return@withContext detailed
+            } catch (_: Exception) {}
+        }
+        null
+    }
+
+    /**
      * Resolves streaming servers for a video via active providers
      */
     suspend fun fetchServers(video: Video): List<VideoServer> = withContext(Dispatchers.IO) {
+        val preferredProvider = activeProviderInstances.values.firstOrNull { p ->
+            video.id.startsWith("${p.id}_") || video.videoUrl.contains(p.id, ignoreCase = true)
+        }
+        if (preferredProvider != null) {
+            try {
+                val servers = preferredProvider.fetchServers(video)
+                if (servers.isNotEmpty()) return@withContext servers
+            } catch (_: Exception) {}
+        }
+
         for (provider in activeProviderInstances.values) {
+            if (provider == preferredProvider) continue
             try {
                 val servers = provider.fetchServers(video)
                 if (servers.isNotEmpty()) return@withContext servers

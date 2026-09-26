@@ -62,9 +62,20 @@ class DexPluginProvider(
             )
 
             // Look for provider class matching id or standard name
-            val className = entity.name.replace(" ", "") + "Provider"
-            val loadedClass = classLoader.loadClass(className)
-            val instance = loadedClass.getDeclaredConstructor().newInstance()
+            val candidateClassNames = listOf(
+                entity.name.replace(" ", "") + "Provider",
+                entity.id.substringAfterLast('.').replaceFirstChar { it.uppercase() } + "Provider",
+                entity.name.replace(" ", ""),
+                "MainPlugin"
+            )
+            var instance: Any? = null
+            for (candidate in candidateClassNames) {
+                try {
+                    val loadedClass = classLoader.loadClass(candidate)
+                    instance = loadedClass.getDeclaredConstructor().newInstance()
+                    break
+                } catch (_: ClassNotFoundException) {}
+            }
             if (instance is MediaProvider) {
                 dynamicInstance = instance
                 Log.i(TAG, "Successfully dynamically loaded .dex plugin: ${entity.name}")
@@ -76,19 +87,49 @@ class DexPluginProvider(
 
     override suspend fun search(query: String, page: Int): List<Video> = withContext(Dispatchers.IO) {
         if (!isEnabled) return@withContext emptyList()
-        dynamicInstance?.search(query, page) ?: emptyList()
+        try {
+            val list = dynamicInstance?.search(query, page) ?: emptyList()
+            list.map {
+                it.copy(
+                    id = if (it.id.startsWith("${entity.id}_")) it.id else "${entity.id}_${it.id}"
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Dynamic search failed for $name: ${e.message}")
+            emptyList()
+        }
     }
 
     override suspend fun fetchSection(path: String, page: Int, count: Int): List<Video> = withContext(Dispatchers.IO) {
         if (!isEnabled) return@withContext emptyList()
-        dynamicInstance?.fetchSection(path, page, count) ?: emptyList()
+        try {
+            val list = dynamicInstance?.fetchSection(path, page, count) ?: emptyList()
+            list.map {
+                it.copy(
+                    id = if (it.id.startsWith("${entity.id}_")) it.id else "${entity.id}_${it.id}"
+                )
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Dynamic fetchSection failed for $name: ${e.message}")
+            emptyList()
+        }
     }
 
     override suspend fun fetchVideoDetail(video: Video): Video? = withContext(Dispatchers.IO) {
-        dynamicInstance?.fetchVideoDetail(video)
+        try {
+            dynamicInstance?.fetchVideoDetail(video)
+        } catch (e: Exception) {
+            Log.w(TAG, "Dynamic fetchVideoDetail failed for $name: ${e.message}")
+            null
+        }
     }
 
     override suspend fun fetchServers(video: Video): List<VideoServer> = withContext(Dispatchers.IO) {
-        dynamicInstance?.fetchServers(video) ?: emptyList()
+        try {
+            dynamicInstance?.fetchServers(video) ?: emptyList()
+        } catch (e: Exception) {
+            Log.w(TAG, "Dynamic fetchServers failed for $name: ${e.message}")
+            emptyList()
+        }
     }
 }

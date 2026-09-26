@@ -134,10 +134,44 @@ class VideoRepository @Inject constructor(
     }
 
     suspend fun fetchVideosBySection(cat: String, page: Int, count: Int): List<Video> = coroutineScope {
-        val results = VideoExtractor.fetchVideosBySection(cat, page, count)
-        val dbItems = videoDao.getVideosByIds(results.map { it.id }).associateBy { it.id }
+        val extractorDeferred = async(Dispatchers.IO) {
+            try {
+                VideoExtractor.fetchVideosBySection(cat, page, count)
+            } catch (e: Exception) {
+                Log.w("VideoRepository", "VideoExtractor fetch failed for $cat: ${e.message}")
+                emptyList()
+            }
+        }
+        val customProvidersDeferred = async(Dispatchers.IO) {
+            try {
+                providerManager.fetchSectionAllCustom(cat, page, count)
+            } catch (e: Exception) {
+                Log.w("VideoRepository", "Custom providers fetch failed for $cat: ${e.message}")
+                emptyList()
+            }
+        }
+
+        val extractorResults = extractorDeferred.await()
+        val customResults = customProvidersDeferred.await()
+
+        val seen = mutableSetOf<String>()
+        val combined = mutableListOf<Video>()
+        for (v in extractorResults) {
+            val key = v.title.trim().lowercase()
+            seen.add(key)
+            seen.add(v.id)
+            combined.add(v)
+        }
+        for (v in customResults) {
+            val key = v.title.trim().lowercase()
+            if (seen.add(key) && seen.add(v.id)) {
+                combined.add(v)
+            }
+        }
+
+        val dbItems = videoDao.getVideosByIds(combined.map { it.id }).associateBy { it.id }
         val videos = VideoExtractor.sortVideosByNewestRelease(
-            results.map { mergeVideos(it, dbItems[it.id]?.toDomain()).also { v -> videoCache[v.id] = v } }
+            combined.map { mergeVideos(it, dbItems[it.id]?.toDomain()).also { v -> videoCache[v.id] = v } }
         )
         if (page == 1) videoDao.updateCategoryCache(cat, videos.map { it.toEntity() })
         else videoDao.insertOrUpdateVideos(videos.map { it.toEntity() })
@@ -145,14 +179,43 @@ class VideoRepository @Inject constructor(
     }
 
     suspend fun searchVideos(query: String, page: Int, count: Int, categoryPath: String? = null): List<Video> = coroutineScope {
-        val providerResults = providerManager.searchAllEnabled(query, page)
-        val results = if (providerResults.isNotEmpty()) {
-            providerResults
-        } else {
-            VideoExtractor.searchVideos(query, page, count, categoryPath)
+        val providerDeferred = async(Dispatchers.IO) {
+            try {
+                providerManager.searchAllEnabled(query, page)
+            } catch (e: Exception) {
+                Log.w("VideoRepository", "Provider search error: ${e.message}")
+                emptyList()
+            }
         }
-        val dbItems = videoDao.getVideosByIds(results.map { it.id }).associateBy { it.id }
-        val videos = results.map { mergeVideos(it, dbItems[it.id]?.toDomain()).also { v -> videoCache[v.id] = v } }
+        val extractorDeferred = async(Dispatchers.IO) {
+            try {
+                VideoExtractor.searchVideos(query, page, count, categoryPath)
+            } catch (e: Exception) {
+                Log.w("VideoRepository", "VideoExtractor search error: ${e.message}")
+                emptyList()
+            }
+        }
+
+        val providerResults = providerDeferred.await()
+        val extractorResults = extractorDeferred.await()
+
+        val seen = mutableSetOf<String>()
+        val combined = mutableListOf<Video>()
+        for (v in extractorResults) {
+            val key = v.title.trim().lowercase()
+            seen.add(key)
+            seen.add(v.id)
+            combined.add(v)
+        }
+        for (v in providerResults) {
+            val key = v.title.trim().lowercase()
+            if (seen.add(key) && seen.add(v.id)) {
+                combined.add(v)
+            }
+        }
+
+        val dbItems = videoDao.getVideosByIds(combined.map { it.id }).associateBy { it.id }
+        val videos = combined.map { mergeVideos(it, dbItems[it.id]?.toDomain()).also { v -> videoCache[v.id] = v } }
         videoDao.insertOrUpdateVideos(videos.map { it.toEntity() })
         videos
     }
@@ -238,6 +301,23 @@ class VideoRepository @Inject constructor(
                 videoCache[videoId] = merged
                 return@withContext merged
             } else {
+                val providerDetail = providerManager.fetchVideoDetail(video)
+                if (providerDetail != null) {
+                    var merged = mergeVideos(providerDetail, video)
+                    if (merged.thumbnailUrl.isEmpty()) {
+                        val fallbackPoster = VideoExtractor.findPosterForTitle(merged.title, merged.date)
+                        if (fallbackPoster.isNotEmpty()) {
+                            merged = merged.copy(
+                                thumbnailUrl = fallbackPoster,
+                                backdropUrl = merged.backdropUrl.ifEmpty { fallbackPoster }
+                            )
+                        }
+                    }
+                    videoDao.insertOrUpdateVideos(listOf(merged.toEntity()))
+                    videoCache[videoId] = merged
+                    return@withContext merged
+                }
+
                 val healed = VideoExtractor.healVideoFromAlternativeSources(video)
                 if (healed != null) {
                     var merged = mergeVideos(healed, video)

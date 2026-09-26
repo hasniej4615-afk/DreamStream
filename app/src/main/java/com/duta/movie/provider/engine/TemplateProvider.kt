@@ -72,7 +72,7 @@ class TemplateProvider(
     override suspend fun search(query: String, page: Int): List<Video> = withContext(Dispatchers.IO) {
         if (!isEnabled) return@withContext emptyList()
         try {
-            when (entity.templateType) {
+            val list = when (entity.templateType) {
                 "PENCURI" -> {
                     VideoExtractor.searchVideos(query, page, 25)
                 }
@@ -94,6 +94,7 @@ class TemplateProvider(
                     VideoExtractor.searchVideos(query, page, 25)
                 }
             }
+            list
         } catch (e: Exception) {
             Log.e(TAG, "Search error on provider $name: ${e.message}")
             emptyList()
@@ -103,7 +104,27 @@ class TemplateProvider(
     override suspend fun fetchSection(path: String, page: Int, count: Int): List<Video> = withContext(Dispatchers.IO) {
         if (!isEnabled) return@withContext emptyList()
         try {
-            VideoExtractor.fetchVideosBySection(path, page, count)
+            val list = when (entity.templateType) {
+                "DUTAFILM" -> {
+                    VideoExtractor.fetchDutaFilmWebVideos(path, page, count)
+                }
+                "WORDPRESS_MUVIPRO" -> {
+                    VideoExtractor.fetchBullerswoodVideos(path, page, count)
+                }
+                "GENERIC_HTML" -> {
+                    if (id.contains("pramlee", ignoreCase = true)) {
+                        val all = VideoExtractor.sortVideosByNewestRelease(VideoExtractor.fetchArchivePramleeVideos())
+                        val start = (page - 1) * count
+                        if (start >= all.size) emptyList() else all.drop(start).take(count)
+                    } else {
+                        VideoExtractor.fetchVideosBySection(path, page, count)
+                    }
+                }
+                else -> {
+                    VideoExtractor.fetchVideosBySection(path, page, count)
+                }
+            }
+            list
         } catch (e: Exception) {
             Log.e(TAG, "Section fetch error on provider $name for $path: ${e.message}")
             emptyList()

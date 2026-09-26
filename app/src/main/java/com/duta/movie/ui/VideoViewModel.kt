@@ -1498,13 +1498,15 @@ class VideoViewModel @Inject constructor(
                                 } catch (_: Exception) {}
                             }
 
-                            // 3. Discover alternative sources across all partners and universal stream catalogues
+                            // 3. Discover alternative sources across all partners and universal stream catalogues + installed providers
                             val altServers = com.duta.movie.util.VideoExtractor.findAlternativeSources(detailed)
-                            if (altServers.isNotEmpty()) {
+                            val providerServers = videoRepository.providerManager.fetchServers(detailed)
+                            val allDiscoveredServers = (altServers + providerServers).distinctBy { it.url.trimEnd('/') }
+                            if (allDiscoveredServers.isNotEmpty()) {
                                 val current = _videoMetadata.value
                                 if (current != null && (current.id == detailed.id || current.title.equals(detailed.title, ignoreCase = true) || com.duta.movie.util.VideoExtractor.stripSourcePrefix(current.id) == com.duta.movie.util.VideoExtractor.stripSourcePrefix(detailed.id))) {
                                     val existingServerUrls = current.servers.map { it.url.trimEnd('/') }.toSet()
-                                    val newUnique = altServers.filter { !existingServerUrls.contains(it.url.trimEnd('/')) }
+                                    val newUnique = allDiscoveredServers.filter { !existingServerUrls.contains(it.url.trimEnd('/')) }
                                     if (newUnique.isNotEmpty()) {
                                         val combined = (current.servers + newUnique).sortedByDescending { com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) }
                                         val updated = current.copy(servers = combined)
