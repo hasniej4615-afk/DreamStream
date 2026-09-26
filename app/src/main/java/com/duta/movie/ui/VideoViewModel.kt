@@ -3,6 +3,7 @@ import com.duta.movie.R
 
 import android.content.Context
 import android.util.Log
+import androidx.compose.ui.focus.FocusRequester
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.ImageLoader
@@ -302,6 +303,10 @@ class VideoViewModel @Inject constructor(
     var lastFocusedCategoryRowIndex: Int = 0
     var lastFocusedHomeVideoId: String? = null
     var pendingRestoreVideoId: String? = null
+
+    // TV D-Pad Focus Bridges
+    val contentFocusRequester = FocusRequester()
+    val sidebarFocusRequester = FocusRequester()
 
     fun setSearchFilter(filter: SearchFilter) { _searchFilter.value = filter }
     fun setSearchSort(sort: SearchSort) { _searchSort.value = sort }

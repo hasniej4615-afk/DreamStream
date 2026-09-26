@@ -9,6 +9,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -42,6 +43,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.focusable
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.FocusRequester
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -86,7 +88,7 @@ fun CategoryResultsScreen(
     val scope = rememberCoroutineScope()
     
     // TV Optimization: Focus requesters
-    val firstItemFocusRequester = remember { FocusRequester() }
+    val firstItemFocusRequester = viewModel.contentFocusRequester
     val clickedItemFocusRequester = remember { FocusRequester() }
     var lastClickedVideoId by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -99,7 +101,7 @@ fun CategoryResultsScreen(
 
     LaunchedEffect(isLoading, videos) {
         if (isExpanded && !isLoading && videos.isNotEmpty()) {
-            delay(1000)
+            delay(200)
             try {
                 if (lastClickedVideoId != null && videos.any { it.id == lastClickedVideoId }) {
                     clickedItemFocusRequester.requestFocus()
@@ -312,12 +314,13 @@ fun CategoryResultsScreen(
                     modifier = Modifier.fillMaxSize(),
                     contentPadding = PaddingValues(8.dp)
                 ) {
-                    items(
+                    itemsIndexed(
                         items = videos,
-                        contentType = { "video_thumbnail" }
-                    ) { video ->
-                        val isFirst = videos.firstOrNull()?.id == video.id
+                        contentType = { _, _ -> "video_thumbnail" }
+                    ) { index, video ->
+                        val isFirst = index == 0
                         val isTV = isExpanded || isMedium
+                        val isFirstColumn = index % columns == 0
                         val itemModifier = Modifier
                             .fillMaxWidth()
                             .padding(8.dp)
@@ -328,6 +331,11 @@ fun CategoryResultsScreen(
                                     Modifier.focusRequester(firstItemFocusRequester)
                                 } else Modifier
                             )
+                            .focusProperties {
+                                if (isFirstColumn && isTV) {
+                                    left = viewModel.sidebarFocusRequester
+                                }
+                            }
                         NetflixThumbnail(
                             video = video,
                             modifier = itemModifier,

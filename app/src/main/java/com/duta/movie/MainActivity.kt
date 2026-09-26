@@ -38,6 +38,9 @@ import androidx.compose.material3.Text
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.focusGroup
@@ -374,6 +377,8 @@ class MainActivity : AppCompatActivity() {
                                             isSelected = isSearchActive,
                                             isExpanded = sidebarFocused,
                                             isRealTV = isRealTV,
+                                            focusRequester = if (isSearchActive) videoViewModel.sidebarFocusRequester else null,
+                                            rightFocusRequester = videoViewModel.contentFocusRequester,
                                             onClick = {
                                                 videoViewModel.setSearchActive(!isSearchActive)
                                                 if (currentDestination?.hasRoute<Destination.Home>() == false) {
@@ -390,6 +395,8 @@ class MainActivity : AppCompatActivity() {
                                                 isSelected = selected,
                                                 isExpanded = sidebarFocused,
                                                 isRealTV = isRealTV,
+                                                focusRequester = if (selected && !isSearchActive) videoViewModel.sidebarFocusRequester else null,
+                                                rightFocusRequester = videoViewModel.contentFocusRequester,
                                                 onClick = {
                                                     videoViewModel.setSearchActive(false)
                                                     videoViewModel.onSearchQueryChange("")
@@ -411,6 +418,8 @@ class MainActivity : AppCompatActivity() {
                                             isSelected = currentDestination?.hasRoute<Destination.Settings>() == true,
                                             isExpanded = sidebarFocused,
                                             isRealTV = isRealTV,
+                                            focusRequester = if (currentDestination?.hasRoute<Destination.Settings>() == true) videoViewModel.sidebarFocusRequester else null,
+                                            rightFocusRequester = videoViewModel.contentFocusRequester,
                                             onClick = { navController.navigate(Destination.Settings) }
                                         )
 
@@ -550,6 +559,8 @@ fun SidebarIcon(
     isSelected: Boolean,
     isExpanded: Boolean,
     isRealTV: Boolean = false,
+    focusRequester: FocusRequester? = null,
+    rightFocusRequester: FocusRequester? = null,
     onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
@@ -569,6 +580,12 @@ fun SidebarIcon(
             .fillMaxWidth()
             .scale(scale)
             .onFocusChanged { isFocused = it.isFocused }
+            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
+            .focusProperties {
+                if (rightFocusRequester != null) {
+                    right = rightFocusRequester
+                }
+            }
             .focusable()
             .then(
                 if (isFocused && isRealTV) Modifier.border(3.dp, Color.White, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))

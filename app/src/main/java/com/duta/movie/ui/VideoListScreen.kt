@@ -170,7 +170,7 @@ fun VideoListScreen(
     val searchSort by viewModel.searchSort.collectAsStateWithLifecycle()
     val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
     val firstItemFocusRequester = remember { FocusRequester() }
-    val firstCategoryFocusRequester = remember { FocusRequester() }
+    val firstCategoryFocusRequester = viewModel.contentFocusRequester
     val clickedItemFocusRequester = remember { FocusRequester() }
     var lastClickedVideoId by rememberSaveable { mutableStateOf<String?>(null) }
     var lastFocusedSearchVideoId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -192,11 +192,14 @@ fun VideoListScreen(
                     } else {
                         firstItemFocusRequester.requestFocus()
                     }
-                } else if (!isSearchActive && !initialHomeFocusRequested && viewModel.lastFocusedHomeVideoId == null && !isLoading && videos.isNotEmpty()) {
-                    delay(300)
-                    if (viewModel.lastFocusedHomeVideoId == null) {
-                        firstCategoryFocusRequester.requestFocus()
-                        initialHomeFocusRequested = true
+                } else if (!isSearchActive && viewModel.lastFocusedHomeVideoId == null && !isLoading) {
+                    for (attempt in 1..5) {
+                        delay(150L * attempt)
+                        try {
+                            firstCategoryFocusRequester.requestFocus()
+                            initialHomeFocusRequested = true
+                            break
+                        } catch (_: Exception) {}
                     }
                 }
             } catch(_: Exception) {}
@@ -640,7 +643,8 @@ fun VideoListScreen(
                                           }
                                       }
 
-                                      if (rowVideos.isNotEmpty() || isRowLoading) {
+                                      val hasLoadedAndEmpty = !isRowLoading && rowVideos.isEmpty() && categoryVideos.containsKey(path)
+                                       if (!hasLoadedAndEmpty) {
                                           val scope = rememberCoroutineScope()
                                           var isRowFocused by remember { mutableStateOf(false) }
                                           val rowAlpha by animateFloatAsState(if (isRowFocused) 1f else 0.65f)
@@ -896,19 +900,29 @@ fun HorizontalVideoRow(
         contentPadding = PaddingValues(horizontal = if (isRealTV) 48.dp else 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         modifier = modifier
-            .focusRestorer { rowFirstItemFocusRequester }
+            .focusRestorer { firstItemFocusRequester ?: rowFirstItemFocusRequester }
             .focusGroup()
             .fillMaxWidth()
             .height(((if (isRealTV) 240 else if (isTV) 260 else 340) * thumbnailScale).dp)
             .onFocusChanged { hasFocus = it.hasFocus }
     ) {
         if (isLoading && videos.isEmpty()) {
-            items(5) {
+            items(5) { shimmerIndex ->
                 var isShimmerFocused by remember { mutableStateOf(false) }
+                val shimmerRequester = if (shimmerIndex == 0) (firstItemFocusRequester ?: rowFirstItemFocusRequester) else null
                 Box(
                     modifier = Modifier
                         .width((if (isRealTV) 140 * thumbnailScale else if (isTV) 130 * thumbnailScale else 165f).dp)
                         .height((if (isRealTV) 210 * thumbnailScale else if (isTV) 195 * thumbnailScale else 245f).dp)
+                        .then(if (shimmerRequester != null) Modifier.focusRequester(shimmerRequester) else Modifier)
+                        .focusProperties {
+                            if (rowIndex == 0 && isRealTV) {
+                                up = FocusRequester.Cancel
+                            }
+                            if (shimmerIndex == 0 && isRealTV) {
+                                left = viewModel?.sidebarFocusRequester ?: FocusRequester.Default
+                            }
+                        }
                         .onFocusChanged { 
                             isShimmerFocused = it.isFocused 
                             if (it.isFocused) shimmerHadFocus = true
@@ -987,6 +1001,9 @@ fun HorizontalVideoRow(
                         .focusProperties {
                             if (rowIndex == 0 && isRealTV) {
                                 up = FocusRequester.Cancel
+                            }
+                            if (index == 0 && isRealTV) {
+                                left = viewModel?.sidebarFocusRequester ?: FocusRequester.Default
                             }
                         }
                 ) {
