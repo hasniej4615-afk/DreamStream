@@ -1499,31 +1499,46 @@ class VideoViewModel @Inject constructor(
                             }
 
                             // 3. Discover alternative sources across all partners and universal stream catalogues + installed providers
-                            val cachedAlts = discoveredAltServers[detailed.id]
-                            val altServers = if (cachedAlts != null) {
-                                cachedAlts
-                            } else {
-                                val found = com.duta.movie.util.VideoExtractor.findAlternativeSources(detailed)
-                                discoveredAltServers[detailed.id] = found
-                                found
-                            }
+                            // ONLY query alternatives if movie has 0 servers
+                            val current = _videoMetadata.value
+                            val currentServers = current?.servers ?: detailed.servers
+                            val needsAlternativeSearch = currentServers.isEmpty() && detailed.isSeries != true
+
+                            val altServers = if (needsAlternativeSearch) {
+                                val cachedAlts = discoveredAltServers[detailed.id]
+                                if (cachedAlts != null) {
+                                    cachedAlts
+                                } else {
+                                    val found = com.duta.movie.util.VideoExtractor.findAlternativeSources(detailed)
+                                    discoveredAltServers[detailed.id] = found
+                                    found
+                                }
+                            } else emptyList()
+
                             val providerServers = videoRepository.providerManager.fetchServers(detailed)
-                            val allDiscoveredServers = (altServers + providerServers).distinctBy { it.url.trimEnd('/') }
-                            if (allDiscoveredServers.isNotEmpty()) {
-                                val current = _videoMetadata.value
-                                if (current != null && (current.id == detailed.id || current.title.equals(detailed.title, ignoreCase = true) || com.duta.movie.util.VideoExtractor.stripSourcePrefix(current.id) == com.duta.movie.util.VideoExtractor.stripSourcePrefix(detailed.id))) {
-                                    val existingServerUrls = current.servers.map { it.url.trimEnd('/') }.toSet()
-                                    val newUnique = allDiscoveredServers.filter { !existingServerUrls.contains(it.url.trimEnd('/')) }
-                                    if (newUnique.isNotEmpty()) {
-                                        val combined = (current.servers + newUnique).sortedByDescending { com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) }
-                                        val updated = current.copy(servers = combined)
-                                        withContext(Dispatchers.Main) {
-                                            _videoMetadata.value = applyMetadata(updated)
-                                        }
-                                        videoRepository.updateVideoInDb(updated)
-                                        updateMetadataCache(listOf(updated), triggerBackground = false)
-                                        Log.i("VideoViewModel", "Appended ${newUnique.size} alternative mirror(s) to server list for '${current.title}'")
+                            val allDiscoveredServers = (altServers + providerServers)
+                                .filter { com.duta.movie.util.VideoExtractor.isServerMatchingMovie(detailed.title, it) }
+                                .distinctBy { it.url.trimEnd('/') }
+
+                            if (current != null && (current.id == detailed.id || current.title.equals(detailed.title, ignoreCase = true) || com.duta.movie.util.VideoExtractor.stripSourcePrefix(current.id) == com.duta.movie.util.VideoExtractor.stripSourcePrefix(detailed.id))) {
+                                // Filter existing servers as well to remove any previously persisted mismatched servers from Room DB
+                                val cleanCurrentServers = current.servers.filter { 
+                                    com.duta.movie.util.VideoExtractor.isServerMatchingMovie(current.title, it) 
+                                }
+                                val existingServerUrls = cleanCurrentServers.map { it.url.trimEnd('/') }.toSet()
+                                val newUnique = allDiscoveredServers.filter { !existingServerUrls.contains(it.url.trimEnd('/')) }
+
+                                if (newUnique.isNotEmpty() || cleanCurrentServers.size != current.servers.size) {
+                                    val combined = (cleanCurrentServers + newUnique).sortedByDescending { 
+                                        com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) 
                                     }
+                                    val updated = current.copy(servers = combined)
+                                    withContext(Dispatchers.Main) {
+                                        _videoMetadata.value = applyMetadata(updated)
+                                    }
+                                    videoRepository.updateVideoInDb(updated)
+                                    updateMetadataCache(listOf(updated), triggerBackground = false)
+                                    Log.i("VideoViewModel", "Updated server list for '${current.title}' (clean=${combined.size}, removed=${current.servers.size - cleanCurrentServers.size}, added=${newUnique.size})")
                                 }
                             }
                         } catch (e: Exception) {

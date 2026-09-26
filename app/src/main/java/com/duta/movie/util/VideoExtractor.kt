@@ -2372,67 +2372,77 @@ object VideoExtractor {
             }
         }
 
-        // Full movie & universal stream fallbacks (Archive.org, YouTube, Bilibili, Dailymotion):
-        // Always engage if no mirrors found yet, or if video is not an explicit series URL
-        val isExplicitSeries = video.videoUrl.contains("/series/") || video.videoUrl.contains("/tv/") || video.videoUrl.contains("/serial-tv/")
-        if (!isExplicitSeries || video.isSeries != true || video.episodes.isEmpty() || altServers.isEmpty()) {
-            // Also check classic P. Ramlee Archive.org catalogue if applicable
-            if (altServers.isEmpty() || !video.videoUrl.contains("archive.org")) {
-                try {
-                    val classicMatch = fetchArchivePramleeVideos().find {
-                        normalizeForDedup(it.title) == targetNorm
+        // Also check classic P. Ramlee Archive.org catalogue if applicable
+        if (!video.videoUrl.contains("archive.org")) {
+            try {
+                val classicMatch = fetchArchivePramleeVideos().find {
+                    normalizeForDedup(it.title) == targetNorm
+                }
+                if (classicMatch != null && video.servers.none { it.url.contains("archive.org") }) {
+                    Log.i(TAG, "Discovered Archive.org classic mirror for '${video.title}'")
+                    if (classicMatch.servers.isNotEmpty()) {
+                        altServers.addAll(classicMatch.servers)
+                    } else {
+                        altServers.add(VideoServer(name = "Archive.org HD (Fast Direct)", url = classicMatch.videoUrl))
                     }
-                    if (classicMatch != null && video.servers.none { it.url.contains("archive.org") }) {
-                        Log.i(TAG, "Discovered Archive.org classic mirror for '${video.title}'")
-                        if (classicMatch.servers.isNotEmpty()) {
-                            altServers.addAll(classicMatch.servers)
-                        } else {
-                            altServers.add(VideoServer(name = "Archive.org HD (Fast Direct)", url = classicMatch.videoUrl))
-                        }
-                    }
-                } catch (_: Exception) {}
-            }
+                }
+            } catch (_: Exception) {}
+        }
 
+        // Full movie & universal stream fallbacks (YouTube, Bilibili, Dailymotion):
+        // Only engage if no mirrors found yet, and video is not an unreleased or future movie
+        val isExplicitSeries = video.videoUrl.contains("/series/") || video.videoUrl.contains("/tv/") || video.videoUrl.contains("/serial-tv/")
+        if (altServers.isEmpty() && (!isExplicitSeries || video.isSeries != true || video.episodes.isEmpty())) {
             // Extract effective target release year from title, date, or URL slug
             val targetYear = parseMovieTitleMeta(video.title, video.date).year
                 ?: Regex("""\b(19\d{2}|20\d{2})\b""").find(video.videoUrl)?.groupValues?.get(1)?.toIntOrNull()
             val effectiveDate = targetYear?.toString() ?: video.date
 
-            // Search YouTube Full Movie for modern Malaysian movies and titles whose filehosts are dead
-            try {
-                val ytServers = searchYouTubeFullMovie(video.title, effectiveDate)
-                if (ytServers.isNotEmpty()) {
-                    Log.i(TAG, "Discovered ${ytServers.size} YouTube Full Movie mirrors for '${video.title}'")
-                    altServers.addAll(ytServers)
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "YouTube full movie search error: ${e.message}")
-            }
+            val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+            val isUnreleased = targetYear != null && (targetYear > currentYear || (targetYear >= currentYear && (video.quality.contains("tba", ignoreCase = true) || video.quality.contains("coming", ignoreCase = true) || video.quality.contains("cam", ignoreCase = true))))
 
-            // Search Bilibili Full Movie for anime, asian films, and full movies (ad-free & globally accessible)
-            try {
-                val biliServers = searchBilibiliFullMovie(video.title, effectiveDate)
-                if (biliServers.isNotEmpty()) {
-                    Log.i(TAG, "Discovered ${biliServers.size} Bilibili Full Movie mirrors for '${video.title}'")
-                    altServers.addAll(biliServers)
+            // Only query YouTube, Bilibili, and Dailymotion if movie is released and not already found
+            if (!isUnreleased && altServers.isEmpty()) {
+                // Search YouTube Full Movie for modern Malaysian movies and titles whose filehosts are dead
+                try {
+                    val ytServers = searchYouTubeFullMovie(video.title, effectiveDate)
+                    if (ytServers.isNotEmpty()) {
+                        Log.i(TAG, "Discovered ${ytServers.size} YouTube Full Movie mirrors for '${video.title}'")
+                        altServers.addAll(ytServers)
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "YouTube full movie search error: ${e.message}")
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Bilibili full movie search error: ${e.message}")
-            }
 
-            // Search Dailymotion Full Movie for user uploads, malay/indo films, and full movies
-            try {
-                val dmServers = searchDailymotionFullMovie(video.title, effectiveDate)
-                if (dmServers.isNotEmpty()) {
-                    Log.i(TAG, "Discovered ${dmServers.size} Dailymotion Full Movie mirrors for '${video.title}'")
-                    altServers.addAll(dmServers)
+                // Search Bilibili Full Movie for anime, asian films, and full movies (ad-free & globally accessible)
+                if (altServers.isEmpty()) {
+                    try {
+                        val biliServers = searchBilibiliFullMovie(video.title, effectiveDate)
+                        if (biliServers.isNotEmpty()) {
+                            Log.i(TAG, "Discovered ${biliServers.size} Bilibili Full Movie mirrors for '${video.title}'")
+                            altServers.addAll(biliServers)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Bilibili full movie search error: ${e.message}")
+                    }
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Dailymotion full movie search error: ${e.message}")
+
+                // Search Dailymotion Full Movie for user uploads, malay/indo films, and full movies
+                if (altServers.isEmpty()) {
+                    try {
+                        val dmServers = searchDailymotionFullMovie(video.title, effectiveDate)
+                        if (dmServers.isNotEmpty()) {
+                            Log.i(TAG, "Discovered ${dmServers.size} Dailymotion Full Movie mirrors for '${video.title}'")
+                            altServers.addAll(dmServers)
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Dailymotion full movie search error: ${e.message}")
+                    }
+                }
             }
         }
 
-        altServers.distinctBy { it.url }
+        altServers.filter { isServerMatchingMovie(video.title, it) }.distinctBy { it.url }
     }
 
     suspend fun healVideoFromAlternativeSources(video: Video): Video? = withContext(Dispatchers.IO) {
@@ -2706,12 +2716,16 @@ object VideoExtractor {
             }
         }
 
-        // Key shared root word with identical release year (e.g. "Tarung: Unforgiven (2026)" vs "Tarung (2026)")
-        if (targetTokens.isNotEmpty() && candTokens.isNotEmpty() &&
-            targetTokens.first() == candTokens.first() &&
-            targetTokens.first().length >= 4 &&
-            targetYear != null && candYear != null && targetYear == candYear) {
-            return true
+        // Subtitle match with colon separator: e.g. "Tarung: Unforgiven (2026)" vs "Tarung (2026)"
+        if ((target.title.contains(":") || candidate.title.contains(":")) && targetYear != null && candYear != null && targetYear == candYear) {
+            val targetMainTokens = parseMovieTitleMeta(target.title.substringBefore(":")).baseTokens
+            val candMainTokens = parseMovieTitleMeta(candidate.title.substringBefore(":")).baseTokens
+            if (targetMainTokens.isNotEmpty() && candMainTokens.isNotEmpty()) {
+                if (targetMainTokens == candMainTokens) return true
+                if (targetMainTokens.first() == candMainTokens.first() && targetMainTokens.first().length >= 4 && (targetMainTokens.size == 1 || candMainTokens.size == 1)) {
+                    return true
+                }
+            }
         }
 
         // Token overlap check for multi-token titles
@@ -2852,11 +2866,115 @@ object VideoExtractor {
         return false
     }
 
+    /**
+     * Validates whether a server genuinely matches the movie title being displayed,
+     * rejecting ad/spam servers, mismatched YouTube/Dailymotion titles, unreleased future titles,
+     * and mismatched partner slugs.
+     */
+    fun isServerMatchingMovie(videoTitle: String, server: VideoServer): Boolean {
+        val isAlt = isAlternativePartnerHost(server.url) || isAlternativePartnerServer(server.name, server.url) || server.url.contains("archive.org")
+        if (!isAlt && !isGenuineMirror(server.name, server.url)) return false
+
+        val targetMeta = parseMovieTitleMeta(videoTitle)
+        if (targetMeta.baseTokens.isEmpty()) return true
+
+        // Reject YouTube / Bilibili / Dailymotion alternative hosts for future unreleased movies
+        val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+        if (isAlternativePartnerHost(server.url) || isAlternativePartnerServer(server.name, server.url)) {
+            if (targetMeta.year != null && targetMeta.year > currentYear) {
+                return false
+            }
+        }
+
+        // Name title check: If server.name embeds an explicit movie title
+        // e.g. "YouTube HD: Inception", "Dailymotion: Adnan Sempit", "Bilibili HD: Naruto"
+        if (server.name.contains(":") || server.name.contains(" - ")) {
+            val candidateTitlePart = when {
+                server.name.contains(":") -> server.name.substringAfter(":").trim()
+                else -> server.name.substringAfter(" - ").trim()
+            }
+            val ignoredSuffixes = setOf(
+                "full movie", "fast direct", "vip", "backup", "mirror", "hd", "720p", "1080p", "4k",
+                "hls", "direct", "embed", "server 1", "server 2", "server 3", "server 4", "server 5",
+                "versi klasik", "versi warna", "pencuri", "dutafilm", "dutafilmweb", "lk21"
+            )
+            if (candidateTitlePart.isNotEmpty() && !ignoredSuffixes.contains(candidateTitlePart.lowercase())) {
+                val candMeta = parseMovieTitleMeta(candidateTitlePart)
+                if (candMeta.baseTokens.isNotEmpty()) {
+                    // Check sequel
+                    if (targetMeta.sequel != candMeta.sequel) return false
+
+                    // Check year if both present
+                    if (targetMeta.year != null && candMeta.year != null) {
+                        if (Math.abs(targetMeta.year - candMeta.year) > 1) return false
+                    }
+
+                    // Check token overlap
+                    val candTokenSet = candMeta.baseTokens.toSet()
+                    val targetTokens = targetMeta.baseTokens
+                    if (targetTokens.size == 1) {
+                        val t0 = targetTokens[0]
+                        val match = candTokenSet.any { 
+                            it == t0 || (it.length >= 4 && t0.length >= 4 && it.removeSuffix("s") == t0.removeSuffix("s"))
+                        }
+                        if (!match) return false
+                    } else {
+                        val matchedCount = targetTokens.count { candTokenSet.contains(it) }
+                        val required = if (targetTokens.size <= 2) targetTokens.size else targetTokens.size - 1
+                        if (matchedCount < required) return false
+                    }
+                }
+            }
+        }
+
+        // Partner URL slug check: If server.url points to a partner page with a movie slug
+        // e.g. https://pencurimovie.skin/movie/adnan-sempit/ or https://bullerswood.com/inception-2010/
+        val serverUrl = server.url.trimEnd('/')
+        val isPartnerPage = isPencuriMovie(videoUrl = serverUrl) || 
+                            isBullerswood(videoUrl = serverUrl) || 
+                            isDutaFilm(videoUrl = serverUrl) || 
+                            isDutaFilmWeb(videoUrl = serverUrl)
+        if (isPartnerPage) {
+            val slug = serverUrl.substringAfterLast('/').substringBefore('?').substringBefore('#')
+            if (slug.isNotEmpty() && slug.contains('-')) {
+                val slugTitle = slug.replace('-', ' ')
+                val slugMeta = parseMovieTitleMeta(slugTitle)
+                if (slugMeta.baseTokens.isNotEmpty()) {
+                    if (targetMeta.sequel != slugMeta.sequel) return false
+                    if (targetMeta.year != null && slugMeta.year != null) {
+                        if (Math.abs(targetMeta.year - slugMeta.year) > 1) return false
+                    }
+                    val slugTokens = slugMeta.baseTokens.toSet()
+                    val targetTokens = targetMeta.baseTokens
+                    if (targetTokens.size == 1) {
+                        val t0 = targetTokens[0]
+                        val match = slugTokens.any { 
+                            it == t0 || (it.length >= 4 && t0.length >= 4 && it.removeSuffix("s") == t0.removeSuffix("s"))
+                        }
+                        if (!match) return false
+                    } else {
+                        val matchedCount = targetTokens.count { slugTokens.contains(it) }
+                        val required = if (targetTokens.size <= 2) targetTokens.size else targetTokens.size - 1
+                        if (matchedCount < required) return false
+                    }
+                }
+            }
+        }
+
+        return true
+    }
+
     fun isYouTubeMovieMatch(targetMeta: MovieTitleMeta, candidateTitle: String): Boolean {
-        // 0. Strict reject for promotional, preview, trailer, or review clips (unless target title itself has it)
-        if (!targetMeta.baseTokens.contains("trailer") &&
-            candidateTitle.contains(Regex("""\b(?:trailer|teaser|review|reaction|behind\s*the\s*scenes)\b""", RegexOption.IGNORE_CASE))) {
-            return false
+        // 0. Strict reject for promotional, preview, trailer, review, or explainer clips (unless target title itself has it)
+        val blockedPattern = Regex(
+            """\b(?:trailer|teaser|review|reaction|behind\s*the\s*scenes|explain|explanation|facts?|recap|breakdown|analysis|ending\s*explained|soundtrack|ost|audio|songs?|theme|compilation|podcast|interview|full\s*ep(?:isode)?|ep(?:isode)?\s*\d+|s\d+e\d+|fan\s*made|concept|parody|spoiler|leak|cast|news|all\s*cutscenes|gameplay|walkthrough)\b""",
+            RegexOption.IGNORE_CASE
+        )
+        if (candidateTitle.contains(blockedPattern)) {
+            val matchedWords = blockedPattern.findAll(candidateTitle).map { it.value.lowercase() }.toSet()
+            if (matchedWords.any { !targetMeta.baseTokens.contains(it) }) {
+                return false
+            }
         }
 
         val candMeta = parseMovieTitleMeta(candidateTitle, null)
@@ -2875,29 +2993,23 @@ object VideoExtractor {
 
         if (cleanTargetTokens.isEmpty() || cleanCandTokens.isEmpty()) return false
 
-        // 2. Primary Title Alignment (Subject check):
-        // Candidate must start with the target movie title tokens
+        // 2. Candidate must start with target movie title tokens
         val startsWithTarget = cleanCandTokens.take(cleanTargetTokens.size).let { prefix ->
-            prefix.size == cleanTargetTokens.size &&
+            (prefix.size == cleanTargetTokens.size || (cleanTargetTokens.size > 2 && prefix.size >= cleanTargetTokens.size - 1)) &&
             prefix.indices.all { idx ->
                 val ct = prefix[idx]
-                val tt = cleanTargetTokens[idx]
-                ct == tt || (ct.length >= 4 && tt.length >= 4 && ct.removeSuffix("s") == tt.removeSuffix("s"))
+                val tt = cleanTargetTokens.getOrNull(idx) ?: return@all false
+                ct == tt || (ct.length >= 4 && tt.length >= 4 && (ct.removeSuffix("s") == tt.removeSuffix("s") || (idx == prefix.lastIndex && (tt.startsWith(ct) || ct.startsWith(tt)))))
             }
         }
-
-        // For titles with <= 2 tokens (e.g. "Moana", "Inception", "KL Gangster"), candidate MUST start with target title!
-        // This instantly rejects clickbait like "Adnan Sempit Full Movie ... Moana" or "Cassandra 2024 ... Moana"
-        if (cleanTargetTokens.size <= 2 && !startsWithTarget) {
-            return false
-        }
+        if (!startsWithTarget) return false
 
         val extraTokens = cleanCandTokens.size - cleanTargetTokens.size
+        // Allow up to 4 extra tokens (e.g. director/actors/subtitles like Sutradara Syamsul Yusof)
+        if (extraTokens > 4) return false
 
         // 3. Single-token title strictness (e.g. "Moana", "Inception", "Avatar", "Titanic")
         if (cleanTargetTokens.size == 1) {
-            if (!startsWithTarget) return false
-            if (extraTokens > 4) return false
             val candTokenSet = cleanCandTokens.toSet()
             val matched = cleanTargetTokens.count { tt ->
                 candTokenSet.any { it == tt || (it.length >= 4 && tt.length >= 4 && it.removeSuffix("s") == tt.removeSuffix("s")) }
@@ -2930,14 +3042,11 @@ object VideoExtractor {
         // 5. Base tokens matching: Target base tokens must be present in candidate clean title
         val candCleanLower = cleanCandTokens.toSet()
         val matchedCount = cleanTargetTokens.count { bt ->
-            candCleanLower.any { it == bt || (it.length >= 4 && bt.length >= 4 && (it.removeSuffix("s") == bt.removeSuffix("s"))) }
+            candCleanLower.any { it == bt || (it.length >= 4 && bt.length >= 4 && (it.removeSuffix("s") == bt.removeSuffix("s") || bt.startsWith(it) || it.startsWith(bt))) }
         }
         val requiredMatches = if (cleanTargetTokens.size <= 2) cleanTargetTokens.size else cleanTargetTokens.size - 1
         if (matchedCount < requiredMatches) return false
 
-        // 6. Excess tokens check: Prevent matching clickbait titles, compilations, or unrelated movies
-        // e.g. "Trilogy of Terror ... VOODOO DOLL COMES ALIVE ... STUDENT VIDEOS PROFESSOR AND PAYS"
-        if (extraTokens > 4) return false
         if (cleanCandTokens.isNotEmpty()) {
             val precision = matchedCount.toDouble() / cleanCandTokens.size.toDouble()
             if (precision < 0.25) return false
