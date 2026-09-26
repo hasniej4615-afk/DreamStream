@@ -1038,6 +1038,35 @@ object VideoExtractor {
             return@withContext ExtractionResult(pageUrl)
         }
 
+        val isDfwPage = pageUrl.contains("mantab.men") || pageUrl.contains("df31") || isDutaFilmWeb(pageUrl)
+        if (isDfwPage && pageUrl.contains("epid=")) {
+            val uri = try { android.net.Uri.parse(pageUrl) } catch (_: Exception) { null }
+            val epId = uri?.getQueryParameter("epid") ?: ""
+            if (epId.isNotEmpty()) {
+                val catVal = uri?.getQueryParameter("cat") ?: "hs"
+                val tagVal = uri?.getQueryParameter("tag") ?: "ind"
+                val xidVal = uri?.getQueryParameter("xid") ?: "f1"
+                var cVal = uri?.getQueryParameter("c") ?: ""
+                var tVal = uri?.getQueryParameter("t") ?: ""
+                var cApiHost = "https://api.drakor.bid/c_api"
+                val baseHtml = fetchHtml(pageUrl, actualReferer)
+                if (baseHtml != null) {
+                    val (c, t, host) = extractDutaFilmWebParams(baseHtml)
+                    if (c.isNotEmpty()) cVal = c
+                    if (t.isNotEmpty()) tVal = t
+                    if (host.isNotEmpty()) cApiHost = host
+                }
+                val epServers = resolveDutaFilmWebEpisodeServers(pageUrl, actualReferer, cApiHost, epId, catVal, tagVal, xidVal, cVal, tVal)
+                for (s in epServers) {
+                    val sub = extractVideoUrl(s.url, depth + 1, actualReferer, visited)
+                    if (sub != null) return@withContext sub
+                }
+                if (epServers.isNotEmpty()) {
+                    return@withContext ExtractionResult(epServers.first().url)
+                }
+            }
+        }
+
         // OWL'S EYE: Dedicated Direct Extractor for Streamtape
         if (pageUrl.contains("streamtape.com") || pageUrl.contains("streamtape.to") || pageUrl.contains("streamtape.net")) {
             val direct = extractStreamtape(pageUrl, actualReferer)
@@ -5050,7 +5079,11 @@ object VideoExtractor {
         val parts = obfStr.split('.')
         for (part in parts) {
             try {
-                val decodedBytes = android.util.Base64.decode(part, android.util.Base64.DEFAULT)
+                val decodedBytes = try {
+                    android.util.Base64.decode(part, android.util.Base64.DEFAULT)
+                } catch (_: Throwable) {
+                    java.util.Base64.getDecoder().decode(part)
+                }
                 val decodedStr = String(decodedBytes, Charsets.ISO_8859_1)
                 val digits = decodedStr.filter { it.isDigit() }
                 if (digits.isNotEmpty()) {
@@ -5077,11 +5110,11 @@ object VideoExtractor {
             return Triple(c, t, cApiHost)
         }
 
-        val obfRegex = Regex("""(?:var\s+)?([a-zA-Z0-9_$]+)\s*=\s*['"]([A-Za-z0-9+/=.]{500,30000})['"]""")
+        val obfRegex = Regex("""(?:var\s+)?([a-zA-Z0-9_$]+)\s*=\s*['"]([A-Za-z0-9+/=.]{500,})['"]""")
         val matches = obfRegex.findAll(html)
         for (match in matches) {
             val candidate = match.groupValues[2]
-            if (candidate.contains(".") && candidate.length in 500..30000) {
+            if (candidate.contains(".") && candidate.length >= 500) {
                 val decoded = decodeDutaFilmWebObfScript(candidate)
                 if (decoded.contains("c_api_host") || decoded.contains("loadEpisode") || (decoded.contains("var c =") && decoded.contains("var t ="))) {
                     val cM = Regex("""var\s+c\s*=\s*['"]([^'"]+)['"]""").find(decoded)
@@ -5491,11 +5524,22 @@ object VideoExtractor {
                     }
 
                     if (postId.isNotEmpty() && n.isNotEmpty()) {
-                        val resolved = resolveAjaxServer(videoUrl, postId, n, type, videoUrl)
-                        if (resolved != null) {
-                            link = resolved
-                            Log.d(TAG, "Resolved AJAX server: $rawName -> $link")
+                        val uri = try { android.net.Uri.parse(videoUrl) } catch (_: Exception) { null }
+                        val primaryHost = uri?.host?.lowercase() ?: ""
+                        val cachedEndpoint = if (primaryHost.isNotEmpty()) workingAjaxCache[primaryHost] else null
+                        if (cachedEndpoint != null) {
+                            val resolved = tryAjaxEndpoint(
+                                cachedEndpoint.host, cachedEndpoint.action, cachedEndpoint.paramKey,
+                                postId, n, cachedEndpoint.type, videoUrl
+                            )
+                            if (resolved != null) {
+                                link = resolved
+                                Log.d(TAG, "Resolved AJAX server: $rawName -> $link")
+                            } else if (link.isEmpty() || link.startsWith("#") || link.startsWith("javascript")) {
+                                link = "ajax:$postId:$n:$type"
+                            }
                         } else if (link.isEmpty() || link.startsWith("#") || link.startsWith("javascript")) {
+                            // FAST-PATH: Do not block detail view with 24 endpoint trials. Assign ajax: and resolve on demand during playback!
                             link = "ajax:$postId:$n:$type"
                         }
                     }
@@ -5609,34 +5653,6 @@ object VideoExtractor {
             }
         }
 
-        val isPmSource = isPencuriMovie(videoUrl = videoUrl)
-        val sortedRawServers = if (isPmSource) {
-            rawServers.distinctBy { it.url }.sortedWith(Comparator { a, b ->
-                fun serverPriority(url: String): Int {
-                    val low = url.lowercase()
-                    return when {
-                        low.contains("voe") || low.contains("johnfullwonder") -> 0
-                        low.contains("listeamed") || low.contains("indostream") || low.contains("audinifer") -> 1
-                        low.contains("hglink") || low.contains("hgcloud") -> 2
-                        else -> 3
-                    }
-                }
-                serverPriority(a.url).compareTo(serverPriority(b.url))
-            })
-        } else {
-            rawServers.distinctBy { it.url }
-        }
-
-        val finalServers = mutableListOf<VideoServer>()
-        val nameCounts = mutableMapOf<String, Int>()
-        sortedRawServers.forEach { s ->
-            val name = s.name
-            val count = nameCounts.getOrDefault(name, 0) + 1
-            nameCounts[name] = count
-            val finalName = if (count > 1) "$name $count" else name
-            finalServers.add(s.copy(name = finalName))
-        }
-
         val isExplicitSeries = videoUrl.contains("/series/") || videoUrl.contains("/tv/") || videoUrl.contains("/serial-tv/")
         val hasEpisodeContainer = doc.select(".gmr-listseries, .muvipro-listepisode, .list-episode, .episodios, .eps-item, .list-eps, .list-series, .seasons, .season, [class*='listseries'], .episode-list-container, .episodes-grid, #seasons, #season, .tvseason, [id*='season']").isNotEmpty()
         val isEpisodePage = videoUrl.contains("/eps/") || videoUrl.contains("/episode/") || videoUrl.contains("-episode-") ||
@@ -5665,10 +5681,34 @@ object VideoExtractor {
 
         if (rawEpisodes.isEmpty() && isDfw) {
             try {
-                val epBtn = doc.selectFirst("a[onclick*='loadEpisode']")
-                val onclick = epBtn?.attr("onclick") ?: ""
-                val epMatch = Regex("""loadEpisode\('([^']+)',\s*'([^']+)',\s*'([^']+)'\)""").find(onclick)
-                    ?: Regex("""loadEpisode\('([^']+)',\s*'([^']+)',\s*'([^']+)'\)""").find(html)
+                // INSTANT FAST PATH: If direct language/server buttons exist on the HTML page (e.g. HARDSUB INDO, SOFTSUB INDO for movies)
+                val directSvxButtons = doc.select("a.episode.btn-svx[onclick*='loadEpisode'], a.btn-svx[onclick*='loadEpisode'], a[id*='svx-'][onclick*='loadEpisode']")
+                if (directSvxButtons.isNotEmpty() && !isExplicitSeries && !hasEpisodeContainer && !title.contains("Season", ignoreCase = true)) {
+                    val cleanBase = effectiveUrl.substringBefore('?')
+                    directSvxButtons.forEach { a ->
+                        val onclick = a.attr("onclick")
+                        val match = Regex("""loadEpisode\('([^']+)',\s*'([^']+)',\s*'([^']+)'\)""").find(onclick)
+                        if (match != null) {
+                            val movieId = match.groupValues[1]
+                            val cat = match.groupValues[2]
+                            val tag = match.groupValues[3]
+                            val label = a.text().trim().ifEmpty { 
+                                if (cat == "ss") "Softsub Indo" else if (cat == "hs") "Hardsub Indo" else "Server ${cat.uppercase()}"
+                            }
+                            val sUrl = "$cleanBase?epid=$movieId&cat=$cat&tag=$tag"
+                            rawServers.add(VideoServer(label, sUrl))
+                        }
+                    }
+                    if (rawServers.isNotEmpty()) {
+                        Log.i(TAG, "Fast-path resolved ${rawServers.size} DFW servers directly from HTML buttons in 0ms")
+                    }
+                }
+
+                if (rawServers.isEmpty()) {
+                    val epBtn = doc.selectFirst("a[onclick*='loadEpisode']")
+                    val onclick = epBtn?.attr("onclick") ?: ""
+                    val epMatch = Regex("""loadEpisode\('([^']+)',\s*'([^']+)',\s*'([^']+)'\)""").find(onclick)
+                        ?: Regex("""loadEpisode\('([^']+)',\s*'([^']+)',\s*'([^']+)'\)""").find(html)
                 if (epMatch != null) {
                     val movieId = epMatch.groupValues[1]
                     val catVal = epMatch.groupValues[2]
@@ -5676,7 +5716,7 @@ object VideoExtractor {
                     val (cVal, tVal, cApiHost) = extractDutaFilmWebParams(html)
                     if (cVal.isNotEmpty() && tVal.isNotEmpty()) {
                         val epListUrl = "$cApiHost/episode_mob.php?is_mob=0&is_uc=0&movie_id=$movieId&cat=$catVal&tag=$tagVal&c=$cVal&t=${java.net.URLEncoder.encode(tVal, "UTF-8")}"
-                        val epListJsonStr = fetchHtml(epListUrl, effectiveUrl)
+                        val epListJsonStr = withTimeoutOrNull(2000) { fetchHtml(epListUrl, effectiveUrl) }
                         if (!epListJsonStr.isNullOrEmpty() && epListJsonStr.trim().startsWith("{")) {
                             val epJson = org.json.JSONObject(epListJsonStr)
                             val epHtml = epJson.optString("episode_lists", "")
@@ -5745,11 +5785,11 @@ object VideoExtractor {
                                 val movieUrl = "$cleanBase?epid=$movieEpid&cat=$movieCat&tag=$movieTag&xid=$movieXid&c=$cVal&t=${java.net.URLEncoder.encode(tVal, "UTF-8")}"
                                 val epServers = resolveDutaFilmWebEpisodeServers(movieUrl, effectiveUrl, cApiHost, movieEpid!!, movieCat, movieTag, movieXid, cVal, tVal)
                                 rawServers.addAll(epServers)
-                                Log.i(TAG, "Resolved ${epServers.size} movie servers from DutaFilm Web for $title")
                             }
                         }
                     }
                 }
+            }
             } catch (e: Exception) {
                 Log.w(TAG, "DutaFilm Web episode extraction failed: ${e.message}")
             }
@@ -5808,8 +5848,36 @@ object VideoExtractor {
         val finalIsSeries = (rawEpisodes.isNotEmpty() && hasRealEpisodes) || isExplicitSeries || isEpisodePage
         val episodes = if (finalIsSeries) rawEpisodes.filter { !it.name.contains("unnamed", ignoreCase = true) } else emptyList()
 
+        val isPmSource = isPencuriMovie(videoUrl = videoUrl)
+        val sortedRawServers = if (isPmSource) {
+            rawServers.distinctBy { it.url }.sortedWith(Comparator { a, b ->
+                fun serverPriority(url: String): Int {
+                    val low = url.lowercase()
+                    return when {
+                        low.contains("voe") || low.contains("johnfullwonder") -> 0
+                        low.contains("listeamed") || low.contains("indostream") || low.contains("audinifer") -> 1
+                        low.contains("hglink") || low.contains("hgcloud") -> 2
+                        else -> 3
+                    }
+                }
+                serverPriority(a.url).compareTo(serverPriority(b.url))
+            })
+        } else {
+            rawServers.distinctBy { it.url }
+        }
+
+        val finalServers = mutableListOf<VideoServer>()
+        val nameCounts = mutableMapOf<String, Int>()
+        sortedRawServers.forEach { s ->
+            val name = s.name
+            val count = nameCounts.getOrDefault(name, 0) + 1
+            nameCounts[name] = count
+            val finalName = if (count > 1) "$name $count" else name
+            finalServers.add(s.copy(name = finalName))
+        }
+
         // OWL'S EYE: Speculative Probing (v5.9)
-        var discoveredServers = finalServers
+        var discoveredServers = finalServers.toMutableList()
         if (finalIsSeries && discoveredServers.isEmpty() && episodes.isNotEmpty() && !isRecursive && !isEpisodePage) {
             val firstEp = episodes.first()
             val cleanSeriesSlug = seriesSlug.replace(Regex("""[-_]s(?:eason)?[-_]?\d+""", RegexOption.IGNORE_CASE), "")

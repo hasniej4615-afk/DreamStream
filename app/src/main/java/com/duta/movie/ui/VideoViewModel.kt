@@ -114,6 +114,7 @@ class VideoViewModel @Inject constructor(
                     viewModelScope.launch(Dispatchers.IO) {
                         videoRepository.insertOrUpdateVideos(newVideos)
                     }
+                    prewarmTopVideos(newVideos, limit = 5)
                 }.onFailure { e ->
                     Log.e("VideoViewModel", "Failed to fetch Pakcik Rekomen videos", e)
                 }
@@ -1302,13 +1303,13 @@ class VideoViewModel @Inject constructor(
     }
 
     fun loadFullDetails(videoId: String) { 
-        val immediateCached = metadataCache[videoId]
+        val immediateCached = metadataCache[videoId] ?: videoRepository.getCachedVideo(videoId)
         if (immediateCached != null && (immediateCached.servers.isNotEmpty() || immediateCached.episodes.isNotEmpty())) {
             _videoMetadata.value = applyMetadata(immediateCached)
             _isDetailLoading.value = false
             _isLoading.value = false
         } else if (_videoMetadata.value?.id != videoId) {
-            _videoMetadata.value = getVideo(videoId) 
+            _videoMetadata.value = immediateCached ?: getVideo(videoId) 
         }
 
         loadComments(videoId)
@@ -1336,7 +1337,7 @@ class VideoViewModel @Inject constructor(
                 }
 
                 // Instant cache/DB check: if memory or local DB already has servers/episodes, display them immediately
-                val cached = metadataCache[videoId]
+                val cached = metadataCache[videoId] ?: videoRepository.getCachedVideo(videoId)
                 val hasCachedContent = cached != null && (cached.servers.isNotEmpty() || cached.episodes.isNotEmpty())
                 if (hasCachedContent) {
                     _videoMetadata.value = applyMetadata(cached!!)
@@ -1361,6 +1362,8 @@ class VideoViewModel @Inject constructor(
                 if (detailed != null) { 
                     _videoMetadata.value = applyMetadata(detailed)
                     updateMetadataCache(listOf(detailed), triggerBackground = false) 
+                    _isDetailLoading.value = false
+                    _isLoading.value = false
                     
                     // Asynchronously discover alternative mirrors, missing series episode servers, and posters
                     viewModelScope.launch(Dispatchers.IO) {
@@ -1800,17 +1803,17 @@ class VideoViewModel @Inject constructor(
         }
     }
 
+    private var prewarmJob: Job? = null
+
     fun prefetchVideoDetails(video: Video) {
         if (_isPlayerActive.value) return
-        val cached = metadataCache[video.id]
+        val cached = metadataCache[video.id] ?: videoRepository.getCachedVideo(video.id)
         if (cached != null && (cached.servers.isNotEmpty() || cached.episodes.isNotEmpty())) {
             viewModelScope.launch(Dispatchers.Main) { _metadataTrigger.update { it + 1 } }
             return
         }
-        prefetchJob?.cancel()
-        prefetchJob = viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(Dispatchers.IO) {
             try {
-                delay(200) // Fast 200ms debounce for TV remote D-pad navigation
                 if (!isActive || _isPlayerActive.value) return@launch
                 val detailed = videoRepository.fetchVideoDetails(video.id)
                 if (detailed != null) {
@@ -1819,6 +1822,31 @@ class VideoViewModel @Inject constructor(
                 }
             } catch (e: Exception) {
                 if (e !is CancellationException) Log.e("VideoViewModel", "Prefetch failed for ${video.title}", e)
+            }
+        }
+    }
+
+    fun prewarmTopVideos(videos: List<Video>, limit: Int = 8) {
+        if (_isPlayerActive.value || videos.isEmpty()) return
+        val candidates = videos.take(limit).filter { v ->
+            val c = metadataCache[v.id] ?: videoRepository.getCachedVideo(v.id)
+            c == null || (c.servers.isEmpty() && c.episodes.isEmpty())
+        }
+        if (candidates.isEmpty()) return
+
+        prewarmJob?.cancel()
+        prewarmJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(800) // Allow initial screen transition & UI render to complete first
+            for (v in candidates) {
+                if (!isActive || _isPlayerActive.value) break
+                try {
+                    val detailed = videoRepository.fetchVideoDetails(v.id)
+                    if (detailed != null) {
+                        updateMetadataCache(listOf(detailed), triggerBackground = false)
+                        updateListsWithMetadata(listOf(detailed))
+                    }
+                } catch (_: Exception) {}
+                delay(150) // Gentle non-blocking pacing
             }
         }
     }
@@ -3231,6 +3259,7 @@ class VideoViewModel @Inject constructor(
                         if (category == moviePath) {
                             _latestMovies.value = sortedResults
                             _headlinerVideo.value = sortedResults.firstOrNull()
+                            prewarmTopVideos(sortedResults, limit = 5)
                         }
                         if (category == seriesPath) _latestTVSeries.value = sortedResults
                     }

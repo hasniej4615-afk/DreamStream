@@ -219,12 +219,6 @@ class VideoRepository @Inject constructor(
             val updated = if (targetUrl.isNotBlank()) VideoExtractor.fetchVideoDetails(targetUrl) else null
             if (updated != null) {
                 var merged = mergeVideos(updated, video)
-                if (merged.servers.isEmpty() && merged.isSeries != true) {
-                    val healed = VideoExtractor.healVideoFromAlternativeSources(merged)
-                    if (healed != null && healed.servers.isNotEmpty()) {
-                        merged = mergeVideos(healed, merged)
-                    }
-                }
                 if (merged.thumbnailUrl.isEmpty()) {
                     val fallbackPoster = VideoExtractor.findPosterForTitle(merged.title, merged.date)
                     if (fallbackPoster.isNotEmpty()) {

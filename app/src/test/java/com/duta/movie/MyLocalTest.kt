@@ -514,6 +514,27 @@ class MyLocalTest {
             assertEquals("Zero invalid posters across 5 pages of DutaFilm Web", 0, totalNoPoster)
         }
     }
+
+    @Test
+    fun testFetchVideoDetailsBenchmark() {
+        kotlinx.coroutines.runBlocking {
+            val dfwUrl = "https://df31.mantab.men/watch/obsession-2026-1t68.html"
+            val t0 = System.currentTimeMillis()
+            val dfwDetails = VideoExtractor.fetchVideoDetails(dfwUrl)
+            val t1 = System.currentTimeMillis()
+            println("DFW Detail fetch time: ${t1 - t0}ms, servers: ${dfwDetails?.servers?.size}")
+            dfwDetails?.servers?.forEach { println(" - DFW Server: ${it.name} -> ${it.url}") }
+            assertTrue("DFW should resolve servers now", (dfwDetails?.servers?.size ?: 0) > 0)
+
+            val pmUrl = "https://ww44.pencurimovie.baby/obsession-2026/"
+            val t2 = System.currentTimeMillis()
+            val pmDetails = VideoExtractor.fetchVideoDetails(pmUrl)
+            val t3 = System.currentTimeMillis()
+            println("PM Detail fetch time: ${t3 - t2}ms, servers: ${pmDetails?.servers?.size}")
+            pmDetails?.servers?.forEach { println(" - PM Server: ${it.name} -> ${it.url}") }
+            assertTrue("PM should resolve servers", (pmDetails?.servers?.size ?: 0) > 0)
+        }
+    }
 }
 
 
