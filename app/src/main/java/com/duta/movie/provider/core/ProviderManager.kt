@@ -150,7 +150,7 @@ class ProviderManager @Inject constructor(
                     mediaType = "MULTI",
                     engineType = "TEMPLATE",
                     templateType = "DUTAFILM",
-                    baseUrlsJson = "[\"http://159.89.249.45\", \"https://df31.mantab.men\", \"https://df32.mantab.men\"]",
+                    baseUrlsJson = "[\"https://df31.mantab.men\", \"https://df32.mantab.men\", \"https://df30.mantab.men\"]",
                     configJson = "{\"searchPath\": \"/search/\", \"isSeriesSupported\": true}",
                     isEnabled = true,
                     priorityOrder = 2
@@ -191,6 +191,13 @@ class ProviderManager @Inject constructor(
                 )
             )
             repoDao.insertOrUpdateProviders(defaultProviders)
+        } else {
+            // Self-heal: ensure DutaFilm provider does not have WordPress IP in baseUrlsJson
+            val dutafilm = existingProviders.find { it.id == "com.duta.provider.dutafilm" }
+            if (dutafilm != null && dutafilm.baseUrlsJson.contains("159.89.249.45")) {
+                val cleanedJson = "[\"https://df31.mantab.men\", \"https://df32.mantab.men\", \"https://df30.mantab.men\"]"
+                repoDao.insertOrUpdateProviders(listOf(dutafilm.copy(baseUrlsJson = cleanedJson)))
+            }
         }
     }
 

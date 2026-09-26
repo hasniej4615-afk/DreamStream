@@ -57,8 +57,9 @@ class TemplateProvider(
                 VideoExtractor.updatePencuriBaseUrl(primary)
             }
             "DUTAFILM" -> {
-                if (primary.startsWith("http")) {
-                    VideoExtractor.setDutaFilmWebBaseUrl(primary)
+                val webUrl = baseUrls.firstOrNull { it.startsWith("http") && !it.contains("159.89.249.45") } ?: primary
+                if (webUrl.startsWith("http") && !webUrl.contains("159.89.249.45")) {
+                    VideoExtractor.setDutaFilmWebBaseUrl(webUrl)
                 }
             }
             "WORDPRESS_MUVIPRO" -> {

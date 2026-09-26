@@ -96,20 +96,25 @@ object VideoExtractor {
 
     fun setDutaFilmWebBaseUrl(url: String) {
         val trimmed = url.trimEnd('/')
-        if (trimmed.isNotBlank()) activeDutaFilmWebBaseUrl = trimmed
+        if (trimmed.isNotBlank() && !trimmed.contains("159.89.249.45")) {
+            activeDutaFilmWebBaseUrl = trimmed
+        }
     }
 
     suspend fun probeDutaFilmWebDomain(): String? = withContext(Dispatchers.IO) {
-        val candidates = listOf(activeDutaFilmWebBaseUrl) + DUTAFILM_WEB_FALLBACKS
-        for (candidate in candidates.distinct()) {
+        val candidates = (listOf(activeDutaFilmWebBaseUrl) + DUTAFILM_WEB_FALLBACKS)
+            .filter { !it.contains("159.89.249.45") }
+            .distinct()
+        for (candidate in candidates) {
             try {
                 val testUrl = "$candidate/explore?media_type=movie"
                 val request = Request.Builder().url(testUrl).header("User-Agent", USER_AGENT).build()
                 NetworkConfig.htmlOkHttpClient.newCall(request).execute().use { response ->
                     if (response.isSuccessful) {
+                        val root = "${response.request.url.scheme}://${response.request.url.host}"
+                        if (root.contains("159.89.249.45")) return@use
                         val body = response.body?.string() ?: ""
-                        if (body.contains("explore") || body.contains("df-") || body.contains("watch") || body.contains("movie")) {
-                            val root = "${response.request.url.scheme}://${response.request.url.host}"
+                        if (body.contains("/watch/") || (body.contains("mv-content") && body.contains("explore"))) {
                             setDutaFilmWebBaseUrl(root)
                             Log.i(TAG, "SCOUTING: Live DutaFilm Web domain confirmed: $root")
                             return@withContext root
