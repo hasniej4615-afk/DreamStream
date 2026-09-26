@@ -120,7 +120,8 @@ fun VideoListScreen(
     viewModel: VideoViewModel = hiltViewModel(),
     windowSizeClass: WindowSizeClass,
     onVideoClick: (String) -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    onRepoManagerClick: () -> Unit = {}
 ) {
     val videos by viewModel.videos.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
@@ -825,7 +826,8 @@ fun VideoListScreen(
                             onSearchFilterChange = { viewModel.setSearchFilter(it) },
                             searchSort = searchSort,
                             onSearchSortChange = { viewModel.setSearchSort(it) },
-                            onSettingsClick = onSettingsClick
+                            onSettingsClick = onSettingsClick,
+                            onRepoManagerClick = onRepoManagerClick
                         )
                     }
                 }
@@ -1526,7 +1528,8 @@ fun NetflixTopBar(
     onSearchFilterChange: (SearchFilter) -> Unit,
     searchSort: SearchSort,
     onSearchSortChange: (SearchSort) -> Unit,
-    onSettingsClick: () -> Unit
+    onSettingsClick: () -> Unit,
+    onRepoManagerClick: () -> Unit = {}
 ) {
     Box(
         modifier = Modifier
@@ -1655,6 +1658,15 @@ fun NetflixTopBar(
                         .background(if (isSearchFocused) Color.White.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.1f), CircleShape)
                         .border(if (isSearchFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                 ) { Icon(Icons.Default.Search, null, tint = Color.White, modifier = Modifier.size(22.dp)) }
+                Spacer(Modifier.width(8.dp))
+                var isExtensionsFocused by remember { mutableStateOf(false) }
+                IconButton(
+                    onClick = onRepoManagerClick,
+                    modifier = Modifier
+                        .onFocusChanged { isExtensionsFocused = it.isFocused }
+                        .background(if (isExtensionsFocused) Color.White.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.1f), CircleShape)
+                        .border(if (isExtensionsFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                ) { Icon(Icons.Default.Extension, "Extensions", tint = Color.White, modifier = Modifier.size(22.dp)) }
                 Spacer(Modifier.width(8.dp))
                 var isSettingsFocused by remember { mutableStateOf(false) }
                 IconButton(
