@@ -79,6 +79,50 @@ class VideoViewModel @Inject constructor(
     val myRecommendedVideoIds: StateFlow<Set<String>> = preferenceManager.myRecommendedVideoIds
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
 
+    val installedProviders: StateFlow<List<com.duta.movie.data.local.InstalledProviderEntity>> = videoRepository.providerManager.installedProviders
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val installedRepos: StateFlow<List<com.duta.movie.data.local.InstalledRepoEntity>> = videoRepository.providerManager.installedRepos
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val availableOnlineProviders = videoRepository.providerManager.availableOnlineProviders
+
+    val isRepoSyncing = videoRepository.providerManager.isSyncing
+
+    fun toggleProvider(id: String, isEnabled: Boolean) {
+        viewModelScope.launch {
+            videoRepository.providerManager.toggleProvider(id, isEnabled)
+        }
+    }
+
+    fun installProvider(manifest: com.duta.movie.provider.model.RemoteProviderManifest) {
+        viewModelScope.launch {
+            videoRepository.providerManager.installProvider(manifest)
+        }
+    }
+
+    fun uninstallProvider(id: String) {
+        viewModelScope.launch {
+            videoRepository.providerManager.uninstallProvider(id)
+        }
+    }
+
+    fun syncRepositories() {
+        viewModelScope.launch {
+            videoRepository.providerManager.syncWithSupabaseSilent()
+        }
+    }
+
+    fun addCustomRepository(url: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            val res = videoRepository.providerManager.addCustomRepository(url)
+            res.fold(
+                onSuccess = { name -> onResult(true, name) },
+                onFailure = { e -> onResult(false, e.message ?: "Failed to add repo") }
+            )
+        }
+    }
+
     private val _recommendationCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
     val recommendationCounts: StateFlow<Map<String, Int>> = _recommendationCounts.asStateFlow()
 

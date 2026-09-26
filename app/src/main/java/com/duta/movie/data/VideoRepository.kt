@@ -23,6 +23,7 @@ import javax.inject.Singleton
 class VideoRepository @Inject constructor(
     private val videoDao: VideoDao,
     private val preferenceManager: PreferenceManager,
+    val providerManager: com.duta.movie.provider.core.ProviderManager,
     @param:ApplicationContext private val context: Context
 ) {
     private val videoCache = ConcurrentHashMap<String, Video>()
@@ -144,7 +145,12 @@ class VideoRepository @Inject constructor(
     }
 
     suspend fun searchVideos(query: String, page: Int, count: Int, categoryPath: String? = null): List<Video> = coroutineScope {
-        val results = VideoExtractor.searchVideos(query, page, count, categoryPath)
+        val providerResults = providerManager.searchAllEnabled(query, page)
+        val results = if (providerResults.isNotEmpty()) {
+            providerResults
+        } else {
+            VideoExtractor.searchVideos(query, page, count, categoryPath)
+        }
         val dbItems = videoDao.getVideosByIds(results.map { it.id }).associateBy { it.id }
         val videos = results.map { mergeVideos(it, dbItems[it.id]?.toDomain()).also { v -> videoCache[v.id] = v } }
         videoDao.insertOrUpdateVideos(videos.map { it.toEntity() })

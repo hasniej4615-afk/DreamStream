@@ -31,4 +31,9 @@ object DatabaseModule {
     fun provideVideoDao(database: MovieDatabase): VideoDao {
         return database.videoDao()
     }
+
+    @Provides
+    fun provideRepoDao(database: MovieDatabase): com.duta.movie.data.local.RepoDao {
+        return database.repoDao()
+    }
 }

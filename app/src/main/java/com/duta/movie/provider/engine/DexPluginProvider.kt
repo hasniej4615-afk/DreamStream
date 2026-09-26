@@ -1,0 +1,94 @@
+package com.duta.movie.provider.engine
+
+import android.content.Context
+import android.util.Log
+import com.duta.movie.data.local.InstalledProviderEntity
+import com.duta.movie.model.Video
+import com.duta.movie.model.VideoServer
+import com.duta.movie.provider.core.MediaProvider
+import com.duta.movie.provider.model.ProviderMediaType
+import dalvik.system.DexClassLoader
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.io.File
+
+/**
+ * CloudStream-compatible dynamic .dex plugin loader.
+ * Allows advanced community developers to compile and distribute Kotlin/Java
+ * providers packaged as .dex files hosted in Supabase Storage.
+ */
+class DexPluginProvider(
+    private val context: Context,
+    private val entity: InstalledProviderEntity
+) : MediaProvider {
+
+    companion object {
+        private const val TAG = "DexPluginProvider"
+    }
+
+    override val id: String = entity.id
+    override val name: String = entity.name
+    override val displayName: String = entity.displayName
+    override val version: Int = entity.version
+    override val versionName: String = entity.versionName
+    override val iconUrl: String = entity.iconUrl
+    override val mediaType: ProviderMediaType = try {
+        ProviderMediaType.valueOf(entity.mediaType)
+    } catch (_: Exception) {
+        ProviderMediaType.MULTI
+    }
+    override val isEnabled: Boolean = entity.isEnabled
+
+    private var dynamicInstance: MediaProvider? = null
+
+    init {
+        loadDexInstance()
+    }
+
+    private fun loadDexInstance() {
+        if (entity.pluginUrl.isBlank()) return
+        try {
+            val pluginFile = File(context.filesDir, "plugins/${entity.id}.dex")
+            if (!pluginFile.exists()) return
+
+            // Ensure read-only for Android 14+ W^X security compliance
+            pluginFile.setReadOnly()
+
+            val classLoader = DexClassLoader(
+                pluginFile.absolutePath,
+                context.codeCacheDir.absolutePath,
+                null,
+                context.classLoader
+            )
+
+            // Look for provider class matching id or standard name
+            val className = entity.name.replace(" ", "") + "Provider"
+            val loadedClass = classLoader.loadClass(className)
+            val instance = loadedClass.getDeclaredConstructor().newInstance()
+            if (instance is MediaProvider) {
+                dynamicInstance = instance
+                Log.i(TAG, "Successfully dynamically loaded .dex plugin: ${entity.name}")
+            }
+        } catch (e: Throwable) {
+            Log.w(TAG, "Could not initialize dynamic .dex plugin ${entity.name}: ${e.message}")
+        }
+    }
+
+    override suspend fun search(query: String, page: Int): List<Video> = withContext(Dispatchers.IO) {
+        if (!isEnabled) return@withContext emptyList()
+        dynamicInstance?.search(query, page) ?: emptyList()
+    }
+
+    override suspend fun fetchSection(path: String, page: Int, count: Int): List<Video> = withContext(Dispatchers.IO) {
+        if (!isEnabled) return@withContext emptyList()
+        dynamicInstance?.fetchSection(path, page, count) ?: emptyList()
+    }
+
+    override suspend fun fetchVideoDetail(video: Video): Video? = withContext(Dispatchers.IO) {
+        dynamicInstance?.fetchVideoDetail(video)
+    }
+
+    override suspend fun fetchServers(video: Video): List<VideoServer> = withContext(Dispatchers.IO) {
+        dynamicInstance?.fetchServers(video) ?: emptyList()
+    }
+}

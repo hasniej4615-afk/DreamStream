@@ -52,6 +52,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.duta.movie.util.CacheManager
 
 enum class SettingsSection(val label: String, val icon: ImageVector) {
+    EXTENSIONS("EXTENSIONS & REPOS", Icons.Default.Extension),
     LANGUAGE("LANGUAGE / BAHASA", Icons.Default.Translate),
     DISPLAY("DISPLAY ADJUSTMENT (TV)", Icons.Default.Tv),
     SUBTITLES("SUBTITLES", Icons.Default.ClosedCaption),
@@ -72,7 +73,8 @@ enum class CategorySortMode {
 @Composable
 fun SettingsScreen(
     onBackClick: () -> Unit,
-    viewModel: VideoViewModel
+    viewModel: VideoViewModel,
+    onNavigateToRepoManager: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val isTV = remember { com.duta.movie.util.DeviceUtils.isTvDevice(context) }
@@ -87,6 +89,7 @@ fun SettingsScreen(
     
     val isDebugModeEnabled by viewModel.isDebugModeEnabled.collectAsStateWithLifecycle()
     val defaultSubtitleLanguage by viewModel.defaultSubtitleLanguage.collectAsStateWithLifecycle()
+    val installedProviders by viewModel.installedProviders.collectAsStateWithLifecycle()
     val languages = listOf("English", "Indonesian", "Malay", "Japanese", "Chinese", "Thai", "Arabic")
 
     var showChangelogDialog by remember { mutableStateOf(false) }
@@ -358,6 +361,69 @@ fun SettingsScreen(
                         contentPadding = PaddingValues(bottom = 96.dp)
                     ) {
                         when (selectedSection) {
+
+                            SettingsSection.EXTENSIONS -> {
+                                item {
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                                    ) {
+                                        Column(modifier = Modifier.padding(16.dp)) {
+                                            Text(
+                                                text = "CloudStream Provider Hub",
+                                                style = MaterialTheme.typography.titleMedium,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                            Spacer(modifier = Modifier.height(4.dp))
+                                            Text(
+                                                text = "Manage remote streaming extensions, custom repositories, and zero-APK-update sources powered by Supabase.",
+                                                style = MaterialTheme.typography.bodySmall,
+                                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                                            )
+                                            Spacer(modifier = Modifier.height(12.dp))
+                                            Button(
+                                                onClick = onNavigateToRepoManager,
+                                                modifier = Modifier.fillMaxWidth()
+                                            ) {
+                                                Icon(Icons.Default.Extension, contentDescription = null)
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text("Open Extension & Repo Manager (${installedProviders.size} Installed)")
+                                            }
+                                        }
+                                    }
+                                }
+                                item {
+                                    Text(
+                                        text = "Active Sources (Combined Parallel Search):",
+                                        style = MaterialTheme.typography.labelLarge,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier.padding(top = 8.dp)
+                                    )
+                                }
+                                items(installedProviders, key = { it.id }) { provider ->
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(8.dp)
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(12.dp),
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(modifier = Modifier.weight(1f)) {
+                                                Text(provider.displayName, fontWeight = FontWeight.SemiBold)
+                                                Text("v${provider.versionName} • ${provider.mediaType}", fontSize = 12.sp, color = Color.Gray)
+                                            }
+                                            Switch(
+                                                checked = provider.isEnabled,
+                                                onCheckedChange = { viewModel.toggleProvider(provider.id, it) }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
 
                             SettingsSection.LANGUAGE -> {
                                 item {

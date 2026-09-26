@@ -522,7 +522,17 @@ class MainActivity : AppCompatActivity() {
                                     )
                                 }
                                 composable<Destination.Settings> {
-                                    SettingsScreen(viewModel = videoViewModel, onBackClick = { navController.popBackStack() })
+                                    SettingsScreen(
+                                        viewModel = videoViewModel,
+                                        onBackClick = { navController.popBackStack() },
+                                        onNavigateToRepoManager = { navController.navigate(Destination.RepoManager) }
+                                    )
+                                }
+                                composable<Destination.RepoManager> {
+                                    com.duta.movie.ui.repo.RepoManagerScreen(
+                                        viewModel = videoViewModel,
+                                        onBackClick = { navController.popBackStack() }
+                                    )
                                 }
                             }
                         }
