@@ -5151,10 +5151,15 @@ object VideoExtractor {
         val adDomains = listOf(
             "zeus", "klik", "vingaming", "pingaming", "chiptaylor", "ketik.live",
             "poker", "slot", "bet", "jud", "bola", "win", "88", "138", "jackpot",
-            "qpon", "butynejutes", "parklogic"
+            "qpon", "butynejutes", "parklogic", "lucky", "linkfast", "shope.ee", "tokopedia",
+            "lazada", "t.me", "bit.ly", "tinyurl", "cutt.ly"
         )
         val host = try { android.net.Uri.parse(url).host?.lowercase() ?: "" } catch(_: Exception) { "" }
         if (adDomains.any { host.contains(it) || lowName.contains(it) }) return false
+
+        if (lowUrl.contains("utm_medium=ads") || lowUrl.contains("utm_source=") || 
+            lowUrl.contains("utm_medium=") || lowUrl.contains("lucky77") || lowUrl.contains("linkfast") ||
+            lowUrl.contains("/ads") || lowUrl.contains("banner") || lowUrl.contains("aff_")) return false
         
         if (lowUrl.contains("youtube") || lowUrl.contains("trailer") || lowUrl.contains("preview") || 
             lowUrl.contains("google.com") || lowUrl.contains("googleapis.com") || lowUrl.contains("imasdk")) return false
@@ -5173,12 +5178,19 @@ object VideoExtractor {
              }
         }
         
+        val hasPlayerIndicator = isProbablyVideoHost(url) || isJsOnlyHost(url) ||
+            lowUrl.contains("player=") || lowUrl.contains("mirror=") || lowUrl.contains("server=") ||
+            lowUrl.contains("source=") || lowUrl.contains("srv=") || lowUrl.contains("opt=") ||
+            lowUrl.contains("stream=") || lowUrl.contains("embed=") || lowUrl.contains("action=") ||
+            lowUrl.startsWith("ajax:") || lowUrl.contains(".m3u8") || lowUrl.contains(".mp4") ||
+            lowUrl.contains("/e/") || lowUrl.contains("/v/") || lowUrl.contains("/embed/")
+
         if (lowName.contains("server") || lowName.contains("mirror") || lowName.contains("vip") || 
             lowName.contains("player") || lowName.contains("stream") || lowName.contains("hd") ||
             lowName.contains("1080") || lowName.contains("720") || lowName.contains("p2p") ||
             lowName.contains("s1") || lowName.contains("s2") || lowName.contains("s3") || lowName.contains("s4")) {
             if (host.contains("parklogic") || host.contains("ketik.live")) return false
-            return true
+            return hasPlayerIndicator
         }
 
         return lowName.contains("hgcloud") || 
@@ -5343,6 +5355,487 @@ object VideoExtractor {
         servers.distinctBy { it.url }
     }
 
+    private fun extractTrailer(doc: Document, videoUrl: String, elements: List<Element>): String {
+        var previewUrl = ""
+        
+        // 1. Explicit Content Area Strategy (Old Build Logic)
+        val contentArea = doc.select("article, #primary, .main-content, #content, .post-entry, .video-info")
+            .firstOrNull { it.select(".related-movies, .recommendations, #sidebar, .sidebar").isEmpty() }
+            ?: doc.select("article, #primary, .main-content, #content").firstOrNull()
+            ?: doc
+
+        val explicitTrailer = contentArea.select("a.gmr-trailer-popup, a.gmr-trailer, a.trailer, .trailer-link, .trailer, [class*=\"trailer\"], .do-player-option[data-type=\"trailer\"], [id*=\"trailer\"]")
+            .firstOrNull { el ->
+                val parent = el.parents()
+                if (parent.`is`(".related-movies, .recommendations, .widget_related_posts, #sidebar, .sidebar, .related-posts, .related-items")) return@firstOrNull false
+                
+                val link = if (el.tagName() == "iframe") el.attr("abs:src") 
+                           else if (el.tagName() == "a") el.attr("abs:href").ifEmpty { el.attr("data-url") }.ifEmpty { el.attr("data-link") }
+                           else el.attr("data-url").ifEmpty { el.attr("data-link") }.ifEmpty { el.attr("data-src") }
+                
+                link.contains("youtube.com") || link.contains("youtu.be") || link.contains("vimeo.com") || link.contains(".mp4") || link.contains(".m3u8")
+            }?.let {
+            if (it.tagName() == "iframe") it.attr("abs:src")
+            else if (it.tagName() == "a") it.attr("abs:href").ifEmpty { it.attr("data-url") }.ifEmpty { it.attr("data-link") }
+            else {
+                it.select("a[href*=\"youtube\"], a[href*=\"youtu.be\"]").firstOrNull()?.attr("abs:href") ?:
+                it.select("iframe[src*=\"youtube\"], iframe[src*=\"youtu.be\"]").firstOrNull()?.attr("abs:src") ?:
+                it.attr("data-url").ifEmpty { it.attr("data-link") }.ifEmpty { it.attr("data-src") }
+            }
+        }
+        
+        if (!explicitTrailer.isNullOrEmpty()) {
+            previewUrl = sanitizeUrl(explicitTrailer, videoUrl)
+            Log.d(TAG, "Acquired explicit trailer from content area: $previewUrl")
+        }
+        
+        // 1b. Check Player Tabs (Common in Muvipro)
+        if (previewUrl.isEmpty()) {
+            doc.select(".muvipro-player-tabs li, .player-tabs li").forEach { tab ->
+                if (tab.text().lowercase().contains("trailer")) {
+                    val tabId = tab.attr("id").replace("tab-", "player-option-")
+                    doc.select("#$tabId, .$tabId").firstOrNull()?.let { playerOption ->
+                        val link = playerOption.attr("abs:href").ifEmpty { playerOption.attr("data-url") }.ifEmpty { playerOption.attr("data-link") }
+                        if (link.contains("youtube") || link.contains("youtu.be")) {
+                            previewUrl = link
+                            Log.d(TAG, "Acquired trailer from tabs: $previewUrl")
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. Meta Tags (Fallback)
+        if (previewUrl.isEmpty()) {
+            val metaTrailer = doc.select("meta[property*='video'], meta[name*='trailer'], meta[property*='trailer'], meta[property='og:video:url']").firstOrNull()?.attr("content") ?: ""
+            if (metaTrailer.contains("youtube.com") || metaTrailer.contains("youtu.be") || metaTrailer.contains("vimeo.com")) {
+                previewUrl = metaTrailer
+            }
+        }
+
+        // 3. Iframe/Script Scan within Content Area
+        if (previewUrl.isEmpty()) {
+            doc.select("iframe").forEach { iframe ->
+                val src = iframe.attr("abs:src").ifEmpty { iframe.attr("abs:data-src") }
+                if (src.contains("youtube.com") || src.contains("youtu.be") || src.contains("vimeo.com")) {
+                    if (!src.contains("player=") && !src.contains("player-option") && !src.contains("post=")) {
+                        previewUrl = src
+                        return@forEach
+                    }
+                }
+            }
+        }
+        
+        // 3b. Search for trailer buttons/links specifically
+        if (previewUrl.isEmpty()) {
+            val trailerSelectors = ".trailer-link, .btn-trailer, .view-trailer, .muvipro-trailer, .muvipro-trailer-button, .trailer-content, #trailer, #tab-trailer, .play-trailer, a:contains(Trailer), a:contains(trailer), .trailer-area, .video-trailer"
+            doc.select(trailerSelectors).forEach { el ->
+                var link = el.attr("abs:href").ifEmpty { el.attr("data-url") }.ifEmpty { el.attr("data-link") }.ifEmpty { el.attr("href") }
+                if (link.isEmpty() || (!link.contains("youtube") && !link.contains("youtu.be"))) {
+                    val childLink = el.select("a[href*='youtube'], a[href*='youtu.be'], iframe[src*='youtube']").firstOrNull()
+                    if (childLink != null) {
+                        link = childLink.attr("abs:href").ifEmpty { childLink.attr("abs:src") }
+                    }
+                }
+                if (link.contains("youtube.com") || link.contains("youtu.be") || link.contains("vimeo.com")) {
+                    previewUrl = link
+                    Log.d(TAG, "Found trailer in specific selectors: $previewUrl")
+                    return@forEach
+                }
+            }
+        }
+
+        // 4. Global HTML Script/String Search (Aggressive)
+        if (previewUrl.isEmpty()) {
+            val youtubeRegex = Regex("""(?:https?:)?//(?:www\.)?(?:youtube\.com/(?:watch\?v=|embed/)|youtu\.be/)([a-zA-Z0-9_-]{11})""")
+            val vimeoRegex = Regex("""(?:https?:)?//(?:www\.)?vimeo\.com/(\d+)""")
+            
+            doc.select("script").forEach { script ->
+                val data = script.data()
+                youtubeRegex.find(data)?.let { previewUrl = it.value }
+                if (previewUrl.isEmpty()) vimeoRegex.find(data)?.let { previewUrl = it.value }
+                
+                if (previewUrl.isEmpty()) {
+                    val mTrailer = Regex("""["']?(?:trailer|preview|youtube)_?(?:url|id|link)["']?\s*[:=]\s*["']([^"']+)["']""").find(data)
+                    mTrailer?.let { 
+                        val found = it.groupValues[1]
+                        previewUrl = if (found.contains("http")) found else "https://www.youtube.com/watch?v=$found"
+                    }
+                }
+                if (previewUrl.isNotEmpty()) return@forEach
+            }
+        }
+
+        // 5. Scan elements pass
+        if (previewUrl.isEmpty()) {
+            for (el in elements) {
+                val link = el.attr("abs:href").ifEmpty { el.attr("data-link") }.ifEmpty { el.attr("data-url") }.ifEmpty { el.attr("abs:src") }.ifEmpty { el.attr("href") }
+                if (link.contains("youtube.com") || link.contains("youtu.be") || link.contains("vimeo.com")) {
+                    previewUrl = link
+                    Log.d(TAG, "Found trailer in elements: $previewUrl")
+                    break
+                }
+            }
+        }
+        return previewUrl
+    }
+
+    private suspend fun resolveButtonServers(
+        elements: List<Element>,
+        videoUrl: String
+    ): List<VideoServer> = coroutineScope {
+        elements.map { el ->
+            async {
+                val rawName = el.text().trim()
+                    .ifEmpty { el.attr("data-name") }
+                    .ifEmpty { el.attr("title") }
+                    .ifEmpty { el.attr("aria-label") }
+                    .ifEmpty { "Server" }
+                val postId = el.attr("data-post").ifEmpty { el.attr("data-id") }.ifEmpty { el.attr("data-post-id") }
+                val n = el.attr("data-n").ifEmpty { el.attr("data-server") }.ifEmpty { el.attr("data-index") }
+                val type = el.attr("data-type").ifEmpty { "movie" }
+
+                var link = el.attr("abs:href")
+                    .ifEmpty { el.attr("data-link") }
+                    .ifEmpty { el.attr("data-url") }
+                    .ifEmpty { el.attr("data-src") }
+                    .ifEmpty { el.attr("data-embed") }
+                    .ifEmpty { el.attr("data-video") }
+                    .ifEmpty { el.attr("data-frame") }
+                    .ifEmpty { el.attr("abs:src") }
+                    .ifEmpty { el.attr("value") }
+                    .ifEmpty { el.attr("href") }
+
+                if (link.isEmpty() && postId.isEmpty() && n.isEmpty()) {
+                    return@async null
+                }
+                if (link.contains("youtube.com") || link.contains("youtu.be") || link.contains("vimeo.com")) {
+                    return@async null
+                }
+
+                if (postId.isNotEmpty() && n.isNotEmpty()) {
+                    val uri = try { android.net.Uri.parse(videoUrl) } catch (_: Exception) { null }
+                    val primaryHost = uri?.host?.lowercase() ?: ""
+                    val cachedEndpoint = if (primaryHost.isNotEmpty()) workingAjaxCache[primaryHost] else null
+                    if (cachedEndpoint != null) {
+                        val resolved = tryAjaxEndpoint(
+                            cachedEndpoint.host, cachedEndpoint.action, cachedEndpoint.paramKey,
+                            postId, n, cachedEndpoint.type, videoUrl
+                        )
+                        if (resolved != null) {
+                            link = resolved
+                            Log.d(TAG, "Resolved AJAX server: $rawName -> $link")
+                        } else if (link.isEmpty() || link.startsWith("#") || link.startsWith("javascript")) {
+                            link = "ajax:$postId:$n:$type"
+                        }
+                    } else if (link.isEmpty() || link.startsWith("#") || link.startsWith("javascript")) {
+                        // FAST-PATH: Do not block detail view with 24 endpoint trials. Assign ajax: and resolve on demand during playback!
+                        link = "ajax:$postId:$n:$type"
+                    }
+                }
+
+                val hasPlayerParams = link.contains("player=") || link.contains("mirror=") || link.contains("server=") ||
+                    link.contains("source=") || link.contains("srv=") || link.contains("sv=") ||
+                    link.contains("opt=") || link.contains("option=") || link.contains("stream=") ||
+                    link.contains("play=") || link.contains("watch=") || link.contains("embed=") ||
+                    link.contains("link=") || link.contains("vid=") || link.startsWith("ajax:") ||
+                    link.contains("#player") || link.contains("#server") || link.contains("#tab") || link.contains("#embed")
+                val isAdLink = link.contains("utm_") || link.contains("lucky77") || link.contains("linkfast") ||
+                    link.contains("shope.ee") || link.contains("/ads") || link.contains("banner") ||
+                    link.contains("aff_") || link.contains("bit.ly") || link.contains("tinyurl") ||
+                    link.contains("cutt.ly") || link.contains("lucky")
+                if (isAdLink) return@async null
+
+                val isSelf = link == videoUrl || link == videoUrl.removeSuffix("/") || link == "$videoUrl/"
+                if (isSelf && !hasPlayerParams) {
+                    return@async null
+                }
+
+                if (link.isNotEmpty() && !link.startsWith("javascript") && (!isSelf || hasPlayerParams)) {
+                    if ((isProbablyVideoHost(link) || hasPlayerParams) && isGenuineMirror(rawName, link)) {
+                        val beautifulName = identifyMirrorName(rawName, link)
+                        Log.d(TAG, "Adding server from button: $beautifulName -> $link")
+                        return@async VideoServer(beautifulName, link)
+                    }
+                }
+                null
+            }
+        }.awaitAll().filterNotNull()
+    }
+
+    private fun extractTabAndIframeServers(doc: Document, activeServerName: String): List<VideoServer> {
+        val servers = mutableListOf<VideoServer>()
+
+        // 2b. PencuriMovie Tabbed Players Scan (.player_nav, .idTabs, #player2)
+        val pmTabs = doc.select(".player_nav li, .idTabs li, .server-wrapper li")
+        if (pmTabs.isNotEmpty()) {
+            pmTabs.forEach { li ->
+                val serverName = li.select(".les-title strong, strong, b, a").text().trim()
+                    .ifEmpty { li.text().trim() }.ifEmpty { "Server" }
+                val tabHref = li.select(".les-content a, a").attr("href").trim()
+                    .ifEmpty { li.attr("data-tab") }.removePrefix("#")
+                if (tabHref.isNotEmpty()) {
+                    val tabContainer = doc.select("#$tabHref, .$tabHref")
+                    val iframe = tabContainer.select("iframe").firstOrNull()
+                    var src = iframe?.attr("abs:src")?.ifEmpty { iframe.attr("abs:data-src") }?.ifEmpty { iframe.attr("data-src") }?.ifEmpty { iframe.attr("src") } ?: ""
+                    if (src.isEmpty() || src.startsWith("about:") || src.startsWith("data:")) {
+                        src = iframe?.attr("abs:data-src")?.ifEmpty { iframe.attr("data-src") }?.ifEmpty { iframe.attr("abs:data-lazy-src") } ?: ""
+                    }
+                    if (src.isNotEmpty() && isProbablyVideoHost(src)) {
+                        val beautifulName = identifyMirrorName(serverName, src)
+                        Log.d(TAG, "Adding PencuriMovie server from tab $tabHref: $beautifulName -> $src")
+                        servers.add(VideoServer(beautifulName, src))
+                    }
+                }
+            }
+        }
+
+        // 2c. Direct scan of Pencuri player containers (#player1, #player2, #player3...)
+        doc.select("#player1 iframe, #player2 iframe, #player3 iframe, #player4 iframe, #player5 iframe, .player-embed iframe").forEachIndexed { idx, iframe ->
+            var src = iframe.attr("abs:src")
+            if (src.isEmpty() || src.startsWith("about:") || src.startsWith("data:")) {
+                src = iframe.attr("abs:data-src").ifEmpty { iframe.attr("data-src") }.ifEmpty { iframe.attr("src") }
+            }
+            if (src.isNotEmpty() && !src.contains("ads") && isProbablyVideoHost(src)) {
+                val label = "Server ${idx + 1}"
+                val beautifulName = identifyMirrorName(label, src)
+                servers.add(VideoServer(beautifulName, src))
+            }
+        }
+
+        // 3. Iframe/Object Scan (Real mirrors often auto-load in an iframe below the video area)
+        val videoArea = doc.select(".gmr-pagi-player, .player-wrap, .video-player, #player, #player2, .movieplay, .embed-responsive, .muvipro-player-wrap, .gmr-embed-responsive, #pembed, .video-content")
+        val iframesToScan = if (videoArea.isNotEmpty() && videoArea.select("iframe, embed").isNotEmpty()) videoArea.select("iframe, embed") else doc.select("iframe, embed")
+
+        iframesToScan.forEach { iframe ->
+            var src = iframe.attr("abs:src")
+            if (src.isEmpty() || src.startsWith("about:") || src.startsWith("data:") || src.contains("spinner") || src.contains("loading")) {
+                src = iframe.attr("abs:data-src")
+                    .ifEmpty { iframe.attr("data-src") }
+                    .ifEmpty { iframe.attr("abs:data-lazy-src") }
+                    .ifEmpty { iframe.attr("data-lazy-src") }
+                    .ifEmpty { iframe.attr("data-original") }
+                    .ifEmpty { iframe.attr("data-frame") }
+                    .ifEmpty { iframe.attr("abs:data") }
+            }
+            if (src.isNotEmpty() && !src.contains("ads") && isProbablyVideoHost(src)) {
+                if (!src.contains("youtube") && !src.contains("youtu.be")) {
+                    val iframeLabel = iframe.attr("title").ifEmpty { iframe.attr("name") }.ifEmpty { activeServerName }
+                    val beautifulName = identifyMirrorName(iframeLabel, src)
+                    Log.d(TAG, "Adding server from iframe: $beautifulName -> $src")
+                    servers.add(VideoServer(beautifulName, src))
+                }
+            }
+        }
+
+        // 3b. Kepala Bergetar & Netu/HQQ Hex-Encoded Player Div Scan
+        doc.select("div[id]").forEach { div ->
+            val id = div.id().trim()
+            if (id.length >= 20 && id.length % 3 == 0 && id.all { it in "0123456789abcdefABCDEF" }) {
+                try {
+                    val sb = StringBuilder()
+                    for (i in 0 until id.length step 3) {
+                        val hex = id.substring(i, i + 3)
+                        sb.append(hex.toInt(16).toChar())
+                    }
+                    val decoded = sb.toString()
+                    val vidMatch = Regex("""["']?v["']?\s*[:=]\s*["']([^"']+)["']""").find(decoded)
+                    if (vidMatch != null) {
+                        val vid = vidMatch.groupValues[1]
+                        val netuUrl = "https://waaw.to/e/$vid"
+                        Log.d(TAG, "Decoded Kepala Bergetar hex div: $vid -> $netuUrl")
+                        servers.add(VideoServer("Netu", netuUrl))
+                        servers.add(VideoServer("HQQ", "https://hqq.tv/player/embed_player.php?vid=$vid"))
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+        return servers
+    }
+
+    private suspend fun resolveDfwEpisodesAndServers(
+        doc: Document,
+        html: String,
+        effectiveUrl: String,
+        title: String,
+        parsedSeason: String,
+        isExplicitSeries: Boolean,
+        hasEpisodeContainer: Boolean
+    ): Pair<List<Episode>, List<VideoServer>> {
+        val rawServers = mutableListOf<VideoServer>()
+        var rawEpisodes = emptyList<Episode>()
+
+        try {
+            // INSTANT FAST PATH: If direct language/server buttons exist on the HTML page (e.g. HARDSUB INDO, SOFTSUB INDO for movies)
+            val directSvxButtons = doc.select("a.episode.btn-svx[onclick*='loadEpisode'], a.btn-svx[onclick*='loadEpisode'], a[id*='svx-'][onclick*='loadEpisode']")
+            if (directSvxButtons.isNotEmpty() && !isExplicitSeries && !hasEpisodeContainer && !title.contains("Season", ignoreCase = true)) {
+                val cleanBase = effectiveUrl.substringBefore('?')
+                directSvxButtons.forEach { a ->
+                    val onclick = a.attr("onclick")
+                    val match = Regex("""loadEpisode\('([^']+)',\s*'([^']+)',\s*'([^']+)'\)""").find(onclick)
+                    if (match != null) {
+                        val movieId = match.groupValues[1]
+                        val cat = match.groupValues[2]
+                        val tag = match.groupValues[3]
+                        val label = a.text().trim().ifEmpty { 
+                            if (cat == "ss") "Softsub Indo" else if (cat == "hs") "Hardsub Indo" else "Server ${cat.uppercase()}"
+                        }
+                        val sUrl = "$cleanBase?epid=$movieId&cat=$cat&tag=$tag"
+                        rawServers.add(VideoServer(label, sUrl))
+                    }
+                }
+                if (rawServers.isNotEmpty()) {
+                    Log.i(TAG, "Fast-path resolved ${rawServers.size} DFW servers directly from HTML buttons in 0ms")
+                }
+            }
+
+            if (rawServers.isEmpty()) {
+                val epBtn = doc.selectFirst("a[onclick*='loadEpisode']")
+                val onclick = epBtn?.attr("onclick") ?: ""
+                val epMatch = Regex("""loadEpisode\('([^']+)',\s*'([^']+)',\s*'([^']+)'\)""").find(onclick)
+                    ?: Regex("""loadEpisode\('([^']+)',\s*'([^']+)',\s*'([^']+)'\)""").find(html)
+                if (epMatch != null) {
+                    val movieId = epMatch.groupValues[1]
+                    val catVal = epMatch.groupValues[2]
+                    val tagVal = epMatch.groupValues[3]
+                    val (cVal, tVal, cApiHost) = extractDutaFilmWebParams(html)
+                    if (cVal.isNotEmpty() && tVal.isNotEmpty()) {
+                        val epListUrl = "$cApiHost/episode_mob.php?is_mob=0&is_uc=0&movie_id=$movieId&cat=$catVal&tag=$tagVal&c=$cVal&t=${java.net.URLEncoder.encode(tVal, "UTF-8")}"
+                        val epListJsonStr = withTimeoutOrNull(2000) { fetchHtml(epListUrl, effectiveUrl) }
+                        if (!epListJsonStr.isNullOrEmpty() && epListJsonStr.trim().startsWith("{")) {
+                            val epJson = org.json.JSONObject(epListJsonStr)
+                            val epHtml = epJson.optString("episode_lists", "")
+                            val epDoc = Jsoup.parse(epHtml)
+                            val cleanBase = effectiveUrl.substringBefore('?')
+                            val slug = extractCleanSlug(cleanBase)
+                            val serverXid = epJson.optString("server_xid", "f1")
+                            val sLabel = parsedSeason.ifEmpty { "Season 1" }
+                            val dfwEpisodes = mutableListOf<Episode>()
+                            var movieEpid: String? = null
+                            var movieCat = catVal
+                            var movieTag = tagVal
+                            var movieXid = serverXid
+
+                            epDoc.select("a[data-epid]").forEach { a ->
+                                val epRaw = a.text().trim()
+                                val epid = a.attr("data-epid")
+                                val aCat = a.attr("data-cat").ifEmpty { catVal }
+                                val aTag = a.attr("data-tag").ifEmpty { tagVal }
+                                val aXid = a.attr("data-server_xid").ifEmpty { serverXid }
+
+                                val isUnnamed = epRaw.equals("unnamed", ignoreCase = true) || 
+                                                a.id().contains("unnamed", ignoreCase = true) ||
+                                                a.className().contains("unnamed", ignoreCase = true) ||
+                                                epRaw.equals("movie", ignoreCase = true) ||
+                                                epRaw.equals("full", ignoreCase = true)
+
+                                if (isUnnamed) {
+                                    movieEpid = epid
+                                    movieCat = aCat
+                                    movieTag = aTag
+                                    movieXid = aXid
+                                } else {
+                                    val epNumMatch = Regex("""\d+""").find(epRaw)
+                                    val epNum = epNumMatch?.value ?: epRaw
+                                    val epName = "Episode $epNum"
+                                    val epUrl = "$cleanBase?epid=$epid&ep=$epNum&cat=$aCat&tag=$aTag&xid=$aXid&c=$cVal&t=${java.net.URLEncoder.encode(tVal, "UTF-8")}"
+                                    dfwEpisodes.add(Episode(
+                                        id = "dfw_${slug}_ep$epNum",
+                                        name = epName,
+                                        url = epUrl,
+                                        season = sLabel
+                                    ))
+                                }
+                            }
+
+                            if (dfwEpisodes.isNotEmpty()) {
+                                rawEpisodes = dfwEpisodes.sortedBy { 
+                                    Regex("""\d+""").find(it.name)?.value?.toIntOrNull() ?: 0 
+                                }
+                                Log.i(TAG, "Discovered ${rawEpisodes.size} DutaFilm Web episodes for $title")
+                                if (rawServers.isEmpty()) {
+                                    val firstEp = rawEpisodes.firstOrNull()
+                                    if (firstEp != null) {
+                                        val firstEpUri = android.net.Uri.parse(firstEp.url)
+                                        val epId = firstEpUri.getQueryParameter("epid") ?: ""
+                                        val epCat = firstEpUri.getQueryParameter("cat") ?: catVal
+                                        val epTag = firstEpUri.getQueryParameter("tag") ?: tagVal
+                                        val epXid = firstEpUri.getQueryParameter("xid") ?: serverXid
+                                        val epServers = resolveDutaFilmWebEpisodeServers(firstEp.url, effectiveUrl, cApiHost, epId, epCat, epTag, epXid, cVal, tVal)
+                                        rawServers.addAll(epServers)
+                                        Log.i(TAG, "Resolved ${epServers.size} servers from first DutaFilm Web episode for $title")
+                                    }
+                                }
+                            } else if (!movieEpid.isNullOrEmpty() && rawServers.isEmpty()) {
+                                val movieUrl = "$cleanBase?epid=$movieEpid&cat=$movieCat&tag=$movieTag&xid=$movieXid&c=$cVal&t=${java.net.URLEncoder.encode(tVal, "UTF-8")}"
+                                val epServers = resolveDutaFilmWebEpisodeServers(movieUrl, effectiveUrl, cApiHost, movieEpid!!, movieCat, movieTag, movieXid, cVal, tVal)
+                                rawServers.addAll(epServers)
+                            }
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "DutaFilm Web episode extraction failed: ${e.message}")
+        }
+        return Pair(rawEpisodes, rawServers)
+    }
+
+    private suspend fun autoHealSeriesEpisodes(
+        videoUrl: String,
+        title: String,
+        cleanSlugNoYear: String,
+        targetSeasonNum: Int?
+    ): List<Episode> {
+        val searchDomain = try { 
+            val uri = android.net.Uri.parse(videoUrl)
+            "${uri.scheme}://${uri.host}"
+        } catch(_: Exception) { getBaseUrl() }
+        val queryText = if (targetSeasonNum != null) {
+            "${title.replace(Regex("""\s*\(\d{4}\)"""), "").replace(Regex("""(?i)\s*season\s*\d+"""), "")} Season $targetSeasonNum"
+        } else {
+            title.replace(Regex("""\s*\(\d{4}\)"""), "")
+        }
+        try {
+            val searchUrl = "$searchDomain/?s=${java.net.URLEncoder.encode(queryText.trim(), "UTF-8")}"
+            val searchHtml = fetchHtml(searchUrl, videoUrl)
+            if (searchHtml != null) {
+                val searchDoc = org.jsoup.Jsoup.parse(searchHtml, searchDomain)
+                val healedEpisodes = mutableListOf<Episode>()
+                searchDoc.select("a").forEach { a ->
+                    val href = a.attr("abs:href")
+                    val low = href.lowercase()
+                    if (low.contains("/eps/") || low.contains("/episode/")) {
+                        val cleanEpUrl = href.substringBefore('?')
+                        val matchesSlug = cleanSlugNoYear.length >= 3 && low.contains(cleanSlugNoYear)
+                        val epSeason = Regex("""(?i)season-(\d+)""").find(low)?.groupValues?.get(1)?.toIntOrNull()
+                        val seasonMatches = targetSeasonNum == null || epSeason == null || epSeason == targetSeasonNum
+                        if (matchesSlug && seasonMatches) {
+                            val epNum = Regex("""(?i)episode-(\d+)""").find(low)?.groupValues?.get(1)
+                            val epName = cleanEpisodeTitle(if (epNum != null) "Episode $epNum" else a.text().trim().ifEmpty { "Episode" }, title, videoUrl)
+                            val sLabel = if (targetSeasonNum != null) "Season $targetSeasonNum" else ""
+                            healedEpisodes.add(Episode(id = extractStableId(cleanEpUrl), name = epName, url = cleanEpUrl, season = sLabel))
+                        }
+                    }
+                }
+                if (healedEpisodes.isNotEmpty()) {
+                    val result = healedEpisodes.distinctBy { it.url }.sortedWith(compareBy({ 
+                        it.season.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0 
+                    }, {
+                        Regex("""(?i)\b(?:episod[e]?|eps|ep)\s*(\d+)\b""").find(it.name)?.groupValues?.get(1)?.toIntOrNull()
+                            ?: Regex("""(?i)[-_](?:episod[e]?|eps|ep)[-_](\d+)""").find(it.url)?.groupValues?.get(1)?.toIntOrNull()
+                            ?: 0
+                    }))
+                    Log.i(TAG, "Auto-healed ${result.size} episodes for series: $title (Season $targetSeasonNum)")
+                    return result
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Episode auto-healing search failed: ${e.message}")
+        }
+        return emptyList()
+    }
+
     suspend fun fetchVideoDetails(videoUrl: String, referer: String? = null, isRecursive: Boolean = false): Video? = withContext(Dispatchers.IO) {
         if (videoUrl.contains("archive.org") || videoUrl.startsWith("ia_pramlee")) {
             val cached = archivePramleeCache?.find { 
@@ -5496,288 +5989,14 @@ object VideoExtractor {
             if (t.isNotEmpty() && t.length < 20) t else "Server 1"
         } ?: "Server 1"
         
-        var previewUrl = ""
-        
-        // 1. Explicit Content Area Strategy (Old Build Logic)
-        val contentArea = doc.select("article, #primary, .main-content, #content, .post-entry, .video-info")
-            .firstOrNull { it.select(".related-movies, .recommendations, #sidebar, .sidebar").isEmpty() }
-            ?: doc.select("article, #primary, .main-content, #content").firstOrNull()
-            ?: doc
-
-        val explicitTrailer = contentArea.select("a.gmr-trailer-popup, a.gmr-trailer, a.trailer, .trailer-link, .trailer, [class*=\"trailer\"], .do-player-option[data-type=\"trailer\"], [id*=\"trailer\"]")
-            .firstOrNull { el ->
-                val parent = el.parents()
-                if (parent.`is`(".related-movies, .recommendations, .widget_related_posts, #sidebar, .sidebar, .related-posts, .related-items")) return@firstOrNull false
-                
-                val link = if (el.tagName() == "iframe") el.attr("abs:src") 
-                           else if (el.tagName() == "a") el.attr("abs:href").ifEmpty { el.attr("data-url") }.ifEmpty { el.attr("data-link") }
-                           else el.attr("data-url").ifEmpty { el.attr("data-link") }.ifEmpty { el.attr("data-src") }
-                
-                link.contains("youtube.com") || link.contains("youtu.be") || link.contains("vimeo.com") || link.contains(".mp4") || link.contains(".m3u8")
-            }?.let {
-            if (it.tagName() == "iframe") it.attr("abs:src")
-            else if (it.tagName() == "a") it.attr("abs:href").ifEmpty { it.attr("data-url") }.ifEmpty { it.attr("data-link") }
-            else {
-                it.select("a[href*=\"youtube\"], a[href*=\"youtu.be\"]").firstOrNull()?.attr("abs:href") ?:
-                it.select("iframe[src*=\"youtube\"], iframe[src*=\"youtu.be\"]").firstOrNull()?.attr("abs:src") ?:
-                it.attr("data-url").ifEmpty { it.attr("data-link") }.ifEmpty { it.attr("data-src") }
-            }
-        }
-        
-        if (!explicitTrailer.isNullOrEmpty()) {
-            previewUrl = sanitizeUrl(explicitTrailer, videoUrl)
-            Log.d(TAG, "Acquired explicit trailer from content area: $previewUrl")
-        }
-        
-        // 1b. Check Player Tabs (Common in Muvipro)
-        if (previewUrl.isEmpty()) {
-            doc.select(".muvipro-player-tabs li, .player-tabs li").forEach { tab ->
-                if (tab.text().lowercase().contains("trailer")) {
-                    val tabId = tab.attr("id").replace("tab-", "player-option-")
-                    doc.select("#$tabId, .$tabId").firstOrNull()?.let { playerOption ->
-                        val link = playerOption.attr("abs:href").ifEmpty { playerOption.attr("data-url") }.ifEmpty { playerOption.attr("data-link") }
-                        if (link.contains("youtube") || link.contains("youtu.be")) {
-                            previewUrl = link
-                            Log.d(TAG, "Acquired trailer from tabs: $previewUrl")
-                        }
-                    }
-                }
-            }
-        }
-
-        // 2. Meta Tags (Fallback)
-        if (previewUrl.isEmpty()) {
-            val metaTrailer = doc.select("meta[property*='video'], meta[name*='trailer'], meta[property*='trailer'], meta[property='og:video:url']").firstOrNull()?.attr("content") ?: ""
-            if (metaTrailer.contains("youtube.com") || metaTrailer.contains("youtu.be") || metaTrailer.contains("vimeo.com")) {
-                previewUrl = metaTrailer
-            }
-        }
-
-        // 3. Iframe/Script Scan within Content Area
-        if (previewUrl.isEmpty()) {
-            doc.select("iframe").forEach { iframe ->
-                val src = iframe.attr("abs:src").ifEmpty { iframe.attr("abs:data-src") }
-                if (src.contains("youtube.com") || src.contains("youtu.be") || src.contains("vimeo.com")) {
-                    if (!src.contains("player=") && !src.contains("player-option") && !src.contains("post=")) {
-                        previewUrl = src
-                        return@forEach
-                    }
-                }
-            }
-        }
-        
-        // 3b. Search for trailer buttons/links specifically
-        if (previewUrl.isEmpty()) {
-            val trailerSelectors = ".trailer-link, .btn-trailer, .view-trailer, .muvipro-trailer, .muvipro-trailer-button, .trailer-content, #trailer, #tab-trailer, .play-trailer, a:contains(Trailer), a:contains(trailer), .trailer-area, .video-trailer"
-            doc.select(trailerSelectors).forEach { el ->
-                var link = el.attr("abs:href").ifEmpty { el.attr("data-url") }.ifEmpty { el.attr("data-link") }.ifEmpty { el.attr("href") }
-                if (link.isEmpty() || (!link.contains("youtube") && !link.contains("youtu.be"))) {
-                    val childLink = el.select("a[href*='youtube'], a[href*='youtu.be'], iframe[src*='youtube']").firstOrNull()
-                    if (childLink != null) {
-                        link = childLink.attr("abs:href").ifEmpty { childLink.attr("abs:src") }
-                    }
-                }
-                if (link.contains("youtube.com") || link.contains("youtu.be") || link.contains("vimeo.com")) {
-                    previewUrl = link
-                    Log.d(TAG, "Found trailer in specific selectors: $previewUrl")
-                    return@forEach
-                }
-            }
-        }
-
-        // 4. Global HTML Script/String Search (Aggressive)
-        if (previewUrl.isEmpty()) {
-            val youtubeRegex = Regex("""(?:https?:)?//(?:www\.)?(?:youtube\.com/(?:watch\?v=|embed/)|youtu\.be/)([a-zA-Z0-9_-]{11})""")
-            val vimeoRegex = Regex("""(?:https?:)?//(?:www\.)?vimeo\.com/(\d+)""")
-            
-            doc.select("script").forEach { script ->
-                val data = script.data()
-                youtubeRegex.find(data)?.let { previewUrl = it.value }
-                if (previewUrl.isEmpty()) vimeoRegex.find(data)?.let { previewUrl = it.value }
-                
-                if (previewUrl.isEmpty()) {
-                    val mTrailer = Regex("""["']?(?:trailer|preview|youtube)_?(?:url|id|link)["']?\s*[:=]\s*["']([^"']+)["']""").find(data)
-                    mTrailer?.let { 
-                        val found = it.groupValues[1]
-                        previewUrl = if (found.contains("http")) found else "https://www.youtube.com/watch?v=$found"
-                    }
-                }
-                if (previewUrl.isNotEmpty()) return@forEach
-            }
-        }
-
-        // 1. Trailer scan pass
-        if (previewUrl.isEmpty()) {
-            for (el in elements) {
-                val link = el.attr("abs:href").ifEmpty { el.attr("data-link") }.ifEmpty { el.attr("data-url") }.ifEmpty { el.attr("abs:src") }.ifEmpty { el.attr("href") }
-                if (link.contains("youtube.com") || link.contains("youtu.be") || link.contains("vimeo.com")) {
-                    previewUrl = link
-                    Log.d(TAG, "Found trailer in elements: $previewUrl")
-                    break
-                }
-            }
-        }
+        val previewUrl = extractTrailer(doc, videoUrl, elements)
 
         // 2. Parallel server button resolution
-        val resolvedButtons = coroutineScope {
-            elements.map { el ->
-                async {
-                    val rawName = el.text().trim()
-                        .ifEmpty { el.attr("data-name") }
-                        .ifEmpty { el.attr("title") }
-                        .ifEmpty { el.attr("aria-label") }
-                        .ifEmpty { "Server" }
-                    val postId = el.attr("data-post").ifEmpty { el.attr("data-id") }.ifEmpty { el.attr("data-post-id") }
-                    val n = el.attr("data-n").ifEmpty { el.attr("data-server") }.ifEmpty { el.attr("data-index") }
-                    val type = el.attr("data-type").ifEmpty { "movie" }
-
-                    var link = el.attr("abs:href")
-                        .ifEmpty { el.attr("data-link") }
-                        .ifEmpty { el.attr("data-url") }
-                        .ifEmpty { el.attr("data-src") }
-                        .ifEmpty { el.attr("data-embed") }
-                        .ifEmpty { el.attr("data-video") }
-                        .ifEmpty { el.attr("data-frame") }
-                        .ifEmpty { el.attr("abs:src") }
-                        .ifEmpty { el.attr("value") }
-                        .ifEmpty { el.attr("href") }
-
-                    if (link.isEmpty() && postId.isEmpty() && n.isEmpty()) {
-                        return@async null
-                    }
-                    if (link.contains("youtube.com") || link.contains("youtu.be") || link.contains("vimeo.com")) {
-                        return@async null
-                    }
-
-                    if (postId.isNotEmpty() && n.isNotEmpty()) {
-                        val uri = try { android.net.Uri.parse(videoUrl) } catch (_: Exception) { null }
-                        val primaryHost = uri?.host?.lowercase() ?: ""
-                        val cachedEndpoint = if (primaryHost.isNotEmpty()) workingAjaxCache[primaryHost] else null
-                        if (cachedEndpoint != null) {
-                            val resolved = tryAjaxEndpoint(
-                                cachedEndpoint.host, cachedEndpoint.action, cachedEndpoint.paramKey,
-                                postId, n, cachedEndpoint.type, videoUrl
-                            )
-                            if (resolved != null) {
-                                link = resolved
-                                Log.d(TAG, "Resolved AJAX server: $rawName -> $link")
-                            } else if (link.isEmpty() || link.startsWith("#") || link.startsWith("javascript")) {
-                                link = "ajax:$postId:$n:$type"
-                            }
-                        } else if (link.isEmpty() || link.startsWith("#") || link.startsWith("javascript")) {
-                            // FAST-PATH: Do not block detail view with 24 endpoint trials. Assign ajax: and resolve on demand during playback!
-                            link = "ajax:$postId:$n:$type"
-                        }
-                    }
-
-                    val hasPlayerParams = link.contains("player=") || link.contains("mirror=") || link.contains("server=") ||
-                        link.contains("source=") || link.contains("srv=") || link.contains("sv=") ||
-                        link.contains("opt=") || link.contains("option=") || link.contains("stream=") ||
-                        link.contains("play=") || link.contains("watch=") || link.contains("embed=") ||
-                        link.contains("link=") || link.contains("vid=") || link.startsWith("ajax:") ||
-                        link.contains("#player") || link.contains("#server") || link.contains("#tab") || link.contains("#embed")
-                    val isSelf = link == videoUrl || link == videoUrl.removeSuffix("/") || link == "$videoUrl/"
-                    if (isSelf && !hasPlayerParams) {
-                        return@async null
-                    }
-
-                    if (link.isNotEmpty() && !link.startsWith("javascript") && (!isSelf || hasPlayerParams)) {
-                        if (isProbablyVideoHost(link) || hasPlayerParams || isGenuineMirror(rawName, link)) {
-                            val beautifulName = identifyMirrorName(rawName, link)
-                            Log.d(TAG, "Adding server from button: $beautifulName -> $link")
-                            return@async VideoServer(beautifulName, link)
-                        }
-                    }
-                    null
-                }
-            }.awaitAll().filterNotNull()
-        }
+        val resolvedButtons = resolveButtonServers(elements, videoUrl)
         rawServers.addAll(resolvedButtons)
 
-        // 2b. PencuriMovie Tabbed Players Scan (.player_nav, .idTabs, #player2)
-        val pmTabs = doc.select(".player_nav li, .idTabs li, .server-wrapper li")
-        if (pmTabs.isNotEmpty()) {
-            pmTabs.forEach { li ->
-                val serverName = li.select(".les-title strong, strong, b, a").text().trim()
-                    .ifEmpty { li.text().trim() }.ifEmpty { "Server" }
-                val tabHref = li.select(".les-content a, a").attr("href").trim()
-                    .ifEmpty { li.attr("data-tab") }.removePrefix("#")
-                if (tabHref.isNotEmpty()) {
-                    val tabContainer = doc.select("#$tabHref, .$tabHref")
-                    val iframe = tabContainer.select("iframe").firstOrNull()
-                    var src = iframe?.attr("abs:src")?.ifEmpty { iframe.attr("abs:data-src") }?.ifEmpty { iframe.attr("data-src") }?.ifEmpty { iframe.attr("src") } ?: ""
-                    if (src.isEmpty() || src.startsWith("about:") || src.startsWith("data:")) {
-                        src = iframe?.attr("abs:data-src")?.ifEmpty { iframe.attr("data-src") }?.ifEmpty { iframe.attr("abs:data-lazy-src") } ?: ""
-                    }
-                    if (src.isNotEmpty() && isProbablyVideoHost(src)) {
-                        val beautifulName = identifyMirrorName(serverName, src)
-                        Log.d(TAG, "Adding PencuriMovie server from tab $tabHref: $beautifulName -> $src")
-                        rawServers.add(VideoServer(beautifulName, src))
-                    }
-                }
-            }
-        }
-
-        // 2c. Direct scan of Pencuri player containers (#player1, #player2, #player3...)
-        doc.select("#player1 iframe, #player2 iframe, #player3 iframe, #player4 iframe, #player5 iframe, .player-embed iframe").forEachIndexed { idx, iframe ->
-            var src = iframe.attr("abs:src")
-            if (src.isEmpty() || src.startsWith("about:") || src.startsWith("data:")) {
-                src = iframe.attr("abs:data-src").ifEmpty { iframe.attr("data-src") }.ifEmpty { iframe.attr("src") }
-            }
-            if (src.isNotEmpty() && !src.contains("ads") && isProbablyVideoHost(src)) {
-                val label = "Server ${idx + 1}"
-                val beautifulName = identifyMirrorName(label, src)
-                rawServers.add(VideoServer(beautifulName, src))
-            }
-        }
-
-        // 3. Iframe/Object Scan (Real mirrors often auto-load in an iframe below the video area)
-        val videoArea = doc.select(".gmr-pagi-player, .player-wrap, .video-player, #player, #player2, .movieplay, .embed-responsive, .muvipro-player-wrap, .gmr-embed-responsive, #pembed, .video-content")
-        val iframesToScan = if (videoArea.isNotEmpty() && videoArea.select("iframe, embed").isNotEmpty()) videoArea.select("iframe, embed") else doc.select("iframe, embed")
-
-        iframesToScan.forEach { iframe ->
-            var src = iframe.attr("abs:src")
-            if (src.isEmpty() || src.startsWith("about:") || src.startsWith("data:") || src.contains("spinner") || src.contains("loading")) {
-                src = iframe.attr("abs:data-src")
-                    .ifEmpty { iframe.attr("data-src") }
-                    .ifEmpty { iframe.attr("abs:data-lazy-src") }
-                    .ifEmpty { iframe.attr("data-lazy-src") }
-                    .ifEmpty { iframe.attr("data-original") }
-                    .ifEmpty { iframe.attr("data-frame") }
-                    .ifEmpty { iframe.attr("abs:data") }
-            }
-            if (src.isNotEmpty() && !src.contains("ads") && isProbablyVideoHost(src)) {
-                if (!src.contains("youtube") && !src.contains("youtu.be")) {
-                    val iframeLabel = iframe.attr("title").ifEmpty { iframe.attr("name") }.ifEmpty { activeServerName }
-                    val beautifulName = identifyMirrorName(iframeLabel, src)
-                    Log.d(TAG, "Adding server from iframe: $beautifulName -> $src")
-                    rawServers.add(VideoServer(beautifulName, src))
-                }
-            }
-        }
-
-        // 3b. Kepala Bergetar & Netu/HQQ Hex-Encoded Player Div Scan
-        doc.select("div[id]").forEach { div ->
-            val id = div.id().trim()
-            if (id.length >= 20 && id.length % 3 == 0 && id.all { it in "0123456789abcdefABCDEF" }) {
-                try {
-                    val sb = StringBuilder()
-                    for (i in 0 until id.length step 3) {
-                        val hex = id.substring(i, i + 3)
-                        sb.append(hex.toInt(16).toChar())
-                    }
-                    val decoded = sb.toString()
-                    val vidMatch = Regex("""["']?v["']?\s*:\s*["']([^"']+)["']""").find(decoded)
-                    if (vidMatch != null) {
-                        val vid = vidMatch.groupValues[1]
-                        val netuUrl = "https://waaw.to/e/$vid"
-                        Log.d(TAG, "Decoded Kepala Bergetar hex div: $vid -> $netuUrl")
-                        rawServers.add(VideoServer("Netu", netuUrl))
-                        rawServers.add(VideoServer("HQQ", "https://hqq.tv/player/embed_player.php?vid=$vid"))
-                    }
-                } catch (_: Exception) {}
-            }
-        }
+        // 2b, 2c, 3, 3b. Tabs, Iframes, and Hex divs
+        rawServers.addAll(extractTabAndIframeServers(doc, activeServerName))
 
         val isExplicitSeries = videoUrl.contains("/series/") || videoUrl.contains("/tv/") || videoUrl.contains("/serial-tv/")
         val hasEpisodeContainer = doc.select(".gmr-listseries, .muvipro-listepisode, .list-episode, .episodios, .eps-item, .list-eps, .list-series, .seasons, .season, [class*='listseries'], .episode-list-container, .episodes-grid, #seasons, #season, .tvseason, [id*='season']").isNotEmpty()
@@ -5806,168 +6025,15 @@ object VideoExtractor {
             ?: Regex("""\d+""").find(parsedSeason)?.value?.toIntOrNull()
 
         if (rawEpisodes.isEmpty() && isDfw) {
-            try {
-                // INSTANT FAST PATH: If direct language/server buttons exist on the HTML page (e.g. HARDSUB INDO, SOFTSUB INDO for movies)
-                val directSvxButtons = doc.select("a.episode.btn-svx[onclick*='loadEpisode'], a.btn-svx[onclick*='loadEpisode'], a[id*='svx-'][onclick*='loadEpisode']")
-                if (directSvxButtons.isNotEmpty() && !isExplicitSeries && !hasEpisodeContainer && !title.contains("Season", ignoreCase = true)) {
-                    val cleanBase = effectiveUrl.substringBefore('?')
-                    directSvxButtons.forEach { a ->
-                        val onclick = a.attr("onclick")
-                        val match = Regex("""loadEpisode\('([^']+)',\s*'([^']+)',\s*'([^']+)'\)""").find(onclick)
-                        if (match != null) {
-                            val movieId = match.groupValues[1]
-                            val cat = match.groupValues[2]
-                            val tag = match.groupValues[3]
-                            val label = a.text().trim().ifEmpty { 
-                                if (cat == "ss") "Softsub Indo" else if (cat == "hs") "Hardsub Indo" else "Server ${cat.uppercase()}"
-                            }
-                            val sUrl = "$cleanBase?epid=$movieId&cat=$cat&tag=$tag"
-                            rawServers.add(VideoServer(label, sUrl))
-                        }
-                    }
-                    if (rawServers.isNotEmpty()) {
-                        Log.i(TAG, "Fast-path resolved ${rawServers.size} DFW servers directly from HTML buttons in 0ms")
-                    }
-                }
-
-                if (rawServers.isEmpty()) {
-                    val epBtn = doc.selectFirst("a[onclick*='loadEpisode']")
-                    val onclick = epBtn?.attr("onclick") ?: ""
-                    val epMatch = Regex("""loadEpisode\('([^']+)',\s*'([^']+)',\s*'([^']+)'\)""").find(onclick)
-                        ?: Regex("""loadEpisode\('([^']+)',\s*'([^']+)',\s*'([^']+)'\)""").find(html)
-                if (epMatch != null) {
-                    val movieId = epMatch.groupValues[1]
-                    val catVal = epMatch.groupValues[2]
-                    val tagVal = epMatch.groupValues[3]
-                    val (cVal, tVal, cApiHost) = extractDutaFilmWebParams(html)
-                    if (cVal.isNotEmpty() && tVal.isNotEmpty()) {
-                        val epListUrl = "$cApiHost/episode_mob.php?is_mob=0&is_uc=0&movie_id=$movieId&cat=$catVal&tag=$tagVal&c=$cVal&t=${java.net.URLEncoder.encode(tVal, "UTF-8")}"
-                        val epListJsonStr = withTimeoutOrNull(2000) { fetchHtml(epListUrl, effectiveUrl) }
-                        if (!epListJsonStr.isNullOrEmpty() && epListJsonStr.trim().startsWith("{")) {
-                            val epJson = org.json.JSONObject(epListJsonStr)
-                            val epHtml = epJson.optString("episode_lists", "")
-                            val epDoc = Jsoup.parse(epHtml)
-                            val cleanBase = effectiveUrl.substringBefore('?')
-                            val slug = extractCleanSlug(cleanBase)
-                            val serverXid = epJson.optString("server_xid", "f1")
-                            val sLabel = parsedSeason.ifEmpty { "Season 1" }
-                            val dfwEpisodes = mutableListOf<Episode>()
-                            var movieEpid: String? = null
-                            var movieCat = catVal
-                            var movieTag = tagVal
-                            var movieXid = serverXid
-
-                            epDoc.select("a[data-epid]").forEach { a ->
-                                val epRaw = a.text().trim()
-                                val epid = a.attr("data-epid")
-                                val aCat = a.attr("data-cat").ifEmpty { catVal }
-                                val aTag = a.attr("data-tag").ifEmpty { tagVal }
-                                val aXid = a.attr("data-server_xid").ifEmpty { serverXid }
-
-                                val isUnnamed = epRaw.equals("unnamed", ignoreCase = true) || 
-                                                a.id().contains("unnamed", ignoreCase = true) ||
-                                                a.className().contains("unnamed", ignoreCase = true) ||
-                                                epRaw.equals("movie", ignoreCase = true) ||
-                                                epRaw.equals("full", ignoreCase = true)
-
-                                if (isUnnamed) {
-                                    movieEpid = epid
-                                    movieCat = aCat
-                                    movieTag = aTag
-                                    movieXid = aXid
-                                } else {
-                                    val epNumMatch = Regex("""\d+""").find(epRaw)
-                                    val epNum = epNumMatch?.value ?: epRaw
-                                    val epName = "Episode $epNum"
-                                    val epUrl = "$cleanBase?epid=$epid&ep=$epNum&cat=$aCat&tag=$aTag&xid=$aXid&c=$cVal&t=${java.net.URLEncoder.encode(tVal, "UTF-8")}"
-                                    dfwEpisodes.add(Episode(
-                                        id = "dfw_${slug}_ep$epNum",
-                                        name = epName,
-                                        url = epUrl,
-                                        season = sLabel
-                                    ))
-                                }
-                            }
-
-                            if (dfwEpisodes.isNotEmpty()) {
-                                rawEpisodes = dfwEpisodes.sortedBy { 
-                                    Regex("""\d+""").find(it.name)?.value?.toIntOrNull() ?: 0 
-                                }
-                                Log.i(TAG, "Discovered ${rawEpisodes.size} DutaFilm Web episodes for $title")
-                                if (rawServers.isEmpty()) {
-                                    val firstEp = rawEpisodes.firstOrNull()
-                                    if (firstEp != null) {
-                                        val firstEpUri = android.net.Uri.parse(firstEp.url)
-                                        val epId = firstEpUri.getQueryParameter("epid") ?: ""
-                                        val epCat = firstEpUri.getQueryParameter("cat") ?: catVal
-                                        val epTag = firstEpUri.getQueryParameter("tag") ?: tagVal
-                                        val epXid = firstEpUri.getQueryParameter("xid") ?: serverXid
-                                        val epServers = resolveDutaFilmWebEpisodeServers(firstEp.url, effectiveUrl, cApiHost, epId, epCat, epTag, epXid, cVal, tVal)
-                                        rawServers.addAll(epServers)
-                                        Log.i(TAG, "Resolved ${epServers.size} servers from first DutaFilm Web episode for $title")
-                                    }
-                                }
-                            } else if (!movieEpid.isNullOrEmpty() && rawServers.isEmpty()) {
-                                val movieUrl = "$cleanBase?epid=$movieEpid&cat=$movieCat&tag=$movieTag&xid=$movieXid&c=$cVal&t=${java.net.URLEncoder.encode(tVal, "UTF-8")}"
-                                val epServers = resolveDutaFilmWebEpisodeServers(movieUrl, effectiveUrl, cApiHost, movieEpid!!, movieCat, movieTag, movieXid, cVal, tVal)
-                                rawServers.addAll(epServers)
-                            }
-                        }
-                    }
-                }
-            }
-            } catch (e: Exception) {
-                Log.w(TAG, "DutaFilm Web episode extraction failed: ${e.message}")
-            }
+            val (dfwEps, dfwServers) = resolveDfwEpisodesAndServers(doc, html, effectiveUrl, title, parsedSeason, isExplicitSeries, hasEpisodeContainer)
+            if (dfwEps.isNotEmpty()) rawEpisodes = dfwEps
+            if (dfwServers.isNotEmpty()) rawServers.addAll(dfwServers)
         }
 
         // Auto-Healing: If explicit series is missing episodes or page contained mismatched season episodes
         if (rawEpisodes.isEmpty() && isExplicitSeries && !isEpisodePage && !isRecursive) {
-            val searchDomain = try { 
-                val uri = android.net.Uri.parse(videoUrl)
-                "${uri.scheme}://${uri.host}"
-            } catch(_: Exception) { getBaseUrl() }
-            val queryText = if (targetSeasonNum != null) {
-                "${title.replace(Regex("""\s*\(\d{4}\)"""), "").replace(Regex("""(?i)\s*season\s*\d+"""), "")} Season $targetSeasonNum"
-            } else {
-                title.replace(Regex("""\s*\(\d{4}\)"""), "")
-            }
-            try {
-                val searchUrl = "$searchDomain/?s=${java.net.URLEncoder.encode(queryText.trim(), "UTF-8")}"
-                val searchHtml = fetchHtml(searchUrl, videoUrl)
-                if (searchHtml != null) {
-                    val searchDoc = org.jsoup.Jsoup.parse(searchHtml, searchDomain)
-                    val healedEpisodes = mutableListOf<Episode>()
-                    searchDoc.select("a").forEach { a ->
-                        val href = a.attr("abs:href")
-                        val low = href.lowercase()
-                        if (low.contains("/eps/") || low.contains("/episode/")) {
-                            val cleanEpUrl = href.substringBefore('?')
-                            val matchesSlug = cleanSlugNoYear.length >= 3 && low.contains(cleanSlugNoYear)
-                            val epSeason = Regex("""(?i)season-(\d+)""").find(low)?.groupValues?.get(1)?.toIntOrNull()
-                            val seasonMatches = targetSeasonNum == null || epSeason == null || epSeason == targetSeasonNum
-                            if (matchesSlug && seasonMatches) {
-                                val epNum = Regex("""(?i)episode-(\d+)""").find(low)?.groupValues?.get(1)
-                                val epName = cleanEpisodeTitle(if (epNum != null) "Episode $epNum" else a.text().trim().ifEmpty { "Episode" }, title, videoUrl)
-                                val sLabel = if (targetSeasonNum != null) "Season $targetSeasonNum" else ""
-                                healedEpisodes.add(Episode(id = extractStableId(cleanEpUrl), name = epName, url = cleanEpUrl, season = sLabel))
-                            }
-                        }
-                    }
-                    if (healedEpisodes.isNotEmpty()) {
-                        rawEpisodes = healedEpisodes.distinctBy { it.url }.sortedWith(compareBy({ 
-                            it.season.replace(Regex("[^0-9]"), "").toIntOrNull() ?: 0 
-                        }, {
-                            Regex("""(?i)\b(?:episod[e]?|eps|ep)\s*(\d+)\b""").find(it.name)?.groupValues?.get(1)?.toIntOrNull()
-                                ?: Regex("""(?i)[-_](?:episod[e]?|eps|ep)[-_](\d+)""").find(it.url)?.groupValues?.get(1)?.toIntOrNull()
-                                ?: 0
-                        }))
-                        Log.i(TAG, "Auto-healed ${rawEpisodes.size} episodes for series: $title (Season $targetSeasonNum)")
-                    }
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Episode auto-healing search failed: ${e.message}")
-            }
+            val healed = autoHealSeriesEpisodes(videoUrl, title, cleanSlugNoYear, targetSeasonNum)
+            if (healed.isNotEmpty()) rawEpisodes = healed
         }
 
         val hasRealEpisodes = rawEpisodes.any { !it.name.contains("unnamed", ignoreCase = true) }

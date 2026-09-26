@@ -1097,6 +1097,32 @@ class VideoExtractorTest {
         assert(!VideoExtractor.isDirectVideoUrl(fakeIndexStream)) { "Fake TikTok index.m3u8 must be rejected as direct video" }
         assert(VideoExtractor.isDirectVideoUrl(legitAcekStream)) { "Legitimate acek-cdn master.m3u8 must be accepted as direct video" }
     }
+
+    @Test
+    fun testAdServerRejectionAndGenuineMirrorValidation() {
+        // Gambler / spam ad links with "Server" names must be rejected
+        val adUrl1 = "https://linkfast.vip/lucky77?utm_source=RBH&utm_medium=ADS"
+        val adUrl2 = "https://shope.ee/testad"
+        val adUrl3 = "https://katakatamutiara.com/banner/ads?utm_medium=banner"
+        val adUrl4 = "https://zeusbet.com/slot"
+
+        assert(!VideoExtractor.isGenuineMirror("Server 1 (Main)", adUrl1)) { "Lucky77 ad server must be rejected" }
+        assert(!VideoExtractor.isGenuineMirror("Server 2", adUrl2)) { "Shopee affiliate link must be rejected" }
+        assert(!VideoExtractor.isGenuineMirror("VIP Stream", adUrl3)) { "Banner ads must be rejected" }
+        assert(!VideoExtractor.isGenuineMirror("Server HD", adUrl4)) { "Gambling domains must be rejected" }
+
+        // Valid mirrors must be accepted
+        val legitP2p = "https://ewa.playerp2p.live/#vhtfbe"
+        val legitStreamtape = "https://streamtape.com/e/12345"
+        val legitAjax = "ajax:1234:1:movie"
+        val legitPlayerParam = "https://actors-pictures.com/movie-2026/?player=2"
+
+        assert(VideoExtractor.isGenuineMirror("Server 1", legitP2p)) { "P2P mirror must be accepted" }
+        assert(VideoExtractor.isGenuineMirror("Server 2", legitStreamtape)) { "Streamtape mirror must be accepted" }
+        assert(VideoExtractor.isGenuineMirror("Server 3", legitAjax)) { "AJAX mirror must be accepted" }
+        assert(VideoExtractor.isGenuineMirror("Server 4", legitPlayerParam)) { "Player param mirror must be accepted" }
+    }
 }
+
 
 

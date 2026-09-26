@@ -1499,11 +1499,15 @@ class VideoViewModel @Inject constructor(
                             }
 
                             // 3. Discover alternative sources across all partners and universal stream catalogues + installed providers
-                            val altServers = com.duta.movie.util.VideoExtractor.findAlternativeSources(detailed)
-                            val providerServers = videoRepository.providerManager.fetchServers(detailed)
-                            if (altServers.isNotEmpty()) {
-                                discoveredAltServers[detailed.id] = (discoveredAltServers[detailed.id].orEmpty() + altServers).distinctBy { it.url }
+                            val cachedAlts = discoveredAltServers[detailed.id]
+                            val altServers = if (cachedAlts != null) {
+                                cachedAlts
+                            } else {
+                                val found = com.duta.movie.util.VideoExtractor.findAlternativeSources(detailed)
+                                discoveredAltServers[detailed.id] = found
+                                found
                             }
+                            val providerServers = videoRepository.providerManager.fetchServers(detailed)
                             val allDiscoveredServers = (altServers + providerServers).distinctBy { it.url.trimEnd('/') }
                             if (allDiscoveredServers.isNotEmpty()) {
                                 val current = _videoMetadata.value
@@ -2130,7 +2134,9 @@ class VideoViewModel @Inject constructor(
                 deadMirrors.addAll(hardDeadMirrors)
             }
             rotationCount = 0
-            hasAttemptedAltHealing = false
+            if (!isRotation) {
+                hasAttemptedAltHealing = false
+            }
             com.duta.movie.util.NetworkConfig.clearSessionData()
             withContext(Dispatchers.Main) { _resolvedUrl.value = null }
         }
@@ -2496,7 +2502,9 @@ class VideoViewModel @Inject constructor(
                 deadMirrors.addAll(hardDeadMirrors)
             }
             rotationCount = 0
-            hasAttemptedAltHealing = false
+            if (!isRotation) {
+                hasAttemptedAltHealing = false
+            }
             com.duta.movie.util.NetworkConfig.clearSessionData()
             withContext(Dispatchers.Main) { _resolvedUrl.value = null }
         }
@@ -3491,7 +3499,7 @@ class VideoViewModel @Inject constructor(
                                     !deadMirrors.contains(it.url) && !hardDeadMirrors.contains(it.url) && !exhaustedServerUrls.contains(it.url) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url)
                                 }.sortedByDescending { com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) }
                                 val bestAlt = sortedCombined.firstOrNull() ?: altServers.first()
-                                playMovie(effectiveVideoId, bestAlt.url, forceReset = false, isRotation = false)
+                                playMovie(effectiveVideoId, bestAlt.url, forceReset = false, isRotation = true)
                                 return@launch
                             }
                         }
@@ -3589,9 +3597,9 @@ class VideoViewModel @Inject constructor(
                             val bestAlt = sortedAlt.firstOrNull() ?: altServers.first()
                             val isRealSeries = video.isSeries == true && (video.episodes.isNotEmpty() || _currentEpisode.value != null)
                             if (isRealSeries) {
-                                playTVSeries(effectiveVideoId, bestAlt.url, forceReset = false, targetEpisode = _currentEpisode.value, isRotation = false)
+                                playTVSeries(effectiveVideoId, bestAlt.url, forceReset = false, targetEpisode = _currentEpisode.value, isRotation = true)
                             } else {
-                                playMovie(effectiveVideoId, bestAlt.url, forceReset = false, isRotation = false)
+                                playMovie(effectiveVideoId, bestAlt.url, forceReset = false, isRotation = true)
                             }
                             return@launch
                         } else {
@@ -3606,7 +3614,7 @@ class VideoViewModel @Inject constructor(
                     val isSingleServer = serversToUse.size <= 1
                     val maxTries = if (isSingleServer) 3 else serversToUse.size
                     Log.w("VideoViewModel", "sortedServers is EMPTY! allServersDead=$allServersDead, rotationCount=$rotationCount, serversCount=${serversToUse.size}")
-                    if (allServersDead || rotationCount >= maxTries || rotationCount >= maxRotation) {
+                    if (allServersDead || rotationCount >= maxTries || rotationCount >= maxRotation || hasAttemptedAltHealing) {
                         Log.e("VideoViewModel", "All servers dead or exhausted for $effectiveVideoId. Showing error UI.")
                         addResolutionLog("All available mirrors for this title have failed or are dead. Halting playback.")
                         withContext(Dispatchers.Main) {
