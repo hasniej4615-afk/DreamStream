@@ -113,10 +113,24 @@ class VideoRepository @Inject constructor(
         }
     }
 
-    suspend fun getCachedVideosByCategory(cat: String): List<Video> = 
-        VideoExtractor.sortVideosByNewestRelease(
-            videoDao.getCachedVideosByCategory(cat).map { it.toDomain().also { v -> videoCache[v.id] = v } }
-        )
+    suspend fun getCachedVideosByCategory(cat: String): List<Video> {
+        val cached = videoDao.getCachedVideosByCategory(cat).map { it.toDomain().also { v -> videoCache[v.id] = v } }
+        val needsHealing = cached.filter { !VideoExtractor.isValidImageUrl(it.thumbnailUrl) && !VideoExtractor.isValidImageUrl(it.backdropUrl) }
+        if (needsHealing.isNotEmpty() && !isPlaybackActive()) {
+            CoroutineScope(Dispatchers.IO).launch {
+                needsHealing.take(15).forEach { item ->
+                    try {
+                        val poster = VideoExtractor.findPosterForTitle(item.title, item.date)
+                        if (VideoExtractor.isValidImageUrl(poster)) {
+                            val healed = item.copy(thumbnailUrl = poster, backdropUrl = poster)
+                            updateVideoInDb(healed)
+                        }
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+        return VideoExtractor.sortVideosByNewestRelease(cached)
+    }
 
     suspend fun fetchVideosBySection(cat: String, page: Int, count: Int): List<Video> = coroutineScope {
         val results = VideoExtractor.fetchVideosBySection(cat, page, count)
@@ -169,9 +183,14 @@ class VideoRepository @Inject constructor(
                     val fetched = VideoExtractor.fetchVideoDetails(fallbackUrl)
                     if (fetched != null) {
                         var toSave = fetched.copy(id = videoId)
-                        if (toSave.servers.isEmpty() && (toSave.episodes.isEmpty() || toSave.isSeries != true)) {
-                            val healed = VideoExtractor.healVideoFromAlternativeSources(toSave)
-                            if (healed != null) toSave = mergeVideos(healed, toSave)
+                        if (toSave.thumbnailUrl.isEmpty()) {
+                            val fallbackPoster = VideoExtractor.findPosterForTitle(toSave.title, toSave.date)
+                            if (fallbackPoster.isNotEmpty()) {
+                                toSave = toSave.copy(
+                                    thumbnailUrl = fallbackPoster,
+                                    backdropUrl = toSave.backdropUrl.ifEmpty { fallbackPoster }
+                                )
+                            }
                         }
                         videoDao.insertOrUpdateVideos(listOf(toSave.toEntity()))
                         videoCache[videoId] = toSave
@@ -200,10 +219,19 @@ class VideoRepository @Inject constructor(
             val updated = if (targetUrl.isNotBlank()) VideoExtractor.fetchVideoDetails(targetUrl) else null
             if (updated != null) {
                 var merged = mergeVideos(updated, video)
-                if (merged.servers.isEmpty() && (merged.episodes.isEmpty() || merged.isSeries != true)) {
+                if (merged.servers.isEmpty() && merged.isSeries != true) {
                     val healed = VideoExtractor.healVideoFromAlternativeSources(merged)
-                    if (healed != null) {
+                    if (healed != null && healed.servers.isNotEmpty()) {
                         merged = mergeVideos(healed, merged)
+                    }
+                }
+                if (merged.thumbnailUrl.isEmpty()) {
+                    val fallbackPoster = VideoExtractor.findPosterForTitle(merged.title, merged.date)
+                    if (fallbackPoster.isNotEmpty()) {
+                        merged = merged.copy(
+                            thumbnailUrl = fallbackPoster,
+                            backdropUrl = merged.backdropUrl.ifEmpty { fallbackPoster }
+                        )
                     }
                 }
                 videoDao.insertOrUpdateVideos(listOf(merged.toEntity()))
@@ -212,10 +240,30 @@ class VideoRepository @Inject constructor(
             } else {
                 val healed = VideoExtractor.healVideoFromAlternativeSources(video)
                 if (healed != null) {
-                    val merged = mergeVideos(healed, video)
+                    var merged = mergeVideos(healed, video)
+                    if (merged.thumbnailUrl.isEmpty()) {
+                        val fallbackPoster = VideoExtractor.findPosterForTitle(merged.title, merged.date)
+                        if (fallbackPoster.isNotEmpty()) {
+                            merged = merged.copy(
+                                thumbnailUrl = fallbackPoster,
+                                backdropUrl = merged.backdropUrl.ifEmpty { fallbackPoster }
+                            )
+                        }
+                    }
                     videoDao.insertOrUpdateVideos(listOf(merged.toEntity()))
                     videoCache[videoId] = merged
                     return@withContext merged
+                } else if (video.thumbnailUrl.isEmpty()) {
+                    val fallbackPoster = VideoExtractor.findPosterForTitle(video.title, video.date)
+                    if (fallbackPoster.isNotEmpty()) {
+                        val updatedVideo = video.copy(
+                            thumbnailUrl = fallbackPoster,
+                            backdropUrl = video.backdropUrl.ifEmpty { fallbackPoster }
+                        )
+                        videoDao.insertOrUpdateVideos(listOf(updatedVideo.toEntity()))
+                        videoCache[videoId] = updatedVideo
+                        return@withContext updatedVideo
+                    }
                 }
             }
         } catch (_: Exception) {}
@@ -279,18 +327,38 @@ class VideoRepository @Inject constructor(
         if (old == null) return new.copy(title = VideoExtractor.cleanTitle(new.title))
         
         val isPramlee = new.id.startsWith("ia_pramlee")
-        val isNewThumbBetter = new.thumbnailUrl.isNotEmpty() && (
+        val isOldThumbValid = VideoExtractor.isValidImageUrl(old.thumbnailUrl)
+        val isNewThumbValid = VideoExtractor.isValidImageUrl(new.thumbnailUrl)
+        val isNewThumbBetter = isNewThumbValid && (
             isPramlee ||
-            old.thumbnailUrl.isEmpty() || 
+            !isOldThumbValid || 
             (new.thumbnailUrl.contains("tmdb.org") && !old.thumbnailUrl.contains("tmdb.org")) ||
-            new.thumbnailUrl.length > old.thumbnailUrl.length + 5
+            (!new.thumbnailUrl.contains("resize=") && old.thumbnailUrl.contains("resize="))
         )
-        val isNewBackdropBetter = new.backdropUrl.isNotEmpty() && (
+        val resolvedThumbnail = when {
+            isNewThumbBetter -> new.thumbnailUrl
+            isOldThumbValid -> old.thumbnailUrl
+            isNewThumbValid -> new.thumbnailUrl
+            VideoExtractor.isValidImageUrl(new.backdropUrl) -> new.backdropUrl
+            VideoExtractor.isValidImageUrl(old.backdropUrl) -> old.backdropUrl
+            else -> ""
+        }
+
+        val isOldBackdropValid = VideoExtractor.isValidImageUrl(old.backdropUrl)
+        val isNewBackdropValid = VideoExtractor.isValidImageUrl(new.backdropUrl)
+        val isNewBackdropBetter = isNewBackdropValid && (
             isPramlee ||
-            old.backdropUrl.isEmpty() ||
+            !isOldBackdropValid ||
             (new.backdropUrl.contains("tmdb.org") && !old.backdropUrl.contains("tmdb.org")) ||
-            new.backdropUrl.length > old.backdropUrl.length + 5
+            (!new.backdropUrl.contains("resize=") && old.backdropUrl.contains("resize="))
         )
+        val resolvedBackdrop = when {
+            isNewBackdropBetter -> new.backdropUrl
+            isOldBackdropValid -> old.backdropUrl
+            isNewBackdropValid -> new.backdropUrl
+            resolvedThumbnail.isNotEmpty() -> resolvedThumbnail
+            else -> ""
+        }
         
         val cleanedNewTitle = VideoExtractor.cleanTitle(new.title)
         val cleanedOldTitle = VideoExtractor.cleanTitle(old.title)
@@ -326,8 +394,8 @@ class VideoRepository @Inject constructor(
         return old.copy(
             title = if (cleanedNewTitle.length > cleanedOldTitle.length) cleanedNewTitle else cleanedOldTitle,
             videoUrl = if (isPramlee && new.videoUrl.isNotEmpty()) new.videoUrl else old.videoUrl,
-            thumbnailUrl = if (isNewThumbBetter) new.thumbnailUrl else old.thumbnailUrl,
-            backdropUrl = if (isNewBackdropBetter) new.backdropUrl else old.backdropUrl,
+            thumbnailUrl = if (resolvedThumbnail.isNotEmpty()) resolvedThumbnail else resolvedBackdrop,
+            backdropUrl = if (resolvedBackdrop.isNotEmpty()) resolvedBackdrop else resolvedThumbnail,
             actresses = (new.actresses + old.actresses).distinct().filter { it.isNotEmpty() },
             actressPaths = (old.actressPaths + new.actressPaths),
             actressImages = (old.actressImages + new.actressImages),

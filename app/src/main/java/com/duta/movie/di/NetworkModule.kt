@@ -32,12 +32,12 @@ object NetworkModule {
     ): ImageLoader {
         val isLowRam = com.duta.movie.util.VideoUtils.isLowRamDevice(context)
         val isTv = com.duta.movie.util.DeviceUtils.isTvDevice(context)
-        val imageDispatcher = Dispatchers.IO.limitedParallelism(if (isLowRam) 6 else 16)
+        val imageDispatcher = Dispatchers.IO.limitedParallelism(if (isLowRam) 12 else 32)
 
         return ImageLoader.Builder(context)
             .okHttpClient { NetworkConfig.imageOkHttpClient }
             .dispatcher(imageDispatcher)
-            .bitmapConfig(if (isLowRam && !isTv) Bitmap.Config.RGB_565 else Bitmap.Config.HARDWARE)
+            .bitmapConfig(if (isLowRam) Bitmap.Config.RGB_565 else Bitmap.Config.HARDWARE)
             .allowRgb565(true)
             .allowHardware(true)
             .memoryCache {

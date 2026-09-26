@@ -199,11 +199,16 @@ fun TrailerPlayer(
             LaunchedEffect(Unit) { onError() }
         }
     } else {
-        Log.d("TrailerPlayer", "Native (ExoPlayer) branch | Video URL: $videoUrl")
-        val baseDomains = mutableListOf("seoulschool.org", "ladyriderswear.com", "itoshii-movie.com")
-        val currentBase = com.duta.movie.util.VideoExtractor.getBaseUrl().substringAfter("://")
-        if (currentBase.isNotEmpty() && !baseDomains.contains(currentBase)) {
-            baseDomains.add(0, currentBase)
+        val baseDomains = mutableListOf<String>()
+        val currentBase = com.duta.movie.util.VideoExtractor.getBaseUrl().substringAfter("://").trimEnd('/')
+        if (currentBase.isNotEmpty()) {
+            baseDomains.add(currentBase)
+        }
+        com.duta.movie.util.VideoExtractor.CLUSTER_MIRROR_URLS.take(5).forEach { mirror ->
+            val host = mirror.substringAfter("://").trimEnd('/')
+            if (host.isNotEmpty() && !baseDomains.contains(host)) {
+                baseDomains.add(host)
+            }
         }
 
         val exoPlayer = remember(videoUrl) {
@@ -319,7 +324,9 @@ fun VideoDetailScreen(
 
     val isExpanded = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded
     val isMedium = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Medium
-    val isTV = isExpanded || isMedium
+    val isRealTV = remember { com.duta.movie.util.DeviceUtils.isTvDevice(context) }
+    val isTV = isExpanded || isMedium || isRealTV
+    val isTVLayout = isExpanded || isRealTV
     
     val playButtonFocusRequester = remember { FocusRequester() }
 
@@ -335,10 +342,17 @@ fun VideoDetailScreen(
         viewModel.loadFullDetails(videoId)
     }
 
-    // Delayed auto-focus to prevent jank during transition
-    LaunchedEffect(isExpanded) {
-        if (isExpanded) {
-            delay(1000)
+    val currentVideo = video
+    androidx.compose.runtime.LaunchedEffect(currentVideo?.id, currentVideo?.thumbnailUrl, currentVideo?.backdropUrl) {
+        if (currentVideo != null && currentVideo.thumbnailUrl.isEmpty() && currentVideo.backdropUrl.isEmpty()) {
+            viewModel.healMissingPoster(currentVideo)
+        }
+    }
+
+    // Auto-focus play button on TV mode with smooth debounce
+    LaunchedEffect(isTVLayout) {
+        if (isTVLayout) {
+            delay(400)
             try { playButtonFocusRequester.requestFocus() } catch(_: Exception) {}
         }
     }
@@ -381,10 +395,17 @@ fun VideoDetailScreen(
                 onPlayClick(id, ep)
             }
 
-            if (isExpanded) {
+            if (isTVLayout) {
                 Row(modifier = Modifier.fillMaxSize()) {
                     Box(modifier = Modifier.weight(1.2f).fillMaxHeight()) {
-                        VideoDetailMedia(currentVideo, isPlayerActive, context, showTrailer, isTV = true)
+                        VideoDetailMedia(
+                            video = currentVideo,
+                            isPlayerActive = isPlayerActive,
+                            context = context,
+                            showTrailer = showTrailer,
+                            isTV = true,
+                            onPosterMissing = { viewModel.healMissingPoster(currentVideo) }
+                        )
                         DetailGradients()
                         DetailNavigation(onBackClick, onSettingsClick, isAddedToMyList) { viewModel.toggleMyList(currentVideo.id) }
                     }
@@ -406,7 +427,14 @@ fun VideoDetailScreen(
                         .verticalScroll(rememberScrollState())
                 ) {
                     Box(modifier = Modifier.fillMaxWidth().height(420.dp)) {
-                        VideoDetailMedia(currentVideo, isPlayerActive, context, showTrailer, isTV = isTV)
+                        VideoDetailMedia(
+                            video = currentVideo,
+                            isPlayerActive = isPlayerActive,
+                            context = context,
+                            showTrailer = showTrailer,
+                            isTV = isTV,
+                            onPosterMissing = { viewModel.healMissingPoster(currentVideo) }
+                        )
                         DetailGradients()
                         DetailNavigation(onBackClick, onSettingsClick, isAddedToMyList) { viewModel.toggleMyList(currentVideo.id) }
                     }
@@ -421,7 +449,14 @@ fun VideoDetailScreen(
 }
 
 @Composable
-fun VideoDetailMedia(video: com.duta.movie.model.Video, isPlayerActive: Boolean, context: android.content.Context, showTrailer: Boolean, isTV: Boolean = false) {
+fun VideoDetailMedia(
+    video: com.duta.movie.model.Video, 
+    isPlayerActive: Boolean, 
+    context: android.content.Context, 
+    showTrailer: Boolean, 
+    isTV: Boolean = false,
+    onPosterMissing: (() -> Unit)? = null
+) {
     val isPreviewVideo = video.previewUrl.let { com.duta.movie.util.VideoExtractor.isDirectVideoUrl(it) || it.contains("youtube.com") || it.contains("youtu.be") }
     
     if (video.previewUrl.isNotEmpty() && isPreviewVideo && !isPlayerActive && showTrailer) {
@@ -438,7 +473,13 @@ fun VideoDetailMedia(video: com.duta.movie.model.Video, isPlayerActive: Boolean,
                 onError = { hasPlayerError = true }
             )
             if (!isPlayerReady) {
-                DetailStaticImage(video.backdropUrl.ifEmpty { video.thumbnailUrl }, video.thumbnailUrl.ifEmpty { video.backdropUrl }, context, isTV)
+                DetailStaticImage(
+                    url = video.backdropUrl.ifEmpty { video.thumbnailUrl },
+                    fallbackUrl = video.thumbnailUrl.ifEmpty { video.backdropUrl },
+                    context = context,
+                    isTV = isTV,
+                    onPosterMissing = onPosterMissing
+                )
                 if (!hasPlayerError) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Color.Red, modifier = Modifier.size(48.dp))
@@ -447,13 +488,32 @@ fun VideoDetailMedia(video: com.duta.movie.model.Video, isPlayerActive: Boolean,
             }
         }
     } else {
-        DetailStaticImage(video.backdropUrl.ifEmpty { video.thumbnailUrl }, video.thumbnailUrl.ifEmpty { video.backdropUrl }, context, isTV)
+        DetailStaticImage(
+            url = video.backdropUrl.ifEmpty { video.thumbnailUrl },
+            fallbackUrl = video.thumbnailUrl.ifEmpty { video.backdropUrl },
+            context = context,
+            isTV = isTV,
+            onPosterMissing = onPosterMissing
+        )
     }
 }
 
 @Composable
-fun DetailStaticImage(url: String, fallbackUrl: String? = null, context: android.content.Context, isTV: Boolean = false) {
+fun DetailStaticImage(
+    url: String, 
+    fallbackUrl: String? = null, 
+    context: android.content.Context, 
+    isTV: Boolean = false,
+    onPosterMissing: (() -> Unit)? = null
+) {
     var currentUrl by remember(url) { mutableStateOf(url) }
+
+    LaunchedEffect(currentUrl) {
+        if (currentUrl.isEmpty() || !com.duta.movie.util.VideoExtractor.isValidImageUrl(currentUrl)) {
+            onPosterMissing?.invoke()
+        }
+    }
+
     val detailRequest = ImageRequest.Builder(context)
         .data(VideoUtils.getOptimizedBackdrop(currentUrl, isTV, context))
         .crossfade(true)
@@ -463,6 +523,8 @@ fun DetailStaticImage(url: String, fallbackUrl: String? = null, context: android
             onError = { _, _ ->
                 if (!fallbackUrl.isNullOrEmpty() && currentUrl != fallbackUrl) {
                     currentUrl = fallbackUrl
+                } else {
+                    onPosterMissing?.invoke()
                 }
             }
         )
@@ -476,7 +538,10 @@ fun DetailStaticImage(url: String, fallbackUrl: String? = null, context: android
         modifier = Modifier.fillMaxSize(),
         contentScale = ContentScale.Crop,
         error = errorPlaceholder,
-        placeholder = errorPlaceholder
+        placeholder = errorPlaceholder,
+        onError = {
+            onPosterMissing?.invoke()
+        }
     )
 }
 
@@ -588,14 +653,17 @@ fun VideoDetailInfo(
 ) {
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
         val isLikelySeries = remember(video.videoUrl, video.isSeries, video.episodes) {
-            if (video.episodes.isNotEmpty()) true
+            val validEpisodes = video.episodes.filter { !it.name.contains("unnamed", ignoreCase = true) }
+            if (validEpisodes.isNotEmpty()) {
+                if (video.isSeries == false && validEpisodes.size <= 1) false else true
+            }
             else if (video.isSeries == true) true
             else if (video.isSeries == false) false
             else {
                 val lowUrl = video.videoUrl.lowercase()
                 lowUrl.contains("/series/") || lowUrl.contains("/serial-tv/") || lowUrl.contains("/tv/") || lowUrl.contains("/serial-tv-terbaru/") ||
                 lowUrl.contains("/eps/") || lowUrl.contains("/episode/") || lowUrl.contains("-episode-") ||
-                lowUrl.contains("/episod/") || lowUrl.contains("-episod-") || lowUrl.contains("-epi-")
+                lowUrl.contains("/episod/") || lowUrl.contains("-episod-")
             }
         }
 
@@ -801,11 +869,26 @@ fun VideoDetailInfo(
         val isDetailLoading by viewModel.isDetailLoading.collectAsStateWithLifecycle()
         val isSearchingAlternatives by viewModel.isSearchingAlternatives.collectAsStateWithLifecycle()
         val localContext = LocalContext.current
-        val activeEpName = remember(currentOrFirstEpisode, video.title, video.videoUrl) {
+        val activeEpNum = remember(currentOrFirstEpisode, video.title, video.videoUrl) {
             val raw = currentOrFirstEpisode?.name ?: "Episode 1"
-            com.duta.movie.util.VideoExtractor.cleanEpisodeTitle(raw, video.title, video.videoUrl)
+            val cleaned = com.duta.movie.util.VideoExtractor.cleanEpisodeTitle(raw, video.title, video.videoUrl)
+            Regex("""\d+""").find(cleaned)?.value
         }
-        val headerText = if (isLikelySeries) "Servers ($activeEpName)" else "Servers"
+        val headerText = if (isLikelySeries && activeEpNum != null && video.episodes.size > 1) "Servers (Ep $activeEpNum)" else "Servers"
+
+        val displayServers = remember(video.servers) {
+            video.servers.asSequence()
+                .filter { server ->
+                    val low = server.url.lowercase()
+                    !low.contains("ladyriderswear") && !low.contains("chiptaylor") && !low.contains("seoulschool") &&
+                    !low.contains("ketik.live") && !low.contains("parklogic")
+                }
+                .distinctBy { it.url.trimEnd('/') }
+                .sortedWith(compareByDescending<com.duta.movie.model.VideoServer> {
+                    com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url)
+                }.thenBy { it.name })
+                .toList()
+        }
 
         Spacer(modifier = Modifier.height(32.dp))
         Row(
@@ -813,17 +896,36 @@ fun VideoDetailInfo(
             verticalAlignment = Alignment.CenterVertically,
             horizontalArrangement = Arrangement.SpaceBetween
         ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(text = headerText, color = Color.White, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                if (video.servers.isNotEmpty()) {
+            Row(
+                modifier = Modifier.weight(1f, fill = false),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = headerText, 
+                    color = Color.White, 
+                    style = MaterialTheme.typography.titleLarge, 
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                if (displayServers.isNotEmpty()) {
                     Spacer(modifier = Modifier.width(8.dp))
                     Surface(color = Color.DarkGray, shape = CircleShape) {
-                        Text(text = video.servers.size.toString(), color = Color.LightGray, modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = displayServers.size.toString(), 
+                            color = Color.LightGray, 
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp), 
+                            fontSize = 12.sp, 
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
 
+            Spacer(modifier = Modifier.width(12.dp))
+
             var isAltFocused by remember { mutableStateOf(false) }
+            val altScale by animateFloatAsState(if (isAltFocused) 1.08f else 1f)
             Button(
                 onClick = {
                     if (!isSearchingAlternatives) {
@@ -847,41 +949,38 @@ fun VideoDetailInfo(
                 shape = RoundedCornerShape(8.dp),
                 contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                 modifier = Modifier
+                    .graphicsLayer(scaleX = altScale, scaleY = altScale)
+                    .defaultMinSize(minHeight = 36.dp)
                     .onFocusChanged { isAltFocused = it.isFocused }
                     .border(if (isAltFocused) BorderStroke(2.dp, Color.Red) else BorderStroke(1.dp, Color.DarkGray), RoundedCornerShape(8.dp))
             ) {
-                if (isSearchingAlternatives) {
-                    CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.Red)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(stringResource(R.string.searching_other_sources), fontSize = 12.sp)
-                } else {
-                    Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(14.dp))
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(stringResource(R.string.find_other_sources), fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.Center
+                ) {
+                    if (isSearchingAlternatives) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), strokeWidth = 2.dp, color = Color.Red)
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(stringResource(R.string.searching_other_sources), fontSize = 12.sp, maxLines = 1)
+                    } else {
+                        Icon(Icons.Default.Search, contentDescription = null, modifier = Modifier.size(14.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(stringResource(R.string.find_other_sources), fontSize = 12.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
+                    }
                 }
             }
         }
         Spacer(modifier = Modifier.height(16.dp))
 
-        if (video.servers.isNotEmpty()) {
-            val prioritizedServers = video.servers.asSequence()
-                .filter { !it.url.lowercase().contains("layarkaca") }
-                .sortedWith(compareByDescending<com.duta.movie.model.VideoServer> {
-                    com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url)
-                }.thenBy { it.name })
-                .toList()
-
+        if (displayServers.isNotEmpty()) {
             FlowRow(
                 modifier = Modifier.fillMaxWidth(), 
                 horizontalArrangement = Arrangement.spacedBy(10.dp), 
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
-                prioritizedServers.asSequence().filter {
-                    val low = it.url.lowercase()
-                    // Allow main site mirrors (Indostream/HgCloud proxies) but block specific spam domains
-                    !low.contains("ladyriderswear") && !low.contains("chiptaylor") && !low.contains("seoulschool")
-                }.forEach { server ->
+                displayServers.forEach { server ->
                     var isServerFocused by remember { mutableStateOf(false) }
+                    val serverScale by animateFloatAsState(if (isServerFocused) 1.08f else 1f)
                     Button(
                         onClick = { onPlayClick(video.id, server.url) },
                         colors = ButtonDefaults.buttonColors(
@@ -889,6 +988,7 @@ fun VideoDetailInfo(
                             contentColor = if (isServerFocused) Color.Black else Color.White
                         ),
                         modifier = Modifier
+                            .graphicsLayer(scaleX = serverScale, scaleY = serverScale)
                             .onFocusChanged { isServerFocused = it.isFocused }
                             .border(if (isServerFocused) BorderStroke(3.dp, Color.Red) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
                         shape = RoundedCornerShape(8.dp),
@@ -911,6 +1011,32 @@ fun VideoDetailInfo(
                             .height(40.dp)
                             .clip(RoundedCornerShape(8.dp))
                             .shimmerEffect()
+                    )
+                }
+            }
+        } else if (isLikelySeries && video.episodes.isNotEmpty()) {
+            Text(
+                text = "Select an episode below to stream",
+                color = Color.Gray,
+                fontSize = 13.sp,
+                fontStyle = androidx.compose.ui.text.font.FontStyle.Italic
+            )
+        } else {
+            Surface(
+                color = Color(0xFF141414),
+                shape = RoundedCornerShape(8.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.08f)),
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Row(
+                    modifier = Modifier.padding(14.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = "No direct mirror link found. Tap 'Find other sources' above to search alternative mirrors.",
+                        color = Color.LightGray,
+                        fontSize = 12.sp,
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
@@ -961,10 +1087,12 @@ fun VideoDetailInfo(
                 ) {
                     seasons.forEach { season ->
                         var isTabFocused by remember { mutableStateOf(false) }
+                        val tabScale by animateFloatAsState(if (isTabFocused) 1.08f else 1f)
                         Tab(
                             selected = currentSeason == season,
                             onClick = { currentSeason = season },
                             modifier = Modifier
+                                .graphicsLayer(scaleX = tabScale, scaleY = tabScale)
                                 .onFocusChanged { 
                                      isTabFocused = it.isFocused 
                                      if (it.isFocused) currentSeason = season
@@ -986,7 +1114,8 @@ fun VideoDetailInfo(
             val displaySeason = if (currentSeason.isNotEmpty() && currentSeason in seasons) currentSeason else (seasons.firstOrNull() ?: "")
 
             groupedEpisodes[displaySeason]?.sortedWith(compareBy { ep -> 
-                Regex("""(?i)\b(?:episod[e]?|eps|ep)\s*(\d+)\b""").find(ep.name)?.groupValues?.get(1)?.toIntOrNull()
+                Regex("""(?i)\b(?:episod[e]?|eps|ep)[.:\s-]*(\d+)\b""").find(ep.name)?.groupValues?.get(1)?.toIntOrNull()
+                    ?: Regex("""(?i)(?:e|x)\s*(\d+)\b""").find(ep.name)?.groupValues?.get(1)?.toIntOrNull()
                     ?: Regex("""(?i)[-_](?:episod[e]?|eps|ep)[-_](\d+)""").find(ep.url)?.groupValues?.get(1)?.toIntOrNull()
                     ?: ep.name.filter { c -> c.isDigit() }.toIntOrNull() ?: 0
             })?.forEachIndexed { index, episode ->

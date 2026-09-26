@@ -930,7 +930,7 @@ fun SettingsScreen(
                                     SettingsActionCard(
                                         title = stringResource(R.string.version_info),
                                         annotatedDescription = androidx.compose.ui.text.buildAnnotatedString {
-                                            append("DreamStream, Premium v2.0.4 Raven's Revenge\n")
+                                            append("DreamStream, Premium v2.0.5 Run Forrest Run\n")
                                             withStyle(style = SpanStyle(color = Color.Red)) {
                                                 append(if (isCheckingUpdate) checkingUpdatesText else clickToCheckText)
                                             }
@@ -1010,7 +1010,7 @@ fun SettingsScreen(
 
         AlertDialog(
             onDismissRequest = { showChangelogDialog = false },
-            title = { Text(stringResource(R.string.changelog_v2_0_4), color = Color.White) },
+            title = { Text(stringResource(R.string.changelog_v2_0_5), color = Color.White) },
             text = {
                 Column(
                     modifier = Modifier
@@ -1098,6 +1098,14 @@ fun SettingsScreen(
                         .verticalScroll(changelogScrollState)
                         .padding(end = 8.dp)
                 ) {
+                    Text(stringResource(R.string.v2_0_5_updates), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_0_5_highlight_1), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_0_5_highlight_2), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_0_5_highlight_3), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_0_5_highlight_4), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_0_5_highlight_5), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(stringResource(R.string.v2_0_4_updates), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
                     Text(stringResource(R.string.v2_0_4_highlight_1), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
                     Text(stringResource(R.string.v2_0_4_highlight_2), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))

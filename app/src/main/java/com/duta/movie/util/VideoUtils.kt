@@ -108,29 +108,29 @@ object VideoUtils {
         val original = getOriginalImage(url)
 
         val tmdbSize = when {
+            isTV && !isLowRam -> "w780"
             isTV && isLowRam -> "w500"
-            isTV -> "w780"
             else -> "w342"
         }
         val wpWidth = when {
+            isTV && !isLowRam -> "720"
             isTV && isLowRam -> "500"
-            isTV -> "720"
             else -> "360"
         }
         val googleSize = when {
-            isTV && isLowRam -> "s600"
-            isTV -> "s800"
+            isTV && !isLowRam -> "s800"
+            isTV && isLowRam -> "s500"
             else -> "s400"
         }
         val dmSize = "x720"
         val imdbSy = when {
-            isTV && isLowRam -> "_SY750_"
-            isTV -> "_SY1000_"
+            isTV && !isLowRam -> "_SY1000_"
+            isTV && isLowRam -> "_SY600_"
             else -> "_SY500_"
         }
         val imdbSx = when {
-            isTV && isLowRam -> "_SX500_"
-            isTV -> "_SX720_"
+            isTV && !isLowRam -> "_SX700_"
+            isTV && isLowRam -> "_SX400_"
             else -> "_SX360_"
         }
 
@@ -153,11 +153,7 @@ object VideoUtils {
             }
             // Bilibili CDN optimization (crops horizontal video thumbnail to vertical 2:3 movie poster)
             original.contains("hdslb.com") -> {
-                val biliSuffix = when {
-                    isTV && isLowRam -> "@360w_540h_1c.webp"
-                    isTV -> "@480w_720h_1c.webp"
-                    else -> "@240w_360h_1c.webp"
-                }
+                val biliSuffix = if (isTV) "@320w_480h_1c.webp" else "@240w_360h_1c.webp"
                 if (original.contains("@")) original.substringBefore("@") + biliSuffix else original + biliSuffix
             }
             // WordPress/Jetpack/Photon resizing (i0.wp.com, i1.wp.com, i2.wp.com, i3.wp.com, etc.)
@@ -165,17 +161,8 @@ object VideoUtils {
                 if (original.contains("?")) "$original&w=$wpWidth" else "$original?w=$wpWidth"
             }
             else -> {
-                // On TV, always serve the high-definition original poster (e.g. uncropped WebP from Algarvebuzz/PencuriMovie)
-                if (isTV) {
-                    original
-                } else if (url.contains(Regex("""-\d+x\d+\."""))) {
-                    // On mobile with low bandwidth/data, preserve small thumbnail if available
-                    url
-                } else if (url.isNotEmpty()) {
-                    url
-                } else {
-                    original
-                }
+                // Preserve small lightweight thumbnail from site; avoid downloading multi-megabyte master files
+                if (url.isNotEmpty()) url else original
             }
         }
     }

@@ -356,6 +356,13 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="no_other_sources_found">Tiada sumber alternatif ditemui untuk tajuk ini</string>
     <string name="auto_healed_source">Swapulih %d pelayan cermin alternatif</string>
     <string name="added_multi_provider_alt_sources">Menambah carian silang berbilang penyedia &amp; swapulih automatik: pulih pelayan cermin baharu secara automatik apabila pautan mati atau tamat tempoh.</string>
+    <string name="changelog_v2_0_5">Log Perubahan v2.0.5 Run Forrest Run</string>
+    <string name="v2_0_5_updates">Kemaskini v2.0.5:</string>
+    <string name="v2_0_5_highlight_1">Swapulih Pantas Penstriman &amp; Poster: Pemulihan poster sandaran automatik dan penemuan cermin merentas kelompok berbilang pembekal, memastikan 0 poster hilang.</string>
+    <string name="v2_0_5_highlight_2">Pembetulan Poster &amp; Latar Belakang Butiran: Pengesanan metadata diperbetulkan untuk menolak pautan bukan imej dan menghapuskan pencemaran poster filem berkaitan pada halaman butiran video.</string>
+    <string name="v2_0_5_highlight_3">Pengalaman Kawalan Jauh Android TV Dipertingkatkan: Navigasi D-pad lancar dengan pertukaran musim serta-merta semasa fokus, penskalaan kad 1.25x, bingkai kontras tinggi dan susun atur 2-lajur skrin lebar.</string>
+    <string name="v2_0_5_highlight_4">Penimbalan Video &amp; Penskalaan CDN Resolusi Tinggi: Pengurusan penimbal dinamik sehingga 5 minit pada TV dan peningkatan resolusi imej 780p/1280p yang jelas.</string>
+    <string name="v2_0_5_highlight_5">Kebal Limpahan Tindanan &amp; ReDoS Regex: Menggantikan carian corak regex berulang dengan pemadanan linear pantas pada JavaScript dikaburkan dan pengekstrak sari kata.</string>
     <string name="changelog_v2_0_4">Log Perubahan v2.0.4 Raven\'s Revenge</string>
     <string name="v2_0_4_updates">Kemaskini v2.0.4:</string>
     <string name="v2_0_4_highlight_1">Komen Komuniti Global: Berbincang tentang filem dan siri bersama pengguna lain secara langsung dengan nama samaran kekal dan avatar berwarna.</string>

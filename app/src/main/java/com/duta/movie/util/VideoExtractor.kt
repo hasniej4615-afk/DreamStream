@@ -14,6 +14,7 @@ import okhttp3.FormBody
 import okhttp3.Request
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
+import org.jsoup.nodes.Element
 import java.util.regex.Pattern
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
@@ -47,6 +48,9 @@ object VideoExtractor {
         onDomainLearned = listener
     }
 
+    data class AjaxEndpoint(val host: String, val action: String, val paramKey: String, val type: String)
+    private val workingAjaxCache = ConcurrentHashMap<String, AjaxEndpoint>()
+
     private val confirmedDeadMirrors = ConcurrentHashMap.newKeySet<String>()
 
     fun isConfirmedDead(url: String): Boolean {
@@ -65,6 +69,23 @@ object VideoExtractor {
     const val DUTAFILM_WEB_BASE_URL = "https://df31.mantab.men"
     private var activeDutaFilmWebBaseUrl: String = DUTAFILM_WEB_BASE_URL
 
+    val DUTAFILM_WEB_FALLBACKS = listOf(
+        "https://df31.mantab.men",
+        "https://df32.mantab.men",
+        "https://df30.mantab.men",
+        "https://df29.mantab.men",
+        "https://df33.mantab.men",
+        "https://df28.mantab.men",
+        "https://df34.mantab.men",
+        "https://df27.mantab.men",
+        "https://df35.mantab.men",
+        "https://df26.mantab.men",
+        "https://df36.mantab.men",
+        "https://df25.mantab.men",
+        "https://df37.mantab.men",
+        "https://df38.mantab.men"
+    )
+
     fun getDutaFilmWebBaseUrl(): String = activeDutaFilmWebBaseUrl
 
     fun setDutaFilmWebBaseUrl(url: String) {
@@ -72,8 +93,37 @@ object VideoExtractor {
         if (trimmed.isNotBlank()) activeDutaFilmWebBaseUrl = trimmed
     }
 
+    suspend fun probeDutaFilmWebDomain(): String? = withContext(Dispatchers.IO) {
+        val candidates = listOf(activeDutaFilmWebBaseUrl) + DUTAFILM_WEB_FALLBACKS
+        for (candidate in candidates.distinct()) {
+            try {
+                val testUrl = "$candidate/explore?media_type=tv"
+                val request = Request.Builder().url(testUrl).header("User-Agent", USER_AGENT).build()
+                NetworkConfig.fastOkHttpClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string() ?: ""
+                        if (body.contains("explore") || body.contains("df-") || body.contains("watch") || body.contains("movie")) {
+                            val root = "${response.request.url.scheme}://${response.request.url.host}"
+                            setDutaFilmWebBaseUrl(root)
+                            Log.i(TAG, "SCOUTING: Live DutaFilm Web domain confirmed: $root")
+                            return@withContext root
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        null
+    }
+
     const val BULLERSWOOD_BASE_URL = "https://bullerswood.org"
     private var activeBullerswoodBaseUrl: String = BULLERSWOOD_BASE_URL
+
+    val BULLERSWOOD_FALLBACKS = listOf(
+        "https://bullerswood.org",
+        "https://scphi.org",
+        "https://grishamfarms.org",
+        "https://tv12.lk21official.cc"
+    )
 
     fun getBullerswoodBaseUrl(): String = activeBullerswoodBaseUrl
 
@@ -82,13 +132,35 @@ object VideoExtractor {
         if (trimmed.isNotBlank()) activeBullerswoodBaseUrl = trimmed
     }
 
+    suspend fun probeBullerswoodDomain(): String? = withContext(Dispatchers.IO) {
+        val candidates = listOf(activeBullerswoodBaseUrl) + BULLERSWOOD_FALLBACKS
+        for (candidate in candidates.distinct()) {
+            try {
+                val testUrl = "$candidate/country/indonesia/"
+                val request = Request.Builder().url(testUrl).header("User-Agent", USER_AGENT).build()
+                NetworkConfig.fastOkHttpClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string() ?: ""
+                        if (body.contains("gmr-") || body.contains("muvipro") || body.contains("movie") || body.contains("film")) {
+                            val root = "${response.request.url.scheme}://${response.request.url.host}"
+                            setBullerswoodBaseUrl(root)
+                            Log.i(TAG, "SCOUTING: Live LK21/Bullerswood domain confirmed: $root")
+                            return@withContext root
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        null
+    }
+
     private val YEAR_PAREN_REGEX = Regex("""[\(\[]\s*(19\d{2}|20\d{2})\s*[\)\]]""")
     private val YEAR_WORD_REGEX = Regex("""\b(19\d{2}|20\d{2})\b""")
 
     val CLUSTER_MIRROR_URLS = listOf(
+        "http://159.89.249.45",
         "http://165.227.237.129",
         "http://168.144.209.219",
-        "http://159.89.249.45",
         "http://134.209.20.140",
         "http://134.122.56.188",
         "http://178.62.72.37",
@@ -131,9 +203,18 @@ object VideoExtractor {
     val PENCURI_FALLBACKS = listOf(
         "https://ww44.pencurimovie.baby",
         "https://pencurimovie.baby",
-        "https://pencurimovie.my",
+        "https://pencurimovie.xyz",
         "https://ww45.pencurimovie.baby",
-        "https://ww43.pencurimovie.baby"
+        "https://ww43.pencurimovie.baby",
+        "https://ww46.pencurimovie.baby",
+        "https://ww42.pencurimovie.baby",
+        "https://ww47.pencurimovie.baby",
+        "https://ww41.pencurimovie.baby",
+        "https://ww48.pencurimovie.baby",
+        "https://ww40.pencurimovie.baby",
+        "https://ww49.pencurimovie.baby",
+        "https://ww50.pencurimovie.baby",
+        "https://pencurimovie.my"
     )
 
     fun setOnPencuriDomainLearned(listener: (String) -> Unit) {
@@ -215,7 +296,7 @@ object VideoExtractor {
                     host.contains("yandex.ru") || host.contains("google.com") ||
                     host.contains("ketik.live") || host.contains("klikzeus") || host.contains("vingaming") ||
                     host.contains("zeus88") || host.contains("klik.top") || host.contains("googletagmanager") ||
-                    host.contains("archive.org") || host.contains("kepalabergetar") ||
+                    host.contains("archive.org") || host.contains("kepalabergetar") || host.contains("kepala-bergetar") ||
                     host.contains("159.89.249.45") || host.contains("dutafilm") ||
                     host.contains("youtube") || host.contains("youtu.be") || host.contains("bilibili") || host.contains("dailymotion") ||
                     host.contains("google") || host.contains("player") || 
@@ -320,8 +401,9 @@ object VideoExtractor {
             ?: return url
         
         if (host.contains("archive.org")) return url
-        if (host.contains("kepalabergetar")) return url
+        if (host.contains("kepalabergetar") || host.contains("kepala-bergetar")) return url
         if (host.contains("159.89.249.45") || host.contains("dutafilm") || isClusterSite(host)) return url
+        if (host.contains("mantab.men") || host.contains("bullerswood.org") || host.contains("scphi.org") || host.contains("grishamfarms.org") || host.contains("lk21official")) return url
         
         // Auto-heal for PencuriMovie standalone catalog
         if (host.contains("pencurimovie") || host.contains("pencurifilm") || host.contains("pencurivideo")) {
@@ -383,22 +465,22 @@ object VideoExtractor {
     }
 
     /**
-     * Identifies if a video or server belongs to DutaFilm Web (df31.mantab.men) source.
+     * Identifies if a video or server belongs to DutaFilm Web (mantab.men) source.
      */
     fun isDutaFilmWeb(videoId: String? = null, videoUrl: String? = null, streamUrl: String? = null): Boolean {
         if (videoId?.startsWith("dfw_") == true) return true
-        if (videoUrl?.contains("mantab.men", ignoreCase = true) == true || videoUrl?.contains("df31", ignoreCase = true) == true) return true
-        if (streamUrl?.contains("mantab.men", ignoreCase = true) == true || streamUrl?.contains("df31", ignoreCase = true) == true) return true
+        if (videoUrl?.contains("mantab.men", ignoreCase = true) == true || (videoUrl?.contains("df", ignoreCase = true) == true && videoUrl.contains(".mantab", ignoreCase = true))) return true
+        if (streamUrl?.contains("mantab.men", ignoreCase = true) == true || (streamUrl?.contains("df", ignoreCase = true) == true && streamUrl.contains(".mantab", ignoreCase = true))) return true
         return false
     }
 
     /**
-     * Identifies if a video or server belongs to LK21 / Bullerswood source.
+     * Identifies if a video or server belongs to LK21 / Bullerswood / Scphi source.
      */
     fun isBullerswood(videoId: String? = null, videoUrl: String? = null, streamUrl: String? = null): Boolean {
         if (videoId?.startsWith("bw_") == true) return true
-        if (videoUrl?.contains("bullerswood.org", ignoreCase = true) == true) return true
-        if (streamUrl?.contains("bullerswood.org", ignoreCase = true) == true) return true
+        if (videoUrl?.contains("bullerswood.org", ignoreCase = true) == true || videoUrl?.contains("scphi.org", ignoreCase = true) == true || videoUrl?.contains("grishamfarms.org", ignoreCase = true) == true || videoUrl?.contains("lk21official", ignoreCase = true) == true) return true
+        if (streamUrl?.contains("bullerswood.org", ignoreCase = true) == true || streamUrl?.contains("scphi.org", ignoreCase = true) == true || streamUrl?.contains("grishamfarms.org", ignoreCase = true) == true || streamUrl?.contains("lk21official", ignoreCase = true) == true) return true
         return false
     }
 
@@ -417,8 +499,8 @@ object VideoExtractor {
      */
     fun isKepalaBergetar(videoId: String? = null, videoUrl: String? = null, streamUrl: String? = null): Boolean {
         if (videoId?.startsWith("kb_") == true) return true
-        if (videoUrl?.contains("kepalabergetar", ignoreCase = true) == true) return true
-        if (streamUrl?.contains("kepalabergetar", ignoreCase = true) == true) return true
+        if (videoUrl?.contains("kepalabergetar", ignoreCase = true) == true || videoUrl?.contains("kepala-bergetar", ignoreCase = true) == true || videoUrl?.contains("dfm2u", ignoreCase = true) == true) return true
+        if (streamUrl?.contains("kepalabergetar", ignoreCase = true) == true || streamUrl?.contains("kepala-bergetar", ignoreCase = true) == true || streamUrl?.contains("dfm2u", ignoreCase = true) == true) return true
         return false
     }
 
@@ -462,6 +544,8 @@ object VideoExtractor {
                low.contains("dooplay") || low.contains("dbmovies") ||
                low.contains("muvipro") ||
                low.contains("pencurimovie") || low.contains("pencurifilm") ||
+               low.contains("bullerswood") || low.contains("scphi") || low.contains("grisham") ||
+               low.contains("layarkaca") || low.contains("lk21") ||
                low.contains("katakatamutiara") || low.contains("ohionewsnow")
     }
 
@@ -495,15 +579,8 @@ object VideoExtractor {
             Log.d(TAG, "SCOUTING: OTA mirror check failed: ${e.message}")
         }
 
-        // TIER 3 SCOUT: Known fallback candidate patterns
-        val candidates = PENCURI_FALLBACKS + listOf(
-            "https://ohionewsnow.com",
-            "https://billofrightsforum.org",
-            "https://eddieoneverything.com", 
-            "https://bokinshop.com", 
-            "https://itoshii-movie.com",
-            "https://katakatamutiara.com"
-        )
+        // TIER 3 SCOUT: Known fallback candidate patterns from live clusters
+        val candidates = PENCURI_FALLBACKS + BULLERSWOOD_FALLBACKS + DUTAFILM_WEB_FALLBACKS
         val deferredProbes = candidates.map { url ->
             async {
                 if (pingAndVerify(url)) url else null
@@ -532,6 +609,9 @@ object VideoExtractor {
     }
 
     suspend fun fetchHtml(url: String, referer: String? = null): String? = withContext(Dispatchers.IO) {
+        if (isConfirmedDead(url)) return@withContext null
+        val host = try { android.net.Uri.parse(url).host?.lowercase() } catch(_: Exception) { null }
+        if (host != null && isConfirmedDead(host) && !isWhitelistedHost(host)) return@withContext null
         fetchSemaphore.withPermit {
             for (i in 0..1) {
                 try {
@@ -577,11 +657,21 @@ object VideoExtractor {
                                 Log.d(TAG, "Dynamic Learning: PencuriMovie site verified. Updating base to: $rootUrl")
                                 updatePencuriBaseUrl(rootUrl)
                             }
-                        } else if (finalHost.contains("kepalabergetar") || finalHost.contains("archive.org") || 
+                        } else if (finalHost.contains("kepalabergetar") || finalHost.contains("kepala-bergetar") || finalHost.contains("archive.org") || 
                                    finalHost.contains("youtube") || finalHost.contains("youtu.be") || 
                                    finalHost.contains("bilibili") || finalHost.contains("dailymotion") ||
-                                   finalHost.contains("159.89.249.45") || finalHost.contains("dutafilm")) {
-                            // Dedicated external providers - never learn as DutaMovie BASE_URL
+                                   finalHost.contains("159.89.249.45") || finalHost.contains("dutafilm") ||
+                                   finalHost.contains("mantab.men") || finalHost.contains("bullerswood") ||
+                                   finalHost.contains("scphi") || finalHost.contains("grisham") ||
+                                   finalHost.contains("lk21official")) {
+                            // Dedicated external providers - dynamically learn subdomains if applicable
+                            if (finalHost.contains("mantab.men")) {
+                                val scheme = try { resp.request.url.scheme } catch(_: Exception) { "https" }
+                                setDutaFilmWebBaseUrl("$scheme://$finalHost")
+                            } else if (finalHost.contains("bullerswood") || finalHost.contains("scphi") || finalHost.contains("grisham") || finalHost.contains("lk21official")) {
+                                val scheme = try { resp.request.url.scheme } catch(_: Exception) { "https" }
+                                setBullerswoodBaseUrl("$scheme://$finalHost")
+                            }
                         } else {
                             // OWL'S EYE: Active learning from the current response (never force-hijack from random fetches)
                             if (!body.isNullOrEmpty() && isLegitSite(body)) {
@@ -597,6 +687,11 @@ object VideoExtractor {
                 } catch (e: Exception) {
                     if (e is java.net.SocketTimeoutException || e is java.net.ConnectException || e is java.io.InterruptedIOException) {
                         Log.w(TAG, "fetchHtml timeout on $url: ${e.message}")
+                        markConfirmedDead(url)
+                        val errHost = try { android.net.Uri.parse(url).host?.lowercase() } catch(_: Exception) { null }
+                        if (errHost != null && !isWhitelistedHost(errHost)) {
+                            markConfirmedDead(errHost)
+                        }
                         break // Do not retry unreachable / timed out hosts
                     }
                 }
@@ -920,12 +1015,28 @@ object VideoExtractor {
     }
 
     suspend fun extractVideoUrl(pageUrl: String, depth: Int = 0, referer: String? = null, visited: MutableSet<String> = mutableSetOf()): ExtractionResult? = withContext(Dispatchers.IO) {
-        if (depth > 3 || !visited.add(pageUrl) || !pageUrl.startsWith("http") || pageUrl.lowercase().contains("listeamed")) return@withContext null
+        if (depth > 3 || !visited.add(pageUrl) || pageUrl.lowercase().contains("listeamed")) return@withContext null
+        val actualReferer = referer ?: pageUrl
+
+        if (pageUrl.startsWith("ajax:")) {
+            val parts = pageUrl.removePrefix("ajax:").split(":")
+            if (parts.size >= 2) {
+                val postId = parts[0]
+                val n = parts[1]
+                val type = parts.getOrNull(2) ?: "movie"
+                val resolved = resolveAjaxServer(actualReferer, postId, n, type, actualReferer)
+                if (resolved != null && resolved != pageUrl) {
+                    return@withContext extractVideoUrl(resolved, depth + 1, actualReferer, visited)
+                }
+            }
+            return@withContext null
+        }
+
+        if (!pageUrl.startsWith("http")) return@withContext null
         if (isDirectVideoUrl(pageUrl)) {
             Log.i(TAG, "extractVideoUrl short-circuit: Direct video URL provided: $pageUrl")
             return@withContext ExtractionResult(pageUrl)
         }
-        val actualReferer = referer ?: pageUrl
 
         // OWL'S EYE: Dedicated Direct Extractor for Streamtape
         if (pageUrl.contains("streamtape.com") || pageUrl.contains("streamtape.to") || pageUrl.contains("streamtape.net")) {
@@ -1648,7 +1759,14 @@ object VideoExtractor {
                 val currPage = page + offset
                 val url = buildBullerswoodCategoryUrl(path, currPage)
                 try {
-                    val html = fetchHtml(url)
+                    var html = fetchHtml(url)
+                    if (html.isNullOrEmpty() && currPage == 1) {
+                        val liveDomain = probeBullerswoodDomain()
+                        if (liveDomain != null) {
+                            val retryUrl = buildBullerswoodCategoryUrl(path, currPage)
+                            html = fetchHtml(retryUrl)
+                        }
+                    }
                     if (!html.isNullOrEmpty()) {
                         scrapeVideosFromHtml(html, url)
                     } else emptyList()
@@ -1674,7 +1792,14 @@ object VideoExtractor {
             "${getBullerswoodBaseUrl()}/page/$page/?s=$encodedQuery"
         }
         try {
-            val html = fetchHtml(url)
+            var html = fetchHtml(url)
+            if (html.isNullOrEmpty() && page == 1) {
+                val liveDomain = probeBullerswoodDomain()
+                if (liveDomain != null) {
+                    val retryUrl = if (page <= 1) "$liveDomain/?s=$encodedQuery" else "$liveDomain/page/$page/?s=$encodedQuery"
+                    html = fetchHtml(retryUrl)
+                }
+            }
             if (!html.isNullOrEmpty()) {
                 val scraped = scrapeVideosFromHtml(html, url)
                 scraped.forEach { video ->
@@ -1763,12 +1888,8 @@ object VideoExtractor {
             }
             val title = cleanTitle(rawTitle)
 
-            var poster = anchor.select("img.mv-poster, img").firstOrNull()?.let { img ->
-                img.attr("src").ifEmpty { img.attr("data-src") }.ifEmpty { img.attr("abs:src") }
-            } ?: ""
-            if (poster.startsWith("//")) poster = "https:$poster"
-            else if (poster.startsWith("/")) poster = "${getDutaFilmWebBaseUrl()}$poster"
-            poster = getHighResImage(poster)
+            val poster = extractPosterFromElement(anchor, getDutaFilmWebBaseUrl())
+                .ifEmpty { extractPosterFromElement(el, getDutaFilmWebBaseUrl()) }
 
             val rating = anchor.select(".mv-ratdur, .rating, .score").text().let { text ->
                 val m = Regex("""(\d+(?:\.\d+)?)""").find(text)
@@ -1820,7 +1941,14 @@ object VideoExtractor {
                 val currPage = page + offset
                 val url = buildDutaFilmWebCategoryUrl(path, currPage)
                 try {
-                    val html = fetchHtml(url)
+                    var html = fetchHtml(url)
+                    if (html.isNullOrEmpty() && currPage == 1) {
+                        val liveDomain = probeDutaFilmWebDomain()
+                        if (liveDomain != null) {
+                            val retryUrl = buildDutaFilmWebCategoryUrl(path, currPage)
+                            html = fetchHtml(retryUrl)
+                        }
+                    }
                     if (!html.isNullOrEmpty()) {
                         scrapeDutaFilmWebHtml(html, url)
                     } else emptyList()
@@ -1833,20 +1961,35 @@ object VideoExtractor {
         pageJobs.awaitAll().flatten().forEach { video ->
             if (seen.add(video.id)) results.add(video)
         }
-        sortVideosByNewestRelease(results).take(count)
+        val healedResults = results.map { video ->
+            if (!isValidImageUrl(video.thumbnailUrl)) {
+                val fallback = findPosterForTitle(video.title, video.date)
+                if (isValidImageUrl(fallback)) video.copy(thumbnailUrl = fallback, backdropUrl = video.backdropUrl.ifEmpty { fallback })
+                else video
+            } else video
+        }
+        sortVideosByNewestRelease(healedResults).take(count)
     }
 
     suspend fun searchDutaFilmWeb(query: String, page: Int = 1, count: Int = 20): List<Video> = withContext(Dispatchers.IO) {
         val results = mutableListOf<Video>()
         val seen = mutableSetOf<String>()
-        val cleanBase = getDutaFilmWebBaseUrl().trimEnd('/')
+        var cleanBase = getDutaFilmWebBaseUrl().trimEnd('/')
         val encodedQuery = encodeQuery(query)
 
         // 1. Instant /suggest API if page == 1
         if (page <= 1) {
             try {
                 val suggestUrl = "$cleanBase/suggest?val=$encodedQuery"
-                val json = fetchHtml(suggestUrl)
+                var json = fetchHtml(suggestUrl)
+                if (json.isNullOrEmpty()) {
+                    val liveDomain = probeDutaFilmWebDomain()
+                    if (liveDomain != null) {
+                        cleanBase = liveDomain
+                        val retrySuggest = "$cleanBase/suggest?val=$encodedQuery"
+                        json = fetchHtml(retrySuggest)
+                    }
+                }
                 if (!json.isNullOrEmpty() && json.trim().startsWith("[")) {
                     val root = org.json.JSONArray(json)
                     for (i in 0 until root.length()) {
@@ -1868,7 +2011,15 @@ object VideoExtractor {
         // 2. Query /explore?q= for comprehensive results
         try {
             val exploreUrl = if (page <= 1) "$cleanBase/explore?q=$encodedQuery" else "$cleanBase/explore?q=$encodedQuery&page=$page"
-            val html = fetchHtml(exploreUrl)
+            var html = fetchHtml(exploreUrl)
+            if (html.isNullOrEmpty() && page <= 1) {
+                val liveDomain = probeDutaFilmWebDomain()
+                if (liveDomain != null) {
+                    cleanBase = liveDomain
+                    val retryExplore = if (page <= 1) "$cleanBase/explore?q=$encodedQuery" else "$cleanBase/explore?q=$encodedQuery&page=$page"
+                    html = fetchHtml(retryExplore)
+                }
+            }
             if (!html.isNullOrEmpty()) {
                 val parsed = scrapeDutaFilmWebHtml(html, exploreUrl)
                 parsed.forEach { v ->
@@ -1972,8 +2123,9 @@ object VideoExtractor {
             results
         }
 
-        val bullerswoodDeferred = if (path.contains("country/indonesia", ignoreCase = true)) {
-            async(Dispatchers.IO) { fetchBullerswoodVideos("/country/indonesia/", page, count) }
+        val isMoviesCategory = path == "/" || path == "/movies/" || path.contains("movie") || path.contains("top-imdb") || path.contains("most-viewed")
+        val bullerswoodDeferred = if (path.contains("country/indonesia", ignoreCase = true) || isMoviesCategory) {
+            async(Dispatchers.IO) { fetchBullerswoodVideos(path, page, count) }
         } else null
 
         val dutaWebDeferred = if (path.contains("country/indonesia", ignoreCase = true)) {
@@ -2174,22 +2326,36 @@ object VideoExtractor {
         val isPm = isPencuriMovie(videoId = video.id, videoUrl = video.videoUrl)
         val isKb = isKepalaBergetar(videoId = video.id, videoUrl = video.videoUrl)
         val isDf = isDutaFilm(videoId = video.id, videoUrl = video.videoUrl)
-        val partners = if (isPm) listOf(DUTAFILM_BASE_URL to "DutaFilm")
-                       else if (isDf) listOf(getPencuriBaseUrl() to "Pencuri")
-                       else if (isKb) listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm")
-                       else listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm")
+        val isBw = isBullerswood(videoId = video.id, videoUrl = video.videoUrl)
+        val isDfw = isDutaFilmWeb(videoId = video.id, videoUrl = video.videoUrl)
+        val partners = when {
+            isPm -> listOf(DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb", getBaseUrl() to "DutaMovie")
+            isDfw -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21", getBaseUrl() to "DutaMovie")
+            isDf -> listOf(getPencuriBaseUrl() to "Pencuri", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb", getBaseUrl() to "DutaMovie")
+            isBw -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getDutaFilmWebBaseUrl() to "DutaFilmWeb", getBaseUrl() to "DutaMovie")
+            isKb -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb", getBaseUrl() to "DutaMovie")
+            else -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb")
+        }
 
-        Log.i(TAG, "Healing video '${video.title}' from alternative partners (isPm=$isPm, isDf=$isDf, isKb=$isKb)...")
+        Log.i(TAG, "Healing video '${video.title}' from alternative partners (isPm=$isPm, isDf=$isDf, isKb=$isKb, isBw=$isBw, isDfw=$isDfw)...")
 
         val distinctQueries = buildAlternativeSearchQueries(video.title)
         var healedVideo: Video? = null
 
         for ((partnerDomain, partnerTag) in partners) {
             for (q in distinctQueries) {
-                var searchResults = searchDomain(partnerDomain, q, startPage = 1, maxCount = 20)
-                if (searchResults.isEmpty() && partnerTag == "Pencuri") {
-                    probePencuriDomain()?.let { liveDomain ->
-                        searchResults = searchDomain(liveDomain, q, startPage = 1, maxCount = 20)
+                var searchResults = when (partnerTag) {
+                    "DutaFilmWeb" -> searchDutaFilmWeb(q, page = 1, count = 20)
+                    "DutaFilm" -> searchClusterMirrors(q, page = 1, count = 20)
+                    "LK21" -> searchBullerswood(q, page = 1, count = 20)
+                    else -> {
+                        var res = searchDomain(partnerDomain, q, startPage = 1, maxCount = 20)
+                        if (res.isEmpty() && partnerTag == "Pencuri") {
+                            probePencuriDomain()?.let { liveDomain ->
+                                res = searchDomain(liveDomain, q, startPage = 1, maxCount = 20)
+                            }
+                        }
+                        res
                     }
                 }
 
@@ -2214,7 +2380,17 @@ object VideoExtractor {
                             VideoServer(name = cleanName, url = s.url)
                         }
 
-                        if (taggedServers.isNotEmpty() || resolvedEpisodes.isNotEmpty()) {
+                        if (taggedServers.isNotEmpty() || resolvedEpisodes.isNotEmpty() || isValidImageUrl(details.thumbnailUrl)) {
+                            val bestThumb = when {
+                                isValidImageUrl(details.thumbnailUrl) && (!isValidImageUrl(video.thumbnailUrl) || details.thumbnailUrl.contains("tmdb.org")) -> details.thumbnailUrl
+                                isValidImageUrl(video.thumbnailUrl) -> video.thumbnailUrl
+                                else -> details.thumbnailUrl
+                            }
+                            val bestBackdrop = when {
+                                isValidImageUrl(details.backdropUrl) && (!isValidImageUrl(video.backdropUrl) || details.backdropUrl.contains("tmdb.org")) -> details.backdropUrl
+                                isValidImageUrl(video.backdropUrl) -> video.backdropUrl
+                                else -> details.backdropUrl.ifEmpty { bestThumb }
+                            }
                             healedVideo = video.copy(
                                 title = if (details.title != "Unknown" && details.title.isNotEmpty()) details.title else video.title,
                                 description = if (details.description.length > video.description.length) details.description else video.description,
@@ -2222,11 +2398,11 @@ object VideoExtractor {
                                 episodes = resolvedEpisodes,
                                 isSeries = isSeries,
                                 season = details.season.ifEmpty { video.season },
-                                thumbnailUrl = if (video.thumbnailUrl.isEmpty()) details.thumbnailUrl else video.thumbnailUrl,
-                                backdropUrl = if (video.backdropUrl.isEmpty()) details.backdropUrl else video.backdropUrl
+                                thumbnailUrl = if (bestThumb.isNotEmpty()) bestThumb else bestBackdrop,
+                                backdropUrl = if (bestBackdrop.isNotEmpty()) bestBackdrop else bestThumb
                             )
-                            Log.i(TAG, "Successfully healed '${video.title}' from $partnerTag: ${taggedServers.size} servers, ${resolvedEpisodes.size} episodes")
-                            break
+                            Log.i(TAG, "Successfully healed '${video.title}' from $partnerTag: ${taggedServers.size} servers, ${resolvedEpisodes.size} episodes, poster=${bestThumb.isNotEmpty()}")
+                            if (taggedServers.isNotEmpty() || resolvedEpisodes.isNotEmpty()) break
                         }
                     }
                 }
@@ -2330,8 +2506,8 @@ object VideoExtractor {
             .replace(Regex("""subtitle\s+indo(?:nesia)?"""), " ")
             .replace(Regex("""dutamovie21|dutamovie|layarkaca21|lk21|itoshii|rebahin|bioskopkeren|indoxxi|idlix"""), " ")
             .replace(Regex("""\s*-\s*(?:tv\d+\s*)?rebahinxxi\s*(?:auction)?.*$"""), " ")
-            .replace(Regex("""\s*-\s*(?:[a-zA-Z0-9-]+\.)+[a-zA-Z0-9-]+.*$"""), " ")
-            .replace(Regex("""\s*-\s*\d+\.\d+\.\d+\.\d+.*$"""), " ")
+            .replace(Regex("""\s*-\s*[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}(?::\d+)?.*$"""), " ")
+            .replace(Regex("""\s*-\s*\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?.*$"""), " ")
             .replace(Regex("""\b(?:web-?dl|web-?rip|1080p|720p|480p|360p|hdcam|cam-?rip|bluray|blu-?ray|hdrip)\b"""), " ")
             .replace(Regex("""\b(?:full\s*movie|full\s*film|lengkap|terbaru|official|phim|tonton|watch)\b"""), " ")
             .replace(Regex("""[\(\)\[\]\{\}\-_,:\.'\"\|\\\/–—]"""), " ")
@@ -2426,6 +2602,137 @@ object VideoExtractor {
         val matchedCount = targetTokens.count { candSet.contains(it) }
         val requiredMatches = if (targetTokens.size <= 2) targetTokens.size else targetTokens.size - 1
         return matchedCount >= requiredMatches && Math.abs(targetTokens.size - candTokens.size) <= 1
+    }
+
+    /**
+     * Aggressively discovers a high-quality poster for any movie/series title across
+     * PencuriMovie (TMDB), LK21 cluster mirrors (TMDB), DutaFilm, and YouTube official trailers.
+     * Guarantees that no title is rendered with an empty/blank poster in the UI.
+     */
+    suspend fun findPosterForTitle(title: String, releaseDate: String? = null): String = withContext(Dispatchers.IO) {
+        val clean = cleanTitle(title)
+        if (clean.length < 2) return@withContext ""
+        val queries = buildAlternativeSearchQueries(clean)
+
+        // 1. Try DutaFilm Web (has crisp TMDB posters directly in search/explore results)
+        try {
+            val dfwResults = searchDutaFilmWeb(clean, page = 1, count = 10)
+            val targetDummy = Video(id = "", title = clean, date = releaseDate ?: "", videoUrl = "", thumbnailUrl = "", duration = "")
+            val match = dfwResults.find { cand ->
+                isCrossProviderMovieMatch(targetDummy, cand)
+            }
+            if (match != null && isValidImageUrl(match.thumbnailUrl)) {
+                Log.i(TAG, "findPosterForTitle: Discovered DutaFilm Web poster for '$title': ${match.thumbnailUrl}")
+                return@withContext match.thumbnailUrl
+            }
+        } catch (_: Exception) {}
+
+        // 2. Try Bullerswood (LK21)
+        try {
+            val bwResults = searchBullerswood(clean, page = 1, count = 10)
+            val targetDummy = Video(id = "", title = clean, date = releaseDate ?: "", videoUrl = "", thumbnailUrl = "", duration = "")
+            val match = bwResults.find { cand ->
+                isCrossProviderMovieMatch(targetDummy, cand)
+            }
+            if (match != null && isValidImageUrl(match.thumbnailUrl)) {
+                Log.i(TAG, "findPosterForTitle: Discovered Bullerswood poster for '$title': ${match.thumbnailUrl}")
+                return@withContext match.thumbnailUrl
+            }
+        } catch (_: Exception) {}
+
+        // 3. Try PencuriMovie (uses verified high-res TMDB posters)
+        val pencuriBase = getPencuriBaseUrl()
+        for (q in queries) {
+            try {
+                val results = searchDomain(pencuriBase, q, startPage = 1, maxCount = 10)
+                val targetDummy = Video(id = "", title = clean, date = releaseDate ?: "", videoUrl = "", thumbnailUrl = "", duration = "")
+                val match = results.find { cand ->
+                    isCrossProviderMovieMatch(targetDummy, cand)
+                }
+                if (match != null && isValidImageUrl(match.thumbnailUrl)) {
+                    Log.i(TAG, "findPosterForTitle: Discovered PencuriMovie poster for '$title': ${match.thumbnailUrl}")
+                    return@withContext match.thumbnailUrl
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 2. Try LK21 / Bullerswood cluster mirrors (uses TMDB posters)
+        for (q in queries.take(3)) {
+            try {
+                val clusterResults = searchClusterMirrors(q, page = 1, count = 10)
+                val targetDummy = Video(id = "", title = clean, date = releaseDate ?: "", videoUrl = "", thumbnailUrl = "", duration = "")
+                val match = clusterResults.find { cand ->
+                    isCrossProviderMovieMatch(targetDummy, cand)
+                }
+                if (match != null && isValidImageUrl(match.thumbnailUrl)) {
+                    Log.i(TAG, "findPosterForTitle: Discovered LK21 cluster poster for '$title': ${match.thumbnailUrl}")
+                    return@withContext match.thumbnailUrl
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 3. Try DutaFilm cluster
+        for (q in queries.take(2)) {
+            try {
+                val dfResults = searchDomain(DUTAFILM_BASE_URL, q, startPage = 1, maxCount = 10)
+                val targetDummy = Video(id = "", title = clean, date = releaseDate ?: "", videoUrl = "", thumbnailUrl = "", duration = "")
+                val match = dfResults.find { cand ->
+                    isCrossProviderMovieMatch(targetDummy, cand)
+                }
+                if (match != null && isValidImageUrl(match.thumbnailUrl)) {
+                    Log.i(TAG, "findPosterForTitle: Discovered DutaFilm poster for '$title': ${match.thumbnailUrl}")
+                    return@withContext match.thumbnailUrl
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 4. Try YouTube official trailer / full movie poster thumbnail
+        try {
+            val targetMeta = parseMovieTitleMeta(clean, releaseDate)
+            val baseQuery = targetMeta.baseTokens.joinToString(" ")
+            val yearQuery = targetMeta.year?.toString() ?: ""
+            val ytQuery = "$baseQuery $yearQuery official trailer".replace(Regex("""\s+"""), " ").trim()
+            val ytUrl = "https://www.youtube.com/results?search_query=${encodeQuery(ytQuery)}"
+            val request = Request.Builder()
+                .url(ytUrl)
+                .header("User-Agent", USER_AGENT)
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .build()
+            NetworkConfig.fastOkHttpClient.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val html = resp.body?.string() ?: ""
+                    val vidRegex = Regex("""/watch\?v=([a-zA-Z0-9_-]{11})""")
+                    val vidMatch = vidRegex.find(html)
+                    if (vidMatch != null) {
+                        val vid = vidMatch.groupValues[1]
+                        val posterUrl = "https://i.ytimg.com/vi/$vid/hqdefault.jpg"
+                        Log.i(TAG, "findPosterForTitle: Discovered YouTube trailer poster for '$title': $posterUrl")
+                        return@withContext posterUrl
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "findPosterForTitle: YouTube poster fallback error: ${e.message}")
+        }
+
+        ""
+    }
+
+    fun isAlternativePartnerHost(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        val low = url.lowercase()
+        return low.contains("youtube.com") || low.contains("youtu.be") || low.contains("youtube") ||
+               low.contains("bilibili.com") || low.contains("bilibili.tv") || low.contains("bilibili") ||
+               low.contains("dailymotion.com") || low.contains("dai.ly") || low.contains("dailymotion")
+    }
+
+    fun isAlternativePartnerServer(name: String?, url: String?): Boolean {
+        if (isAlternativePartnerHost(url)) return true
+        if (!name.isNullOrBlank()) {
+            val low = name.lowercase()
+            return low.contains("youtube") || low.contains("bilibili") || low.contains("dailymotion")
+        }
+        return false
     }
 
     fun isYouTubeMovieMatch(targetMeta: MovieTitleMeta, candidateTitle: String): Boolean {
@@ -3821,43 +4128,47 @@ object VideoExtractor {
 
     suspend fun searchKepalaBergetar(query: String, page: Int = 1, count: Int = 30): List<Video> = withContext(Dispatchers.IO) {
         val encoded = encodeQuery(query)
-        val url = if (page > 1) "https://kepalabergetar9.net/page/$page/?s=$encoded" else "https://kepalabergetar9.net/?s=$encoded"
-        try {
-            val html = fetchHtml(url) ?: return@withContext emptyList()
-            val doc = Jsoup.parse(html, url)
-            val items = doc.select("article.item-list, article.post, .post-listing article, .post-box")
-            if (items.isEmpty()) return@withContext emptyList()
-            
-            items.mapNotNull { el ->
-                val titleEl = el.selectFirst(".post-box-title a, h2 a, h3 a, .entry-title a") ?: return@mapNotNull null
-                val rawTitle = titleEl.text().trim()
-                val title = cleanTitle(rawTitle)
-                val link = titleEl.attr("abs:href")
-                if (title.length < 2 || link.isEmpty()) return@mapNotNull null
+        val kbBases = listOf("https://kepalabergetar9.net", "https://kepala-bergetar.com")
+        for (baseUrl in kbBases) {
+            val url = if (page > 1) "$baseUrl/page/$page/?s=$encoded" else "$baseUrl/?s=$encoded"
+            try {
+                val html = fetchHtml(url) ?: continue
+                val doc = Jsoup.parse(html, url)
+                val items = doc.select("article.item-list, article.post, .post-listing article, .post-box, .post-listing li")
+                if (items.isEmpty()) continue
                 
-                val rawImg = el.selectFirst("img")?.let { imgTag ->
-                    imgTag.attr("abs:data-src").ifEmpty { imgTag.attr("abs:src") }.ifEmpty { imgTag.attr("src") }
-                } ?: ""
-                val img = rawImg
-                val badge = el.select(".archive-episode-badge, .archive-quality-badge").text().trim()
-                val date = el.select(".tie-date, .post-meta").firstOrNull()?.text()?.trim() ?: ""
-                
-                val slug = link.trimEnd('/').substringAfterLast('/')
-                Video(
-                    id = "kb_$slug",
-                    title = title,
-                    thumbnailUrl = img,
-                    videoUrl = link,
-                    duration = "",
-                    quality = badge.ifEmpty { "HD" },
-                    date = date,
-                    isSeries = link.contains("episod") || rawTitle.contains("Episod", ignoreCase = true) || rawTitle.contains("Episode", ignoreCase = true)
-                )
-            }.distinctBy { it.id }.take(count)
-        } catch (e: Exception) {
-            Log.w(TAG, "Kepala Bergetar search error for '$query': ${e.message}")
-            emptyList()
+                val results = items.mapNotNull { el ->
+                    val titleEl = el.selectFirst(".post-box-title a, h2 a, h3 a, .entry-title a") ?: return@mapNotNull null
+                    val rawTitle = titleEl.text().trim()
+                    val title = cleanTitle(rawTitle)
+                    val link = titleEl.attr("abs:href")
+                    if (title.length < 2 || link.isEmpty()) return@mapNotNull null
+                    
+                    val img = extractPosterFromElement(el, baseUrl)
+                    val badge = el.select(".archive-episode-badge, .archive-quality-badge").text().trim()
+                    val date = el.select(".tie-date, .post-meta").firstOrNull()?.text()?.trim() ?: ""
+                    
+                    val slug = link.trimEnd('/').substringAfterLast('/')
+                    Video(
+                        id = "kb_$slug",
+                        title = title,
+                        thumbnailUrl = img,
+                        videoUrl = link,
+                        duration = "",
+                        quality = badge.ifEmpty { "HD" },
+                        date = date,
+                        isSeries = link.contains("episod") || rawTitle.contains("Episod", ignoreCase = true) || rawTitle.contains("Episode", ignoreCase = true)
+                    )
+                }.distinctBy { it.id }.take(count)
+
+                if (results.isNotEmpty()) {
+                    return@withContext results
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Kepala Bergetar search error for '$query' on $baseUrl: ${e.message}")
+            }
         }
+        emptyList()
     }
 
     suspend fun searchClusterMirrors(query: String, page: Int = 1, count: Int = 30): List<Video> = withContext(Dispatchers.IO) {
@@ -3889,9 +4200,7 @@ object VideoExtractor {
                                     val link = titleEl.attr("abs:href")
                                     if (title.length < 2 || link.isEmpty() || !link.startsWith("http")) return@mapNotNull null
 
-                                    val rawImg = el.selectFirst("img")?.let { imgTag ->
-                                        imgTag.attr("abs:data-src").ifEmpty { imgTag.attr("abs:src") }.ifEmpty { imgTag.attr("src") }
-                                    } ?: ""
+                                    val img = extractPosterFromElement(el, base)
                                     val duration = el.select(".gmr-duration-item").text().trim()
                                     val quality = el.select(".gmr-quality-item, .quality").text().trim()
                                     val rating = el.select(".gmr-rating-item, .rating").text().trim()
@@ -3901,7 +4210,8 @@ object VideoExtractor {
                                     Video(
                                         id = "df_$slug",
                                         title = title,
-                                        thumbnailUrl = rawImg,
+                                        thumbnailUrl = img,
+                                        backdropUrl = img,
                                         videoUrl = link,
                                         duration = duration,
                                         quality = quality.ifEmpty { "HD" },
@@ -4119,8 +4429,8 @@ object VideoExtractor {
                     .replace("—", "-")
                     .replace(Regex("""(?i)\s*-\s*Pencuri\s*Movie.*"""), "")
                     .replace(Regex("""(?i)\s*-\s*(?:tv\d+\s*)?rebahinxxi\s*(?:auction)?.*$"""), "")
-                    .replace(Regex("""(?i)\s*-\s*(?:[a-zA-Z0-9-]+\.)+[a-zA-Z0-9-]+.*$"""), "")
-                    .replace(Regex("""(?i)\s*-\s*\d+\.\d+\.\d+\.\d+.*$"""), "")
+                    .replace(Regex("""(?i)\s*-\s*[a-zA-Z0-9][a-zA-Z0-9.-]*\.[a-zA-Z]{2,}(?::\d+)?.*$"""), "")
+                    .replace(Regex("""(?i)\s*-\s*\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?.*$"""), "")
                     .replace(Regex("""(?i)\b(rebahin|bioskopkeren|layarkaca21|lk21|indoxxi|idlix|dutamovie21|dutamovie|dutafilm|itoshii|sub\s*indo(?:nesia)?|subtitle\s*indo(?:nesia)?)\b"""), " ")
                     .replace(Regex("""(?i)\s*(?:Tonton\s+)?Drama\s+(?:Video|Melayu|Online)\s*"""), " ")
                     .replace(Regex("""(?i)\s*Tonton\s+Video\s*"""), " ")
@@ -4173,27 +4483,7 @@ object VideoExtractor {
                 !link.contains("/tag/") && !link.contains("/author/") &&
                 !link.contains("facebook.com") && !link.contains("twitter.com")) {
                 
-                val rawImg = el.selectFirst("img")?.let { imgTag ->
-                    val srcset = imgTag.attr("srcset").ifEmpty { imgTag.attr("data-srcset") }
-                    if (srcset.isNotEmpty()) {
-                        val candidates = srcset.split(",").mapNotNull { part ->
-                            val tokens = part.trim().split(Regex("""\s+"""))
-                            if (tokens.isNotEmpty()) {
-                                val u = tokens[0]
-                                val w = tokens.getOrNull(1)?.removeSuffix("w")?.toIntOrNull() ?: 0
-                                Pair(w, u)
-                            } else null
-                        }
-                        val best = candidates.filter { it.first in 240..500 }.maxByOrNull { it.first }?.second
-                            ?: candidates.filter { it.first <= 600 }.maxByOrNull { it.first }?.second
-                            ?: candidates.minByOrNull { it.first }?.second
-                        if (!best.isNullOrEmpty()) best
-                        else imgTag.attr("abs:data-src").ifEmpty { imgTag.attr("abs:src") }.ifEmpty { imgTag.attr("abs:data-original") }.ifEmpty { imgTag.attr("src") }
-                    } else {
-                        imgTag.attr("abs:data-src").ifEmpty { imgTag.attr("abs:src") }.ifEmpty { imgTag.attr("abs:data-original") }.ifEmpty { imgTag.attr("src") }
-                    }
-                } ?: ""
-                val img = rawImg
+                val img = extractPosterFromElement(el, baseUrl)
                 
                 // OWL'S EYE: Extract quality tag (HD, HDCAM, etc) directly from list view
                 val quality = el.select(".quality, .gmr-quality-item, .res, .resolution, .status").text().trim()
@@ -4315,6 +4605,288 @@ object VideoExtractor {
 
     fun fetchAllActresses(): List<Map<String, String>> = emptyList()
     
+    fun isValidImageUrl(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        val u = url.trim()
+        if (u.startsWith("data:image/", ignoreCase = true) || 
+            u.startsWith("blob:", ignoreCase = true) || 
+            u.startsWith("javascript:", ignoreCase = true)) return false
+        val low = u.lowercase()
+        if (low.contains("pixel.gif") || low.contains("blank.gif") || low.contains("loading.gif") ||
+            low.contains("spinner.gif") || low.contains("default-poster") || low.contains("no-image") ||
+            low.contains("no-poster") || low.contains("placeholder") || low.contains("flagsapi.com") ||
+            low.contains("telegram.svg") || low.contains("whatsapp.svg") || low.contains("banner-ads") ||
+            low.contains("ads.jpg") || low.contains("ad.png") || low.contains("icon-play")) {
+            return false
+        }
+        val cleanPath = u.substringBefore('?').lowercase()
+        if (cleanPath.endsWith(".html") || cleanPath.endsWith(".htm") || cleanPath.endsWith(".php") ||
+            cleanPath.contains("/watch/") || cleanPath.contains("/movie/") || cleanPath.contains("/series/") ||
+            cleanPath.contains("/tv/") || cleanPath.contains("/episode/") || cleanPath.contains("/eps/")) {
+            return false
+        }
+        return u.startsWith("http://") || u.startsWith("https://") || u.startsWith("//") || (u.startsWith("/") && u.length > 3)
+    }
+
+    fun normalizeImageUrl(rawUrl: String, baseUrl: String): String {
+        var u = rawUrl.trim()
+        if (u.startsWith("//")) u = "https:$u"
+        else if (u.startsWith("/")) {
+            val base = baseUrl.trimEnd('/')
+            u = if (base.isNotEmpty()) "$base/$u".replace(Regex("([^:])//+"), "$1/") else u
+        }
+        return getHighResImage(u)
+    }
+
+    fun extractBestImageUrlFromTag(img: Element): String {
+        val srcset = img.attr("srcset").ifEmpty { img.attr("data-srcset") }
+        if (srcset.isNotEmpty()) {
+            val parsed = srcset.split(",").mapNotNull { part ->
+                val tokens = part.trim().split(Regex("""\s+"""))
+                if (tokens.isNotEmpty()) {
+                    val u = tokens[0]
+                    val w = tokens.getOrNull(1)?.removeSuffix("w")?.toIntOrNull() ?: 0
+                    Pair(w, u)
+                } else null
+            }
+            val best = parsed.filter { it.first in 240..600 }.maxByOrNull { it.first }?.second
+                ?: parsed.minByOrNull { it.first }?.second
+            if (!best.isNullOrEmpty() && isValidImageUrl(best)) return best
+        }
+
+        val attrs = listOf(
+            "abs:data-original", "data-original",
+            "abs:data-lazy-src", "data-lazy-src",
+            "abs:data-src", "data-src",
+            "abs:data-cfsrc", "data-cfsrc",
+            "abs:data-url", "data-url",
+            "abs:data-bg", "data-bg",
+            "abs:data-background", "data-background",
+            "abs:data-thumbnail", "data-thumbnail",
+            "abs:data-poster", "data-poster",
+            "abs:src", "src"
+        )
+        for (attr in attrs) {
+            val v = img.attr(attr)
+            if (isValidImageUrl(v)) return v
+        }
+        return ""
+    }
+
+    fun extractPosterFromElement(container: Element, baseUrl: String = ""): String {
+        // 1. High-priority dedicated poster selectors
+        val posterSelectors = listOf(
+            "img.mv-poster",
+            ".mv-poster",
+            "img.wp-post-image",
+            "img.attachment-post-thumbnail",
+            ".content-poster img",
+            ".poster img",
+            ".poster-image img",
+            ".item-poster img",
+            ".entry-thumb img",
+            ".thumbnail img",
+            ".thumb img",
+            "img[alt*='poster' i]",
+            "img[src*='tmdb.org' i]",
+            "img[data-src*='tmdb.org' i]",
+            "img[src*='/gambar/' i]",
+            "img[data-src*='/gambar/' i]",
+            "meta[itemprop='image']",
+            "meta[property='og:image']"
+        )
+        for (sel in posterSelectors) {
+            val candidates = container.select(sel)
+            for (cand in candidates) {
+                val url = if (cand.tagName() == "meta") cand.attr("content") else extractBestImageUrlFromTag(cand)
+                if (isValidImageUrl(url)) {
+                    return normalizeImageUrl(url, baseUrl)
+                }
+            }
+        }
+
+        // 2. Scan ALL <img> tags in the element (skips badges/flags/icons that fail isValidImageUrl)
+        val allImgs = container.select("img")
+        for (img in allImgs) {
+            val url = extractBestImageUrlFromTag(img)
+            if (isValidImageUrl(url)) {
+                return normalizeImageUrl(url, baseUrl)
+            }
+        }
+
+        // 2b. Scan noscript tags if img tags failed
+        val noscripts = container.select("noscript")
+        for (ns in noscripts) {
+            val nsDoc = Jsoup.parse(ns.html(), baseUrl)
+            for (img in nsDoc.select("img")) {
+                val url = extractBestImageUrlFromTag(img)
+                if (isValidImageUrl(url)) return normalizeImageUrl(url, baseUrl)
+            }
+        }
+
+        // 3. Scan inline style background-image (excluding related containers)
+        val styleElements = container.select("*[style*='background-image'], *[style*='background:url'], *[data-background], *[data-bg]")
+        for (styleEl in styleElements) {
+            if (styleEl.hasClass("related-mv-pic") || styleEl.parents().`is`(".related, .related-mv-pic, .recommendations, #sidebar, .sidebar")) continue
+            val style = styleEl.attr("style") + " " + styleEl.attr("data-background") + " " + styleEl.attr("data-bg")
+            val match = Regex("""url\(['"]?([^'"]+)['"]?\)""").find(style)
+            val cand = match?.groupValues?.get(1) ?: styleEl.attr("data-background").ifEmpty { styleEl.attr("data-bg") }
+            if (isValidImageUrl(cand)) {
+                return normalizeImageUrl(cand, baseUrl)
+            }
+        }
+
+        // 4. Try parent containers up to 2 levels
+        var p = container.parent()
+        var depth = 0
+        while (p != null && depth < 2) {
+            val pImgs = p.select("img.mv-poster, img.wp-post-image, .poster img, img")
+            for (img in pImgs) {
+                val url = extractBestImageUrlFromTag(img)
+                if (isValidImageUrl(url)) {
+                    return normalizeImageUrl(url, baseUrl)
+                }
+            }
+            p = p.parent()
+            depth++
+        }
+
+        return ""
+    }
+
+    fun extractPosterFromDoc(doc: Document, baseUrl: String = "", title: String = ""): String {
+        // 1. Meta tags (specifically checking content is non-blank and valid image)
+        val metaSelectors = listOf(
+            "meta[property='og:image']",
+            "meta[itemprop='image']",
+            "meta[name='twitter:image']",
+            "meta[name='twitter:image:src']",
+            "meta[name='image']",
+            "link[rel='image_src']"
+        )
+        for (sel in metaSelectors) {
+            val elements = doc.select(sel)
+            for (el in elements) {
+                val raw = if (el.tagName() == "link") {
+                    el.attr("href").ifEmpty { el.attr("abs:href") }
+                } else {
+                    el.attr("content")
+                }.trim()
+                if (raw.isNotEmpty() && isValidImageUrl(raw)) {
+                    val normalized = normalizeImageUrl(raw, baseUrl)
+                    if (isValidImageUrl(normalized)) return normalized
+                }
+            }
+        }
+
+        // 2. Specific poster container elements in DOM
+        val posterImgSelectors = listOf(
+            ".poster img",
+            ".poster-image img",
+            ".content-poster img",
+            ".vid-details-left img",
+            ".mv-poster",
+            "img.mv-poster",
+            "img.wp-post-image",
+            "img.attachment-post-thumbnail",
+            ".movie-poster img",
+            ".detail-poster img",
+            ".thumb img",
+            ".thumbnail img",
+            ".feature-img img",
+            ".entry-thumb img",
+            "#muvipro_player_content_id img",
+            ".item-poster img"
+        )
+        for (sel in posterImgSelectors) {
+            val images = doc.select(sel)
+            for (img in images) {
+                if (img.hasClass("related-mv-pic") || img.parents().`is`(".related, .related-mv-pic, .recommendations, #sidebar, .sidebar, .related-posts, .related-movies")) continue
+                val candidate = extractBestImageUrlFromTag(img)
+                if (isValidImageUrl(candidate)) {
+                    val normalized = normalizeImageUrl(candidate, baseUrl)
+                    if (isValidImageUrl(normalized)) return normalized
+                }
+            }
+        }
+
+        // 3. Fallback: Any <img> matching title or common poster paths (excluding related movie elements)
+        val clean = cleanTitle(title).lowercase()
+        val titleTokens = clean.split(Regex("""\s+""")).filter { it.length >= 3 }
+        val allImages = doc.select("img")
+        for (img in allImages) {
+            if (img.hasClass("related-mv-pic") || img.parents().`is`(".related, .related-mv-pic, .recommendations, #sidebar, .sidebar, .related-posts, .related-movies")) continue
+            val alt = img.attr("alt").lowercase()
+            val candidate = extractBestImageUrlFromTag(img)
+            if (!isValidImageUrl(candidate)) continue
+
+            val isTitleMatch = titleTokens.isNotEmpty() && titleTokens.count { alt.contains(it) } >= minOf(2, titleTokens.size)
+            val isPosterPath = candidate.contains("/gambar/", ignoreCase = true) ||
+                               candidate.contains("tmdb.org", ignoreCase = true) ||
+                               candidate.contains("/poster", ignoreCase = true) ||
+                               candidate.contains("wp-content/uploads", ignoreCase = true)
+
+            if (isTitleMatch || isPosterPath) {
+                val normalized = normalizeImageUrl(candidate, baseUrl)
+                if (isValidImageUrl(normalized)) return normalized
+            }
+        }
+
+        return ""
+    }
+
+    fun extractBackdropFromDoc(doc: Document, baseUrl: String = "", fallbackPoster: String = ""): String {
+        // 1. Meta tags for backdrop
+        val metaSelectors = listOf(
+            "meta[property='og:image:backdrop']",
+            "meta[property='og:image:background']",
+            "meta[name='backdrop']"
+        )
+        for (sel in metaSelectors) {
+            val el = doc.selectFirst(sel) ?: continue
+            val candidate = el.attr("content").trim()
+            if (candidate.isNotEmpty() && isValidImageUrl(candidate)) {
+                val normalized = normalizeImageUrl(candidate, baseUrl)
+                if (isValidImageUrl(normalized)) return normalized
+            }
+        }
+
+        // 2. Backdrop DOM elements (excluding related movies/recommendations/sidebars)
+        val backdropSelectors = listOf(
+            ".backdrop img",
+            "#background img",
+            ".backdrop-image img",
+            ".movie-backdrop img",
+            ".banner-backdrop img",
+            ".hero img",
+            "#hero img"
+        )
+        for (sel in backdropSelectors) {
+            val img = doc.selectFirst(sel) ?: continue
+            if (img.hasClass("related-mv-pic") || img.parents().`is`(".related, .related-mv-pic, .recommendations, #sidebar, .sidebar, .related-posts, .related-movies")) continue
+            val candidate = extractBestImageUrlFromTag(img)
+            if (isValidImageUrl(candidate)) {
+                val normalized = normalizeImageUrl(candidate, baseUrl)
+                if (isValidImageUrl(normalized)) return normalized
+            }
+        }
+
+        // 3. Elements with inline style background-image (EXCLUDING related movie containers)
+        val styleElements = doc.select("*[style*='background-image'], *[style*='background:url'], *[data-background]")
+        for (el in styleElements) {
+            if (el.hasClass("related-mv-pic") || el.parents().`is`(".related, .related-mv-pic, .recommendations, #sidebar, .sidebar, .related-posts, .related-movies")) continue
+            val style = el.attr("style") + " " + el.attr("data-background")
+            val match = Regex("""url\(['"]?([^'"]+)['"]?\)""").find(style)
+            val candidate = match?.groupValues?.get(1) ?: el.attr("data-background")
+            if (isValidImageUrl(candidate)) {
+                val normalized = normalizeImageUrl(candidate, baseUrl)
+                if (isValidImageUrl(normalized)) return normalized
+            }
+        }
+
+        return fallbackPoster
+    }
+
     private fun getHighResImage(url: String): String {
         if (url.isEmpty()) return ""
         return VideoUtils.getOriginalImage(url)
@@ -4334,28 +4906,30 @@ object VideoExtractor {
 
     private fun cleanDescription(desc: String): String {
         if (desc.isEmpty()) return ""
-        var d = desc
-        val seoPatterns = listOf(
-            Regex("""(?i)Nonton\s+.*?\s+Sub\s+Indo\s+hanya\s+di\s+.*?(\.|\b)"""),
-            Regex("""(?i)tempatnya\s+nonton\s+film\s+LK21,.*?\."""),
-            Regex("""(?i)lengkap\s+dengan\s+subtitle\s+indonesia\."""),
-            Regex("""(?i)subtitle\s+indonesia\s+lengkap\s+hanya\s+di\s+.*?(\.|\b)"""),
-            Regex("""(?i)kualitas\s+video\s+terbaik\s+hanya\s+di\s+.*?(\.|\b)"""),
-            Regex("""(?i)Dutamovie21"""),
-            Regex("""(?i)Layarkaca21"""),
-            Regex("""(?i)LK21"""),
-            Regex("""(?i)Rebahin"""),
-            Regex("""(?i)IndoXXI"""),
-            Regex("""(?i)Indostream"""),
-            Regex("""(?i)Bioskop21"""),
-            Regex("""(?i)Dewamovie""")
+        // Split by sentences/newlines to cleanly remove SEO promotion sentences without regex backtracking
+        val sentences = desc.split(".", "\n")
+        val cleanedSentences = sentences.filterNot { s ->
+            val low = s.lowercase()
+            (low.contains("nonton") && (low.contains("sub indo") || low.contains("subtitle") || low.contains("lk21") || low.contains("hanya di"))) ||
+            (low.contains("tempatnya nonton film")) ||
+            (low.contains("kualitas video terbaik hanya di")) ||
+            (low.contains("subtitle indonesia lengkap hanya di")) ||
+            (low.contains("lengkap dengan subtitle indonesia")) ||
+            (low.contains("link download"))
+        }
+        var d = cleanedSentences.map { it.trim() }.filter { it.isNotEmpty() }.joinToString(". ")
+        val keywordsToRemove = listOf(
+            "Dutamovie21", "Layarkaca21", "LK21", "Rebahin", "IndoXXI", "Indostream",
+            "Bioskop21", "Dewamovie", "DMStreaM", "DutaMovie", "dutamovie"
         )
-        seoPatterns.forEach { d = d.replace(it, "") }
-        d = d.replace("DMStreaM", "").replace("DutaMovie", "").replace("dutamovie", "").trim()
+        for (kw in keywordsToRemove) {
+            d = d.replace(kw, "", ignoreCase = true)
+        }
+        d = d.trim()
         val low = d.lowercase()
         if (low.contains("nonton") && (low.contains("sub indo") || low.contains("subtitle")) && d.length < 250) return ""
         if (low.contains("link download") || low.contains("layarkaca")) return ""
-        return d.trim()
+        return d
     }
 
     fun identifyMirrorName(name: String, url: String): String {
@@ -4381,6 +4955,19 @@ object VideoExtractor {
             lowUrl.contains("vkspeed") -> "VKSpeed"
             lowUrl.contains("asiastream") -> "AsiaStream"
             lowUrl.contains("playsobat") -> "PlaySobat"
+            lowUrl.contains("filemoon") || lowName.contains("filemoon") -> "Filemoon"
+            lowUrl.contains("streamsb") || lowUrl.contains("sbanh") || lowUrl.contains("sbembed") -> "StreamSB"
+            lowUrl.contains("vidmoly") -> "Vidmoly"
+            lowUrl.contains("mixdrop") -> "MixDrop"
+            lowUrl.contains("turbovid") -> "TurboVid"
+            lowUrl.contains("upstream") -> "Upstream"
+            lowUrl.contains("vidoza") -> "Vidoza"
+            lowUrl.contains("hydrax") -> "Hydrax"
+            lowUrl.contains("drakorkita") || lowUrl.contains("p2p") -> "P2P Stream"
+            lowUrl.contains("archive.org") -> "Archive.org"
+            lowUrl.contains("youtube") || lowUrl.contains("youtu.be") -> "YouTube HD"
+            lowUrl.contains("bilibili") -> "Bilibili HD"
+            lowUrl.contains("dailymotion") || lowUrl.contains("dai.ly") -> "Dailymotion"
             else -> null
         }
         if (provider != null) return provider
@@ -4404,15 +4991,6 @@ object VideoExtractor {
     fun isGenuineMirror(name: String, url: String): Boolean {
         val lowName = name.lowercase()
         val lowUrl = url.lowercase()
-        
-        // Block known related/recommendation movie paths that might be detected as mirrors
-        if (lowUrl.contains("/movie/") || lowUrl.contains("/tv/") || lowUrl.contains("/horror/") || lowUrl.contains("/action/")) {
-             // If it has 'player=' or 'mirror=', it's a real server button. 
-             // Otherwise, if it's just a clean movie URL, it's a related movie, not a mirror.
-             if (!lowUrl.contains("player=") && !lowUrl.contains("mirror=") && !lowUrl.contains("action=")) {
-                  return false
-             }
-        }
 
         // Efficiency: High-level ad domain blocking
         val adDomains = listOf(
@@ -4425,10 +5003,26 @@ object VideoExtractor {
         
         if (lowUrl.contains("youtube") || lowUrl.contains("trailer") || lowUrl.contains("preview") || 
             lowUrl.contains("google.com") || lowUrl.contains("googleapis.com") || lowUrl.contains("imasdk")) return false
+
+        // Recognized video hosts or JS-only embeds are always genuine
+        if (isProbablyVideoHost(url) || isJsOnlyHost(url)) return true
+
+        // Block known related/recommendation movie paths from the same CMS site that might be detected as mirrors
+        val isInternalCmsPage = host.contains("dutamovie") || host.contains("layarkaca") || host.contains("lk21") ||
+                                host.contains("pencuri") || host.contains("kepalabergetar")
+        if (isInternalCmsPage && (lowUrl.contains("/movie/") || lowUrl.contains("/tv/") || lowUrl.contains("/horror/") || lowUrl.contains("/action/"))) {
+             if (!lowUrl.contains("player=") && !lowUrl.contains("mirror=") && !lowUrl.contains("server=") &&
+                 !lowUrl.contains("source=") && !lowUrl.contains("srv=") && !lowUrl.contains("opt=") &&
+                 !lowUrl.contains("action=") && !lowUrl.contains("/embed/")) {
+                  return false
+             }
+        }
         
         if (lowName.contains("server") || lowName.contains("mirror") || lowName.contains("vip") || 
+            lowName.contains("player") || lowName.contains("stream") || lowName.contains("hd") ||
+            lowName.contains("1080") || lowName.contains("720") || lowName.contains("p2p") ||
             lowName.contains("s1") || lowName.contains("s2") || lowName.contains("s3") || lowName.contains("s4")) {
-            if (host.contains("parklogic")) return false
+            if (host.contains("parklogic") || host.contains("ketik.live")) return false
             return true
         }
 
@@ -4448,7 +5042,7 @@ object VideoExtractor {
                lowName.contains("streamwish") || lowUrl.contains("streamwish") || lowUrl.contains("embedwish") || lowUrl.contains("streamsilk") ||
                lowUrl.contains("player=") || lowUrl.startsWith("ajax:") ||
                lowUrl.contains("m3u8") || lowUrl.contains("mp4") || lowUrl.contains("/e/") || lowUrl.contains("/v/") ||
-                lowUrl.contains("/amt/") || lowUrl.contains(".amt")
+               lowUrl.contains("/amt/") || lowUrl.contains(".amt")
     }
 
     fun decodeDutaFilmWebObfScript(obfStr: String): String {
@@ -4483,11 +5077,11 @@ object VideoExtractor {
             return Triple(c, t, cApiHost)
         }
 
-        val obfRegex = Regex("""(?:var\s+)?([a-zA-Z0-9_$]+)\s*=\s*['"]([A-Za-z0-9+/=]{4,}(?:\.[A-Za-z0-9+/=]{4,})+)'""")
+        val obfRegex = Regex("""(?:var\s+)?([a-zA-Z0-9_$]+)\s*=\s*['"]([A-Za-z0-9+/=.]{500,30000})['"]""")
         val matches = obfRegex.findAll(html)
         for (match in matches) {
             val candidate = match.groupValues[2]
-            if (candidate.length in 500..30000) {
+            if (candidate.contains(".") && candidate.length in 500..30000) {
                 val decoded = decodeDutaFilmWebObfScript(candidate)
                 if (decoded.contains("c_api_host") || decoded.contains("loadEpisode") || (decoded.contains("var c =") && decoded.contains("var t ="))) {
                     val cM = Regex("""var\s+c\s*=\s*['"]([^'"]+)['"]""").find(decoded)
@@ -4528,42 +5122,60 @@ object VideoExtractor {
                 val res = data?.optString("res", "480") ?: "480"
                 val serverId = data?.optString("server_id", xidVal) ?: xidVal
 
-                if (hydraxId.isNotEmpty() || data?.optString("hydrax_status") == "1") {
-                    try {
-                        val hydraxApiUrl = "$cApiHost/video_hydrax.php?is_mob=0&is_uc=0&id=$epId&qua=web&res=$res&server_id=$serverId&cat=$catVal&tag=$tagVal&c=$cVal&t=$tVal"
-                        val hJsonStr = fetchHtml(hydraxApiUrl, referer)
-                        if (!hJsonStr.isNullOrEmpty() && hJsonStr.trim().startsWith("{")) {
-                            val hJson = org.json.JSONObject(hJsonStr)
-                            val hydraxUrl = hJson.optString("hydrax_url", "").replace("\\/", "/")
-                            if (hydraxUrl.isNotEmpty()) {
-                                servers.add(VideoServer("Abyss/Hydrax ${res}p", hydraxUrl))
-                            }
+                coroutineScope {
+                    val hydraxJob = if (hydraxId.isNotEmpty() || data?.optString("hydrax_status") == "1") {
+                        async {
+                            var hydraxServer: VideoServer? = null
+                            try {
+                                val hydraxApiUrl = "$cApiHost/video_hydrax.php?is_mob=0&is_uc=0&id=$epId&qua=web&res=$res&server_id=$serverId&cat=$catVal&tag=$tagVal&c=$cVal&t=$tVal"
+                                val hJsonStr = fetchHtml(hydraxApiUrl, referer)
+                                if (!hJsonStr.isNullOrEmpty() && hJsonStr.trim().startsWith("{")) {
+                                    val hJson = org.json.JSONObject(hJsonStr)
+                                    val hydraxUrl = hJson.optString("hydrax_url", "").replace("\\/", "/")
+                                    if (hydraxUrl.isNotEmpty()) {
+                                        hydraxServer = VideoServer("Abyss/Hydrax ${res}p", hydraxUrl)
+                                    }
+                                }
+                            } catch (_: Exception) {}
+                            hydraxServer
                         }
-                    } catch (_: Exception) {}
-                    if (hydraxId.isNotEmpty()) {
+                    } else null
+
+                    val p2pJob = if (p2pId.isNotEmpty() || data?.optString("p2p_status") == "1") {
+                        async {
+                            var p2pServer: VideoServer? = null
+                            try {
+                                val p2pApiUrl = "$cApiHost/video_p2p.php?is_mob=0&is_uc=0&id=$epId&qua=web&res=$res&server_id=$serverId&cat=$catVal&tag=$tagVal&c=$cVal&t=$tVal"
+                                val pJsonStr = fetchHtml(p2pApiUrl, referer)
+                                if (!pJsonStr.isNullOrEmpty() && pJsonStr.trim().startsWith("{")) {
+                                    val pJson = org.json.JSONObject(pJsonStr)
+                                    val p2pUrl = pJson.optString("p2p_url", "").replace("\\/", "/")
+                                    if (p2pUrl.isNotEmpty()) {
+                                        p2pServer = VideoServer("P2P ${res}p", p2pUrl)
+                                    }
+                                }
+                            } catch (_: Exception) {}
+                            p2pServer
+                        }
+                    } else null
+
+                    val hydraxResolved = hydraxJob?.await()
+                    if (hydraxResolved != null) {
+                        servers.add(hydraxResolved)
+                    } else if (hydraxId.isNotEmpty()) {
                         servers.add(VideoServer("Abyss HD", "https://abysscdn.com/?v=$hydraxId"))
                     }
-                }
 
-                if (p2pId.isNotEmpty() || data?.optString("p2p_status") == "1") {
-                    try {
-                        val p2pApiUrl = "$cApiHost/video_p2p.php?is_mob=0&is_uc=0&id=$epId&qua=web&res=$res&server_id=$serverId&cat=$catVal&tag=$tagVal&c=$cVal&t=$tVal"
-                        val pJsonStr = fetchHtml(p2pApiUrl, referer)
-                        if (!pJsonStr.isNullOrEmpty() && pJsonStr.trim().startsWith("{")) {
-                            val pJson = org.json.JSONObject(pJsonStr)
-                            val p2pUrl = pJson.optString("p2p_url", "").replace("\\/", "/")
-                            if (p2pUrl.isNotEmpty()) {
-                                servers.add(VideoServer("P2P ${res}p", p2pUrl))
-                            }
-                        }
-                    } catch (_: Exception) {}
-                    if (p2pId.isNotEmpty()) {
+                    val p2pResolved = p2pJob?.await()
+                    if (p2pResolved != null) {
+                        servers.add(p2pResolved)
+                    } else if (p2pId.isNotEmpty()) {
                         servers.add(VideoServer("P2P Stream", "https://drakorkita.stream/#$p2pId"))
                     }
-                }
 
-                if (sbId.isNotEmpty()) {
-                    servers.add(VideoServer("StreamSB", "https://streamsb.net/e/$sbId"))
+                    if (sbId.isNotEmpty()) {
+                        servers.add(VideoServer("StreamSB", "https://streamsb.net/e/$sbId"))
+                    }
                 }
             }
         } catch (e: Exception) {
@@ -4602,7 +5214,7 @@ object VideoExtractor {
                     effectiveUrl = migrateUrlToBase(videoUrl)
                     html = fetchHtml(effectiveUrl, referer)
                 }
-            } else if (effectiveUrl.contains("kepalabergetar") || effectiveUrl.contains("archive.org") || 
+            } else if (effectiveUrl.contains("kepalabergetar") || effectiveUrl.contains("kepala-bergetar") || effectiveUrl.contains("archive.org") || 
                        effectiveUrl.contains("youtube") || effectiveUrl.contains("bilibili") || 
                        effectiveUrl.contains("dailymotion")) {
                 // External provider failed or 404 - do not trigger DutaMovie domain probe
@@ -4655,8 +5267,8 @@ object VideoExtractor {
         }
         val title = cleanTitle(rawTitle)
         
-        val poster = getHighResImage(doc.select("meta[property=\"og:image\"], .poster img, .vid-details-left img").firstOrNull()?.let { it.attr("content").ifEmpty { it.attr("abs:src") } } ?: "")
-        val backdrop = getHighResImage(doc.select(".backdrop img, #background img").firstOrNull()?.attr("abs:src") ?: "")
+        val poster = extractPosterFromDoc(doc, baseUrl = effectiveUrl, title = title)
+        val backdrop = extractBackdropFromDoc(doc, baseUrl = effectiveUrl, fallbackPoster = poster)
         
         val descriptions = doc.select(".synopsis p, .description p, .entry-content p, .desc p, .synopsis, .description, .plot, #muvipro_player_content_id p, article.item p")
         var bestDesc = ""
@@ -4708,14 +5320,13 @@ object VideoExtractor {
         }
         
         // OWL'S EYE: High-accuracy mirror detection
-        val serverContainers = doc.select(".muvipro-player-tabs, .player-tabs, .gmr-player-nav, .gmr-server-wrap, #player-option-1, #player-option-2, #player-option-3, .server-list, .list-server, .source-box, .sources-list, .mirror-list, .list-server-items, .server-wrap, .player-options")
+        val serverContainers = doc.select(".muvipro-player-tabs, .player-tabs, .gmr-player-nav, .gmr-server-wrap, #player-option-1, #player-option-2, #player-option-3, .server-list, .list-server, .source-box, .sources-list, .mirror-list, .list-server-items, .server-wrap, .player-options, ul.servers, .servers, .servers-list, #playeroptionsul, .playeroptionsul, .opt-servers, .tab-content, .nav-tabs, .player-nav, .server-wrapper")
         
-        val elements = if (serverContainers.isNotEmpty()) {
-            serverContainers.select("a, li, span, [data-post][data-n], [data-index], .do-player-option, .server-item, .gmr-player-option, .btn-server, .source, .mirror")
-        } else {
-            // Fallback to broader scan if specialized containers not found
-            doc.select(".do-player-option, .server-item, .source-box, a:contains(Server), [data-post][data-n], [data-index], .player-option, .gmr-player-option, .btn-server, .source-box a, .mirror-item, a[data-url], a[data-link], .server a, .mirror a")
-        }
+        val containerElements = if (serverContainers.isNotEmpty()) {
+            serverContainers.select("a, li, span, button, option, [data-post][data-n], [data-index], .do-player-option, .server-item, .gmr-player-option, .btn-server, .source, .mirror, [data-embed], [data-src], [data-url], [data-link]")
+        } else emptyList()
+        val docElements = doc.select(".do-player-option, .server-item, .source-box, a:contains(Server), button:contains(Server), [data-post][data-n], [data-index], .player-option, .gmr-player-option, .btn-server, .source-box a, .mirror-item, a[data-url], a[data-link], a[data-src], a[data-embed], button[data-url], button[data-src], button[data-embed], select option[data-url], select option[value*='http'], select option[data-index], .server a, .mirror a, [data-provider]")
+        val elements = (containerElements + docElements).distinct()
 
         Log.d(TAG, "Scanning servers/trailers for: $videoUrl - Found ${elements.size} potential buttons")
 
@@ -4836,66 +5447,98 @@ object VideoExtractor {
             }
         }
 
-        for (el in elements) {
-            var link = el.attr("abs:href").ifEmpty { el.attr("data-link") }.ifEmpty { el.attr("data-url") }.ifEmpty { el.attr("abs:src") }.ifEmpty { el.attr("href") }
-            if (link.isEmpty()) continue
-            
-            // Extract trailer if YouTube/Vimeo (if not already found)
-            if (link.contains("youtube.com") || link.contains("youtu.be") || link.contains("vimeo.com")) {
-                if (previewUrl.isEmpty()) {
+        // 1. Trailer scan pass
+        if (previewUrl.isEmpty()) {
+            for (el in elements) {
+                val link = el.attr("abs:href").ifEmpty { el.attr("data-link") }.ifEmpty { el.attr("data-url") }.ifEmpty { el.attr("abs:src") }.ifEmpty { el.attr("href") }
+                if (link.contains("youtube.com") || link.contains("youtu.be") || link.contains("vimeo.com")) {
                     previewUrl = link
                     Log.d(TAG, "Found trailer in elements: $previewUrl")
-                }
-                continue // Don't add youtube as a mirror server
-            }
-
-            var rawName = el.text().trim().ifEmpty { el.attr("data-name") }.ifEmpty { "Server" }
-            
-            val postId = el.attr("data-post").ifEmpty { el.attr("data-id") }.ifEmpty { el.attr("data-post-id") }
-            val n = el.attr("data-n").ifEmpty { el.attr("data-server") }.ifEmpty { el.attr("data-index") }
-            val type = el.attr("data-type").ifEmpty { "movie" }
-            
-            if (postId.isNotEmpty() && n.isNotEmpty()) {
-                val resolved = resolveAjaxServer(videoUrl, postId, n, type, videoUrl)
-                if (resolved != null) {
-                    link = resolved
-                    Log.d(TAG, "Resolved AJAX server: $rawName -> $link")
-                } else if (link.isEmpty() || link.startsWith("#")) {
-                    link = "ajax:$postId:$n:$type"
-                }
-            }
-            
-            val isSelf = link == videoUrl || link == videoUrl.removeSuffix("/") || link == "$videoUrl/"
-            
-            // Refinement: If it's a self-link (placeholder tab), skip adding it as a server button.
-            // We will extract the actual player from the iframe inside this page later.
-            if (isSelf && !link.contains("player=") && !link.contains("mirror=")) {
-                continue
-            }
-            
-            val hasPlayerParams = link.contains("player=") || link.contains("mirror=") || link.startsWith("ajax:")
-            
-            if (link.isNotEmpty() && !link.contains("javascript") && (!isSelf || hasPlayerParams)) {
-                if (isProbablyVideoHost(link) || hasPlayerParams) {
-                    if (isGenuineMirror(rawName, link)) {
-                        val beautifulName = identifyMirrorName(rawName, link)
-                        Log.d(TAG, "Adding server from button: $beautifulName -> $link")
-                        rawServers.add(VideoServer(beautifulName, link))
-                    }
+                    break
                 }
             }
         }
 
+        // 2. Parallel server button resolution
+        val resolvedButtons = coroutineScope {
+            elements.map { el ->
+                async {
+                    val rawName = el.text().trim()
+                        .ifEmpty { el.attr("data-name") }
+                        .ifEmpty { el.attr("title") }
+                        .ifEmpty { el.attr("aria-label") }
+                        .ifEmpty { "Server" }
+                    val postId = el.attr("data-post").ifEmpty { el.attr("data-id") }.ifEmpty { el.attr("data-post-id") }
+                    val n = el.attr("data-n").ifEmpty { el.attr("data-server") }.ifEmpty { el.attr("data-index") }
+                    val type = el.attr("data-type").ifEmpty { "movie" }
+
+                    var link = el.attr("abs:href")
+                        .ifEmpty { el.attr("data-link") }
+                        .ifEmpty { el.attr("data-url") }
+                        .ifEmpty { el.attr("data-src") }
+                        .ifEmpty { el.attr("data-embed") }
+                        .ifEmpty { el.attr("data-video") }
+                        .ifEmpty { el.attr("data-frame") }
+                        .ifEmpty { el.attr("abs:src") }
+                        .ifEmpty { el.attr("value") }
+                        .ifEmpty { el.attr("href") }
+
+                    if (link.isEmpty() && postId.isEmpty() && n.isEmpty()) {
+                        return@async null
+                    }
+                    if (link.contains("youtube.com") || link.contains("youtu.be") || link.contains("vimeo.com")) {
+                        return@async null
+                    }
+
+                    if (postId.isNotEmpty() && n.isNotEmpty()) {
+                        val resolved = resolveAjaxServer(videoUrl, postId, n, type, videoUrl)
+                        if (resolved != null) {
+                            link = resolved
+                            Log.d(TAG, "Resolved AJAX server: $rawName -> $link")
+                        } else if (link.isEmpty() || link.startsWith("#") || link.startsWith("javascript")) {
+                            link = "ajax:$postId:$n:$type"
+                        }
+                    }
+
+                    val hasPlayerParams = link.contains("player=") || link.contains("mirror=") || link.contains("server=") ||
+                        link.contains("source=") || link.contains("srv=") || link.contains("sv=") ||
+                        link.contains("opt=") || link.contains("option=") || link.contains("stream=") ||
+                        link.contains("play=") || link.contains("watch=") || link.contains("embed=") ||
+                        link.contains("link=") || link.contains("vid=") || link.startsWith("ajax:") ||
+                        link.contains("#player") || link.contains("#server") || link.contains("#tab") || link.contains("#embed")
+                    val isSelf = link == videoUrl || link == videoUrl.removeSuffix("/") || link == "$videoUrl/"
+                    if (isSelf && !hasPlayerParams) {
+                        return@async null
+                    }
+
+                    if (link.isNotEmpty() && !link.startsWith("javascript") && (!isSelf || hasPlayerParams)) {
+                        if (isProbablyVideoHost(link) || hasPlayerParams || isGenuineMirror(rawName, link)) {
+                            val beautifulName = identifyMirrorName(rawName, link)
+                            Log.d(TAG, "Adding server from button: $beautifulName -> $link")
+                            return@async VideoServer(beautifulName, link)
+                        }
+                    }
+                    null
+                }
+            }.awaitAll().filterNotNull()
+        }
+        rawServers.addAll(resolvedButtons)
+
         // 2b. PencuriMovie Tabbed Players Scan (.player_nav, .idTabs, #player2)
-        val pmTabs = doc.select(".player_nav li, .idTabs li")
+        val pmTabs = doc.select(".player_nav li, .idTabs li, .server-wrapper li")
         if (pmTabs.isNotEmpty()) {
             pmTabs.forEach { li ->
-                val serverName = li.select(".les-title strong").text().trim().ifEmpty { "Server" }
-                val tabHref = li.select(".les-content a").attr("href").trim().removePrefix("#")
+                val serverName = li.select(".les-title strong, strong, b, a").text().trim()
+                    .ifEmpty { li.text().trim() }.ifEmpty { "Server" }
+                val tabHref = li.select(".les-content a, a").attr("href").trim()
+                    .ifEmpty { li.attr("data-tab") }.removePrefix("#")
                 if (tabHref.isNotEmpty()) {
-                    val tabContainer = doc.select("#$tabHref")
+                    val tabContainer = doc.select("#$tabHref, .$tabHref")
                     val iframe = tabContainer.select("iframe").firstOrNull()
-                    val src = iframe?.attr("abs:src")?.ifEmpty { iframe.attr("abs:data-src") }?.ifEmpty { iframe.attr("data-src") }?.ifEmpty { iframe.attr("src") } ?: ""
+                    var src = iframe?.attr("abs:src")?.ifEmpty { iframe.attr("abs:data-src") }?.ifEmpty { iframe.attr("data-src") }?.ifEmpty { iframe.attr("src") } ?: ""
+                    if (src.isEmpty() || src.startsWith("about:") || src.startsWith("data:")) {
+                        src = iframe?.attr("abs:data-src")?.ifEmpty { iframe.attr("data-src") }?.ifEmpty { iframe.attr("abs:data-lazy-src") } ?: ""
+                    }
                     if (src.isNotEmpty() && isProbablyVideoHost(src)) {
                         val beautifulName = identifyMirrorName(serverName, src)
                         Log.d(TAG, "Adding PencuriMovie server from tab $tabHref: $beautifulName -> $src")
@@ -4905,17 +5548,38 @@ object VideoExtractor {
             }
         }
 
+        // 2c. Direct scan of Pencuri player containers (#player1, #player2, #player3...)
+        doc.select("#player1 iframe, #player2 iframe, #player3 iframe, #player4 iframe, #player5 iframe, .player-embed iframe").forEachIndexed { idx, iframe ->
+            var src = iframe.attr("abs:src")
+            if (src.isEmpty() || src.startsWith("about:") || src.startsWith("data:")) {
+                src = iframe.attr("abs:data-src").ifEmpty { iframe.attr("data-src") }.ifEmpty { iframe.attr("src") }
+            }
+            if (src.isNotEmpty() && !src.contains("ads") && isProbablyVideoHost(src)) {
+                val label = "Server ${idx + 1}"
+                val beautifulName = identifyMirrorName(label, src)
+                rawServers.add(VideoServer(beautifulName, src))
+            }
+        }
+
         // 3. Iframe/Object Scan (Real mirrors often auto-load in an iframe below the video area)
-        val videoArea = doc.select(".gmr-pagi-player, .player-wrap, .video-player, #player, #player2, .movieplay, .embed-responsive, .muvipro-player-wrap, .gmr-embed-responsive")
+        val videoArea = doc.select(".gmr-pagi-player, .player-wrap, .video-player, #player, #player2, .movieplay, .embed-responsive, .muvipro-player-wrap, .gmr-embed-responsive, #pembed, .video-content")
         val iframesToScan = if (videoArea.isNotEmpty() && videoArea.select("iframe, embed").isNotEmpty()) videoArea.select("iframe, embed") else doc.select("iframe, embed")
 
         iframesToScan.forEach { iframe ->
-            val src = iframe.attr("abs:src").ifEmpty { iframe.attr("abs:data-src") }.ifEmpty { iframe.attr("data-src") }.ifEmpty { iframe.attr("abs:data") }
+            var src = iframe.attr("abs:src")
+            if (src.isEmpty() || src.startsWith("about:") || src.startsWith("data:") || src.contains("spinner") || src.contains("loading")) {
+                src = iframe.attr("abs:data-src")
+                    .ifEmpty { iframe.attr("data-src") }
+                    .ifEmpty { iframe.attr("abs:data-lazy-src") }
+                    .ifEmpty { iframe.attr("data-lazy-src") }
+                    .ifEmpty { iframe.attr("data-original") }
+                    .ifEmpty { iframe.attr("data-frame") }
+                    .ifEmpty { iframe.attr("abs:data") }
+            }
             if (src.isNotEmpty() && !src.contains("ads") && isProbablyVideoHost(src)) {
                 if (!src.contains("youtube") && !src.contains("youtu.be")) {
-                    // Refinement: If this iframe is the auto-loaded player for the default button,
-                    // use the site's original button label (e.g. "Server 1") for consistency.
-                    val beautifulName = identifyMirrorName(activeServerName, src)
+                    val iframeLabel = iframe.attr("title").ifEmpty { iframe.attr("name") }.ifEmpty { activeServerName }
+                    val beautifulName = identifyMirrorName(iframeLabel, src)
                     Log.d(TAG, "Adding server from iframe: $beautifulName -> $src")
                     rawServers.add(VideoServer(beautifulName, src))
                 }
@@ -5022,21 +5686,43 @@ object VideoExtractor {
                             val serverXid = epJson.optString("server_xid", "f1")
                             val sLabel = parsedSeason.ifEmpty { "Season 1" }
                             val dfwEpisodes = mutableListOf<Episode>()
+                            var movieEpid: String? = null
+                            var movieCat = catVal
+                            var movieTag = tagVal
+                            var movieXid = serverXid
+
                             epDoc.select("a[data-epid]").forEach { a ->
-                                val epNum = a.text().trim()
+                                val epRaw = a.text().trim()
                                 val epid = a.attr("data-epid")
                                 val aCat = a.attr("data-cat").ifEmpty { catVal }
                                 val aTag = a.attr("data-tag").ifEmpty { tagVal }
                                 val aXid = a.attr("data-server_xid").ifEmpty { serverXid }
-                                val epName = "Episode $epNum"
-                                val epUrl = "$cleanBase?epid=$epid&ep=$epNum&cat=$aCat&tag=$aTag&xid=$aXid&c=$cVal&t=${java.net.URLEncoder.encode(tVal, "UTF-8")}"
-                                dfwEpisodes.add(Episode(
-                                    id = "dfw_${slug}_ep$epNum",
-                                    name = epName,
-                                    url = epUrl,
-                                    season = sLabel
-                                ))
+
+                                val isUnnamed = epRaw.equals("unnamed", ignoreCase = true) || 
+                                                a.id().contains("unnamed", ignoreCase = true) ||
+                                                a.className().contains("unnamed", ignoreCase = true) ||
+                                                epRaw.equals("movie", ignoreCase = true) ||
+                                                epRaw.equals("full", ignoreCase = true)
+
+                                if (isUnnamed) {
+                                    movieEpid = epid
+                                    movieCat = aCat
+                                    movieTag = aTag
+                                    movieXid = aXid
+                                } else {
+                                    val epNumMatch = Regex("""\d+""").find(epRaw)
+                                    val epNum = epNumMatch?.value ?: epRaw
+                                    val epName = "Episode $epNum"
+                                    val epUrl = "$cleanBase?epid=$epid&ep=$epNum&cat=$aCat&tag=$aTag&xid=$aXid&c=$cVal&t=${java.net.URLEncoder.encode(tVal, "UTF-8")}"
+                                    dfwEpisodes.add(Episode(
+                                        id = "dfw_${slug}_ep$epNum",
+                                        name = epName,
+                                        url = epUrl,
+                                        season = sLabel
+                                    ))
+                                }
                             }
+
                             if (dfwEpisodes.isNotEmpty()) {
                                 rawEpisodes = dfwEpisodes.sortedBy { 
                                     Regex("""\d+""").find(it.name)?.value?.toIntOrNull() ?: 0 
@@ -5055,6 +5741,11 @@ object VideoExtractor {
                                         Log.i(TAG, "Resolved ${epServers.size} servers from first DutaFilm Web episode for $title")
                                     }
                                 }
+                            } else if (!movieEpid.isNullOrEmpty() && rawServers.isEmpty()) {
+                                val movieUrl = "$cleanBase?epid=$movieEpid&cat=$movieCat&tag=$movieTag&xid=$movieXid&c=$cVal&t=${java.net.URLEncoder.encode(tVal, "UTF-8")}"
+                                val epServers = resolveDutaFilmWebEpisodeServers(movieUrl, effectiveUrl, cApiHost, movieEpid!!, movieCat, movieTag, movieXid, cVal, tVal)
+                                rawServers.addAll(epServers)
+                                Log.i(TAG, "Resolved ${epServers.size} movie servers from DutaFilm Web for $title")
                             }
                         }
                     }
@@ -5113,8 +5804,9 @@ object VideoExtractor {
             }
         }
 
-        val finalIsSeries = rawEpisodes.isNotEmpty() || isExplicitSeries || isEpisodePage
-        val episodes = if (finalIsSeries) rawEpisodes else emptyList()
+        val hasRealEpisodes = rawEpisodes.any { !it.name.contains("unnamed", ignoreCase = true) }
+        val finalIsSeries = (rawEpisodes.isNotEmpty() && hasRealEpisodes) || isExplicitSeries || isEpisodePage
+        val episodes = if (finalIsSeries) rawEpisodes.filter { !it.name.contains("unnamed", ignoreCase = true) } else emptyList()
 
         // OWL'S EYE: Speculative Probing (v5.9)
         var discoveredServers = finalServers
@@ -5130,7 +5822,7 @@ object VideoExtractor {
             if (isSafeProbe) {
                 Log.d(TAG, "Series mirrors missing. Speculative Probe engaged for: ${firstEp.name}")
                 val probeResult = try {
-                    withTimeoutOrNull(8000) {
+                    withTimeoutOrNull(1200) {
                         fetchVideoDetails(firstEp.url, videoUrl, isRecursive = true)
                     }
                 } catch (e: Exception) { null }
@@ -5143,13 +5835,33 @@ object VideoExtractor {
             }
         }
         
-        // If we are on an episode page and found NO mirrors, try finding an iframe with a common mirror host
-        if (isEpisodePage && discoveredServers.isEmpty()) {
-            doc.select("iframe").forEach { iframe ->
-                val src = iframe.attr("abs:src").ifEmpty { iframe.attr("abs:data-src") }.ifEmpty { iframe.attr("data-src") }.ifEmpty { iframe.attr("src") }
-                if (src.isNotEmpty() && isProbablyVideoHost(src)) {
-                    val beautifulName = identifyMirrorName("Server 1", src)
+        // OWL'S EYE: Universal Fallback - If discoveredServers is still empty (movies or episode pages),
+        // scan all iframes, <video>/<source> tags for playable streams
+        if (discoveredServers.isEmpty() && (!finalIsSeries || isEpisodePage)) {
+            doc.select("iframe, embed").forEach { iframe ->
+                var src = iframe.attr("abs:src")
+                if (src.isEmpty() || src.startsWith("about:") || src.startsWith("data:")) {
+                    src = iframe.attr("abs:data-src")
+                        .ifEmpty { iframe.attr("data-src") }
+                        .ifEmpty { iframe.attr("abs:data-lazy-src") }
+                        .ifEmpty { iframe.attr("data-lazy-src") }
+                        .ifEmpty { iframe.attr("data-original") }
+                        .ifEmpty { iframe.attr("data-frame") }
+                        .ifEmpty { iframe.attr("src") }
+                }
+                if (src.isNotEmpty() && !src.contains("ads") && isProbablyVideoHost(src) && !src.contains("youtube") && !src.contains("youtu.be")) {
+                    val label = iframe.attr("title").ifEmpty { "Server 1" }
+                    val beautifulName = identifyMirrorName(label, src)
                     discoveredServers.add(VideoServer(beautifulName, src))
+                }
+            }
+            if (discoveredServers.isEmpty()) {
+                doc.select("video, source").forEach { v ->
+                    val src = v.attr("abs:src").ifEmpty { v.attr("src") }
+                    if (src.isNotEmpty() && (src.contains(".mp4") || src.contains(".m3u8") || src.contains(".webm"))) {
+                        val beautifulName = identifyMirrorName("Direct Server", src)
+                        discoveredServers.add(VideoServer(beautifulName, src))
+                    }
                 }
             }
         }
@@ -5159,8 +5871,28 @@ object VideoExtractor {
         val quality = doc.select(".quality, .resolution, .res, .gmr-quality-item").firstOrNull()?.text() ?: ""
         val year = doc.select(".date, .release-date, .year").firstOrNull()?.text()?.filter { it.isDigit() }?.takeLast(4) ?: ""
 
+        var finalPoster = if (poster.isNotEmpty() && isValidImageUrl(poster)) poster else ""
+        var finalBackdrop = if (backdrop.isNotEmpty() && isValidImageUrl(backdrop)) backdrop else ""
+
+        if (finalPoster.isEmpty()) {
+            finalPoster = if (finalBackdrop.isNotEmpty()) finalBackdrop else ""
+        }
+        if (finalBackdrop.isEmpty()) {
+            finalBackdrop = if (finalPoster.isNotEmpty()) finalPoster else ""
+        }
+
+        if (finalPoster.isEmpty() || !isValidImageUrl(finalPoster)) {
+            val fallback = findPosterForTitle(title, year)
+            if (isValidImageUrl(fallback)) {
+                finalPoster = fallback
+                if (finalBackdrop.isEmpty() || !isValidImageUrl(finalBackdrop)) {
+                    finalBackdrop = fallback
+                }
+            }
+        }
+
         Video(
-            id = extractStableId(videoUrl), title = title, thumbnailUrl = poster, backdropUrl = backdrop,
+            id = extractStableId(videoUrl), title = title, thumbnailUrl = finalPoster, backdropUrl = finalBackdrop,
             videoUrl = videoUrl, description = bestDesc, previewUrl = previewUrl, actresses = actresses.distinct(),
             actressPaths = actressPaths, actressImages = actressImages,
             duration = doc.select(".duration, .runtime").firstOrNull()?.text() ?: "",
@@ -5214,6 +5946,9 @@ object VideoExtractor {
             lowUrl.contains("streamtape") && (lowUrl.contains("get_video") || lowUrl.contains("tapecontent")) -> 140
             lowUrl.contains("streamtape") || lowName.contains("streamtape") -> 135
 
+            // OWL'S EYE: Priority Tier 1 - Native Clean Embeds (Dsvplay - PencuriMovie Native Server 1)
+            lowUrl.contains("dsvplay") || lowName.contains("dsvplay") -> 145
+
             // OWL'S EYE: Priority Tier 1a - LuluStream (Ultra Fast Direct HLS 720p)
             lowUrl.contains("luluvdo") || lowUrl.contains("lulustream") || lowUrl.contains("player=7") ||
             lowName.contains("lulustream") || lowName.contains("lulu") -> 138
@@ -5234,9 +5969,6 @@ object VideoExtractor {
             lowUrl.contains("player=3") || lowUrl.contains("player=6") || lowUrl.contains("player=8") ||
             lowName.contains("indostream") || lowName.contains("indovip") || (lowName.contains("amt") && !lowName.contains("stream")) -> 125
 
-            // OWL'S EYE: Priority Tier 2b - YouTube Full Movie / High-speed Direct
-            lowUrl.contains("youtube") || lowUrl.contains("youtu.be") || lowName.contains("youtube") -> 110
-
             // OWL'S EYE: Priority Tier 2c - Dedicated Streaming Video Hosts (Playstream, EmbedPyrox, Faststream, Upstream, etc.)
             lowUrl.contains("playstream") || lowName.contains("playstream") ||
             lowUrl.contains("embedpyrox") || lowUrl.contains("pyrox") ||
@@ -5244,25 +5976,28 @@ object VideoExtractor {
             lowUrl.contains("vstream") || lowUrl.contains("hexload") -> 95
 
             lowUrl.contains("embedo") || lowName.contains("embedo") -> 100
+            lowUrl.contains("swishsrv") || lowUrl.contains("swish") || lowName.contains("swish") -> 85
             lowUrl.contains("sbanh") || lowName.contains("sbanh") -> 80
 
             lowName.contains("vip") || lowUrl.contains("vip") -> 90
             lowUrl.contains("archive.org/download") -> 45
             lowName.contains("direct") || lowUrl.contains(".mp4") || lowUrl.contains(".m3u8") -> 88
-            lowUrl.contains("dsvplay") || lowName.contains("dsvplay") -> 85
-            lowUrl.contains("swishsrv") || lowUrl.contains("swish") || lowName.contains("swish") -> 85
             lowUrl.contains("dood") -> 70
 
-            // OWL'S EYE: External Alternative Partner Mirrors (Dailymotion / Bilibili Fallbacks)
-            lowUrl.contains("dailymotion") || lowUrl.contains("dai.ly") || lowName.contains("dailymotion") -> 65
-            lowUrl.contains("bilibili") || lowName.contains("bilibili") -> 45
-            
             // OWL'S EYE: Demoted unreliable / heavily protected hosts
             lowUrl.contains("veev") || lowName.contains("veev") || lowUrl.contains("player=5") -> 55
 
+            lowUrl.contains("playerp2p") || lowName.contains("playerp2p") -> 35
+
+            // OWL'S EYE: External Alternative Partner Mirrors (YouTube, Dailymotion, Bilibili) - Last-Resort Fallbacks
+            // Only triggered when all primary mirrors & streaming hosts are dead/exhausted
+            lowUrl.contains("youtube") || lowUrl.contains("youtu.be") || lowName.contains("youtube") -> 10
+            lowUrl.contains("dailymotion") || lowUrl.contains("dai.ly") || lowName.contains("dailymotion") -> 65
+            lowUrl.contains("bilibili") || lowName.contains("bilibili") -> 45
+
             // OWL'S EYE: Demoted Steganographic / Fake Chunk wrapper embeds
-            lowUrl.contains("embed4me") || lowUrl.contains("upns") || lowUrl.contains("playerp2p") ||
-            lowName.contains("embed4me") || lowName.contains("upns") || lowName.contains("playerp2p") -> 35
+            lowUrl.contains("embed4me") || lowUrl.contains("upns") ||
+            lowName.contains("embed4me") || lowName.contains("upns") -> 15
 
             lowUrl.contains("hglink") || lowName.contains("hglink") -> 20
             
@@ -5277,7 +6012,7 @@ object VideoExtractor {
 
     fun cleanEpisodeTitle(rawName: String, parentTitle: String = "", parentUrl: String = ""): String {
         val trimmed = rawName.trim()
-        if (trimmed.isEmpty()) return "Episode"
+        if (trimmed.isEmpty() || trimmed.contains("unnamed", ignoreCase = true)) return "Episode"
 
         // Pure numeric strings e.g. "1", "01"
         if (trimmed.length <= 4 && trimmed.all { it.isDigit() }) {
@@ -5296,7 +6031,7 @@ object VideoExtractor {
             val num = match.groupValues[1]
             val rawSubtitle = match.groupValues[2].trim().removeSuffix(")").trim()
 
-            if (rawSubtitle.isEmpty()) {
+            if (rawSubtitle.isEmpty() || Regex("""(?i)^\s*(?:episod[e]?|eps|ep)?\s*$num\s*$""").matches(rawSubtitle)) {
                 return "Episode $num"
             }
 
@@ -5368,7 +6103,7 @@ object VideoExtractor {
             val isEpisodeLink = (lowUrl.contains("/eps/") || lowUrl.contains("/episode/") || lowUrl.contains("-episode-") || 
                                 lowUrl.contains("/episod/") || lowUrl.contains("-episod-") || lowUrl.contains("-epi-") ||
                                 lowUrl.contains("/ep-") || lowUrl.contains("/episodio/")) && 
-                               !lowName.contains("next") && !lowName.contains("prev") && !lowName.contains("lanjut") && !lowName.contains("sebelum") && !lowName.contains("halaman") && !isBackLink && !isSocial
+                               !lowName.contains("next") && !lowName.contains("prev") && !lowName.contains("lanjut") && !lowName.contains("sebelum") && !lowName.contains("halaman") && !lowName.contains("unnamed") && !lowUrl.contains("unnamed") && !isBackLink && !isSocial
 
             if (epUrl.isNotEmpty() && !isServer && isEpisodeLink) {
                 val cleanUrl = epUrl.substringBefore('?')
@@ -5385,10 +6120,26 @@ object VideoExtractor {
                     }
                 }
 
-                val seasonFromName = Regex("""(?i)\bS(\d+)\b""").find(epName)?.groupValues?.get(1)?.let { "Season $it" }
-                val seasonFromUrl = Regex("""(?i)season-(\d+)""").find(epUrl)?.groupValues?.get(1)?.let { "Season $it" }
-                val seasonFromTitle = Regex("""(?i)season\s+(\d+)""").find(epTitle)?.groupValues?.get(1)?.let { "Season $it" }
-                val resolvedSeason = seasonFromName ?: seasonFromUrl ?: seasonFromTitle ?: ""
+                val seasonFromName = Regex("""(?i)\b(?:season|musim|s)\s*[-_]?(\d+)\b""").find(epName)?.groupValues?.get(1)?.let { "Season $it" }
+                    ?: Regex("""(?i)\b(\d+)x\d+\b""").find(epName)?.groupValues?.get(1)?.let { "Season $it" }
+                val seasonFromUrl = Regex("""(?i)\b(?:season|s)[-_](\d+)\b""").find(epUrl)?.groupValues?.get(1)?.let { "Season $it" }
+                val seasonFromTitle = Regex("""(?i)\b(?:season|musim|s)\s*(\d+)\b""").find(epTitle)?.groupValues?.get(1)?.let { "Season $it" }
+                
+                var parentSeason: String? = null
+                if (seasonFromName == null && seasonFromUrl == null && seasonFromTitle == null) {
+                    var curr: org.jsoup.nodes.Element? = el.parent()
+                    while (curr != null && curr != doc.body() && parentSeason == null) {
+                        val parentId = curr.id()
+                        val parentClass = curr.className()
+                        val match = Regex("""(?i)\b(?:season|musim)[-_ ]?(\d+)\b""").find("$parentId $parentClass")
+                            ?: Regex("""(?i)\b(?:season|musim)\s*(\d+)\b""").find(curr.select("h1, h2, h3, h4, h5, .season-title, .title-season").text())
+                        if (match != null) {
+                            parentSeason = "Season ${match.groupValues[1]}"
+                        }
+                        curr = curr.parent()
+                    }
+                }
+                val resolvedSeason = seasonFromName ?: seasonFromUrl ?: seasonFromTitle ?: parentSeason ?: ""
 
                 // Multi-Season Conflict Guard: If series specifies Season X, reject episodes belonging to Season Y
                 val targetSeasonNum = Regex("""(?i)\b(?:season|s)[-_ ]?(\d+)\b""").find(videoUrl)?.groupValues?.get(1)?.toIntOrNull()
@@ -5398,9 +6149,10 @@ object VideoExtractor {
                     return@forEach
                 }
 
-                val epNum = Regex("""(?i)\b(?:episod[e]?|eps|ep)\s*(\d+)\b""").find(epName)?.groupValues?.get(1)
-                    ?: Regex("""(?i)\b(?:episod[e]?|eps|ep)\s*(\d+)\b""").find(epTitle)?.groupValues?.get(1)
-                    ?: Regex("""(?i)\b(?:episod[e]?|eps|ep)\s*(\d+)\b""").find(epAria)?.groupValues?.get(1)
+                val epNum = Regex("""(?i)\b(?:episod[e]?|eps|ep)[.:\s-]*(\d+)\b""").find(epName)?.groupValues?.get(1)
+                    ?: Regex("""(?i)(?:e|x)\s*(\d+)\b""").find(epName)?.groupValues?.get(1)
+                    ?: Regex("""(?i)\b(?:episod[e]?|eps|ep)[.:\s-]*(\d+)\b""").find(epTitle)?.groupValues?.get(1)
+                    ?: Regex("""(?i)\b(?:episod[e]?|eps|ep)[.:\s-]*(\d+)\b""").find(epAria)?.groupValues?.get(1)
                     ?: Regex("""(?i)[-_](?:episod[e]?|eps|ep)[-_](\d+)""").find(lowUrl)?.groupValues?.get(1)
 
                 val cleanEpName = cleanEpisodeTitle(epName, title, videoUrl)
@@ -5432,60 +6184,121 @@ object VideoExtractor {
         }))
     }
 
+    private fun tryAjaxEndpoint(
+        host: String,
+        action: String,
+        paramKey: String,
+        postId: String,
+        n: String,
+        type: String,
+        referer: String
+    ): String? {
+        try {
+            val ajaxUrl = "https://$host/wp-admin/admin-ajax.php"
+            val bodyBuilder = FormBody.Builder()
+                .add("action", action)
+                .add("post", postId)
+                .add(paramKey, n)
+                .add("type", type)
+            val body = bodyBuilder.build()
+            val request = Request.Builder().url(ajaxUrl).post(body)
+                .header("X-Requested-With", "XMLHttpRequest")
+                .header("Referer", referer)
+                .header("User-Agent", USER_AGENT)
+                .build()
+                
+            NetworkConfig.fastOkHttpClient.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val resp = response.body?.string() ?: ""
+                        val unescaped = resp.replace("\\/", "/")
+                        val urlMatch = Regex("""(?:src=["']|["'](?:embed_url|url|link|src)["']\s*:\s*["'])(https?://[^"'\\\s>]+)""").find(unescaped)
+                            ?: Regex("""src=["'](https?://[^"']+)["']""").find(unescaped)
+                            ?: Regex("""https?://[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:/[^"'\\\s<>]*)?""").find(unescaped)
+                        val found = urlMatch?.groupValues?.let { if (it.size > 1) it[1] else it[0] }
+                        if (found != null && found.startsWith("http") && isProbablyVideoHost(found)) return found
+                }
+            }
+        } catch (_: Exception) {}
+        return null
+    }
+
     suspend fun resolveAjaxServer(url: String, postId: String, n: String, type: String, referer: String? = null): String? = withContext(Dispatchers.IO) {
         val uri = try { android.net.Uri.parse(url) } catch(e: Exception) { null }
-        val hosts = listOf("eddieoneverything.com", "seoulschool.org", "ladyriderswear.com", "itoshii-movie.com", "bokinshop.com", "b7510.com")
+        val primaryHost = uri?.host?.lowercase() ?: ""
         val actualReferer = referer ?: url
         
+        // Fast-Path: Check domain-level cached winning endpoint
+        if (primaryHost.isNotEmpty()) {
+            workingAjaxCache[primaryHost]?.let { cached ->
+                val resolved = tryAjaxEndpoint(cached.host, cached.action, cached.paramKey, postId, n, cached.type, actualReferer)
+                if (resolved != null) return@withContext resolved
+            }
+        }
+
         val typesToTry = when (type) {
             "movie" -> listOf("movie", "movies")
             "tv" -> listOf("tv", "episodes", "episode")
             else -> listOf(type, "movie")
         }
-        
-        val allHosts = (listOf(uri?.host ?: "") + hosts).distinct().filter { it.isNotEmpty() }
-        val actions = listOf("muvipro_player_content", "muvipro_get_player", "muvipro_player", "doo_player_ajax", "muvipro_player_ajax", "dt_player_ajax", "halim_ajax_player", "ajax_get_link", "get_player_link", "gmr_ajax_player", "player_ajax", "get_player_ajax", "load_player_content", "load_player", "player_content", "ajax_player")
 
-        // OWL'S EYE GOD MODE: Parallel Handshake
-        // Try all hosts and all actions simultaneously to find the winner in <1s
-        val result = coroutineScope {
-            allHosts.flatMap { host ->
-                typesToTry.flatMap { currentType ->
-                    actions.map { actionName ->
-                        async {
-                            try {
-                                val ajaxUrl = "https://$host/wp-admin/admin-ajax.php"
-                                val bodyBuilder = FormBody.Builder().add("action", actionName)
-                                if (actionName == "muvipro_player_content") {
-                                    bodyBuilder.add("post", postId).add("nume", n).add("type", currentType)
-                                } else {
-                                    bodyBuilder.add("post", postId).add("n", n).add("type", currentType)
+        val clusterHosts = listOf("scphi.org", "bullerswood.org", "grishamfarms.org", "tv12.lk21official.cc", "b7510.com")
+        val candidateHosts = (listOf(primaryHost) + clusterHosts).distinct().filter { it.isNotEmpty() }
+
+        val commonActions = listOf(
+            Triple("muvipro_player_content", "nume", "Muvipro"),
+            Triple("muvipro_player_content", "n", "MuviproAlt"),
+            Triple("doo_player_ajax", "n", "DooPlay"),
+            Triple("gmr_ajax_player", "n", "GMR"),
+            Triple("get_player_ajax", "n", "GetPlayer"),
+            Triple("muvipro_get_player", "n", "MuviproGet"),
+            Triple("dt_player_ajax", "n", "DooplayDt"),
+            Triple("player_ajax", "n", "PlayerAjax")
+        )
+
+        val candidates = mutableListOf<AjaxEndpoint>()
+        for (t in typesToTry) {
+            for ((act, pKey, _) in commonActions) {
+                if (primaryHost.isNotEmpty()) {
+                    candidates.add(AjaxEndpoint(primaryHost, act, pKey, t))
+                }
+            }
+        }
+        for (h in candidateHosts.filter { it != primaryHost }.take(3)) {
+            for (t in typesToTry.take(1)) {
+                candidates.add(AjaxEndpoint(h, "muvipro_player_content", "nume", t))
+                candidates.add(AjaxEndpoint(h, "doo_player_ajax", "n", t))
+            }
+        }
+
+        val winner = CompletableDeferred<Pair<String, AjaxEndpoint>?>()
+        var winningResult: String? = null
+        try {
+            coroutineScope {
+                candidates.forEach { candidate ->
+                    launch {
+                        if (winner.isCompleted) return@launch
+                        val resolved = tryAjaxEndpoint(
+                            candidate.host, candidate.action, candidate.paramKey,
+                            postId, n, candidate.type, actualReferer
+                        )
+                        if (resolved != null) {
+                            if (winner.complete(Pair(resolved, candidate))) {
+                                if (primaryHost.isNotEmpty()) {
+                                    workingAjaxCache[primaryHost] = candidate
                                 }
-                                val body = bodyBuilder.build()
-                                val request = Request.Builder().url(ajaxUrl).post(body)
-                                    .header("X-Requested-With", "XMLHttpRequest")
-                                    .header("Referer", actualReferer)
-                                    .header("User-Agent", USER_AGENT)
-                                    .build()
-                                    
-                                NetworkConfig.okHttpClient.newCall(request).execute().use { response ->
-                                    if (response.isSuccessful) {
-                                        val resp = response.body?.string() ?: ""
-                                        if (resp.length > 10) {
-                                            val m = Regex("src=[\"']([^\"']+)[\"']").find(resp) ?: 
-                                                    Regex("[\"'](?:embed_url|url|link|src)[\"']\\s*:\\s*[\"']([^\"']+)[\"']").find(resp)
-                                            val found = m?.groupValues?.get(1)?.replace("\\/", "/")
-                                            if (found != null && found.startsWith("http")) found else null
-                                        } else null
-                                    } else null
-                                }
-                            } catch (_: Exception) { null }
+                                workingAjaxCache[candidate.host] = candidate
+                                coroutineContext.cancelChildren()
+                            }
                         }
                     }
                 }
-            }.firstNotNullOfOrNull { it.await() }
-        }
-        
-        return@withContext result
+                val won = withTimeoutOrNull(2500) {
+                    winner.await()
+                }
+                winningResult = won?.first
+            }
+        } catch (_: Exception) {}
+
+        return@withContext winningResult
     }
 }

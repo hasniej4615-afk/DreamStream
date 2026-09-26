@@ -357,6 +357,13 @@ Tap to re-scout and refresh content</string>
     <string name="no_other_sources_found">No alternative sources found for this title</string>
     <string name="auto_healed_source">Auto-recovered %d alternative mirror(s)</string>
     <string name="added_multi_provider_alt_sources">Added multi-provider cross-search &amp; auto-healing: discover fresh mirrors from partner providers when mirrors expire or fail.</string>
+    <string name="changelog_v2_0_5">Changelog v2.0.5 Run Forrest Run</string>
+    <string name="v2_0_5_updates">v2.0.5 Updates:</string>
+    <string name="v2_0_5_highlight_1">Ultra-Fast Stream &amp; Poster Auto-Healing: Automated fallback poster recovery and mirror discovery across multi-provider clusters, ensuring 0 missing posters and zero broken titles.</string>
+    <string name="v2_0_5_highlight_2">Fixed Detail Poster &amp; Backdrop Resolution: Corrected media metadata parsing to strictly reject non-image links and eliminate related movie backdrop bleed on video detail pages.</string>
+    <string name="v2_0_5_highlight_3">Optimized Android TV Remote Experience: Seamless D-pad navigation with instant season switching on hover, 1.25x tactile card focus scaling, high-contrast borders, and adaptive widescreen 2-column layout.</string>
+    <string name="v2_0_5_highlight_4">Enhanced Video Buffering &amp; High-Res CDN Scaling: Dynamic buffer management with up to 5-minute pre-buffering on TV and crystal-clear 780p/1280p image upscaling.</string>
+    <string name="v2_0_5_highlight_5">Regex ReDoS &amp; Stack Overflow Immunity: Replaced recursive regex backtracking with high-speed linear pattern matching across obfuscated JavaScript and subtitle extractors.</string>
     <string name="changelog_v2_0_4">Changelog v2.0.4 Raven\'s Revenge</string>
     <string name="v2_0_4_updates">v2.0.4 Updates:</string>
     <string name="v2_0_4_highlight_1">Global Community Comments: Discuss movies and series with other users in real time, featuring persistent nicknames and colorful user avatars.</string>

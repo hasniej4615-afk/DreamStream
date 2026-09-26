@@ -26,17 +26,27 @@ interface VideoDao {
             val existing = getVideoById(video.id)
             if (existing != null) {
                 // Hard filter for placeholders
-                val isNewPlaceholder = video.thumbnailUrl.contains("data:image/") || video.thumbnailUrl.contains("/pixel.gif") || video.thumbnailUrl.contains("/loading.gif")
-                val isExistingPlaceholder = existing.thumbnailUrl.contains("data:image/") || existing.thumbnailUrl.contains("/pixel.gif") || existing.thumbnailUrl.contains("/loading.gif")
+                val isNewInvalid = video.thumbnailUrl.isBlank() || video.thumbnailUrl.contains("data:image/") || video.thumbnailUrl.contains("/pixel.gif") || video.thumbnailUrl.contains("/loading.gif") || video.thumbnailUrl.contains("placeholder")
+                val isExistingInvalid = existing.thumbnailUrl.isBlank() || existing.thumbnailUrl.contains("data:image/") || existing.thumbnailUrl.contains("/pixel.gif") || existing.thumbnailUrl.contains("/loading.gif") || existing.thumbnailUrl.contains("placeholder")
                 
                 val betterThumb = when {
-                    existing.thumbnailUrl.isNotEmpty() && !isExistingPlaceholder && (video.thumbnailUrl.isEmpty() || isNewPlaceholder) -> existing.thumbnailUrl
-                    video.thumbnailUrl.isNotEmpty() && !isNewPlaceholder && (existing.thumbnailUrl.isEmpty() || isExistingPlaceholder) -> video.thumbnailUrl
-                    existing.thumbnailUrl.isNotEmpty() && video.thumbnailUrl.isNotEmpty() -> {
-                        if (existing.thumbnailUrl.length > video.thumbnailUrl.length + 10 && !existing.thumbnailUrl.contains("-150x")) existing.thumbnailUrl
+                    !isExistingInvalid && isNewInvalid -> existing.thumbnailUrl
+                    !isNewInvalid && isExistingInvalid -> video.thumbnailUrl
+                    !isExistingInvalid && !isNewInvalid -> {
+                        if (existing.thumbnailUrl.contains("tmdb.org") && !video.thumbnailUrl.contains("tmdb.org")) existing.thumbnailUrl
+                        else if (video.thumbnailUrl.contains("tmdb.org") && !existing.thumbnailUrl.contains("tmdb.org")) video.thumbnailUrl
+                        else if (existing.thumbnailUrl.length > video.thumbnailUrl.length + 10 && !existing.thumbnailUrl.contains("-150x")) existing.thumbnailUrl
                         else video.thumbnailUrl
                     }
                     else -> video.thumbnailUrl.ifEmpty { existing.thumbnailUrl }
+                }
+
+                val isNewBackdropInvalid = video.backdropUrl.isBlank() || video.backdropUrl.contains("data:image/") || video.backdropUrl.contains("pixel.gif")
+                val isExistingBackdropInvalid = existing.backdropUrl.isBlank() || existing.backdropUrl.contains("data:image/") || existing.backdropUrl.contains("pixel.gif")
+                val betterBackdrop = when {
+                    !isNewBackdropInvalid -> video.backdropUrl
+                    !isExistingBackdropInvalid -> existing.backdropUrl
+                    else -> betterThumb
                 }
 
                 val isExistingSynopsis = existing.description.length > 100 && existing.description.contains(" ")
@@ -48,35 +58,41 @@ interface VideoDao {
                     else -> existing.description.ifEmpty { video.description }
                 }
 
+                val cleanVideoEps = video.episodes.filter { !it.name.contains("unnamed", ignoreCase = true) }
+                val cleanExistEps = existing.episodes.filter { !it.name.contains("unnamed", ignoreCase = true) }
                 val betterEpisodes = when {
-                    video.episodes.isNotEmpty() -> video.episodes
+                    cleanVideoEps.isNotEmpty() -> cleanVideoEps
                     video.isSeries == false -> emptyList()
                     video.description.isNotEmpty() -> {
                          val lowUrl = video.videoUrl.lowercase()
                          if (lowUrl.contains("/movie/") || lowUrl.contains("/film/")) emptyList()
-                         else existing.episodes
+                         else cleanExistEps
                     }
-                    else -> existing.episodes
+                    else -> cleanExistEps
                 }
 
                 val merged = video.copy(
-                    thumbnailUrl = betterThumb,
+                    thumbnailUrl = if (betterThumb.isNotEmpty()) betterThumb else betterBackdrop,
+                    backdropUrl = if (betterBackdrop.isNotEmpty()) betterBackdrop else betterThumb,
                     description = betterDesc,
                     previewUrl = if (video.previewUrl.isEmpty()) existing.previewUrl else video.previewUrl,
-                    backdropUrl = if (video.backdropUrl.isEmpty()) existing.backdropUrl else video.backdropUrl,
                     actresses = if (video.actresses.isEmpty()) existing.actresses else video.actresses,
                     actressPaths = if (video.actressPaths.isEmpty()) existing.actressPaths else video.actressPaths,
                     actressImages = if (video.actressImages.isEmpty()) existing.actressImages else video.actressImages,
                     servers = if (video.servers.isEmpty()) existing.servers else video.servers,
                     episodes = betterEpisodes,
                     season = if (video.season.isNotEmpty()) video.season else existing.season,
-                    isSeries = if (betterEpisodes.isNotEmpty()) true else (video.isSeries ?: existing.isSeries),
+                    isSeries = if (betterEpisodes.isNotEmpty()) {
+                        if (video.isSeries == false && betterEpisodes.size <= 1) false else true
+                    } else (video.isSeries ?: existing.isSeries),
                     isFavorite = existing.isFavorite,
                     lastWatched = if (video.lastWatched > 0) video.lastWatched else existing.lastWatched
                 )
                 insertVideo(merged)
             } else {
-                insertVideo(video)
+                val cleanThumb = video.thumbnailUrl.ifEmpty { video.backdropUrl }
+                val cleanBackdrop = video.backdropUrl.ifEmpty { video.thumbnailUrl }
+                insertVideo(video.copy(thumbnailUrl = cleanThumb, backdropUrl = cleanBackdrop))
             }
         }
     }

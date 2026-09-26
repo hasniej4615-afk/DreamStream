@@ -76,6 +76,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.duta.movie.util.VideoUtils
+import com.duta.movie.util.VideoExtractor
 import com.duta.movie.model.Video
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
@@ -346,7 +347,7 @@ fun VideoListScreen(
         if (focusedVideo == null) return@LaunchedEffect
         kotlinx.coroutines.delay(if (isImmersiveMode) 200L else 1000L)
         debouncedHeroVideo = focusedVideo
-        if (isImmersiveMode) {
+        if (isImmersiveMode || isRealTV) {
             viewModel.prefetchVideoDetails(focusedVideo!!)
         }
     }
@@ -483,6 +484,7 @@ fun VideoListScreen(
                                         showTitle = !isImmersiveMode,
                                         isTV = isImmersiveMode,
                                         isRealTV = isImmersiveMode,
+                                        onPosterMissing = { viewModel.healMissingPoster(video) },
                                         onFocus = { 
                                             focusedVideo = video
                                             if (isSearchActive) {
@@ -512,6 +514,7 @@ fun VideoListScreen(
                                 showTitle = !isImmersiveMode,
                                 isTV = isImmersiveMode,
                                 isRealTV = isImmersiveMode,
+                                onPosterMissing = { viewModel.healMissingPoster(video) },
                                 onFocus = { focusedVideo = video },
                                 onClick = { onVideoClick(video.id) }
                             )
@@ -538,6 +541,7 @@ fun VideoListScreen(
                                         isLargeLayout = true,
                                         isRealTV = isImmersiveMode,
                                         downFocusRequester = firstCategoryFocusRequester,
+                                        onPosterMissing = { viewModel.healMissingPoster(video) },
                                         onClick = { onVideoClick(video.id) }
                                     )
                                 }
@@ -675,6 +679,10 @@ fun VideoListScreen(
                                                      if (nextIdx < categories.size) {
                                                          categories[nextIdx]["path"]?.let { nextPath ->
                                                              viewModel.fetchVideosForCategoryRow(nextPath)
+                                                             val nextRowVideos = categoryVideos[nextPath]
+                                                             if (!nextRowVideos.isNullOrEmpty()) {
+                                                                 viewModel.prefetchThumbnails(nextRowVideos, limit = 8)
+                                                             }
                                                          }
                                                      }
                                                  },
@@ -710,6 +718,7 @@ fun VideoListScreen(
                                         onMyListClick = { viewModel.toggleMyList(video.id) },
                                         isLargeLayout = isLargeLayout,
                                         isRealTV = false,
+                                        onPosterMissing = { viewModel.healMissingPoster(video) },
                                         onClick = { onVideoClick(video.id) }
                                     )
                                 }
@@ -956,6 +965,7 @@ fun HorizontalVideoRow(
                     isTV = isTV,
                     isRealTV = isRealTV,
                     isPakcikRekomen = isPakcikRekomen,
+                    onPosterMissing = { viewModel?.healMissingPoster(video) },
                     onFocus = { 
                         itemFocused = true
                         viewModel?.lastFocusedHomeVideoId = video.id
@@ -963,6 +973,11 @@ fun HorizontalVideoRow(
                         onVideoFocus(video)
                         if (isRealTV) {
                             scope.launch { listState.animateScrollToItem(index) }
+                            // TV D-PAD LOOKAHEAD PREFETCH: Proactively decode next 4 upcoming items in this row
+                            if (index + 1 < videos.size) {
+                                val lookahead = videos.subList(index + 1, minOf(videos.size, index + 5))
+                                viewModel?.prefetchThumbnails(lookahead, limit = 4)
+                            }
                         }
                     },
                     modifier = Modifier
@@ -1005,6 +1020,7 @@ fun NetflixThumbnail(
     isTV: Boolean = false,
     isRealTV: Boolean = false,
     isPakcikRekomen: Boolean = false,
+    onPosterMissing: (() -> Unit)? = null,
     onFocus: () -> Unit = {},
     onClick: () -> Unit
 ) {
@@ -1063,21 +1079,37 @@ fun NetflixThumbnail(
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 val context = LocalContext.current
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(VideoUtils.getOptimizedImage(video.thumbnailUrl, isTV, context))
-                        .size(if (isTV) coil.size.Size(500, 750) else coil.size.Size(240, 360))
+                val effectiveThumb = video.thumbnailUrl.ifEmpty { video.backdropUrl }
+
+                LaunchedEffect(video.id, effectiveThumb) {
+                    if (effectiveThumb.isEmpty() || !VideoExtractor.isValidImageUrl(effectiveThumb)) {
+                        onPosterMissing?.invoke()
+                    }
+                }
+
+                val optimizedThumbUrl = remember(effectiveThumb, isTV) {
+                    VideoUtils.getOptimizedImage(effectiveThumb, isTV, context)
+                }
+                val imageRequest = remember(optimizedThumbUrl, isTV) {
+                    ImageRequest.Builder(context)
+                        .data(optimizedThumbUrl)
+                        .size(if (isTV) coil.size.Size(342, 513) else coil.size.Size(240, 360))
                         .precision(coil.size.Precision.INEXACT)
                         .crossfade(false)
                         .diskCachePolicy(coil.request.CachePolicy.ENABLED)
                         .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
                         .networkCachePolicy(coil.request.CachePolicy.ENABLED)
-                        .build(),
+                        .build()
+                }
+                AsyncImage(
+                    model = imageRequest,
                     contentDescription = video.title,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
-                    placeholder = errorPlaceholder,
-                    error = errorPlaceholder
+                    error = errorPlaceholder,
+                    onError = {
+                        onPosterMissing?.invoke()
+                    }
                 )
 
                 if (isRealTV) {
@@ -1094,8 +1126,8 @@ fun NetflixThumbnail(
                     )
                 }
                 
-                // Fallback title for TV if image is missing or bad
-                if (isTV && video.thumbnailUrl.isEmpty()) {
+                // Fallback title if image is missing or bad
+                if (effectiveThumb.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.Center) {
                         Text(
                             text = video.title,
@@ -1260,10 +1292,17 @@ fun FeaturedHero(
     isLargeLayout: Boolean = false,
     isRealTV: Boolean = false,
     downFocusRequester: FocusRequester? = null,
+    onPosterMissing: (() -> Unit)? = null,
     onClick: () -> Unit
 ) {
     val heroImage = video.backdropUrl.ifEmpty { video.thumbnailUrl }
     
+    LaunchedEffect(video.id, heroImage) {
+        if (heroImage.isEmpty() || !VideoExtractor.isValidImageUrl(heroImage)) {
+            onPosterMissing?.invoke()
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize().then(if (!isRealTV) Modifier.clickable(onClick = onClick) else Modifier)) {
         val context = LocalContext.current
         AsyncImage(
@@ -1277,7 +1316,10 @@ fun FeaturedHero(
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
             placeholder = rememberVectorPainter(Icons.Default.Movie),
-            error = rememberVectorPainter(Icons.Default.Warning)
+            error = rememberVectorPainter(Icons.Default.Warning),
+            onError = {
+                onPosterMissing?.invoke()
+            }
         )
         Box(modifier = Modifier.fillMaxSize().background(
             Brush.verticalGradient(
@@ -1444,7 +1486,7 @@ fun FeaturedHero(
                  val context = LocalContext.current
                   AsyncImage(
                     model = ImageRequest.Builder(context)
-                        .data(VideoUtils.getOptimizedImage(video.thumbnailUrl, isRealTV, context))
+                        .data(VideoUtils.getOptimizedImage(video.thumbnailUrl.ifEmpty { video.backdropUrl }, isRealTV, context))
                         .size(coil.size.Size(300, 450))
                         .precision(coil.size.Precision.INEXACT)
                         .diskCachePolicy(coil.request.CachePolicy.ENABLED)

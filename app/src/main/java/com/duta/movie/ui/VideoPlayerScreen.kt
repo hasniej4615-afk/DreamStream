@@ -88,6 +88,7 @@ import com.duta.movie.LocalPipMode
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -1143,7 +1144,9 @@ fun VideoPlayerScreen(
                     if (isHls) {
                         val hlsOkHttpFactory = OkHttpDataSource.Factory(NetworkConfig.permissiveOkHttpClient).setUserAgent(NetworkConfig.SHARED_USER_AGENT)
                         val hlsCacheFactory = com.duta.movie.util.PlayerCacheManager.getCacheDataSourceFactory(context, hlsOkHttpFactory)
-                        val hlsMediaSource = HlsMediaSource.Factory(hlsCacheFactory).createMediaSource(mediaItem)
+                        val hlsMediaSource = HlsMediaSource.Factory(hlsCacheFactory)
+                            .setAllowChunklessPreparation(true)
+                            .createMediaSource(mediaItem)
                         
                         exoPlayer.setMediaSource(hlsMediaSource, /* resetPosition = */ true)
                     } else {
@@ -1245,9 +1248,9 @@ fun VideoPlayerScreen(
                 if (state == Player.STATE_IDLE && !useWebView && !isCasting && extractedUrl != null && !isVideoReady && !isFinishing) {
                     idleJob?.cancel()
                     idleJob = scope.launch {
-                        delay(2500)
+                        delay(4000)
                         if (currentPlayer.playbackState == Player.STATE_IDLE && !useWebView && !isCasting && !isVideoReady && !isFinishing) {
-                            Log.w("VideoPlayerScreen", "ExoPlayer stranded in STATE_IDLE for 2.5s. Media failed to load. Rotating to next server...")
+                            Log.w("VideoPlayerScreen", "ExoPlayer stranded in STATE_IDLE for 4s. Media failed to load. Rotating to next server...")
                             isFinishing = true
                             extractedUrl?.let { viewModel.notifyPlaybackFailure(it) }
                             viewModel.resolveNextServer(videoId, viewModel.currentServerUrl.value, force = true)
@@ -1263,19 +1266,42 @@ fun VideoPlayerScreen(
                     
                     bufferJob?.cancel()
                     bufferJob = scope.launch {
-                        // Last-resort watchdog: only rotate if stuck for a very long time
                         val isArchiveStream = extractedUrl?.contains("archive.org") == true
-                        val timeout = if (isUserSeeking) 45000L else if (isTV || isArchiveStream) 45000L else 30000L
-                        delay(timeout)
-                        if (currentPlayer.playbackState == Player.STATE_BUFFERING && !isFinishing) {
-                            Log.w("VideoPlayerScreen", "Stuck in BUFFERING for ${timeout/1000}s. Stream appears dead. Rotating.")
-                            if (currentPlayer.currentPosition > 2000) {
-                                pendingRotationResumePosition = currentPlayer.currentPosition
-                                pendingRotationContentKey = activeContentKey
+                        val baseTimeout = if (isUserSeeking) 50000L else if (isTV || isArchiveStream) 50000L else 45000L
+                        val maxTimeout = 75000L // Maximum allowance if progress is actively being made
+                        val startTime = System.currentTimeMillis()
+                        var lastBufferedPos = currentPlayer.bufferedPosition
+                        var lastProgressTime = startTime
+
+                        while (isActive && currentPlayer.playbackState == Player.STATE_BUFFERING && !isFinishing) {
+                            delay(3000L)
+                            val now = System.currentTimeMillis()
+                            val currentBufferedPos = currentPlayer.bufferedPosition
+                            val currentBufferedDuration = currentPlayer.totalBufferedDuration
+
+                            // If data has been buffered or buffer position is advancing, mark progress
+                            if (currentBufferedDuration > 0 || currentBufferedPos > lastBufferedPos) {
+                                lastProgressTime = now
+                                lastBufferedPos = currentBufferedPos
                             }
-                            isFinishing = true
-                            extractedUrl?.let { viewModel.notifyPlaybackFailure(it) }
-                            viewModel.resolveNextServer(videoId, viewModel.currentServerUrl.value)
+
+                            val timeSinceLastProgress = now - lastProgressTime
+                            val totalTimeElapsed = now - startTime
+
+                            // If we have had no progress for baseTimeout, or overall stuck beyond maxTimeout:
+                            if ((timeSinceLastProgress >= baseTimeout) || (totalTimeElapsed >= maxTimeout)) {
+                                if (currentPlayer.playbackState == Player.STATE_BUFFERING && !isFinishing) {
+                                    Log.w("VideoPlayerScreen", "Stuck in BUFFERING for ${totalTimeElapsed / 1000}s (no progress for ${timeSinceLastProgress / 1000}s, bufferedDuration=${currentBufferedDuration}ms). Stream appears dead. Rotating.")
+                                    if (currentPlayer.currentPosition > 2000) {
+                                        pendingRotationResumePosition = currentPlayer.currentPosition
+                                        pendingRotationContentKey = activeContentKey
+                                    }
+                                    isFinishing = true
+                                    extractedUrl?.let { viewModel.notifyPlaybackFailure(it) }
+                                    viewModel.resolveNextServer(videoId, viewModel.currentServerUrl.value)
+                                }
+                                break
+                            }
                         }
                     }
                 }
@@ -3338,6 +3364,7 @@ fun VideoPlayerWebView(
                         val currentActiveUrl = v?.getTag(R.id.active_url) as? String ?: url
                         val isSafe = u.contains("hgcloud") || u.contains("hglink") || u.contains("voe") || 
                                     u.contains("abyss") || u.contains("indostream") || u.contains("veev") ||
+                                    low.contains("bullerswood") || low.contains("scphi") || low.contains("grisham") || low.contains("lk21") || low.contains("mantab") || low.contains("kepala-bergetar") ||
                                     low.contains("/stream/") || low.contains("/embed/") || low.contains("/e/") || low.contains("/v/") ||
                                     low.contains("player") || low.contains("mirror") ||
                                     low.contains("/amt/") || low.contains(".amt") || low.contains("amt1.pro") || low.contains("amt2.pro") || low.contains("haneri") ||
@@ -4001,7 +4028,13 @@ fun ServerSelectionDialog(
                     val lowN = s.name.lowercase()
                     !lowU.contains("google.com") && !lowU.contains("pagead") && !lowU.contains("/aclk") &&
                     !lowN.contains("google.com") && !lowN.contains("pagead")
-                }
+                }.sortedWith(
+                    compareBy<com.duta.movie.model.VideoServer> { s ->
+                        if (com.duta.movie.util.VideoExtractor.isAlternativePartnerServer(s.name, s.url)) 1 else 0
+                    }.thenByDescending { s ->
+                        com.duta.movie.util.VideoExtractor.getProviderPriority(s.name, s.url)
+                    }
+                )
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(if (isTV) 6.dp else 2.dp)) {
                 itemsIndexed(cleanServers, key = { _, server -> server.url }) { index, server ->

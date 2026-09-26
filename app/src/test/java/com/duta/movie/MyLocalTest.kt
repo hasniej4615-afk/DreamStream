@@ -474,6 +474,46 @@ class MyLocalTest {
             assertTrue("Series category should fetch titles", series.isNotEmpty())
         }
     }
+
+    @Test
+    fun testDutaFilmCategoryAndObsessionPoster() {
+        kotlinx.coroutines.runBlocking {
+            println("=== TESTING IS_VALID_IMAGE_URL REJECTION OF HTML ===")
+            val htmlCheck = VideoExtractor.isValidImageUrl("https://df31.mantab.men/watch/obsession-2026-1t68.html")
+            println("isValidImageUrl on html page: $htmlCheck")
+            org.junit.Assert.assertFalse("HTML pages must not be considered valid image URLs", htmlCheck)
+
+            println("=== TESTING OBSESSION (2026) VIDEO DETAILS ===")
+            val obsessionDetails = VideoExtractor.fetchVideoDetails("https://df31.mantab.men/watch/obsession-2026-1t68.html")
+            println("Obsession Title: ${obsessionDetails?.title}")
+            println("Obsession Poster: ${obsessionDetails?.thumbnailUrl}")
+            println("Obsession Backdrop: ${obsessionDetails?.backdropUrl}")
+
+            assertTrue("Obsession title should not be empty", obsessionDetails?.title?.contains("Obsession") == true)
+            assertTrue("Obsession poster must be valid image URL", VideoExtractor.isValidImageUrl(obsessionDetails?.thumbnailUrl))
+            org.junit.Assert.assertFalse("Obsession poster must not be HTML page URL", obsessionDetails?.thumbnailUrl?.endsWith(".html") == true)
+            org.junit.Assert.assertFalse("Obsession poster must not contain /watch/", obsessionDetails?.thumbnailUrl?.contains("/watch/") == true)
+            org.junit.Assert.assertFalse("Obsession backdrop must not be related movie poster", obsessionDetails?.backdropUrl?.contains("ega1G9rdcDsuDQeonGaCpm8FR3S") == true)
+
+            println("=== TESTING DUTAFILM CATEGORY ===")
+            val dutaVideos = VideoExtractor.fetchVideosBySection("/source/dutafilm/", page = 1, count = 20)
+            println("DutaFilm videos fetched: ${dutaVideos.size}")
+            assertTrue("DutaFilm category should return movies", dutaVideos.isNotEmpty())
+            val noPoster = dutaVideos.filter { !VideoExtractor.isValidImageUrl(it.thumbnailUrl) }
+            assertEquals("Zero movies in DutaFilm should have missing poster", 0, noPoster.size)
+
+            println("=== TESTING PAGES 1..5 OF DUTAFILM WEB ===")
+            var totalNoPoster = 0
+            for (p in 1..5) {
+                val url = "https://df31.mantab.men/explore?media_type=movie&page=$p"
+                val html = VideoExtractor.fetchHtml(url) ?: ""
+                val items = VideoExtractor.scrapeDutaFilmWebHtml(html, url)
+                val invalid = items.filter { !VideoExtractor.isValidImageUrl(it.thumbnailUrl) }
+                totalNoPoster += invalid.size
+            }
+            assertEquals("Zero invalid posters across 5 pages of DutaFilm Web", 0, totalNoPoster)
+        }
+    }
 }
 
 

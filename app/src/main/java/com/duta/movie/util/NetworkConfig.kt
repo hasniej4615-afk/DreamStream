@@ -105,8 +105,8 @@ object NetworkConfig {
             
             val hostAliases = mutableSetOf(host)
             // Add common subdomains and related mirrors for cookie sharing
-            if (host.contains("masukestin") || host.contains("masukin") || host.contains("dhcplay") || host.contains("audinifer") || host.contains("distributedcomputing") || host.contains("morencius") || host.contains("bestcdn") || host.contains("katakatamutiara")) {
-                hostAliases.addAll(listOf("masukestin.com", "masukestin.net", "masukin.vip", "masuk.link", "masukin.lol", "masukin.top", "dhcplay.com", "audinifer.com", "audinifer.lol", "audinifer.top", "distributedcomputing.space", "morencius.com", "bestcdn.me", "bestcdn.pro", "katakatamutiara.com"))
+            if (host.contains("masukestin") || host.contains("masukin") || host.contains("dhcplay") || host.contains("audinifer") || host.contains("distributedcomputing") || host.contains("morencius") || host.contains("bestcdn") || host.contains("katakatamutiara") || host.contains("scphi") || host.contains("grisham") || host.contains("bullerswood") || host.contains("mantab") || host.contains("dfm2u") || host.contains("kepala-bergetar") || host.contains("kepalabergetar")) {
+                hostAliases.addAll(listOf("masukestin.com", "masukestin.net", "masukin.vip", "masuk.link", "masukin.lol", "masukin.top", "dhcplay.com", "audinifer.com", "audinifer.lol", "audinifer.top", "distributedcomputing.space", "morencius.com", "bestcdn.me", "bestcdn.pro", "katakatamutiara.com", "scphi.org", "grishamfarms.org", "bullerswood.org", "tv12.lk21official.cc", "dfm2u.org", "kepalabergetar9.net", "kepala-bergetar.com"))
             }
             if (host.contains("vibuxer") || host.contains("hanerix") || host.contains("duvidun") || host.contains("fujihide") || host.contains("wellnessspace") || host.contains("harmonix") || host.contains("veev")) {
                 hostAliases.addAll(listOf("vibuxer.com", "vibuxer.net", "hanerix.com", "hanerix.net", "duvidun.com", "duvidun.net", "fujihide.com", "fujihide.net", "wellnessspace.shop", "wellnessspace.online", "harmonixinnovationlab.store", "harmonixinnovationlab.com", "veev.to"))
@@ -174,7 +174,7 @@ object NetworkConfig {
                                    host.contains("ryder") || host.contains("hgcdn")
                 
                 if (!isStrictGroup) {
-                    val commonCdnHosts = listOf("hgcdn.com", "hglcdn.com", "meadowpath.com", "wellnessspace.shop", "latestmoviereview.com", "abyss.to", "abysscdn.com", "bond.to", "bondcdn.com", "dhcplay.com", "indostream.lol", "vidplay.xyz", "distributedcomputing.space", "seoulschool.org", "ladyriderswear.com", "itoshii-movie.com", "eddieoneverything.com", "dutamovie.com", "iplayerhls.com", "amt1.pro", "amt2.pro", "zeus88.lol", "klikzeus.lol", "katakatamutiara.com")
+                    val commonCdnHosts = listOf("hgcdn.com", "hglcdn.com", "meadowpath.com", "wellnessspace.shop", "latestmoviereview.com", "abyss.to", "abysscdn.com", "bond.to", "bondcdn.com", "dhcplay.com", "morencius.com", "scphi.org", "grishamfarms.org", "bullerswood.org", "tv12.lk21official.cc", "mantab.men", "dfm2u.org", "kepalabergetar9.net", "kepala-bergetar.com", "indostream.lol", "vidplay.xyz", "distributedcomputing.space", "seoulschool.org", "ladyriderswear.com", "itoshii-movie.com", "eddieoneverything.com", "dutamovie.com", "iplayerhls.com", "amt1.pro", "amt2.pro", "zeus88.lol", "klikzeus.lol", "katakatamutiara.com")
                     commonCdnHosts.forEach { if (host.contains(it.split(".").first())) sessionReferers[it] = referer }
                 }
                 
@@ -243,17 +243,25 @@ object NetworkConfig {
     @Volatile private var dohFailCount = 0
     @Volatile private var dohSuspendedUntil = 0L
 
+    private val dnsCache = java.util.concurrent.ConcurrentHashMap<String, Pair<Long, List<InetAddress>>>()
+    private const val DNS_CACHE_TTL_MS = 60 * 60 * 1000L // 1 hour DNS in-memory cache for ultra-fast image loading
+
+    fun clearDnsCache() {
+        dnsCache.clear()
+    }
+
     fun resetDohCircuitBreaker() {
         dohFailCount = 0
         dohSuspendedUntil = 0L
+        dnsCache.clear()
         Log.d(TAG, "DoH Circuit Breaker reset. Probing DoH on new network.")
     }
 
     private val bootstrapClient = OkHttpClient.Builder()
-        .connectTimeout(2, TimeUnit.SECONDS)
-        .readTimeout(2, TimeUnit.SECONDS)
-        .writeTimeout(2, TimeUnit.SECONDS)
-        .callTimeout(3, TimeUnit.SECONDS)
+        .connectTimeout(1, TimeUnit.SECONDS)
+        .readTimeout(1, TimeUnit.SECONDS)
+        .writeTimeout(1, TimeUnit.SECONDS)
+        .callTimeout(1500, TimeUnit.MILLISECONDS)
         .sslSocketFactory(permissiveSslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
         .hostnameVerifier { _, _ -> true }
         .build()
@@ -282,7 +290,14 @@ object NetworkConfig {
     private val multiDns = object : Dns {
         override fun lookup(hostname: String): List<InetAddress> {
             val now = System.currentTimeMillis()
+            // 0. Ultra-fast In-Memory DNS Cache (0ms latency for repeating image CDN hosts like image.tmdb.org)
+            val cached = dnsCache[hostname]
+            if (cached != null && now < cached.first) {
+                return cached.second
+            }
+
             val isDohSuspended = now < dohSuspendedUntil
+            var resolvedIps: List<InetAddress> = emptyList()
 
             if (!isDohSuspended) {
                 // 1. Prioritize Cloudflare DoH (Encrypted over port 443, immune to ISP port 53 DNS interception)
@@ -290,62 +305,74 @@ object NetworkConfig {
                     val cf = cloudflareDns.lookup(hostname).filter { isValidPublicIp(it) }
                     if (cf.isNotEmpty()) {
                         dohFailCount = 0
-                        return cf
+                        resolvedIps = cf
                     }
                 } catch (_: Exception) {}
 
                 // 2. Fallback to Google DoH (Encrypted over port 443)
-                try {
-                    val gg = googleDns.lookup(hostname).filter { isValidPublicIp(it) }
-                    if (gg.isNotEmpty()) {
-                        dohFailCount = 0
-                        return gg
-                    }
-                } catch (_: Exception) {}
+                if (resolvedIps.isEmpty()) {
+                    try {
+                        val gg = googleDns.lookup(hostname).filter { isValidPublicIp(it) }
+                        if (gg.isNotEmpty()) {
+                            dohFailCount = 0
+                            resolvedIps = gg
+                        }
+                    } catch (_: Exception) {}
+                }
 
                 // 3. Fallback to Quad9 DoH (Encrypted over port 443)
-                try {
-                    val q9 = quad9Dns.lookup(hostname).filter { isValidPublicIp(it) }
-                    if (q9.isNotEmpty()) {
-                        dohFailCount = 0
-                        return q9
-                    }
-                } catch (_: Exception) {}
+                if (resolvedIps.isEmpty()) {
+                    try {
+                        val q9 = quad9Dns.lookup(hostname).filter { isValidPublicIp(it) }
+                        if (q9.isNotEmpty()) {
+                            dohFailCount = 0
+                            resolvedIps = q9
+                        }
+                    } catch (_: Exception) {}
+                }
 
-                // DoH failed or timed out (common on secure office firewalls that drop public DNS IPs)
-                dohFailCount++
-                if (dohFailCount >= 2) {
-                    dohSuspendedUntil = now + (10 * 60 * 1000L) // Suspend DoH for 10 minutes on this network
-                    Log.w(TAG, "DoH unreachable/blocked by office network firewall. Suspending DoH for 10m; routing via System DNS.")
+                if (resolvedIps.isEmpty()) {
+                    dohFailCount++
+                    if (dohFailCount >= 1) {
+                        dohSuspendedUntil = now + (15 * 60 * 1000L) // Suspend DoH for 15 minutes on this network
+                        Log.w(TAG, "DoH unreachable/blocked by office network firewall. Suspending DoH for 15m; routing via System DNS.")
+                    }
                 }
             }
 
             // 4. System DNS fallback (enterprise/office network native resolver, VPN, or corporate DHCP DNS)
-            return try {
-                val sys = Dns.SYSTEM.lookup(hostname).filter { isValidPublicIp(it) }
-                if (sys.isNotEmpty()) sys else emptyList()
-            } catch (_: Exception) {
-                emptyList()
+            if (resolvedIps.isEmpty()) {
+                resolvedIps = try {
+                    val sys = Dns.SYSTEM.lookup(hostname).filter { isValidPublicIp(it) }
+                    if (sys.isNotEmpty()) sys else emptyList()
+                } catch (_: Exception) {
+                    emptyList()
+                }
             }
+
+            if (resolvedIps.isNotEmpty()) {
+                dnsCache[hostname] = Pair(now + DNS_CACHE_TTL_MS, resolvedIps)
+            }
+            return resolvedIps
         }
     }
 
     val imageOkHttpClient: OkHttpClient by lazy {
         OkHttpClient.Builder()
             .dispatcher(okhttp3.Dispatcher().apply {
-                maxRequests = 128
-                maxRequestsPerHost = 32
+                maxRequests = 256
+                maxRequestsPerHost = 64
             })
-            .connectionPool(okhttp3.ConnectionPool(32, 5, TimeUnit.MINUTES))
-            .connectTimeout(8, TimeUnit.SECONDS)
-            .readTimeout(10, TimeUnit.SECONDS)
+            .connectionPool(okhttp3.ConnectionPool(64, 5, TimeUnit.MINUTES))
+            .connectTimeout(6, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS)
             .dns(multiDns)
             .sslSocketFactory(permissiveSslContext.socketFactory, trustAllCerts[0] as X509TrustManager)
             .hostnameVerifier { _, _ -> true }
-            .protocols(listOf(okhttp3.Protocol.HTTP_1_1)) // Force HTTP/1.1 to avoid HTTP/2 stream issues
+            .protocols(listOf(okhttp3.Protocol.HTTP_2, okhttp3.Protocol.HTTP_1_1)) // HTTP/2 multiplexing for Cloudflare/Google CDNs
             .addInterceptor { chain ->
-                chain.withConnectTimeout(8000, TimeUnit.MILLISECONDS)
-                     .withReadTimeout(10000, TimeUnit.MILLISECONDS)
+                chain.withConnectTimeout(6000, TimeUnit.MILLISECONDS)
+                     .withReadTimeout(8000, TimeUnit.MILLISECONDS)
                      .proceed(chain.request())
             }
             .addInterceptor { chain ->
@@ -363,8 +390,14 @@ object NetworkConfig {
                     builder.header("Referer", "https://www.bilibili.com/")
                 } else if (host.contains("dmcdn.net") || host.contains("dailymotion.com")) {
                     builder.header("Referer", "https://www.dailymotion.com/")
+                } else if (host.contains("tmdb.org")) {
+                    builder.removeHeader("Referer")
+                } else if (host.contains("load.my.id") || host.contains("mantab.men")) {
+                    builder.header("Referer", "${VideoExtractor.getDutaFilmWebBaseUrl()}/")
+                } else if (host.contains("bullerswood.org")) {
+                    builder.header("Referer", "https://bullerswood.org/")
                 } else {
-                    builder.header("Referer", "${VideoExtractor.getBaseUrl()}/")
+                    builder.header("Referer", "https://$host/")
                 }
                 
                 var response: okhttp3.Response? = null
@@ -429,10 +462,16 @@ object NetworkConfig {
             .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
             .connectionSpecs(listOf(ConnectionSpec.MODERN_TLS, ConnectionSpec.COMPATIBLE_TLS, ConnectionSpec.CLEARTEXT))
             .addInterceptor { chain ->
-                val timeout = networkTimeoutMs.toInt()
-                chain.withConnectTimeout(timeout, TimeUnit.MILLISECONDS)
-                     .withReadTimeout(timeout, TimeUnit.MILLISECONDS)
-                     .proceed(chain.request())
+                val clientConnect = chain.connectTimeoutMillis()
+                // If caller explicitly configured a faster timeout (< 15s), respect it and do not override with 30s!
+                if (clientConnect in 1..15000) {
+                    chain.proceed(chain.request())
+                } else {
+                    val timeout = networkTimeoutMs.toInt()
+                    chain.withConnectTimeout(timeout, TimeUnit.MILLISECONDS)
+                         .withReadTimeout(timeout, TimeUnit.MILLISECONDS)
+                         .proceed(chain.request())
+                }
             }
             .addInterceptor { chain ->
                 val request = chain.request()
@@ -565,13 +604,13 @@ object NetworkConfig {
             .build()
     }
 
-    // FAST CLIENT: Swift 6s timeout for mirror probing and direct stream extraction
+    // FAST CLIENT: Swift 5s connect timeout for mirror probing and direct stream extraction
     val fastOkHttpClient: OkHttpClient by lazy {
         okHttpClient.newBuilder()
-            .connectTimeout(6, TimeUnit.SECONDS)
+            .connectTimeout(5, TimeUnit.SECONDS)
             .readTimeout(6, TimeUnit.SECONDS)
             .writeTimeout(6, TimeUnit.SECONDS)
-            .callTimeout(8, TimeUnit.SECONDS)
+            .callTimeout(7, TimeUnit.SECONDS)
             .build()
     }
 }
