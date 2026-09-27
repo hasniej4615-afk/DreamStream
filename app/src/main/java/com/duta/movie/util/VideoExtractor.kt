@@ -1151,27 +1151,30 @@ object VideoExtractor {
             val uri = try { android.net.Uri.parse(pageUrl) } catch (_: Exception) { null }
             val epId = uri?.getQueryParameter("epid") ?: ""
             if (epId.isNotEmpty()) {
-                val catVal = uri?.getQueryParameter("cat") ?: "hs"
-                val tagVal = uri?.getQueryParameter("tag") ?: "ind"
-                val xidVal = uri?.getQueryParameter("xid") ?: "f1"
-                var cVal = uri?.getQueryParameter("c") ?: ""
-                var tVal = uri?.getQueryParameter("t") ?: ""
-                var cApiHost = "https://api.drakor.bid/c_api"
-                val baseHtml = fetchHtml(pageUrl, actualReferer)
-                if (baseHtml != null) {
-                    val (c, t, host) = extractDutaFilmWebParams(baseHtml)
-                    if (c.isNotEmpty()) cVal = c
-                    if (t.isNotEmpty()) tVal = t
-                    if (host.isNotEmpty()) cApiHost = host
+                val directRes = withTimeoutOrNull(2500) {
+                    val catVal = uri?.getQueryParameter("cat") ?: "hs"
+                    val tagVal = uri?.getQueryParameter("tag") ?: "ind"
+                    val xidVal = uri?.getQueryParameter("xid") ?: "f1"
+                    var cVal = uri?.getQueryParameter("c") ?: ""
+                    var tVal = uri?.getQueryParameter("t") ?: ""
+                    var cApiHost = "https://api.drakor.bid/c_api"
+                    val baseHtml = fetchHtml(pageUrl, actualReferer)
+                    if (baseHtml != null) {
+                        val (c, t, host) = extractDutaFilmWebParams(baseHtml)
+                        if (c.isNotEmpty()) cVal = c
+                        if (t.isNotEmpty()) tVal = t
+                        if (host.isNotEmpty()) cApiHost = host
+                    }
+                    val epServers = resolveDutaFilmWebEpisodeServers(pageUrl, actualReferer, cApiHost, epId, catVal, tagVal, xidVal, cVal, tVal)
+                    for (s in epServers) {
+                        val sub = extractVideoUrl(s.url, depth + 1, actualReferer, visited)
+                        if (sub != null) return@withTimeoutOrNull sub
+                    }
+                    if (epServers.isNotEmpty()) {
+                        ExtractionResult(epServers.first().url)
+                    } else null
                 }
-                val epServers = resolveDutaFilmWebEpisodeServers(pageUrl, actualReferer, cApiHost, epId, catVal, tagVal, xidVal, cVal, tVal)
-                for (s in epServers) {
-                    val sub = extractVideoUrl(s.url, depth + 1, actualReferer, visited)
-                    if (sub != null) return@withContext sub
-                }
-                if (epServers.isNotEmpty()) {
-                    return@withContext ExtractionResult(epServers.first().url)
-                }
+                if (directRes != null) return@withContext directRes
             }
         }
 
