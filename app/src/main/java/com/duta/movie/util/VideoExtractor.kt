@@ -791,16 +791,77 @@ object VideoExtractor {
 
     suspend fun extractStreamtape(pageUrl: String, referer: String? = null): String? = withContext(Dispatchers.IO) {
         try {
-            val html = fetchHtml(pageUrl, referer ?: pageUrl) ?: return@withContext null
+            var html = fetchHtml(pageUrl, referer ?: pageUrl)
+            if (html == null) return@withContext null
+
+            // If embed URL was used and didn't contain norobotlink / ideoooolink, try the /v/ page
+            if ((!html.contains("norobotlink") && !html.contains("ideoooolink")) && pageUrl.contains("/e/")) {
+                val vUrl = pageUrl.replace("/e/", "/v/")
+                val vHtml = fetchHtml(vUrl, referer ?: vUrl)
+                if (vHtml != null && (vHtml.contains("norobotlink") || vHtml.contains("ideoooolink"))) {
+                    html = vHtml
+                }
+            }
+
             val host = try { java.net.URI(pageUrl).host } catch (_: Exception) { null } ?: "streamtape.com"
 
-            // Strategy 1: Find query inside script assignments to robotlink / botlink / ideoolink
-            // Streamtape constructs the real stream link in Javascript:
-            // document.getElementById('robotlink').innerHTML = ... ('..._video?id=...&token=...').substring(...)
-            val scriptRegex = Regex("""document\.getElementById\(['"](?:robotlink|botlink|ideoolink)['"]\)\.innerHTML\s*=\s*(.+?);""")
+            // Helper to evaluate JS string concatenation and .substring(start, end)
+            fun evaluateJsStringConcat(expr: String): String {
+                val tokenRegex = Regex("""(?:['"]([^'"]*)['"])(?:\.substring\(\s*(\d+)(?:\s*,\s*(\d+))?\s*\))?""")
+                val sb = StringBuilder()
+                for (m in tokenRegex.findAll(expr)) {
+                    val str = m.groupValues[1]
+                    val startStr = m.groupValues[2]
+                    val endStr = m.groupValues[3]
+                    if (startStr.isNotEmpty()) {
+                        val start = startStr.toIntOrNull() ?: 0
+                        val end = if (endStr.isNotEmpty()) endStr.toIntOrNull() ?: str.length else str.length
+                        val safeStart = start.coerceIn(0, str.length)
+                        val safeEnd = end.coerceIn(safeStart, str.length)
+                        sb.append(str.substring(safeStart, safeEnd))
+                    } else {
+                        sb.append(str)
+                    }
+                }
+                return sb.toString()
+            }
+
+            // Strategy 0: Modern Streamtape pattern with div#ideoooolink and document.getElementById('norobotlink').innerHTML
+            val divRegex = Regex("""<div[^>]+id=['"]ideooo*link['"][^>]*>([^<]+)</div>""")
+            val divMatch = divRegex.find(html)
+            if (divMatch != null) {
+                var basePath = divMatch.groupValues[1].trim()
+                if (!basePath.startsWith("http")) {
+                    basePath = if (basePath.startsWith("//")) "https:$basePath"
+                               else if (basePath.startsWith("/")) "https://$host$basePath"
+                               else "https://$host/$basePath"
+                }
+
+                // Look for script assigning to norobotlink, cphldlink, or ideoooolink
+                val scriptAssignRegex = Regex("""document\.getElementById\(['"](?:norobotlink|cphldlink|ideooo*link)['"]\)\.innerHTML\s*=\s*(.+?);""")
+                for (match in scriptAssignRegex.findAll(html)) {
+                    val evaluated = evaluateJsStringConcat(match.groupValues[1])
+                    val tokenMatch = Regex("""token=([a-zA-Z0-9_-]+)""").find(evaluated)
+                    if (tokenMatch != null) {
+                        val token = tokenMatch.groupValues[1]
+                        if (!token.endsWith("cde") && !token.endsWith("xyza")) {
+                            val finalUrl = if (basePath.contains("token=")) basePath else "$basePath&token=$token"
+                            val streamParam = if (!finalUrl.contains("stream=")) "&stream=1" else ""
+                            val directUrl = "$finalUrl$streamParam"
+                            Log.i(TAG, "Streamtape direct extracted (norobotlink + ideoooolink): $directUrl")
+                            return@withContext directUrl
+                        }
+                    }
+                }
+            }
+
+            // Strategy 1: Find query inside script assignments to norobotlink / robotlink / ideoooolink / cphldlink
+            val scriptRegex = Regex("""document\.getElementById\(['"](?:norobotlink|cphldlink|robotlink|ideooo*link)['"]\)\.innerHTML\s*=\s*(.+?);""")
             val scriptAssignments = scriptRegex.findAll(html).map { it.groupValues[1] }.toList()
             for (assignment in scriptAssignments) {
-                val queryMatch = Regex("""['"]([^'"]*?\?(id=[^'"]+))['"]""").find(assignment)
+                val evaluated = evaluateJsStringConcat(assignment)
+                val queryMatch = Regex("""['"]?([^'"]*?\?(id=[^'"]+))['"]?""").find(evaluated)
+                    ?: Regex("""['"]?([^'"]*?\?(id=[^'"]+))['"]?""").find(assignment)
                 if (queryMatch != null) {
                     val query = queryMatch.groupValues[2]
                     if (query.contains("token=") && query.contains("expires=")) {
@@ -815,7 +876,7 @@ object VideoExtractor {
                 }
             }
 
-            // Strategy 2: Scan all queries containing id, expires, and token, rejecting honeypot decoys
+            // Strategy 2: Scan all queries containing id, expires, and token, strictly rejecting honeypot decoys
             // Honeypot tokens end in 'cde' or 'xyza' and return text/html error pages rather than video.
             val queryRegex = Regex("""\?(id=[a-zA-Z0-9_-]+&expires=\d+&ip=[^&'"]+&token=([a-zA-Z0-9_-]+))""")
             val candidateQueries = queryRegex.findAll(html)
@@ -834,9 +895,17 @@ object VideoExtractor {
                 return@withContext directUrl
             }
 
-            // Strategy 3: Fallback to any matched query if no clean candidate was found
+            // Strategy 3: Fallback query search - STRICTLY enforce honeypot filtering
             val fallbackMatches = Regex("""(?:get_video|_video)\?([a-zA-Z0-9_=&~-]+)""").findAll(html).toList()
-            val fallbackValid = fallbackMatches.map { it.groupValues[1] }.filter { it.contains("id=") && it.contains("token=") && it.contains("expires=") }
+            val fallbackValid = fallbackMatches
+                .map { it.groupValues[1] }
+                .filter { query ->
+                    query.contains("id=") && query.contains("token=") && query.contains("expires=") &&
+                    run {
+                        val token = query.substringAfter("token=").substringBefore('&')
+                        token.isNotEmpty() && !token.endsWith("cde") && !token.endsWith("xyza")
+                    }
+                }
             val fallbackQuery = fallbackValid.lastOrNull() ?: fallbackValid.firstOrNull()
             if (fallbackQuery != null) {
                 val streamParam = if (!fallbackQuery.contains("stream=")) "&stream=1" else ""
@@ -844,6 +913,8 @@ object VideoExtractor {
                 Log.i(TAG, "Streamtape direct extracted (fallback): $directUrl")
                 return@withContext directUrl
             }
+
+            Log.w(TAG, "Streamtape direct extraction: No non-honeypot stream found for: $pageUrl")
         } catch (e: Exception) {
             Log.w(TAG, "Error extracting streamtape: ${e.message}")
         }

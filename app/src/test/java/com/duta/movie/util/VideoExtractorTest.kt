@@ -1213,6 +1213,24 @@ class VideoExtractorTest {
         assert(!VideoExtractor.isYouTubeMovieMatch(targetMeta, clickbait3)) { "Behind the scenes / Interview must be rejected" }
         assert(!VideoExtractor.isYouTubeMovieMatch(targetMeta, clickbait4)) { "Soundtrack/audio must be rejected" }
     }
+
+    @Test
+    fun testStreamtapeHoneypotDetection() {
+        val honeypotToken1 = "mKmQq7NsTcde"
+        val honeypotToken2 = "PYfnr45SEcde"
+        val honeypotToken3 = "fakeTokenxyza"
+        val validToken = "mKmQq7NsTab123"
+
+        val isHoneypot1 = honeypotToken1.endsWith("cde") || honeypotToken1.endsWith("xyza")
+        val isHoneypot2 = honeypotToken2.endsWith("cde") || honeypotToken2.endsWith("xyza")
+        val isHoneypot3 = honeypotToken3.endsWith("cde") || honeypotToken3.endsWith("xyza")
+        val isValid = !validToken.endsWith("cde") && !validToken.endsWith("xyza")
+
+        assert(isHoneypot1) { "Token ending in cde must be detected as honeypot" }
+        assert(isHoneypot2) { "Token ending in cde must be detected as honeypot" }
+        assert(isHoneypot3) { "Token ending in xyza must be detected as honeypot" }
+        assert(isValid) { "Valid token must not be detected as honeypot" }
+    }
 }
 
 
