@@ -490,8 +490,8 @@ object VideoExtractor {
      */
     fun isDutaFilmWeb(videoId: String? = null, videoUrl: String? = null, streamUrl: String? = null): Boolean {
         if (videoId?.startsWith("dfw_") == true) return true
-        if (videoUrl?.contains("mantab.men", ignoreCase = true) == true || (videoUrl?.contains("df", ignoreCase = true) == true && videoUrl.contains(".mantab", ignoreCase = true))) return true
-        if (streamUrl?.contains("mantab.men", ignoreCase = true) == true || (streamUrl?.contains("df", ignoreCase = true) == true && streamUrl.contains(".mantab", ignoreCase = true))) return true
+        if (videoUrl?.contains("mantab.", ignoreCase = true) == true || (videoUrl?.contains("df", ignoreCase = true) == true && videoUrl.contains(".mantab", ignoreCase = true))) return true
+        if (streamUrl?.contains("mantab.", ignoreCase = true) == true || (streamUrl?.contains("df", ignoreCase = true) == true && streamUrl.contains(".mantab", ignoreCase = true))) return true
         return false
     }
 
@@ -538,6 +538,18 @@ object VideoExtractor {
         if (streamUrl?.contains("159.89.249.45", ignoreCase = true) == true) return true
         if (streamUrl?.contains("mantab.men", ignoreCase = true) == true) return true
         return false
+    }
+
+    /**
+     * Identifies if a URL originates from any of our primary scraped provider domains.
+     */
+    fun isPrimaryProviderServer(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        return isDutaFilmWeb(videoUrl = url) ||
+               isDutaFilm(videoUrl = url) ||
+               isBullerswood(videoUrl = url) ||
+               isPencuriMovie(videoUrl = url) ||
+               isKepalaBergetar(videoUrl = url)
     }
 
     private fun isLegitSite(html: String): Boolean {
@@ -1767,6 +1779,7 @@ object VideoExtractor {
                low.contains("/stream/") || low.contains("/hls/") || low.contains("mirror") ||
                low.contains("player") || low.contains("swhoi") || low.contains("playstream") ||
                low.contains("asiastream") || low.contains("playsobat") || low.contains("/watch?") || low.contains("watch.") ||
+               low.contains("/watch/") || low.contains("epid=") || isPrimaryProviderServer(url) ||
                low.contains("pyrox") || low.contains("embedpyrox") || low.contains("amt") ||
                low.contains("haneri") || low.contains("audinifer") || low.contains("vibuxer") ||
                low.contains("morencius") || low.contains("bestcdn") ||
@@ -2946,7 +2959,8 @@ object VideoExtractor {
      */
     fun isServerMatchingMovie(videoTitle: String, server: VideoServer): Boolean {
         val isAlt = isAlternativePartnerHost(server.url) || isAlternativePartnerServer(server.name, server.url) || server.url.contains("archive.org")
-        if (!isAlt && !isGenuineMirror(server.name, server.url)) return false
+        val isPrimary = isPrimaryProviderServer(server.url)
+        if (!isAlt && !isPrimary && !isGenuineMirror(server.name, server.url)) return false
 
         val targetMeta = parseMovieTitleMeta(videoTitle)
         if (targetMeta.baseTokens.isEmpty()) return true
@@ -3006,12 +3020,11 @@ object VideoExtractor {
         // Partner URL slug check: If server.url points to a partner page with a movie slug
         // e.g. https://pencurimovie.skin/movie/adnan-sempit/ or https://bullerswood.com/inception-2010/
         val serverUrl = server.url.trimEnd('/')
-        val isPartnerPage = isPencuriMovie(videoUrl = serverUrl) || 
-                            isBullerswood(videoUrl = serverUrl) || 
-                            isDutaFilm(videoUrl = serverUrl) || 
-                            isDutaFilmWeb(videoUrl = serverUrl)
+        val isPartnerPage = isPrimaryProviderServer(serverUrl)
         if (isPartnerPage) {
-            val slug = serverUrl.substringAfterLast('/').substringBefore('?').substringBefore('#')
+            var slug = serverUrl.substringAfterLast('/').substringBefore('?').substringBefore('#')
+            slug = slug.removeSuffix(".html").removeSuffix(".htm").removeSuffix(".php")
+            slug = slug.replace(Regex("""-[a-z0-9]{4,6}$"""), "")
             if (slug.isNotEmpty() && slug.contains('-')) {
                 val slugTitle = slug.replace('-', ' ')
                 val slugMeta = parseMovieTitleMeta(slugTitle)
@@ -5349,8 +5362,8 @@ object VideoExtractor {
         if (lowUrl.contains("youtube") || lowUrl.contains("trailer") || lowUrl.contains("preview") || 
             lowUrl.contains("google.com") || lowUrl.contains("googleapis.com") || lowUrl.contains("imasdk")) return false
 
-        // Recognized video hosts or JS-only embeds are always genuine
-        if (isProbablyVideoHost(url) || isJsOnlyHost(url)) return true
+        // Recognized video hosts, JS-only embeds, or primary provider mirrors are always genuine
+        if (isProbablyVideoHost(url) || isJsOnlyHost(url) || isPrimaryProviderServer(url)) return true
 
         // Block known related/recommendation movie paths from the same CMS site that might be detected as mirrors
         val isInternalCmsPage = host.contains("dutamovie") || host.contains("layarkaca") || host.contains("lk21") ||
@@ -5363,17 +5376,20 @@ object VideoExtractor {
              }
         }
         
-        val hasPlayerIndicator = isProbablyVideoHost(url) || isJsOnlyHost(url) ||
+        val hasPlayerIndicator = isProbablyVideoHost(url) || isJsOnlyHost(url) || isPrimaryProviderServer(url) ||
             lowUrl.contains("player=") || lowUrl.contains("mirror=") || lowUrl.contains("server=") ||
             lowUrl.contains("source=") || lowUrl.contains("srv=") || lowUrl.contains("opt=") ||
             lowUrl.contains("stream=") || lowUrl.contains("embed=") || lowUrl.contains("action=") ||
+            lowUrl.contains("epid=") || lowUrl.contains("/watch/") ||
             lowUrl.startsWith("ajax:") || lowUrl.contains(".m3u8") || lowUrl.contains(".mp4") ||
             lowUrl.contains("/e/") || lowUrl.contains("/v/") || lowUrl.contains("/embed/")
 
         if (lowName.contains("server") || lowName.contains("mirror") || lowName.contains("vip") || 
             lowName.contains("player") || lowName.contains("stream") || lowName.contains("hd") ||
             lowName.contains("1080") || lowName.contains("720") || lowName.contains("p2p") ||
-            lowName.contains("s1") || lowName.contains("s2") || lowName.contains("s3") || lowName.contains("s4")) {
+            lowName.contains("s1") || lowName.contains("s2") || lowName.contains("s3") || lowName.contains("s4") ||
+            lowName.contains("indo") || lowName.contains("sub") || lowName.contains("dub") || 
+            lowName.contains("melayu") || lowName.contains("malay") || lowName.contains("hardsub") || lowName.contains("softsub")) {
             if (host.contains("parklogic") || host.contains("ketik.live")) return false
             return hasPlayerIndicator
         }

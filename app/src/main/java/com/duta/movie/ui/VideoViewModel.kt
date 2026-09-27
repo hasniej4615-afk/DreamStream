@@ -1529,9 +1529,15 @@ class VideoViewModel @Inject constructor(
 
                             if (current != null && (current.id == detailed.id || current.title.equals(detailed.title, ignoreCase = true) || com.duta.movie.util.VideoExtractor.stripSourcePrefix(current.id) == com.duta.movie.util.VideoExtractor.stripSourcePrefix(detailed.id))) {
                                 val baseActiveServers = if (current.servers.isNotEmpty()) current.servers else workingServers
-                                // Filter existing servers as well to remove any previously persisted mismatched servers from Room DB
-                                val cleanCurrentServers = if (detailed.isSeries == true) baseActiveServers else baseActiveServers.filter { 
-                                    com.duta.movie.util.VideoExtractor.isServerMatchingMovie(current.title, it) 
+                                val detailedUrls = detailed.servers.map { it.url.trimEnd('/') }.toSet()
+                                // Filter existing servers as well to remove any previously persisted mismatched servers from Room DB,
+                                // but ALWAYS preserve servers originating directly from this video's detailed page
+                                val cleanCurrentServers = if (detailed.isSeries == true) baseActiveServers else {
+                                    val filtered = baseActiveServers.filter { server ->
+                                        detailedUrls.contains(server.url.trimEnd('/')) || 
+                                        com.duta.movie.util.VideoExtractor.isServerMatchingMovie(current.title, server) 
+                                    }
+                                    if (filtered.isEmpty() && baseActiveServers.isNotEmpty()) baseActiveServers else filtered
                                 }
                                 val existingServerUrls = cleanCurrentServers.map { it.url.trimEnd('/') }.toSet()
                                 val newUnique = allDiscoveredServers.filter { !existingServerUrls.contains(it.url.trimEnd('/')) }

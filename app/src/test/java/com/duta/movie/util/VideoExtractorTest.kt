@@ -1231,6 +1231,28 @@ class VideoExtractorTest {
         assert(isHoneypot3) { "Token ending in xyza must be detected as honeypot" }
         assert(isValid) { "Valid token must not be detected as honeypot" }
     }
+
+    @Test
+    fun testDutaFilmWebServerValidationAndDisplay() {
+        val dfwWatchUrl = "https://df31.mantab.men/watch/dive-into-you-2026-p8kl.html?epid=d1OtUJfKza&cat=hs&tag=ind"
+        val dfwServer = VideoServer("Hardsub Indo", dfwWatchUrl)
+        val videoTitle = "Dive into You (2026)"
+
+        // 1. Verify provider server identification
+        assert(VideoExtractor.isPrimaryProviderServer(dfwWatchUrl)) { "DFW URL must be identified as primary provider" }
+        assert(VideoExtractor.isProbablyVideoHost(dfwWatchUrl)) { "DFW URL must be considered a playable video host" }
+
+        // 2. Verify genuine mirror recognition
+        assert(VideoExtractor.isGenuineMirror("Hardsub Indo", dfwWatchUrl)) { "Hardsub Indo on DFW must be a genuine mirror" }
+        assert(VideoExtractor.isGenuineMirror("Softsub Indo", dfwWatchUrl)) { "Softsub Indo on DFW must be a genuine mirror" }
+
+        // 3. Verify server matching movie title
+        assert(VideoExtractor.isServerMatchingMovie(videoTitle, dfwServer)) { "DFW server must match movie title Dive into You (2026)" }
+
+        // 4. Verify mismatched slug is rejected
+        val mismatchedServer = VideoServer("Hardsub Indo", "https://df31.mantab.men/watch/alien-earth-2025-x9y2.html?epid=123")
+        assert(!VideoExtractor.isServerMatchingMovie(videoTitle, mismatchedServer)) { "Mismatched partner slug must be rejected" }
+    }
 }
 
 
