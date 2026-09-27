@@ -3093,6 +3093,21 @@ fun VideoPlayerWebView(
                                                 doc.body.style.setProperty('background-color', '#000', 'important');
                                                 doc.body.classList.add('video-active', 'video-playing');
                                             }
+                                            var bgEls = doc.querySelectorAll('.stage, .wrap, #player, #content, .container, main, .jwplayer, .jw-wrapper, .jw-media, div#player, div.player, .player, .index-container, .mv-content, .play-content, .left-content, #ploader, .vid-content, .vid-play-overlay, [id^="pjs_"]');
+                                            for (var bgi = 0; bgi < bgEls.length; bgi++) {
+                                                bgEls[bgi].style.setProperty('background', '#000', 'important');
+                                                bgEls[bgi].style.setProperty('background-color', '#000', 'important');
+                                                bgEls[bgi].style.setProperty('border', 'none', 'important');
+                                                bgEls[bgi].style.setProperty('box-shadow', 'none', 'important');
+                                            }
+                                            var webJunk = doc.querySelectorAll('.breadcrumb, .breadcrumbs, [class*="breadcrumb"], [id*="breadcrumb"], .server_list, #server_lists, .server-list, #servers, #server_list, .server-options, .btn-svx, .episode, [class*="server_list"], [class*="server-list"], .lightswitch, .light-switch, [class*="lightswitch"], .vid-episodes, #episode_lists, .episode-list, .list-episode, .episodes-list, [class*="vid-episodes"], [class*="episode-list"], .vid-details, .vid-details-left, .vid-details-right, .vid-seo-keywords, [class*="vid-details"], .movie-details, .movie-info, .film-details, .film-info, .synopsis, .deskripsi, [class*="movie-info"], [class*="movie-details"], .right-content, .related-label, .related-mv, .related-movies, .related-posts, [class*="related-"], .catalogue, .footer, .footer-content, .footer-copy, .footer-1, .footer-2, .footer-3, .index-search, .index-filter, .index-menu, .logo, .notice, .marquee, .menu-content, .menu, .sub, .socmed, .fb-share-button, .overlay, .filter-content, .filter-box, .divider, .site-header, .site-footer');
+                                            for (var wj = 0; wj < webJunk.length; wj++) {
+                                                webJunk[wj].style.setProperty('display', 'none', 'important');
+                                                webJunk[wj].style.setProperty('opacity', '0', 'important');
+                                                webJunk[wj].style.setProperty('visibility', 'hidden', 'important');
+                                                webJunk[wj].style.setProperty('height', '0', 'important');
+                                                webJunk[wj].style.setProperty('pointer-events', 'none', 'important');
+                                            }
                                             var bads = doc.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                             for (var i = 0; i < bads.length; i++) {
                                                 bads[i].style.setProperty('display', 'none', 'important');
@@ -3456,6 +3471,21 @@ fun VideoPlayerWebView(
                                                 if (o) { o.style.display = 'none'; try { o.remove(); } catch(e){} }
                                                 var p = doc.getElementById('playback');
                                                 if (p) { p.style.display = 'none'; try { p.remove(); } catch(e){} }
+                                                var bgEls = doc.querySelectorAll('.stage, .wrap, #player, #content, .container, main, .jwplayer, .jw-wrapper, .jw-media, div#player, div.player, .player, .index-container, .mv-content, .play-content, .left-content, #ploader, .vid-content, .vid-play-overlay, [id^="pjs_"]');
+                                                for (var bgi = 0; bgi < bgEls.length; bgi++) {
+                                                    bgEls[bgi].style.setProperty('background', '#000', 'important');
+                                                    bgEls[bgi].style.setProperty('background-color', '#000', 'important');
+                                                    bgEls[bgi].style.setProperty('border', 'none', 'important');
+                                                    bgEls[bgi].style.setProperty('box-shadow', 'none', 'important');
+                                                }
+                                                var webJunk = doc.querySelectorAll('.breadcrumb, .breadcrumbs, [class*="breadcrumb"], [id*="breadcrumb"], .server_list, #server_lists, .server-list, #servers, #server_list, .server-options, .btn-svx, .episode, [class*="server_list"], [class*="server-list"], .lightswitch, .light-switch, [class*="lightswitch"], .vid-episodes, #episode_lists, .episode-list, .list-episode, .episodes-list, [class*="vid-episodes"], [class*="episode-list"], .vid-details, .vid-details-left, .vid-details-right, .vid-seo-keywords, [class*="vid-details"], .movie-details, .movie-info, .film-details, .film-info, .synopsis, .deskripsi, [class*="movie-info"], [class*="movie-details"], .right-content, .related-label, .related-mv, .related-movies, .related-posts, [class*="related-"], .catalogue, .footer, .footer-content, .footer-copy, .footer-1, .footer-2, .footer-3, .index-search, .index-filter, .index-menu, .logo, .notice, .marquee, .menu-content, .menu, .sub, .socmed, .fb-share-button, .overlay, .filter-content, .filter-box, .divider, .site-header, .site-footer');
+                                                for (var wj = 0; wj < webJunk.length; wj++) {
+                                                    webJunk[wj].style.setProperty('display', 'none', 'important');
+                                                    webJunk[wj].style.setProperty('opacity', '0', 'important');
+                                                    webJunk[wj].style.setProperty('visibility', 'hidden', 'important');
+                                                    webJunk[wj].style.setProperty('height', '0', 'important');
+                                                    webJunk[wj].style.setProperty('pointer-events', 'none', 'important');
+                                                }
                                                 var bads = doc.querySelectorAll('#overlay, #playback, div#overlay, div#playback, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, svg, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                                 for (var i = 0; i < bads.length; i++) {
                                                     bads[i].style.setProperty('display', 'none', 'important');

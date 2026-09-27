@@ -48,10 +48,20 @@ object Nuker {
                                         d.body.style.setProperty('background', '#000', 'important');
                                         d.body.style.setProperty('background-color', '#000', 'important');
                                     }
-                                    var bgEls = d.querySelectorAll('.stage, .wrap, #player, #content, .container, main, .jwplayer, .jw-wrapper, .jw-media, div#player, div.player, .player');
+                                    var bgEls = d.querySelectorAll('.stage, .wrap, #player, #content, .container, main, .jwplayer, .jw-wrapper, .jw-media, div#player, div.player, .player, .index-container, .mv-content, .play-content, .left-content, #ploader, .vid-content, .vid-play-overlay, [id^="pjs_"]');
                                     for (var bgi = 0; bgi < bgEls.length; bgi++) {
                                         bgEls[bgi].style.setProperty('background', '#000', 'important');
                                         bgEls[bgi].style.setProperty('background-color', '#000', 'important');
+                                        bgEls[bgi].style.setProperty('border', 'none', 'important');
+                                        bgEls[bgi].style.setProperty('box-shadow', 'none', 'important');
+                                    }
+                                    var webJunk = d.querySelectorAll('.breadcrumb, .breadcrumbs, [class*="breadcrumb"], [id*="breadcrumb"], .server_list, #server_lists, .server-list, #servers, #server_list, .server-options, .btn-svx, .episode, [class*="server_list"], [class*="server-list"], .lightswitch, .light-switch, [class*="lightswitch"], .vid-episodes, #episode_lists, .episode-list, .list-episode, .episodes-list, [class*="vid-episodes"], [class*="episode-list"], .vid-details, .vid-details-left, .vid-details-right, .vid-seo-keywords, [class*="vid-details"], .movie-details, .movie-info, .film-details, .film-info, .synopsis, .deskripsi, [class*="movie-info"], [class*="movie-details"], .right-content, .related-label, .related-mv, .related-movies, .related-posts, [class*="related-"], .catalogue, .footer, .footer-content, .footer-copy, .footer-1, .footer-2, .footer-3, .index-search, .index-filter, .index-menu, .logo, .notice, .marquee, .menu-content, .menu, .sub, .socmed, .fb-share-button, .overlay, .filter-content, .filter-box, .site-header, .site-footer');
+                                    for (var wj = 0; wj < webJunk.length; wj++) {
+                                        webJunk[wj].style.setProperty('display', 'none', 'important');
+                                        webJunk[wj].style.setProperty('opacity', '0', 'important');
+                                        webJunk[wj].style.setProperty('visibility', 'hidden', 'important');
+                                        webJunk[wj].style.setProperty('height', '0', 'important');
+                                        webJunk[wj].style.setProperty('pointer-events', 'none', 'important');
                                     }
                                 } catch(e){}
                             };
@@ -588,7 +598,7 @@ object Nuker {
 
                     var unhidePlayerAncestors = function() {
                         try {
-                            var targets = document.querySelectorAll('video, .jwplayer, .video-js, iframe');
+                            var targets = document.querySelectorAll('video, .jwplayer, .video-js, div[id*="player"], div.player, div#player, div#ploader, [id^="pjs_"], iframe');
                             for (var t = 0; t < targets.length; t++) {
                                 var el = targets[t];
                                 if (el.tagName === 'IFRAME') {
@@ -597,26 +607,78 @@ object Nuker {
                                         var src = (el.src || "").toLowerCase();
                                         if (src.indexOf('player') !== -1 || src.indexOf('embed') !== -1 || src.indexOf('voe') !== -1 || 
                                             src.indexOf('stream') !== -1 || src.indexOf('hgcloud') !== -1 || src.indexOf('hglink') !== -1 ||
-                                            src.indexOf('swhoi') !== -1 || src.indexOf('ohio') !== -1 || src.indexOf('veev') !== -1 ||
+                                            src.indexOf('swhoi') !== -1 || src.indexOf('ohio') !== -1 || src.indexOf('veev') !== -1 || 
+                                            src.indexOf('drakor') !== -1 || src.indexOf('load') !== -1 || src.indexOf('mantab') !== -1 ||
+                                            src.indexOf('abyss') !== -1 || src.indexOf('hydrax') !== -1 ||
                                             src.indexOf('youtube') !== -1 || src.indexOf('youtu.be') !== -1) {
                                             isEmbed = true;
                                         }
                                     } catch(e) {}
                                     if (!isEmbed) continue;
                                     el.classList.add('nuker-active-frame');
+                                } else if (el.classList.contains('jwplayer') || el.classList.contains('video-js') || el.id === 'ploader' || (el.id && el.id.indexOf('pjs_') === 0)) {
+                                    el.classList.add('nuker-active-player');
                                 }
                                 el.style.setProperty('opacity', '1', 'important');
                                 el.style.setProperty('visibility', 'visible', 'important');
                                 if (el.style.display === 'none') el.style.setProperty('display', 'block', 'important');
+                            }
 
-                                var p = el.parentElement;
-                                while (p && p !== document.body && p !== document.documentElement) {
-                                    p.classList.add('nuker-video-container');
-                                    p.style.setProperty('opacity', '1', 'important');
-                                    p.style.setProperty('visibility', 'visible', 'important');
-                                    if (p.style.display === 'none') p.style.setProperty('display', 'block', 'important');
-                                    p = p.parentElement;
+                            // Strict priority for activePlayer: video > active iframe > pjs_/ploader/jwplayer/video-js > div#player > div.player
+                            var activePlayer = document.querySelector('video');
+                            if (!activePlayer) activePlayer = document.querySelector('iframe.nuker-active-frame');
+                            if (!activePlayer) activePlayer = document.querySelector('.jwplayer, .video-js, [id^="pjs_"], #ploader');
+                            if (!activePlayer) activePlayer = document.querySelector('div#player, div.player');
+
+                            if (activePlayer) {
+                                var curr = activePlayer;
+                                while (curr && curr !== document.body && curr !== document.documentElement) {
+                                    var parent = curr.parentElement;
+                                    if (parent) {
+                                        parent.classList.add('nuker-video-container');
+                                        parent.style.setProperty('background', '#000000', 'important');
+                                        parent.style.setProperty('background-color', '#000000', 'important');
+                                        parent.style.setProperty('padding', '0', 'important');
+                                        parent.style.setProperty('margin', '0', 'important');
+                                        parent.style.setProperty('border', 'none', 'important');
+                                        parent.style.setProperty('box-shadow', 'none', 'important');
+                                        parent.style.setProperty('transform', 'none', 'important');
+                                        parent.style.setProperty('-webkit-transform', 'none', 'important');
+                                        parent.style.setProperty('opacity', '1', 'important');
+                                        parent.style.setProperty('visibility', 'visible', 'important');
+                                        if (parent.style.display === 'none') parent.style.setProperty('display', 'block', 'important');
+
+                                        var siblings = parent.children;
+                                        for (var s = 0; s < siblings.length; s++) {
+                                            var sib = siblings[s];
+                                            if (sib !== curr && !sib.contains(curr) && sib.tagName !== 'SCRIPT' && sib.tagName !== 'STYLE') {
+                                                sib.style.setProperty('display', 'none', 'important');
+                                                sib.style.setProperty('opacity', '0', 'important');
+                                                sib.style.setProperty('visibility', 'hidden', 'important');
+                                                sib.style.setProperty('height', '0', 'important');
+                                                sib.style.setProperty('max-height', '0', 'important');
+                                                sib.style.setProperty('overflow', 'hidden', 'important');
+                                                sib.style.setProperty('pointer-events', 'none', 'important');
+                                            }
+                                        }
+                                    }
+                                    curr = parent;
                                 }
+
+                                activePlayer.style.setProperty('display', 'block', 'important');
+                                activePlayer.style.setProperty('visibility', 'visible', 'important');
+                                activePlayer.style.setProperty('opacity', '1', 'important');
+                                activePlayer.style.setProperty('position', 'fixed', 'important');
+                                activePlayer.style.setProperty('top', '0', 'important');
+                                activePlayer.style.setProperty('left', '0', 'important');
+                                activePlayer.style.setProperty('width', '100vw', 'important');
+                                activePlayer.style.setProperty('height', '100vh', 'important');
+                                activePlayer.style.setProperty('max-width', '100vw', 'important');
+                                activePlayer.style.setProperty('max-height', '100vh', 'important');
+                                activePlayer.style.setProperty('z-index', '999990', 'important');
+                                activePlayer.style.setProperty('background', '#000000', 'important');
+                                activePlayer.style.setProperty('background-color', '#000000', 'important');
+                                activePlayer.style.setProperty('object-fit', 'contain', 'important');
                             }
                         } catch(e) {}
                     };
@@ -654,7 +716,18 @@ object Nuker {
                                         #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"],
                                         .video-info-title, .video-info-hint, .video-info-close,
                                         div#videoInfo, div.video-info,
-                                        #sidebar, #header, #footer {
+                                        #sidebar, #header, #footer,
+                                        .breadcrumb, .breadcrumbs, [class*="breadcrumb"], [id*="breadcrumb"],
+                                        .server_list, #server_lists, .server-list, #servers, #server_list, .server-options, .btn-svx, .episode, [class*="server_list"], [class*="server-list"],
+                                        .lightswitch, .light-switch, [class*="lightswitch"],
+                                        .vid-episodes, #episode_lists, .episode-list, .list-episode, .episodes-list, [class*="vid-episodes"], [class*="episode-list"],
+                                        .vid-details, .vid-details-left, .vid-details-right, .vid-seo-keywords, [class*="vid-details"],
+                                        .movie-details, .movie-info, .film-details, .film-info, .synopsis, .deskripsi, [class*="movie-info"], [class*="movie-details"],
+                                        .right-content, .related-label, .related-mv, .related-movies, .related-posts, [class*="related-"],
+                                        .catalogue, .footer, .footer-content, .footer-copy, .footer-1, .footer-2, .footer-3,
+                                        .index-search, .index-filter, .index-menu, .logo, .notice, .marquee,
+                                        .menu-content, .menu, .sub, .socmed, .fb-share-button,
+                                        .overlay, .filter-content, .filter-box, .divider, .site-header, .site-footer {
                                             display: none !important;
                                             opacity: 0 !important; 
                                             visibility: hidden !important; 
@@ -664,7 +737,15 @@ object Nuker {
                                             overflow: hidden !important;
                                             z-index: -99999 !important;
                                         }
-                                        video { 
+                                        .index-container, .content, .mv-content, .play-content, .left-content, .player, #player, #ploader, .vid-content, .vid-play-overlay, .nuker-video-container {
+                                            background: #000000 !important;
+                                            background-color: #000000 !important;
+                                            border: none !important;
+                                            box-shadow: none !important;
+                                            transform: none !important;
+                                            -webkit-transform: none !important;
+                                        }
+                                        video, .jwplayer, .video-js, div#player.nuker-active-player, div.player.nuker-active-player, div#ploader.nuker-active-player, [id^="pjs_"].nuker-active-player { 
                                             display: block !important; 
                                             visibility: visible !important; 
                                             opacity: 1 !important;
@@ -677,22 +758,13 @@ object Nuker {
                                             max-height: 100vh !important;
                                             z-index: 999990 !important;
                                             object-fit: contain !important;
-                                            background: transparent !important;
+                                            background: #000000 !important;
+                                            background-color: #000000 !important;
                                         }
                                         .jwplayer, .video-js, .nuker-video-container {
                                             display: block !important;
                                             visibility: visible !important;
                                             opacity: 1 !important;
-                                        }
-                                        .jwplayer, .video-js {
-                                            position: fixed !important; 
-                                            top: 0 !important; 
-                                            left: 0 !important;
-                                            width: 100vw !important; 
-                                            height: 100vh !important; 
-                                            max-width: 100vw !important;
-                                            max-height: 100vh !important;
-                                            z-index: 999990 !important;
                                         }
                                         iframe.nuker-active-frame {
                                             position: fixed !important;
@@ -700,11 +772,15 @@ object Nuker {
                                             left: 0 !important;
                                             width: 100vw !important;
                                             height: 100vh !important;
+                                            max-width: 100vw !important;
+                                            max-height: 100vh !important;
                                             z-index: 999980 !important;
                                             display: block !important;
                                             visibility: visible !important;
                                             opacity: 1 !important;
                                             border: none !important;
+                                            background: #000000 !important;
+                                            background-color: #000000 !important;
                                         }
                                         .jwplayer *, .video-js * {
                                             visibility: visible;
@@ -758,9 +834,15 @@ object Nuker {
                     })();
 
                     var runNuker = function() {
-                        if (window.successNotified) return;
+                        if (window.successNotified) {
+                            ensureBlackBackground();
+                            unhidePlayerAncestors();
+                            return;
+                        }
                         if (window.AndroidPlayer && window.AndroidPlayer.isVideoReady && window.AndroidPlayer.isVideoReady()) {
                             window.successNotified = true;
+                            ensureBlackBackground();
+                            unhidePlayerAncestors();
                             return;
                         }
                         window.nukerAttempts++; 
@@ -1090,10 +1172,20 @@ object Nuker {
                                         d.body.style.setProperty('background', '#000', 'important');
                                         d.body.style.setProperty('background-color', '#000', 'important');
                                     }
-                                    var bgEls = d.querySelectorAll('.stage, .wrap, #player, #content, .container, main, .jwplayer, .jw-wrapper, .jw-media, div#player, div.player, .player');
+                                    var bgEls = d.querySelectorAll('.stage, .wrap, #player, #content, .container, main, .jwplayer, .jw-wrapper, .jw-media, div#player, div.player, .player, .index-container, .mv-content, .play-content, .left-content, #ploader, .vid-content, .vid-play-overlay, [id^="pjs_"]');
                                     for (var bgi = 0; bgi < bgEls.length; bgi++) {
                                         bgEls[bgi].style.setProperty('background', '#000', 'important');
                                         bgEls[bgi].style.setProperty('background-color', '#000', 'important');
+                                        bgEls[bgi].style.setProperty('border', 'none', 'important');
+                                        bgEls[bgi].style.setProperty('box-shadow', 'none', 'important');
+                                    }
+                                    var webJunk = d.querySelectorAll('.breadcrumb, .breadcrumbs, [class*="breadcrumb"], [id*="breadcrumb"], .server_list, #server_lists, .server-list, #servers, #server_list, .server-options, .btn-svx, .episode, [class*="server_list"], [class*="server-list"], .lightswitch, .light-switch, [class*="lightswitch"], .vid-episodes, #episode_lists, .episode-list, .list-episode, .episodes-list, [class*="vid-episodes"], [class*="episode-list"], .vid-details, .vid-details-left, .vid-details-right, .vid-seo-keywords, [class*="vid-details"], .movie-details, .movie-info, .film-details, .film-info, .synopsis, .deskripsi, [class*="movie-info"], [class*="movie-details"], .right-content, .related-label, .related-mv, .related-movies, .related-posts, [class*="related-"], .catalogue, .footer, .footer-content, .footer-copy, .footer-1, .footer-2, .footer-3, .index-search, .index-filter, .index-menu, .logo, .notice, .marquee, .menu-content, .menu, .sub, .socmed, .fb-share-button, .overlay, .filter-content, .filter-box, .site-header, .site-footer');
+                                    for (var wj = 0; wj < webJunk.length; wj++) {
+                                        webJunk[wj].style.setProperty('display', 'none', 'important');
+                                        webJunk[wj].style.setProperty('opacity', '0', 'important');
+                                        webJunk[wj].style.setProperty('visibility', 'hidden', 'important');
+                                        webJunk[wj].style.setProperty('height', '0', 'important');
+                                        webJunk[wj].style.setProperty('pointer-events', 'none', 'important');
                                     }
                                 } catch(e){}
                             };
@@ -1756,6 +1848,25 @@ object Nuker {
                                             max-height: 0 !important;
                                             z-index: -99999 !important;
                                         }
+                                        .breadcrumb, .breadcrumbs, [class*="breadcrumb"], [id*="breadcrumb"],
+                                        .server_list, #server_lists, .server-list, #servers, #server_list, .server-options, .btn-svx, .episode, [class*="server_list"], [class*="server-list"],
+                                        .lightswitch, .light-switch, [class*="lightswitch"],
+                                        .vid-episodes, #episode_lists, .episode-list, .list-episode, .episodes-list, [class*="vid-episodes"], [class*="episode-list"],
+                                        .vid-details, .vid-details-left, .vid-details-right, .vid-seo-keywords, [class*="vid-details"],
+                                        .movie-details, .movie-info, .film-details, .film-info, .synopsis, .deskripsi, [class*="movie-info"], [class*="movie-details"],
+                                        .right-content, .related-label, .related-mv, .related-movies, .related-posts, [class*="related-"],
+                                        .catalogue, .footer, .footer-content, .footer-copy, .footer-1, .footer-2, .footer-3,
+                                        .index-search, .index-filter, .index-menu, .logo, .notice, .marquee,
+                                        .menu-content, .menu, .sub, .socmed, .fb-share-button,
+                                        .overlay, .filter-content, .filter-box, .divider, .site-header, .site-footer,
+                                        .index-container, .content, .mv-content, .play-content, .left-content, .player, #player, #ploader, .vid-content, .vid-play-overlay, .nuker-video-container {
+                                            background: #000000 !important;
+                                            background-color: #000000 !important;
+                                            border: none !important;
+                                            box-shadow: none !important;
+                                            transform: none !important;
+                                            -webkit-transform: none !important;
+                                        }
                                         /* Aggressively eliminate ad iframes, popups, overlays, and robot verification prompts */
                                         iframe:not(.nuker-active-frame),
                                         #overlay, #playback, #overlay *, #playback *,
@@ -1785,7 +1896,10 @@ object Nuker {
                     })();
 
                     var runPmNuker = function() {
-                        if (window.successNotified) return;
+                        if (window.successNotified) {
+                            ensureBlackBackground();
+                            return;
+                        }
                         window.nukerAttempts++;
                         var elapsedMs = Date.now() - window.nukerStartTime;
 
