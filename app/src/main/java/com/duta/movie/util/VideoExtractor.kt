@@ -2637,6 +2637,7 @@ object VideoExtractor {
             .replace(Regex("""\s*-\s*\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?::\d+)?.*$"""), " ")
             .replace(Regex("""\b(?:web-?dl|web-?rip|1080p|720p|480p|360p|hdcam|cam-?rip|bluray|blu-?ray|hdrip)\b"""), " ")
             .replace(Regex("""\b(?:full\s*movie|full\s*film|lengkap|terbaru|official|phim|tonton|watch)\b"""), " ")
+            .replace(Regex("""\b(?:episode|episod|eps|ep)\s*\d*\b"""), " ")
             .replace(Regex("""[\(\)\[\]\{\}\-_,:\.'\"\|\\\/–—]"""), " ")
             .replace(Regex("""\s+"""), " ")
             .trim()
@@ -2658,7 +2659,7 @@ object VideoExtractor {
             "hd", "dubbed", "eng", "sub", "source", "director", "sutradara", "pemeran",
             "full", "short", "drama", "video", "clip", "complete",
             "dailymotion", "youtube", "bilibili", "archive", "server", "phim", "tonton", "watch",
-            "rebahin", "bioskopkeren", "indoxxi", "idlix"
+            "rebahin", "bioskopkeren", "indoxxi", "idlix", "episode", "episod", "eps", "ep"
         )
         val tokens = clean.split(Regex("""\s+"""))
         val baseTokens = mutableListOf<String>()
@@ -2889,7 +2890,7 @@ object VideoExtractor {
 
         // Name title check: If server.name embeds an explicit movie title
         // e.g. "YouTube HD: Inception", "Dailymotion: Adnan Sempit", "Bilibili HD: Naruto"
-        if (server.name.contains(":") || server.name.contains(" - ")) {
+        if (isAlt && (server.name.contains(":") || server.name.contains(" - "))) {
             val candidateTitlePart = when {
                 server.name.contains(":") -> server.name.substringAfter(":").trim()
                 else -> server.name.substringAfter(" - ").trim()
@@ -2897,9 +2898,12 @@ object VideoExtractor {
             val ignoredSuffixes = setOf(
                 "full movie", "fast direct", "vip", "backup", "mirror", "hd", "720p", "1080p", "4k",
                 "hls", "direct", "embed", "server 1", "server 2", "server 3", "server 4", "server 5",
-                "versi klasik", "versi warna", "pencuri", "dutafilm", "dutafilmweb", "lk21"
+                "versi klasik", "versi warna", "pencuri", "dutafilm", "dutafilmweb", "lk21",
+                "streamtape", "voe", "doodstream", "mixdrop", "upstream", "filelions", "vidguard",
+                "hxfile", "gofile", "mp4upload", "streamwish", "vidsrc", "superembed"
             )
-            if (candidateTitlePart.isNotEmpty() && !ignoredSuffixes.contains(candidateTitlePart.lowercase())) {
+            val isEpisodeSuffix = candidateTitlePart.matches(Regex("""(?i)^(?:\s*ep(?:isode|isod)?\s*\d+.*|\s*s\d+\s*ep?\d+.*)$"""))
+            if (candidateTitlePart.isNotEmpty() && !isEpisodeSuffix && !ignoredSuffixes.contains(candidateTitlePart.lowercase())) {
                 val candMeta = parseMovieTitleMeta(candidateTitlePart)
                 if (candMeta.baseTokens.isNotEmpty()) {
                     // Check sequel
@@ -6192,7 +6196,7 @@ object VideoExtractor {
             if (isSafeProbe) {
                 Log.d(TAG, "Series mirrors missing. Speculative Probe engaged for: ${firstEp.name}")
                 val probeResult = try {
-                    withTimeoutOrNull(1200) {
+                    withTimeoutOrNull(5000) {
                         fetchVideoDetails(firstEp.url, videoUrl, isRecursive = true)
                     }
                 } catch (e: Exception) { null }

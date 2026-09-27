@@ -876,10 +876,10 @@ fun VideoDetailInfo(
         }
         val headerText = if (isLikelySeries && activeEpNum != null && video.episodes.size > 1) "Servers (Ep $activeEpNum)" else "Servers"
 
-        val displayServers = remember(video.servers, video.title) {
+        val displayServers = remember(video.servers, video.title, isLikelySeries) {
             video.servers.asSequence()
                 .filter { server ->
-                    com.duta.movie.util.VideoExtractor.isServerMatchingMovie(video.title, server)
+                    if (isLikelySeries) true else com.duta.movie.util.VideoExtractor.isServerMatchingMovie(video.title, server)
                 }
                 .distinctBy { it.url.trimEnd('/') }
                 .sortedWith(compareByDescending<com.duta.movie.model.VideoServer> {

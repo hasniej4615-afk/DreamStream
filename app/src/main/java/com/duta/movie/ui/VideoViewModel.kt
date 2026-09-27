@@ -1454,6 +1454,8 @@ class VideoViewModel @Inject constructor(
                                 }
                             }
 
+                            var workingServers = detailed.servers
+
                             // 1. If TV series has 0 servers on root page, probe Episode 1 in background
                             if (detailed.servers.isEmpty() && detailed.episodes.isNotEmpty()) {
                                 val firstEp = detailed.episodes.firstOrNull()
@@ -1461,6 +1463,9 @@ class VideoViewModel @Inject constructor(
                                     try {
                                         val epDetails = com.duta.movie.util.VideoExtractor.fetchVideoDetails(firstEp.url, detailed.videoUrl, isRecursive = true)
                                         if (epDetails != null && epDetails.servers.isNotEmpty()) {
+                                            workingServers = epDetails.servers
+                                            val epSlug = com.duta.movie.util.VideoExtractor.extractStableId(firstEp.url)
+                                            episodeServersCache[epSlug] = epDetails.servers
                                             val cur = _videoMetadata.value
                                             if (cur != null && (cur.id == detailed.id || com.duta.movie.util.VideoExtractor.stripSourcePrefix(cur.id) == com.duta.movie.util.VideoExtractor.stripSourcePrefix(detailed.id))) {
                                                 val updated = cur.copy(servers = epDetails.servers)
@@ -1481,6 +1486,7 @@ class VideoViewModel @Inject constructor(
                                 try {
                                     val healed = com.duta.movie.util.VideoExtractor.healVideoFromAlternativeSources(detailed)
                                     if (healed != null && healed.servers.isNotEmpty()) {
+                                        workingServers = healed.servers
                                         val cur = _videoMetadata.value
                                         if (cur != null && (cur.id == detailed.id || com.duta.movie.util.VideoExtractor.stripSourcePrefix(cur.id) == com.duta.movie.util.VideoExtractor.stripSourcePrefix(detailed.id))) {
                                             val updated = cur.copy(
@@ -1502,7 +1508,7 @@ class VideoViewModel @Inject constructor(
                             // 3. Discover alternative sources across all partners and universal stream catalogues + installed providers
                             // ONLY query alternatives if movie has 0 servers
                             val current = _videoMetadata.value
-                            val currentServers = current?.servers ?: detailed.servers
+                            val currentServers = if (workingServers.isNotEmpty()) workingServers else (current?.servers ?: detailed.servers)
                             val needsAlternativeSearch = currentServers.isEmpty() && detailed.isSeries != true
 
                             val altServers = if (needsAlternativeSearch) {
@@ -1516,14 +1522,15 @@ class VideoViewModel @Inject constructor(
                                 }
                             } else emptyList()
 
-                            val providerServers = videoRepository.providerManager.fetchServers(detailed)
+                            val providerServers = if (detailed.isSeries != true) videoRepository.providerManager.fetchServers(detailed) else emptyList()
                             val allDiscoveredServers = (altServers + providerServers)
                                 .filter { com.duta.movie.util.VideoExtractor.isServerMatchingMovie(detailed.title, it) }
                                 .distinctBy { it.url.trimEnd('/') }
 
                             if (current != null && (current.id == detailed.id || current.title.equals(detailed.title, ignoreCase = true) || com.duta.movie.util.VideoExtractor.stripSourcePrefix(current.id) == com.duta.movie.util.VideoExtractor.stripSourcePrefix(detailed.id))) {
+                                val baseActiveServers = if (current.servers.isNotEmpty()) current.servers else workingServers
                                 // Filter existing servers as well to remove any previously persisted mismatched servers from Room DB
-                                val cleanCurrentServers = current.servers.filter { 
+                                val cleanCurrentServers = if (detailed.isSeries == true) baseActiveServers else baseActiveServers.filter { 
                                     com.duta.movie.util.VideoExtractor.isServerMatchingMovie(current.title, it) 
                                 }
                                 val existingServerUrls = cleanCurrentServers.map { it.url.trimEnd('/') }.toSet()
@@ -2104,11 +2111,12 @@ class VideoViewModel @Inject constructor(
                     val epSlug = VideoExtractor.extractStableId(episodePageUrl)
                     val cachedServers = episodeServersCache[epSlug]
                     
-                    if (cachedServers.isNullOrEmpty() || forceReset) {
+                    var finalServers = cachedServers ?: emptyList()
+                    if (cachedServers.isNullOrEmpty() || (forceReset && isEpisodeUrl)) {
                         addResolutionLog("Scoping servers for episode...")
                         val fetched = VideoExtractor.fetchVideoDetails(episodePageUrl)
                         
-                        var finalServers = fetched?.servers ?: emptyList()
+                        finalServers = fetched?.servers ?: emptyList()
                         
                         // Parent fallback if episode page fails
                         if (finalServers.isEmpty()) {
@@ -2123,6 +2131,16 @@ class VideoViewModel @Inject constructor(
                             episodeServersCache[epSlug] = finalServers
                         } else {
                             addResolutionLog("Warning: No servers found for this episode.")
+                        }
+                    }
+
+                    if (finalServers.isNotEmpty()) {
+                        val cur = _videoMetadata.value
+                        if (cur != null) {
+                            val updated = cur.copy(servers = finalServers)
+                            withContext(Dispatchers.Main) {
+                                _videoMetadata.value = applyMetadata(updated)
+                            }
                         }
                     }
                 }
@@ -2547,11 +2565,8 @@ class VideoViewModel @Inject constructor(
                     deadMirrors.contains(it.url) || hardDeadMirrors.contains(it.url) || com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url)
                 }
                 val needsDetailFetch = video == null || 
-                    forceReset ||
-                    video!!.servers.isEmpty() ||
-                    (video!!.isSeries != true && video!!.servers.size <= 1) ||
-                    allMirrorsDead ||
-                    (video!!.isSeries == true && (video!!.episodes.isEmpty() || hasMismatchedSeason))
+                    (video!!.isSeries == true && (video!!.episodes.isEmpty() || hasMismatchedSeason)) ||
+                    (video!!.isSeries != true && (forceReset || video!!.servers.isEmpty() || video!!.servers.size <= 1 || allMirrorsDead))
 
                 if (needsDetailFetch) {
                     videoRepository.fetchVideoDetails(videoId)?.let { detailed -> 
@@ -2628,6 +2643,16 @@ class VideoViewModel @Inject constructor(
                     episodeServersCache[epSlug] ?: video!!.servers
                 } else {
                     video!!.servers
+                }
+
+                if (baseServers.isNotEmpty()) {
+                    val cur = _videoMetadata.value
+                    if (cur != null && cur.servers.isEmpty()) {
+                        val updated = cur.copy(servers = baseServers)
+                        withContext(Dispatchers.Main) {
+                            _videoMetadata.value = applyMetadata(updated)
+                        }
+                    }
                 }
 
                 val extraAlt = discoveredAltServers[videoId] ?: emptyList()

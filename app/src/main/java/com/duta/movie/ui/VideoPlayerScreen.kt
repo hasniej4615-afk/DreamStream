@@ -1067,18 +1067,15 @@ fun VideoPlayerScreen(
                     val lowUrl = url.lowercase()
                     // MimeType optimization for both local and Chromecast
                     // Only use explicit path/extension indicators, NOT TLDs
-                    if (lowUrl.contains(".m3u8") || lowUrl.contains(".txt") || 
-                        lowUrl.contains("/hls/") || lowUrl.contains("/stream/")) {
+                    if (lowUrl.contains(".m3u8") || lowUrl.contains(".txt") || lowUrl.contains("/hls/")) {
                         // application/x-mpegURL is the standard for HLS on both Media3 and Cast
                         setMimeType(MimeTypes.APPLICATION_M3U8)
-                    } else if (lowUrl.contains(".mp4")) {
+                    } else if (lowUrl.contains(".mp4") || lowUrl.contains("get_video") || lowUrl.contains("/download")) {
                         setMimeType(MimeTypes.VIDEO_MP4)
                     } else if (lowUrl.contains(".mkv")) {
                         setMimeType(MimeTypes.VIDEO_MATROSKA)
                     } else if (lowUrl.contains(".webm")) {
                         setMimeType(MimeTypes.VIDEO_WEBM)
-                    } else {
-                        setMimeType(MimeTypes.APPLICATION_M3U8)
                     }
                 }
                 .setSubtitleConfigurations(
@@ -1139,7 +1136,7 @@ fun VideoPlayerScreen(
                     exoPlayer.stop()
                     exoPlayer.clearMediaItems()
                     val isHls = url.lowercase().contains(".m3u8") || url.lowercase().contains(".txt") || 
-                                url.lowercase().contains("/hls/") || url.lowercase().contains("/stream/")
+                                url.lowercase().contains("/hls/")
                     
                     if (isHls) {
                         val hlsOkHttpFactory = OkHttpDataSource.Factory(NetworkConfig.permissiveOkHttpClient).setUserAgent(NetworkConfig.SHARED_USER_AGENT)

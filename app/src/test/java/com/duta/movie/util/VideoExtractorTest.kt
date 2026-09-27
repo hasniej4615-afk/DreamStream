@@ -1163,9 +1163,14 @@ class VideoExtractorTest {
         val genericVip = VideoServer("VIP Server", "https://turboviplay.com/embed/abc123xyz")
         val genericStreamwish = VideoServer("StreamWish HD", "https://streamwish.to/e/abc123xyz")
         val genericP2p = VideoServer("Server 1", "https://ewa.playerp2p.live/#vhtfbe")
+        val episodeStreamtape = VideoServer("Episod 1 - Streamtape", "https://streamtape.com/e/6q4O8qkkb9U92gY/")
+        val episodeVoe = VideoServer("Episod 2 - VOE", "https://voe.sx/e/xyz")
+        val kudratSeries = "Kudrat (1968) High Council (2026)"
         assert(VideoExtractor.isServerMatchingMovie(targetMovie, genericVip)) { "Generic VIP server must be accepted" }
         assert(VideoExtractor.isServerMatchingMovie(targetMovie, genericStreamwish)) { "Generic StreamWish server must be accepted" }
         assert(VideoExtractor.isServerMatchingMovie(targetMovie, genericP2p)) { "Generic P2P server must be accepted" }
+        assert(VideoExtractor.isServerMatchingMovie(kudratSeries, episodeStreamtape)) { "Episode 1 Streamtape must match Kudrat" }
+        assert(VideoExtractor.isServerMatchingMovie(kudratSeries, episodeVoe)) { "Episode 2 VOE must match Kudrat" }
 
         // 5. Future unreleased movies must reject alternative partner hosts
         val futureMovie = "Avatar 5 (2031)"
