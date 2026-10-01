@@ -965,7 +965,13 @@ fun VideoPlayerScreen(
             val embedLow = (extractedUrl ?: "").lowercase()
             val isJsProtected = embedLow.contains("vidhide") || embedLow.contains("fujihide") ||
                                 embedLow.contains("tnmr.org") || embedLow.contains("morencius")
-            val stallThreshold = if (isJsProtected) 25 else 15
+            // Alternative partner embeds (Bilibili, YouTube, Dailymotion) can momentarily lose audio
+            // focus or pause for buffering without it being a true stall — give them the same extended
+            // threshold as JS-protected streams, and a resume grace when they pause unexpectedly.
+            val isAltPartnerEmbed = extractedUrl?.let {
+                com.duta.movie.util.VideoExtractor.isAlternativePartnerHost(it)
+            } ?: false
+            val stallThreshold = if (isJsProtected || isAltPartnerEmbed) 25 else 15
             val seekGracePeriod = if (isJsProtected) 20 else 10 // seconds of grace after a seek
             var lastPos = -1L
             var stallSeconds = 0
@@ -986,7 +992,7 @@ fun VideoPlayerScreen(
                         stallSeconds = 0
                         lastPos = currentPos
                     } else if (postSeekCooldown > 0) {
-                        // Actively within post-seek grace period: countdown grace without counting as stall
+                        // Actively within post-seek/pause grace period: countdown without counting stall
                         postSeekCooldown--
                         stallSeconds = 0
                         lastPos = currentPos
@@ -998,7 +1004,12 @@ fun VideoPlayerScreen(
                             stallThreshold
                         }
                         if (stallSeconds >= effectiveThreshold) {
-                            Log.w("VideoPlayerScreen", "Owl's Eye: WebView playback stall detected (frozen at ${currentPos}ms for ${stallSeconds}s). Failing over...")
+                            val hostType = when {
+                                isJsProtected -> "JS-protected"
+                                isAltPartnerEmbed -> "partner-embed"
+                                else -> "standard"
+                            }
+                            Log.w("VideoPlayerScreen", "Owl's Eye: WebView playback stall detected [$hostType] (frozen at ${currentPos}ms for ${stallSeconds}s). Failing over...")
                             val failingUrl = extractedUrl ?: currentServerUrlFromVm ?: ""
                             if (currentPos > 2000) {
                                 pendingRotationResumePosition = currentPos
@@ -1024,8 +1035,17 @@ fun VideoPlayerScreen(
                         stallSeconds = 0
                     }
                 } else {
-                    stallSeconds = 0
-                    postSeekCooldown = 0
+                    // Player is not playing (buffering pause, audio-focus interruption, etc.)
+                    // For partner embeds: grant a 15s resume grace instead of just resetting, so a
+                    // brief audio-focus loss (e.g., Bilibili abandoning focus then re-acquiring) does
+                    // not confuse the stall counter on the next isPlaying=true tick.
+                    if (!userInitiatedPause && isAltPartnerEmbed && postSeekCooldown == 0) {
+                        postSeekCooldown = 15
+                        Log.d("VideoPlayerScreen", "Owl's Eye: Partner embed paused unexpectedly (audio-focus loss?). Granting 15s resume grace.")
+                    } else {
+                        stallSeconds = 0
+                        if (!isAltPartnerEmbed) postSeekCooldown = 0
+                    }
                 }
             }
         }

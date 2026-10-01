@@ -668,7 +668,7 @@ fun VideoListScreen(
                                       val rowVideos = categoryVideos[path] ?: emptyList()
                                       val isRowLoading = categoryLoading[path] ?: false
                                       LaunchedEffect(path) { 
-                                          if (rowVideos.isEmpty()) {
+                                          if (rowVideos.isEmpty() || !viewModel.isCategoryNetworkFetched(path) || rowVideos.size < 25) {
                                               viewModel.fetchVideosForCategoryRow(path)
                                           }
                                       }
@@ -824,11 +824,14 @@ fun VideoListScreen(
                                     val isRowLoading = categoryLoading[path] ?: false
                                     
                                     LaunchedEffect(path) { 
-                                        if (rowVideos.isEmpty()) viewModel.fetchVideosForCategoryRow(path) 
+                                        if (rowVideos.isEmpty() || !viewModel.isCategoryNetworkFetched(path) || rowVideos.size < 25) {
+                                            viewModel.fetchVideosForCategoryRow(path) 
+                                        }
                                         val nextIdx = index + 1
                                         if (nextIdx < distinctCategories.size) {
                                             distinctCategories[nextIdx]["path"]?.let { nextCatPath ->
-                                                if (categoryVideos[nextCatPath].isNullOrEmpty()) {
+                                                val nextVideos = categoryVideos[nextCatPath]
+                                                if (nextVideos.isNullOrEmpty() || !viewModel.isCategoryNetworkFetched(nextCatPath) || nextVideos.size < 25) {
                                                     viewModel.fetchVideosForCategoryRow(nextCatPath)
                                                 }
                                             }
@@ -998,8 +1001,8 @@ fun HorizontalVideoRow(
                         }
                     }
                 }
-                // ON-DEMAND PAGINATION: Load next page when within 15 items of row end
-                if (categoryPath != null && uniqueVideos.size >= 15 && index >= uniqueVideos.size - 15) {
+                // ON-DEMAND PAGINATION: Load next page when within 12 items of row end
+                if (categoryPath != null && uniqueVideos.isNotEmpty() && index >= maxOf(0, uniqueVideos.size - 12)) {
                     LaunchedEffect(categoryPath, uniqueVideos.size) {
                         viewModel?.loadMoreForCategoryRow(categoryPath)
                     }

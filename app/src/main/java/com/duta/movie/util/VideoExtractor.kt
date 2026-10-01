@@ -2450,7 +2450,7 @@ object VideoExtractor {
             page > 1 -> 1
             count >= 100 -> 4
             count >= 50 -> 2
-            else -> 1
+            else -> 2
         }
         val pageJobs = (0 until pagesToFetch).map { offset ->
             async(Dispatchers.IO) {
@@ -2555,7 +2555,7 @@ object VideoExtractor {
                 page > 1 -> 1
                 count >= 100 -> 4
                 count >= 50 -> 2
-                else -> 1
+                else -> 2
             }
             val dutaWebDeferred = async(Dispatchers.IO) {
                 try {
@@ -2600,13 +2600,14 @@ object VideoExtractor {
             val ipVideos = dutaIpDeferred.await()
             Log.i(TAG, "DutaFilm Dual Fetch for $path (Page $page): IP=${ipVideos.size}, Web=${webVideos.size}")
 
+            val effCount = maxOf(count, 50)
             val combined = when {
-                webVideos.isNotEmpty() && ipVideos.isNotEmpty() -> mergeAndInterleave(ipVideos, webVideos, count)
+                webVideos.isNotEmpty() && ipVideos.isNotEmpty() -> mergeAndInterleave(ipVideos, webVideos, effCount)
                 webVideos.isNotEmpty() -> webVideos
                 ipVideos.isNotEmpty() -> ipVideos
                 else -> emptyList()
             }
-            return@withContext sortVideosByNewestRelease(combined).take(count)
+            return@withContext sortVideosByNewestRelease(combined).take(effCount)
         }
 
         if (path.contains("bullerswood", ignoreCase = true) || path.contains("lk21", ignoreCase = true)) {

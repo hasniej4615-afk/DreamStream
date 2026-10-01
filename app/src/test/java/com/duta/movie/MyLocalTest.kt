@@ -725,6 +725,19 @@ class MyLocalTest {
             assertTrue("Movies section must not contain series items, found: ${seriesInMovies.map { it.title }}", seriesInMovies.isEmpty())
         }
     }
+
+    @Test
+    fun testDutaFilmCategoryListing() {
+        kotlinx.coroutines.runBlocking {
+            println("=== TESTING DUTAFILM SECTION FETCH ===")
+            val dutaVideos = VideoExtractor.fetchVideosBySection("/source/dutafilm/", 1, 50)
+            println("DutaFilm videos fetched: ${dutaVideos.size}")
+            dutaVideos.take(20).forEachIndexed { i, v ->
+                println(" $i. ${v.title} (id=${v.id}, thumb=${v.thumbnailUrl})")
+            }
+            assertTrue("DutaFilm videos should return at least 40 titles", dutaVideos.size >= 40)
+        }
+    }
 }
 
 

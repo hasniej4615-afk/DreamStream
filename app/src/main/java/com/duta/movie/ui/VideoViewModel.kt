@@ -1219,6 +1219,7 @@ class VideoViewModel @Inject constructor(
                 }
 
                 // FAST CACHE REHYDRATION: Pre-populate all rows from Room cache instantly
+                networkFetchedCategories.clear()
                 val enabled = enabledCategoryPaths.value
                 val fetchQueue = enabled.toList().sortedBy { path -> 
                     val i = PRIORITY_PATHS.indexOf(path)
@@ -1242,9 +1243,9 @@ class VideoViewModel @Inject constructor(
                     }
                 }
 
-                // EAGER FETCH ONLY TOP ROWS: Network scrape only top priority visible rows (e.g. 4)
+                // EAGER FETCH ONLY TOP ROWS: Network scrape core and regional priority visible rows (e.g. 8)
                 // Other rows load lazily as user scrolls into them via LaunchedEffect in UI
-                val eagerQueue = fetchQueue.take(4)
+                val eagerQueue = fetchQueue.take(8)
                 eagerQueue.forEachIndexed { index, path ->
                     if (index > 0) {
                         viewModelScope.launch {
@@ -3592,12 +3593,16 @@ class VideoViewModel @Inject constructor(
 
     private val inFlightCategories = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val inFlightLoadMoreCategories = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    val networkFetchedCategories = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    fun isCategoryNetworkFetched(category: String): Boolean = networkFetchedCategories.contains(category)
 
     fun fetchVideosForCategoryRow(category: String, count: Int = 50) {
         if (_categoryLoading.value[category] == true || _isPlayerActive.value) return
         if (!inFlightCategories.add(category)) return
         viewModelScope.launch {
             _categoryLoading.update { it + (category to true) }
+            var shouldAutoFetchMore = false
             
             // OWL'S EYE: Load from cache first for instant UI!
             try {
@@ -3619,6 +3624,7 @@ class VideoViewModel @Inject constructor(
             try { 
                 val results = withContext(Dispatchers.IO) { videoRepository.fetchVideosBySection(category, page = 1, count = count) }
                 if (results.isNotEmpty()) { 
+                    networkFetchedCategories.add(category)
                     if (!_isPlayerActive.value) {
                         val withMeta = withContext(Dispatchers.Default) {
                             val sortedResults = VideoExtractor.sortVideosByNewestRelease(results.distinctBy { it.id })
@@ -3643,10 +3649,7 @@ class VideoViewModel @Inject constructor(
 
                         // PROACTIVE MULTI-PAGE: Auto-fetch page 2 when initial fetch is small
                         if (withMeta.size < 80 && categoryEndReached[category] != true) {
-                            viewModelScope.launch {
-                                delay(200)
-                                loadMoreForCategoryRow(category)
-                            }
+                            shouldAutoFetchMore = true
                         }
                     }
                 }
@@ -3658,6 +3661,11 @@ class VideoViewModel @Inject constructor(
             } finally { 
                 inFlightCategories.remove(category)
                 _categoryLoading.update { it + (category to false) } 
+                if (shouldAutoFetchMore && categoryEndReached[category] != true && !_isPlayerActive.value) {
+                    viewModelScope.launch {
+                        loadMoreForCategoryRow(category)
+                    }
+                }
             }
         }
     }

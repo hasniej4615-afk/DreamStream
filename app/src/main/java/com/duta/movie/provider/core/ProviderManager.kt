@@ -360,7 +360,13 @@ class ProviderManager @Inject constructor(
                     for (rp in remoteProviders) {
                         val local = repoDao.getProviderById(rp.id)
                         if (local != null) {
-                            val baseUrlsStr = Json.encodeToString(rp.baseUrls)
+                            val sanitizedBaseUrls = if (rp.id == "com.duta.provider.dutafilm") {
+                                val filtered = rp.baseUrls.filter { !it.contains("159.89.249.45") }
+                                if (filtered.isNotEmpty()) filtered else listOf("https://df31.mantab.men", "https://df32.mantab.men", "https://df30.mantab.men")
+                            } else {
+                                rp.baseUrls
+                            }
+                            val baseUrlsStr = Json.encodeToString(sanitizedBaseUrls)
                             val configStr = rp.config.toString()
                             val updated = local.copy(
                                 version = rp.version,
@@ -624,6 +630,13 @@ class ProviderManager @Inject constructor(
             downloadPluginFile(manifest.id, manifest.pluginUrl)
         }
 
+        val sanitizedBaseUrls = if (manifest.id == "com.duta.provider.dutafilm") {
+            val filtered = manifest.baseUrls.filter { !it.contains("159.89.249.45") }
+            if (filtered.isNotEmpty()) filtered else listOf("https://df31.mantab.men", "https://df32.mantab.men", "https://df30.mantab.men")
+        } else {
+            manifest.baseUrls
+        }
+
         val entity = InstalledProviderEntity(
             id = manifest.id,
             repoId = manifest.repoId,
@@ -637,7 +650,7 @@ class ProviderManager @Inject constructor(
             mediaType = manifest.mediaType.name,
             engineType = manifest.engineType.name,
             templateType = manifest.templateType.name,
-            baseUrlsJson = Json.encodeToString(manifest.baseUrls),
+            baseUrlsJson = Json.encodeToString(sanitizedBaseUrls),
             configJson = manifest.config.toString(),
             pluginUrl = manifest.pluginUrl,
             status = manifest.status.name,
