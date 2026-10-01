@@ -147,6 +147,70 @@ class VideoViewModel @Inject constructor(
         }
     }
 
+    private val _isDiagnosingEndpoints = MutableStateFlow(false)
+    val isDiagnosingEndpoints: StateFlow<Boolean> = _isDiagnosingEndpoints.asStateFlow()
+
+    private val _diagnosticResults = MutableStateFlow<List<com.duta.movie.provider.diagnostic.EndpointTestResult>>(emptyList())
+    val diagnosticResults: StateFlow<List<com.duta.movie.provider.diagnostic.EndpointTestResult>> = _diagnosticResults.asStateFlow()
+
+    private val _diagnosticSummaries = MutableStateFlow<List<com.duta.movie.provider.diagnostic.ProviderDiagnosticSummary>>(emptyList())
+    val diagnosticSummaries: StateFlow<List<com.duta.movie.provider.diagnostic.ProviderDiagnosticSummary>> = _diagnosticSummaries.asStateFlow()
+
+    fun runProviderDiagnostics() {
+        val providers = installedProviders.value
+        if (providers.isEmpty() || _isDiagnosingEndpoints.value) return
+        _isDiagnosingEndpoints.value = true
+        _diagnosticResults.value = emptyList()
+        _diagnosticSummaries.value = emptyList()
+
+        viewModelScope.launch {
+            try {
+                val summaries = com.duta.movie.provider.diagnostic.ProviderDiagnosticManager.testAllEndpoints(
+                    providers = providers,
+                    concurrency = 6,
+                    onProgress = { newResult ->
+                        _diagnosticResults.update { current -> current + newResult }
+                    }
+                )
+                _diagnosticSummaries.value = summaries
+            } catch (e: Throwable) {
+                Log.e("VideoViewModel", "Provider diagnostics failed", e)
+            } finally {
+                _isDiagnosingEndpoints.value = false
+            }
+        }
+    }
+
+    fun applyEndpointAsPrimary(providerId: String, url: String, onComplete: ((String) -> Unit)? = null) {
+        viewModelScope.launch {
+            try {
+                val clean = url.trimEnd('/')
+                val low = providerId.lowercase()
+                when {
+                    low.contains("pencuri") -> {
+                        com.duta.movie.util.VideoExtractor.updatePencuriBaseUrl(clean)
+                        com.duta.movie.util.VideoExtractor.setBaseUrl(clean)
+                    }
+                    low.contains("dutafilm") -> {
+                        com.duta.movie.util.VideoExtractor.setDutaFilmWebBaseUrl(clean)
+                    }
+                    low.contains("lk21") || low.contains("bullerswood") -> {
+                        com.duta.movie.util.VideoExtractor.setBullerswoodBaseUrl(clean)
+                    }
+                    low.contains("dutamovie") -> {
+                        com.duta.movie.util.VideoExtractor.setDutaMovieBaseUrl(clean)
+                    }
+                    else -> {
+                        com.duta.movie.util.VideoExtractor.setBaseUrl(clean)
+                    }
+                }
+                onComplete?.invoke("Active base updated to: $clean")
+            } catch (e: Throwable) {
+                onComplete?.invoke("Failed to update base: ${e.message}")
+            }
+        }
+    }
+
     private val _recommendationCounts = MutableStateFlow<Map<String, Int>>(emptyMap())
     val recommendationCounts: StateFlow<Map<String, Int>> = _recommendationCounts.asStateFlow()
 

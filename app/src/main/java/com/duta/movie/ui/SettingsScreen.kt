@@ -92,6 +92,7 @@ fun SettingsScreen(
     val languages = listOf("English", "Indonesian", "Malay", "Japanese", "Chinese", "Thai", "Arabic")
 
     var showChangelogDialog by remember { mutableStateOf(false) }
+    var showProviderDiagnostics by remember { mutableStateOf(false) }
     var cacheSize by remember { mutableStateOf(context.getString(R.string.calculating)) }
     var versionTapCount by remember { mutableStateOf(0) }
 
@@ -851,6 +852,17 @@ fun SettingsScreen(
                                                 Spacer(modifier = Modifier.width(8.dp))
                                                 Text("Open Extension & Repo Manager (${installedProviders.size} Installed)")
                                             }
+                                            Spacer(modifier = Modifier.height(8.dp))
+                                            OutlinedButton(
+                                                onClick = { showProviderDiagnostics = true },
+                                                modifier = Modifier.fillMaxWidth(),
+                                                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFF4CAF50)),
+                                                border = BorderStroke(1.dp, Color(0xFF4CAF50).copy(alpha = 0.6f))
+                                            ) {
+                                                Icon(Icons.Default.NetworkCheck, contentDescription = null, tint = Color(0xFF4CAF50))
+                                                Spacer(modifier = Modifier.width(8.dp))
+                                                Text("Test Repo Provider Endpoints & IPs", fontWeight = FontWeight.SemiBold)
+                                            }
                                         }
                                     }
                                 }
@@ -1184,6 +1196,14 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+    if (showProviderDiagnostics) {
+        com.duta.movie.ui.repo.ProviderDiagnosticDialog(
+            viewModel = viewModel,
+            isTV = isTV,
+            onDismiss = { showProviderDiagnostics = false }
+        )
     }
 
     if (manualUpdateInfo != null) {

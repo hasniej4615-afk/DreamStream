@@ -41,8 +41,10 @@ fun RepoManagerScreen(
     onBackClick: () -> Unit
 ) {
     val context = LocalContext.current
+    val isTV = remember { com.duta.movie.util.DeviceUtils.isTvDevice(context) }
     var selectedTab by remember { mutableStateOf(RepoTab.INSTALLED) }
     var showAddRepoDialog by remember { mutableStateOf(false) }
+    var showDiagnosticDialog by remember { mutableStateOf(false) }
     var repoToDelete by remember { mutableStateOf<InstalledRepoEntity?>(null) }
     var providerToUninstall by remember { mutableStateOf<InstalledProviderEntity?>(null) }
 
@@ -106,6 +108,13 @@ fun RepoManagerScreen(
                                 contentDescription = "Sync"
                             )
                         }
+                    }
+                    IconButton(onClick = { showDiagnosticDialog = true }) {
+                        Icon(
+                            imageVector = Icons.Default.NetworkCheck,
+                            contentDescription = "Test Provider Mirrors",
+                            tint = androidx.compose.ui.graphics.Color(0xFF4CAF50)
+                        )
                     }
                     IconButton(onClick = { showAddRepoDialog = true }) {
                         Icon(
@@ -275,6 +284,14 @@ fun RepoManagerScreen(
                     Text("Cancel")
                 }
             }
+        )
+    }
+
+    if (showDiagnosticDialog) {
+        ProviderDiagnosticDialog(
+            viewModel = viewModel,
+            isTV = isTV,
+            onDismiss = { showDiagnosticDialog = false }
         )
     }
 }

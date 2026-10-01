@@ -992,7 +992,7 @@ fun VideoPlayerScreen(
                     } else if (currentPos >= 0L && currentPos == lastPos) {
                         stallSeconds++
                         val effectiveThreshold = if (currentPos <= 1000L) {
-                            if (isJsProtected) 8 else 6
+                            if (isJsProtected) (if (isTV) 10 else 8) else (if (isTV) 8 else 6)
                         } else {
                             stallThreshold
                         }
@@ -3035,16 +3035,18 @@ fun VideoPlayerWebView(
                     descendantFocusability = android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
                     // Dispatch a synthetic touch so JWPlayer's gesture detector initializes
                     post {
+                        val x = if (width > 0) width / 2f else resources.displayMetrics.widthPixels / 2f
+                        val y = if (height > 0) height / 2f else resources.displayMetrics.heightPixels / 2f
                         val e = android.view.MotionEvent.obtain(
                             android.os.SystemClock.uptimeMillis(),
                             android.os.SystemClock.uptimeMillis(),
-                            android.view.MotionEvent.ACTION_DOWN, width / 2f, height / 2f, 0
+                            android.view.MotionEvent.ACTION_DOWN, x, y, 0
                         )
                         dispatchTouchEvent(e)
                         val eUp = android.view.MotionEvent.obtain(
                             android.os.SystemClock.uptimeMillis(),
                             android.os.SystemClock.uptimeMillis(),
-                            android.view.MotionEvent.ACTION_UP, width / 2f, height / 2f, 0
+                            android.view.MotionEvent.ACTION_UP, x, y, 0
                         )
                         dispatchTouchEvent(eUp)
                         e.recycle()
