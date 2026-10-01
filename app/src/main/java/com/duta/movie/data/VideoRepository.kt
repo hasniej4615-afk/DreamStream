@@ -493,9 +493,32 @@ class VideoRepository @Inject constructor(
             else -> old.season
         }
 
+        val resolvedVideoUrl = when {
+            new.videoUrl.isNotBlank() && !new.videoUrl.contains("?epid=") -> new.videoUrl
+            old.videoUrl.isNotBlank() && !old.videoUrl.contains("?epid=") -> old.videoUrl
+            new.videoUrl.isNotBlank() -> new.videoUrl.substringBefore('?')
+            old.videoUrl.isNotBlank() -> old.videoUrl.substringBefore('?')
+            else -> ""
+        }
+
+        val resolvedServers = if (resolvedIsSeries == true && new.servers.isNotEmpty()) {
+            new.servers.filter { s ->
+                val lowU = s.url.lowercase()
+                !(lowU.endsWith(".html") || lowU.contains("/watch/"))
+            }
+        } else {
+            (new.servers + old.servers).distinctBy { it.url.trimEnd('/') }.filter {
+                val lowU = it.url.lowercase()
+                val lowN = it.name.lowercase()
+                !lowU.contains("google.com") && !lowU.contains("pagead") && !lowU.contains("/aclk") &&
+                !lowN.contains("google.com") && !lowN.contains("pagead") &&
+                !(lowU.endsWith(".html") || lowU.contains("/watch/"))
+            }.sortedByDescending { VideoExtractor.getProviderPriority(it.name, it.url) }
+        }
+
         return old.copy(
             title = if (cleanedNewTitle.length > cleanedOldTitle.length) cleanedNewTitle else cleanedOldTitle,
-            videoUrl = old.videoUrl,
+            videoUrl = resolvedVideoUrl,
             thumbnailUrl = if (resolvedThumbnail.isNotEmpty()) resolvedThumbnail else resolvedBackdrop,
             backdropUrl = if (resolvedBackdrop.isNotEmpty()) resolvedBackdrop else resolvedThumbnail,
             actresses = (new.actresses + old.actresses).distinct().filter { it.isNotEmpty() },
@@ -507,12 +530,7 @@ class VideoRepository @Inject constructor(
             season = resolvedSeason,
             description = if (new.description.length > old.description.length) new.description else old.description,
             previewUrl = if (new.previewUrl.isNotEmpty()) new.previewUrl else old.previewUrl,
-            servers = (new.servers + old.servers).distinctBy { it.url.trimEnd('/') }.filter {
-                val lowU = it.url.lowercase()
-                val lowN = it.name.lowercase()
-                !lowU.contains("google.com") && !lowU.contains("pagead") && !lowU.contains("/aclk") &&
-                !lowN.contains("google.com") && !lowN.contains("pagead")
-            }.sortedByDescending { VideoExtractor.getProviderPriority(it.name, it.url) },
+            servers = resolvedServers,
             episodes = resolvedEpisodes,
             isSeries = resolvedIsSeries,
             imdbId = if (new.imdbId?.isNotEmpty() == true) new.imdbId else old.imdbId

@@ -1477,13 +1477,23 @@ class VideoViewModel @Inject constructor(
     }
 
     fun loadFullDetails(videoId: String) { 
+        val isCompleteCached: (Video?) -> Boolean = { v ->
+            v != null && (
+                v.episodes.isNotEmpty() ||
+                (v.isSeries == false && v.servers.isNotEmpty() && !v.servers.all { it.url.contains(".html") || it.url.contains("/watch/") } && !v.servers.any { it.url.contains("epid=") })
+            )
+        }
+
         val immediateCached = metadataCache[videoId] ?: videoRepository.getCachedVideo(videoId)
-        if (immediateCached != null && (immediateCached.servers.isNotEmpty() || immediateCached.episodes.isNotEmpty())) {
-            _videoMetadata.value = applyMetadata(immediateCached)
+        if (isCompleteCached(immediateCached)) {
+            _videoMetadata.value = applyMetadata(immediateCached!!)
             _isDetailLoading.value = false
             _isLoading.value = false
         } else if (_videoMetadata.value?.id != videoId) {
             _videoMetadata.value = immediateCached ?: getVideo(videoId) 
+            _isDetailLoading.value = true
+        } else {
+            _isDetailLoading.value = true
         }
 
         loadComments(videoId)
@@ -1501,17 +1511,15 @@ class VideoViewModel @Inject constructor(
                     }
                 }
 
-                // Instant cache/DB check: if memory or local DB already has servers/episodes, display them immediately
+                // Instant cache/DB check: if memory or local DB already has verified servers/episodes, display them immediately
                 val cached = metadataCache[videoId] ?: videoRepository.getCachedVideo(videoId)
-                val hasCachedContent = cached != null && (cached.servers.isNotEmpty() || cached.episodes.isNotEmpty())
-                if (hasCachedContent) {
+                if (isCompleteCached(cached)) {
                     _videoMetadata.value = applyMetadata(cached!!)
                     _isDetailLoading.value = false
                     _isLoading.value = false
                 } else {
                     val dbVideo = videoRepository.getCachedOrDbVideo(videoId)
-                    val hasDbContent = dbVideo != null && (dbVideo.servers.isNotEmpty() || dbVideo.episodes.isNotEmpty())
-                    if (hasDbContent) {
+                    if (isCompleteCached(dbVideo)) {
                         _videoMetadata.value = applyMetadata(dbVideo!!)
                         updateMetadataCache(listOf(dbVideo), triggerBackground = false)
                         _isDetailLoading.value = false
@@ -2244,7 +2252,7 @@ class VideoViewModel @Inject constructor(
                 } == true
 
                 // Fetch basic metadata if missing episodes or cached episodes belong to wrong season
-                if (video == null || (video!!.isSeries == true && (video!!.episodes.isEmpty() || hasMismatchedSeason))) {
+                if (video == null || ((video!!.isSeries == true || videoId.startsWith("dfw_") || episodeUrl?.contains("epid=") == true) && (video!!.episodes.isEmpty() || hasMismatchedSeason))) {
                     videoRepository.fetchVideoDetails(videoId)?.let { detailed -> 
                         metadataCache[videoId] = detailed
                         video = detailed
@@ -4375,7 +4383,12 @@ class VideoViewModel @Inject constructor(
 
     fun applyMetadata(video: Video): Video {
         val cached = metadataCache[video.id] ?: return video
-        val baseServers = if (cached.servers.size >= video.servers.size) cached.servers else video.servers
+        val isEffectiveSeries = video.isSeries == true || video.episodes.isNotEmpty() || cached.isSeries == true || cached.episodes.isNotEmpty()
+        val baseServers = if (isEffectiveSeries && video.servers.isNotEmpty() && !video.servers.all { it.url.contains(".html") || it.url.contains("/watch/") }) {
+            video.servers
+        } else if (cached.servers.size >= video.servers.size && !cached.servers.all { it.url.contains(".html") || it.url.contains("/watch/") }) {
+            cached.servers
+        } else video.servers
         val extra = discoveredAltServers[video.id] ?: emptyList()
         val combinedServers = if (extra.isNotEmpty()) {
             val existingUrls = baseServers.map { it.url }.toSet()
@@ -4385,6 +4398,7 @@ class VideoViewModel @Inject constructor(
         val targetMeta = com.duta.movie.util.VideoExtractor.parseMovieTitleMeta(video.title, video.date)
         val validServers = combinedServers.filter { s ->
             val lowUrl = s.url.lowercase()
+            if (lowUrl.endsWith(".html") || lowUrl.contains("/watch/")) return@filter false
             val isAlt = lowUrl.contains("youtube") || lowUrl.contains("youtu.be") ||
                         lowUrl.contains("dailymotion") || lowUrl.contains("dai.ly") ||
                         lowUrl.contains("bilibili")
@@ -4417,7 +4431,12 @@ class VideoViewModel @Inject constructor(
             resolvedThumb.isNotEmpty() -> resolvedThumb
             else -> ""
         }
+        val cleanUrl = if (video.id.startsWith("dfw_") && !video.id.contains("_ep") && video.videoUrl.contains("epid=")) {
+            video.videoUrl.substringBefore('?')
+        } else video.videoUrl
+
         return video.copy(
+            videoUrl = cleanUrl,
             thumbnailUrl = if (resolvedThumb.isNotEmpty()) resolvedThumb else resolvedBackdrop,
             backdropUrl = if (resolvedBackdrop.isNotEmpty()) resolvedBackdrop else resolvedThumb,
             previewUrl = if (video.previewUrl.isNotEmpty()) video.previewUrl else cached.previewUrl,

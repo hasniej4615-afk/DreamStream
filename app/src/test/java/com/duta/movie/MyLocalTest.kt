@@ -5,6 +5,7 @@ import com.duta.movie.util.VideoExtractor
 import com.duta.movie.util.NetworkConfig
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertNotNull
 import com.duta.movie.ui.VideoViewModel
 
 class MyLocalTest {
@@ -727,15 +728,52 @@ class MyLocalTest {
     }
 
     @Test
-    fun testDutaFilmCategoryListing() {
+    fun testTheEastPalaceEpisodes() {
         kotlinx.coroutines.runBlocking {
-            println("=== TESTING DUTAFILM SECTION FETCH ===")
-            val dutaVideos = VideoExtractor.fetchVideosBySection("/source/dutafilm/", 1, 50)
-            println("DutaFilm videos fetched: ${dutaVideos.size}")
-            dutaVideos.take(20).forEachIndexed { i, v ->
-                println(" $i. ${v.title} (id=${v.id}, thumb=${v.thumbnailUrl})")
+            println("=== TESTING THE EAST PALACE (2026) END-TO-END ===")
+            val urlWithEpid = "https://df31.mantab.men/watch/the-east-palace-2026-bjkv.html?epid=MbQgXfRw4S&cat=hs&tag=ind"
+            val htmlWithEpid = VideoExtractor.fetchHtml(urlWithEpid) ?: ""
+            val docWithEpid = org.jsoup.Jsoup.parse(htmlWithEpid, urlWithEpid)
+            println("Calling resolveDfwEpisodesAndServers with urlWithEpid...")
+            val (eps, srvs) = VideoExtractor.resolveDfwEpisodesAndServers(
+                docWithEpid, htmlWithEpid, urlWithEpid, "The East Palace (2026)", "Season 1", false, true
+            )
+            println("resolveDfwEpisodesAndServers result: eps=${eps.size}, srvs=${srvs.size}")
+            eps.forEach { println("  Ep: ${it.name} -> ${it.url}") }
+            srvs.forEach { println("  Srv: ${it.name} -> ${it.url}") }
+
+            val details = VideoExtractor.fetchVideoDetails(urlWithEpid)
+            assertNotNull("Details should not be null", details)
+            println("Title: ${details?.title}")
+            println("isSeries: ${details?.isSeries}")
+            println("episodes count: ${details?.episodes?.size}")
+            details?.episodes?.forEach { ep ->
+                println("  ${ep.name} -> ${ep.url}")
             }
-            assertTrue("DutaFilm videos should return at least 40 titles", dutaVideos.size >= 40)
+            println("servers count: ${details?.servers?.size}")
+            details?.servers?.forEach { s ->
+                println("  ${s.name} -> ${s.url}")
+            }
+
+            assertTrue("The East Palace must be recognized as a series", details?.isSeries == true)
+            assertTrue("The East Palace must have at least 8 episodes, found: ${details?.episodes?.size}", (details?.episodes?.size ?: 0) >= 8)
+            assertTrue("The East Palace must have playable servers for episode 1", details?.servers?.isNotEmpty() == true)
+
+            println("\n=== TESTING MOVIE OBSESSION FAST-PATH ===")
+            val movieUrl = "https://df31.mantab.men/watch/obsession-2026-1t68.html"
+            val movieDetails = VideoExtractor.fetchVideoDetails(movieUrl)
+            assertNotNull("Movie details should not be null", movieDetails)
+            println("Movie Title: ${movieDetails?.title}")
+            println("Movie isSeries: ${movieDetails?.isSeries}")
+            println("Movie episodes count: ${movieDetails?.episodes?.size}")
+            println("Movie servers count: ${movieDetails?.servers?.size}")
+            movieDetails?.servers?.forEach { s ->
+                println("  ${s.name} -> ${s.url}")
+            }
+
+            assertTrue("Obsession must NOT be a series", movieDetails?.isSeries == false)
+            assertTrue("Obsession must have 0 episodes", movieDetails?.episodes?.isEmpty() == true)
+            assertTrue("Obsession must have servers", movieDetails?.servers?.isNotEmpty() == true)
         }
     }
 }
