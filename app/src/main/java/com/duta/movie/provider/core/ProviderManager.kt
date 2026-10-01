@@ -39,8 +39,10 @@ class ProviderManager @Inject constructor(
         val CORE_PROVIDER_IDS = setOf(
             "com.duta.provider.pencurimovie",
             "com.duta.provider.dutafilm",
+            "com.duta.provider.pusatfilm",
             "com.duta.provider.lk21",
-            "com.duta.provider.pramlee"
+            "com.duta.provider.pramlee",
+            "com.duta.provider.dutamovie"
         )
     }
 
@@ -64,7 +66,20 @@ class ProviderManager @Inject constructor(
             seedDefaultProvidersIfEmpty()
             loadCachedOnlineProvidersFromDisk()
             initializeActiveProviders()
+
+            // Allow network to settle after cold app start before initial auto-sync
+            delay(2000L)
             syncAllRepositories()
+
+            // Continuous background periodic auto-sync every 4 hours while app process is alive
+            while (isActive) {
+                delay(4 * 60 * 60 * 1000L)
+                try {
+                    syncAllRepositories()
+                } catch (e: Exception) {
+                    Log.w(TAG, "Periodic auto-sync notice: ${e.message}")
+                }
+            }
         }
     }
 
@@ -157,21 +172,38 @@ class ProviderManager @Inject constructor(
                     priorityOrder = 2
                 ),
                 InstalledProviderEntity(
+                    id = "com.duta.provider.pusatfilm",
+                    repoId = OFFICIAL_REPO_ID,
+                    name = "Pusatfilm21",
+                    displayName = "PusatFilm21 (K-Drama, Series & Cinema)",
+                    description = "Asian & Korean Drama, Netflix series, Western series, and trending blockbuster cinema.",
+                    author = "DreamStream Team",
+                    version = 1,
+                    versionName = "1.0.0",
+                    mediaType = "MULTI",
+                    engineType = "TEMPLATE",
+                    templateType = "WORDPRESS_MUVIPRO",
+                    baseUrlsJson = "[\"https://v5.pusatfilm21info.com\", \"https://site2.pusatfilm21info.com\"]",
+                    configJson = "{\"searchPath\": \"/?s=\", \"isSeriesSupported\": true}",
+                    isEnabled = true,
+                    priorityOrder = 3
+                ),
+                InstalledProviderEntity(
                     id = "com.duta.provider.lk21",
                     repoId = OFFICIAL_REPO_ID,
                     name = "LK21 Bullerswood",
                     displayName = "LK21 / LayarKaca21",
                     description = "Extensive collection of Indonesian and international cinema and dramas.",
                     author = "DreamStream Team",
-                    version = 1,
-                    versionName = "1.0.0",
+                    version = 2,
+                    versionName = "1.0.1",
                     mediaType = "MOVIE",
                     engineType = "TEMPLATE",
                     templateType = "WORDPRESS_MUVIPRO",
-                    baseUrlsJson = "[\"https://bullerswood.org\", \"https://scphi.org\", \"https://grishamfarms.org\"]",
+                    baseUrlsJson = "[\"https://inlionsforisbvi.org\", \"https://bullerswood.org\", \"https://scphi.org\", \"https://grishamfarms.org\"]",
                     configJson = "{\"searchPath\": \"/?s=\"}",
                     isEnabled = true,
-                    priorityOrder = 3
+                    priorityOrder = 4
                 ),
                 InstalledProviderEntity(
                     id = "com.duta.provider.pramlee",
@@ -188,16 +220,108 @@ class ProviderManager @Inject constructor(
                     baseUrlsJson = "[\"https://archive.org\"]",
                     configJson = "{\"archiveCollection\": \"FilemP.ramlee\"}",
                     isEnabled = true,
-                    priorityOrder = 4
+                    priorityOrder = 5
+                ),
+                InstalledProviderEntity(
+                    id = "com.duta.provider.dutamovie",
+                    repoId = OFFICIAL_REPO_ID,
+                    name = "DutaMovie21",
+                    displayName = "DUTAMOVIE21 (Cinema & Series)",
+                    description = "DUTAMOVIE21 streaming portal for blockbuster cinema, LK21, and TV series.",
+                    author = "DreamStream Team",
+                    version = 3,
+                    versionName = "2.0.1",
+                    mediaType = "MULTI",
+                    engineType = "TEMPLATE",
+                    templateType = "WORDPRESS_MUVIPRO",
+                    baseUrlsJson = "[\"https://balletroyale.com\", \"https://dutamovie21.cam\", \"https://dutamovie21.art\", \"https://204.3.234.75\"]",
+                    configJson = "{\"searchPath\": \"/?s=\", \"isSeriesSupported\": true}",
+                    isEnabled = true,
+                    priorityOrder = 6
                 )
             )
             repoDao.insertOrUpdateProviders(defaultProviders)
         } else {
+            // Self-heal: ensure PusatFilm21 exists for existing installations
+            val pusatfilm = existingProviders.find { it.id == "com.duta.provider.pusatfilm" }
+            if (pusatfilm == null) {
+                val pfEntity = InstalledProviderEntity(
+                    id = "com.duta.provider.pusatfilm",
+                    repoId = OFFICIAL_REPO_ID,
+                    name = "Pusatfilm21",
+                    displayName = "PusatFilm21 (K-Drama, Series & Cinema)",
+                    description = "Asian & Korean Drama, Netflix series, Western series, and trending blockbuster cinema.",
+                    author = "DreamStream Team",
+                    version = 1,
+                    versionName = "1.0.0",
+                    mediaType = "MULTI",
+                    engineType = "TEMPLATE",
+                    templateType = "WORDPRESS_MUVIPRO",
+                    baseUrlsJson = "[\"https://v5.pusatfilm21info.com\", \"https://site2.pusatfilm21info.com\"]",
+                    configJson = "{\"searchPath\": \"/?s=\", \"isSeriesSupported\": true}",
+                    isEnabled = true,
+                    priorityOrder = 3
+                )
+                repoDao.insertOrUpdateProvider(pfEntity)
+            }
+
+            // Self-heal: ensure DUTAMOVIE21 (balletroyale.com / dutamovie21.cam / 204.3.234.75) exists for existing installations
+            val dutamovie = existingProviders.find { it.id == "com.duta.provider.dutamovie" }
+            if (dutamovie == null) {
+                val dmEntity = InstalledProviderEntity(
+                    id = "com.duta.provider.dutamovie",
+                    repoId = OFFICIAL_REPO_ID,
+                    name = "DutaMovie21",
+                    displayName = "DUTAMOVIE21 (Cinema & Series)",
+                    description = "DUTAMOVIE21 streaming portal for blockbuster cinema, LK21, and TV series.",
+                    author = "DreamStream Team",
+                    version = 4,
+                    versionName = "2.0.2",
+                    mediaType = "MULTI",
+                    engineType = "TEMPLATE",
+                    templateType = "WORDPRESS_MUVIPRO",
+                    baseUrlsJson = "[\"https://balletroyale.com\", \"https://dutamovie21.cam\", \"https://dutamovie21.art\", \"https://204.3.234.75\"]",
+                    configJson = "{\"searchPath\": \"/?s=\", \"isSeriesSupported\": true}",
+                    isEnabled = true,
+                    priorityOrder = 6
+                )
+                repoDao.insertOrUpdateProvider(dmEntity)
+            } else if (!dutamovie.baseUrlsJson.contains("balletroyale.com")) {
+                repoDao.insertOrUpdateProvider(
+                    dutamovie.copy(
+                        baseUrlsJson = "[\"https://balletroyale.com\", \"https://dutamovie21.cam\", \"https://dutamovie21.art\", \"https://204.3.234.75\"]",
+                        version = dutamovie.version + 1,
+                        versionName = "2.0.2"
+                    )
+                )
+            }
+
+            // Self-heal: purge dead/blacklisted providers from database
+            for (p in existingProviders) {
+                val target = "${p.id} ${p.name} ${p.displayName} ${p.baseUrlsJson}"
+                if (RepoService.isDeadOrBlacklisted(target)) {
+                    repoDao.deleteProviderById(p.id)
+                }
+            }
+
             // Self-heal: ensure DutaFilm provider does not have WordPress IP in baseUrlsJson
             val dutafilm = existingProviders.find { it.id == "com.duta.provider.dutafilm" }
             if (dutafilm != null && dutafilm.baseUrlsJson.contains("159.89.249.45")) {
                 val cleanedJson = "[\"https://df31.mantab.men\", \"https://df32.mantab.men\", \"https://df30.mantab.men\"]"
                 repoDao.insertOrUpdateProviders(listOf(dutafilm.copy(baseUrlsJson = cleanedJson)))
+            }
+
+            // Self-heal: ensure LK21 provider includes inlionsforisbvi.org for existing installations
+            val lk21 = existingProviders.find { it.id == "com.duta.provider.lk21" }
+            if (lk21 != null && !lk21.baseUrlsJson.contains("inlionsforisbvi.org")) {
+                val updatedJson = "[\"https://inlionsforisbvi.org\", \"https://bullerswood.org\", \"https://scphi.org\", \"https://grishamfarms.org\"]"
+                repoDao.insertOrUpdateProvider(
+                    lk21.copy(
+                        baseUrlsJson = updatedJson,
+                        version = lk21.version + 1,
+                        versionName = "1.0.1"
+                    )
+                )
             }
         }
     }
@@ -265,6 +389,13 @@ class ProviderManager @Inject constructor(
                                 updatedAt = System.currentTimeMillis()
                             )
                             repoDao.insertOrUpdateProvider(updated)
+                        } else if (rp.isEnabledDefault && rp.status == com.duta.movie.provider.model.ProviderStatus.ACTIVE) {
+                            // Automatically install official default providers added remotely in Supabase
+                            try {
+                                installProvider(rp)
+                            } catch (e: Exception) {
+                                Log.w(TAG, "Notice: could not auto-install default provider ${rp.id}: ${e.message}")
+                            }
                         }
                     }
                 }
@@ -305,6 +436,7 @@ class ProviderManager @Inject constructor(
                 }
             }
 
+            lastAutoSyncTimestamp = System.currentTimeMillis()
             recomputeOnlineProviders()
             initializeActiveProviders()
             Result.success("Sync completed (${_availableOnlineProviders.value.size} extensions available)")
@@ -314,6 +446,20 @@ class ProviderManager @Inject constructor(
         } finally {
             _isSyncing.value = false
         }
+    }
+
+    private var lastAutoSyncTimestamp: Long = 0L
+
+    /**
+     * Automatically syncs if at least [minIntervalMs] has passed since last sync.
+     * Prevents redundant rapid network requests.
+     */
+    suspend fun autoSyncIfNeeded(minIntervalMs: Long = 30 * 60 * 1000L): Result<String>? {
+        val now = System.currentTimeMillis()
+        if (now - lastAutoSyncTimestamp < minIntervalMs || _isSyncing.value) {
+            return null
+        }
+        return syncAllRepositories()
     }
 
     suspend fun syncWithSupabaseSilent() = syncAllRepositories()
@@ -360,8 +506,9 @@ class ProviderManager @Inject constructor(
         }
         if (customProviders.isEmpty()) return@coroutineScope emptyList()
 
-        val isSeries = categoryPath.contains("series", ignoreCase = true) || categoryPath.contains("tv", ignoreCase = true)
-        val isMovie = categoryPath == "/" || categoryPath == "/movies/" || categoryPath.contains("movie", ignoreCase = true)
+        val isNewlyUpdated = categoryPath == "/" || categoryPath.isBlank()
+        val isSeries = !isNewlyUpdated && (categoryPath.contains("series", ignoreCase = true) || categoryPath.contains("tv", ignoreCase = true))
+        val isMovie = !isNewlyUpdated && (categoryPath == "/movies/" || categoryPath == "/movie/" || categoryPath.contains("movie", ignoreCase = true))
 
         val deferredList: List<Deferred<List<Video>>> = customProviders.mapNotNull { provider ->
             // Filter by media type if provider specializes strictly in Movies or Series
@@ -426,7 +573,9 @@ class ProviderManager @Inject constructor(
         val matchingProvider = activeProviderInstances.values.firstOrNull { p ->
             video.id.startsWith("${p.id}_") ||
             (p.id.contains("dutafilm") && VideoExtractor.isDutaFilmWeb(video.id, video.videoUrl)) ||
+            (p.id.contains("dutamovie") && VideoExtractor.isDutaMovie(video.id, video.videoUrl)) ||
             (p.id.contains("pencuri") && VideoExtractor.isPencuriMovie(video.id, video.videoUrl)) ||
+            (p.id.contains("pusatfilm") && VideoExtractor.isPusatfilm(video.id, video.videoUrl)) ||
             (p.id.contains("lk21") && VideoExtractor.isBullerswood(video.id, video.videoUrl)) ||
             (p.id.contains("pramlee") && video.id.startsWith("ia_pramlee"))
         }

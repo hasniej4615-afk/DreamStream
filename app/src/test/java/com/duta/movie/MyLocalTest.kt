@@ -282,15 +282,54 @@ class MyLocalTest {
         assertTrue(VideoExtractor.isWhitelistedHost("voe.sx"))
         assertTrue(VideoExtractor.isWhitelistedHost("hgcloud.to"))
         assertTrue(VideoExtractor.isWhitelistedHost("dailymotion.com"))
+        assertTrue(VideoExtractor.isWhitelistedHost("204.3.234.75"))
 
         // Known dead/gate hosts or unknown spam domains must NOT be whitelisted
         org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost("tv5.rebahinxxi.auction"))
-        org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost("204.3.234.75"))
         org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost("listeamed.net"))
         org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost("ww1.listeamed.net"))
         org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost("unknown-spam-ads.com"))
         org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost(""))
         org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost(null))
+    }
+
+    @Test
+    fun testDutaMovie21Integration() {
+        assertTrue(VideoExtractor.isWhitelistedHost("204.3.234.75"))
+        assertTrue(VideoExtractor.isWhitelistedHost("dutamovie21.cam"))
+        assertTrue(VideoExtractor.isWhitelistedHost("https://dutamovie21.cam/film/oppenheimer-2023/"))
+        assertTrue(VideoExtractor.isDutaMovie(videoId = "dm_oppenheimer-2023"))
+        assertTrue(VideoExtractor.isDutaMovie(videoId = "dm_film_oppenheimer-2023"))
+        assertTrue(VideoExtractor.isDutaMovie(videoUrl = "https://dutamovie21.cam/film/oppenheimer-2023/"))
+        assertTrue(VideoExtractor.isPrimaryProviderServer("https://dutamovie21.cam/film/oppenheimer-2023/"))
+        assertEquals("dm_film_oppenheimer-2023", VideoExtractor.extractStableId("https://dutamovie21.cam/film/oppenheimer-2023/"))
+        assertEquals("oppenheimer-2023", VideoExtractor.stripSourcePrefix("dm_film_oppenheimer-2023"))
+        assertEquals("https://balletroyale.com/film/oppenheimer-2023/", VideoExtractor.migrateUrlToBase("https://dutamovie21.cam/film/oppenheimer-2023/"))
+        assertEquals("https://balletroyale.com/film/oppenheimer-2023/", VideoExtractor.resolveVideoUrl("dm_film_oppenheimer-2023"))
+
+        assertTrue(VideoExtractor.isWhitelistedHost("dutamovie21.art"))
+        assertTrue(VideoExtractor.isWhitelistedHost("https://dutamovie21.art/one-piece-heroine-2026/"))
+        assertTrue(VideoExtractor.isDutaMovie(videoUrl = "https://dutamovie21.art/one-piece-heroine-2026/"))
+        assertTrue(VideoExtractor.isPrimaryProviderServer("https://dutamovie21.art/one-piece-heroine-2026/"))
+        assertEquals("dm_one-piece-heroine-2026", VideoExtractor.extractStableId("https://dutamovie21.art/one-piece-heroine-2026/"))
+
+        assertTrue(VideoExtractor.isWhitelistedHost("balletroyale.com"))
+        assertTrue(VideoExtractor.isWhitelistedHost("https://balletroyale.com/one-piece-heroine-2026/"))
+        assertTrue(VideoExtractor.isDutaMovie(videoUrl = "https://balletroyale.com/one-piece-heroine-2026/"))
+        assertTrue(VideoExtractor.isPrimaryProviderServer("https://balletroyale.com/one-piece-heroine-2026/"))
+        assertEquals("dm_one-piece-heroine-2026", VideoExtractor.extractStableId("https://balletroyale.com/one-piece-heroine-2026/"))
+
+        kotlinx.coroutines.runBlocking {
+            val results = VideoExtractor.searchWordPressMuviPro("https://204.3.234.75", "oppenheimer", 1, 10)
+            println("DutaMovie21 search results: ${results.size}")
+            results.forEach { println(" - DM item: ${it.id} | ${it.title} | ${it.videoUrl}") }
+            if (results.isNotEmpty()) {
+                assertTrue(results.first().id.startsWith("dm_"))
+                val details = VideoExtractor.fetchVideoDetails(results.first().videoUrl)
+                println("DM details: title=${details?.title}, servers=${details?.servers?.size}")
+                details?.servers?.forEach { println(" - DM Server: ${it.name} | ${it.url}") }
+            }
+        }
     }
 
     @Test
@@ -345,10 +384,25 @@ class MyLocalTest {
         assertTrue(VideoExtractor.isWhitelistedHost("165.227.237.129"))
         assertTrue(VideoExtractor.isWhitelistedHost("138.68.169.162"))
 
-        // 2. Primary Priority tier
+        // 2. Primary Priority tier & Playback Hierarchy
+        val hgPriority = VideoExtractor.getProviderPriority("HgLink", "https://hgcloud.to/e/123")
+        assertEquals(200, hgPriority)
+        val indoPriority = VideoExtractor.getProviderPriority("IndoStream", "https://indostream.example/amt/stream1")
+        assertEquals(170, indoPriority)
+        val voePriority = VideoExtractor.getProviderPriority("VOE", "https://voe.sx/e/abc")
+        assertEquals(160, voePriority)
         val vidhidePriority = VideoExtractor.getProviderPriority("VidHide", "https://vidhide.org/embed/wtc8s9")
-        assertEquals(128, vidhidePriority)
+        assertEquals(150, vidhidePriority)
         val youtubePriority = VideoExtractor.getProviderPriority("YouTube", "https://www.youtube.com/embed/123")
+        assertEquals(10, youtubePriority)
+        val bilibiliPriority = VideoExtractor.getProviderPriority("Bilibili", "https://player.bilibili.com/player.html?bvid=123")
+        assertEquals(10, bilibiliPriority)
+        val dailymotionPriority = VideoExtractor.getProviderPriority("Dailymotion", "https://www.dailymotion.com/embed/video/123")
+        assertEquals(10, dailymotionPriority)
+
+        assertTrue("HgLink must have highest priority", hgPriority > indoPriority)
+        assertTrue("IndoStream must have higher priority than VOE", indoPriority > voePriority)
+        assertTrue("VOE must have higher priority than VidHide", voePriority > vidhidePriority)
         assertTrue("VidHide must have higher priority than YouTube fallback", vidhidePriority > youtubePriority)
 
         // 3. Stable ID & Video URL resolution
@@ -434,8 +488,8 @@ class MyLocalTest {
         val dutaBase = "http://159.89.249.45"
         val pencuriBase = "https://ww44.pencurimovie.baby"
 
-        assertEquals("http://159.89.249.45/", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/movies/", 1))
-        assertEquals("http://159.89.249.45/page/2/", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/movies/", 2))
+        assertEquals("http://159.89.249.45/?post_type=post", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/movies/", 1))
+        assertEquals("http://159.89.249.45/page/2/?post_type=post", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/movies/", 2))
         assertEquals("http://159.89.249.45/?post_type=tv", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/series/", 1))
         assertEquals("http://159.89.249.45/page/2/?post_type=tv", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/series/", 2))
         assertEquals("http://159.89.249.45/best-rating/", VideoExtractor.buildDutaCategoryUrl(dutaBase, "/top-imdb/", 1))
@@ -535,6 +589,150 @@ class MyLocalTest {
             assertTrue("PM should resolve servers", (pmDetails?.servers?.size ?: 0) > 0)
         }
     }
+
+    @Test
+    fun testDutaMovie21CamPortalScraping() {
+        kotlinx.coroutines.runBlocking {
+            val dutaMovieBase = VideoExtractor.getDutaMovieBaseUrl()
+            println("=== TESTING DUTAMOVIE21 INTEGRATION ===")
+            println("DutaMovie Base URL: $dutaMovieBase")
+            assertEquals("DutaMovie base URL should be balletroyale.com", "https://balletroyale.com", dutaMovieBase)
+
+            val searchUrl = "$dutaMovieBase/?s=Munafik"
+            val html = VideoExtractor.fetchHtml(searchUrl)
+            println("Fetched HTML length: ${html?.length ?: 0}")
+            assertTrue("HTML from balletroyale.com search should not be null", html != null && html.isNotEmpty())
+
+            val scrapedVideos = VideoExtractor.scrapeVideosFromHtml(html!!, searchUrl)
+            println("Scraped ${scrapedVideos.size} videos for 'Munafik':")
+            scrapedVideos.forEach { println(" - ${it.title} (${it.videoUrl}) | poster: ${it.thumbnailUrl}") }
+            assertTrue("Should scrape at least 1 video from dutamovie21.cam search", scrapedVideos.isNotEmpty())
+
+            val firstMovie = scrapedVideos.first()
+            println("Testing detail fetch for: ${firstMovie.title} (${firstMovie.videoUrl})")
+            val details = VideoExtractor.fetchVideoDetails(firstMovie.videoUrl)
+            println("Detail: Title='${details?.title}', Year='${details?.date}', Servers=${details?.servers?.size}, Poster='${details?.thumbnailUrl}'")
+            details?.servers?.forEach { println(" - Server: ${it.name} -> ${it.url}") }
+
+            assertTrue("Movie title should not be empty", details != null && details.title.isNotEmpty() && details.title != "Unknown")
+            assertTrue("Poster should be present", details?.thumbnailUrl?.isNotEmpty() == true)
+        }
+    }
+
+    @Test
+    fun testAllRepoSitesHealth() {
+        kotlinx.coroutines.runBlocking {
+            println("\n==========================================")
+            println(" RUNNING ALL REPOSITORY SITES HEALTH CHECK")
+            println("==========================================")
+
+            // 1. PencuriMovie
+            val pencuriBase = VideoExtractor.getPencuriBaseUrl()
+            val pencuriResults = VideoExtractor.searchVideos("avatar", 1, 10)
+            println("[1/6] PencuriMovie ($pencuriBase): Fetched ${pencuriResults.size} titles")
+            assertTrue("PencuriMovie should return results", pencuriResults.isNotEmpty())
+            println("      Sample: ${pencuriResults.first().title} -> ${pencuriResults.first().videoUrl}")
+
+            // 2. DutaFilm Web
+            val dutaWebBase = VideoExtractor.getDutaFilmWebBaseUrl()
+            val dfwResults = VideoExtractor.searchDutaFilmWeb("avatar", 1, 10)
+            println("[2/6] DutaFilm Web ($dutaWebBase): Fetched ${dfwResults.size} titles")
+            assertTrue("DutaFilm Web should return results", dfwResults.isNotEmpty())
+            println("      Sample: ${dfwResults.first().title} -> ${dfwResults.first().videoUrl}")
+
+            // 3. LK21 (inlionsforisbvi.org)
+            val inlionsResults = VideoExtractor.searchWordPressMuviPro("https://inlionsforisbvi.org", "avatar", 1, 10)
+            println("[3/6] LK21 (inlionsforisbvi.org): Fetched ${inlionsResults.size} titles")
+            assertTrue("LK21 inlions should return results", inlionsResults.isNotEmpty())
+            println("      Sample: ${inlionsResults.first().title} -> ${inlionsResults.first().videoUrl}")
+
+            // 4. PusatFilm21 (v5)
+            val pfResults = VideoExtractor.searchWordPressMuviPro("https://v5.pusatfilm21info.com", "avatar", 1, 10)
+            println("[4/6] PusatFilm21 (v5.pusatfilm21info.com): Fetched ${pfResults.size} titles")
+            assertTrue("PusatFilm21 should return results", pfResults.isNotEmpty())
+            println("      Sample: ${pfResults.first().title} -> ${pfResults.first().videoUrl}")
+
+            // 5. DutaMovie21 (.art and .cam)
+            val dmArtResults = VideoExtractor.searchWordPressMuviPro("https://dutamovie21.art", "avatar", 1, 10)
+            println("[5a/6] DutaMovie21 (.art): Fetched ${dmArtResults.size} titles")
+            assertTrue("DutaMovie21 (.art) should return results", dmArtResults.isNotEmpty())
+            println("       Sample: ${dmArtResults.first().title} -> ${dmArtResults.first().videoUrl}")
+
+            val dmCamResults = VideoExtractor.searchWordPressMuviPro("https://dutamovie21.cam", "avatar", 1, 10)
+            println("[5b/6] DutaMovie21 (.cam): Fetched ${dmCamResults.size} titles")
+            assertTrue("DutaMovie21 (.cam) should return results", dmCamResults.isNotEmpty())
+            println("       Sample: ${dmCamResults.first().title} -> ${dmCamResults.first().videoUrl}")
+
+            // 6. Internet Archive P. Ramlee
+            val pramleeResults = VideoExtractor.fetchArchivePramleeVideos()
+            println("[6/6] Internet Archive (P. Ramlee): Fetched ${pramleeResults.size} titles")
+            assertTrue("P. Ramlee archive should return titles", pramleeResults.isNotEmpty())
+            println("      Sample: ${pramleeResults.first().title}")
+
+            println("==========================================")
+            println(" ALL 6 REPOSITORY PROVIDERS ARE FULLY FUNCTIONAL!")
+            println("==========================================\n")
+        }
+    }
+
+    @Test
+    fun testPolongExtraction() {
+        kotlinx.coroutines.runBlocking {
+            val url = "http://159.89.249.45/polong-2026/"
+            val details = VideoExtractor.fetchVideoDetails(url)
+            println("=== POLONG EXTRACTION ===")
+            println("Title: ${details?.title}")
+            println("Servers count: ${details?.servers?.size}")
+
+            val vidhideResult = VideoExtractor.extractVidhideStream("https://vidhide.org/embed/yosa2d")
+            println("=== VIDHIDE DIRECT EXTRACTION ===")
+            println("Vidhide streamUrl: ${vidhideResult?.videoUrl}")
+            details?.servers?.forEach { s ->
+                val genuine = VideoExtractor.isGenuineMirror(s.name, s.url)
+                val matches = if (details != null) VideoExtractor.isServerMatchingMovie(details.title, s) else false
+                val dead = VideoExtractor.isConfirmedDead(s.url)
+                val isAlt = VideoExtractor.isAlternativePartnerServer(s.name, s.url) || VideoExtractor.isAlternativePartnerHost(s.url)
+                println(" - Server: '${s.name}' | URL: '${s.url}' | genuine=$genuine | matches=$matches | dead=$dead | isAlt=$isAlt")
+            }
+
+            // Also test alternative sources search for Polong
+            if (details != null) {
+                println("\n=== ALTERNATIVE SOURCES SEARCH FOR POLONG ===")
+                val alts = VideoExtractor.findAlternativeSources(details)
+                println("Alternative sources found: ${alts.size}")
+                alts.forEach { s ->
+                    println(" - Alt server: '${s.name}' | URL: '${s.url}'")
+                }
+            }
+        }
+    }
+
+    @Test
+    fun testNewlyUpdatedVsMovies() {
+        kotlinx.coroutines.runBlocking {
+            val newlyUpdated = VideoExtractor.fetchVideosBySection("/", 1, 20)
+            val movies = VideoExtractor.fetchVideosBySection("/movies/", 1, 20)
+
+            println("=== SECTION '/' (NEWLY UPDATED) count: ${newlyUpdated.size} ===")
+            newlyUpdated.take(10).forEachIndexed { i, v -> println(" $i. ${v.title} (isSeries=${v.isSeries}, id=${v.id})") }
+
+            println("\n=== SECTION '/movies/' (MOVIES) count: ${movies.size} ===")
+            movies.take(10).forEachIndexed { i, v -> println(" $i. ${v.title} (isSeries=${v.isSeries}, id=${v.id})") }
+
+            assertTrue("Newly Updated should not be empty", newlyUpdated.isNotEmpty())
+            assertTrue("Movies should not be empty", movies.isNotEmpty())
+
+            // Verify they are distinct listings
+            val newlyIds = newlyUpdated.map { it.id }
+            val movieIds = movies.map { it.id }
+            assertTrue("Newly Updated and Movies must not have identical ID lists!", newlyIds != movieIds)
+
+            // Movies section must not contain series items
+            val seriesInMovies = movies.filter { it.isSeries == true }
+            assertTrue("Movies section must not contain series items, found: ${seriesInMovies.map { it.title }}", seriesInMovies.isEmpty())
+        }
+    }
 }
+
 
 

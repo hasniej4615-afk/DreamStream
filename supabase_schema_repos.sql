@@ -138,19 +138,21 @@ insert into providers (
     'LK21 / LayarKaca21',
     'Extensive collection of Indonesian and international cinema and dramas.',
     'DreamStream Team',
-    1,
-    '1.0.0',
+    2,
+    '1.0.1',
     'https://raw.githubusercontent.com/hasniej4615-afk/DreamStream/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png',
     'MOVIE',
     'TEMPLATE',
     'WORDPRESS_MUVIPRO',
-    '["https://bullerswood.org", "https://scphi.org", "https://grishamfarms.org"]'::jsonb,
+    '["https://inlionsforisbvi.org", "https://bullerswood.org", "https://scphi.org", "https://grishamfarms.org"]'::jsonb,
     '{"searchPath": "/?s=", "isSeriesSupported": false}'::jsonb,
     'ACTIVE',
     true
 ) on conflict (id) do update set
     base_urls = excluded.base_urls,
     config = excluded.config,
+    version = excluded.version,
+    version_name = excluded.version_name,
     updated_at = timezone('utc'::text, now());
 
 -- Provider 4: P-Ramlee Classic Archive
@@ -178,3 +180,32 @@ insert into providers (
     base_urls = excluded.base_urls,
     config = excluded.config,
     updated_at = timezone('utc'::text, now());
+
+-- Provider 5: DutaMovie21
+insert into providers (
+    id, repo_id, name, display_name, description, author, version, version_name,
+    icon_url, media_type, engine_type, template_type, base_urls, config, status, is_enabled_default
+) values (
+    'com.duta.provider.dutamovie',
+    'dreamstream-official',
+    'DutaMovie21',
+    'DutaMovie21 (Official Portal)',
+    'Fast streaming portal for movies and cinema releases with HD mirrors.',
+    'DreamStream Team',
+    3,
+    '2.0.1',
+    'https://raw.githubusercontent.com/hasniej4615-afk/DreamStream/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png',
+    'MOVIE',
+    'TEMPLATE',
+    'WORDPRESS_MUVIPRO',
+    '["https://balletroyale.com", "https://dutamovie21.cam", "https://dutamovie21.art", "https://204.3.234.75"]'::jsonb,
+    '{"searchPath": "/?s=", "isSeriesSupported": false}'::jsonb,
+    'ACTIVE',
+    true
+) on conflict (id) do update set
+    base_urls = excluded.base_urls,
+    config = excluded.config,
+    version = excluded.version,
+    version_name = excluded.version_name,
+    updated_at = timezone('utc'::text, now());
+

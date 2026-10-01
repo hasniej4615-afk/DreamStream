@@ -22,7 +22,7 @@ class MovieApplication : Application(), ImageLoaderFactory {
         super.onCreate()
         coil.Coil.setImageLoader(imageLoader)
         com.duta.movie.util.SubtitleExtractor.init(this)
-        Log.i("!!!APP_START!!!", "DMStreaM Version 2.0.5 - Run Forrest Run")
+        Log.i("!!!APP_START!!!", "DMStreaM Version 2.0.6 - Cloud 7")
         try {
             val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
             cm?.registerDefaultNetworkCallback(object : android.net.ConnectivityManager.NetworkCallback() {
@@ -31,6 +31,11 @@ class MovieApplication : Application(), ImageLoaderFactory {
                 }
             })
         } catch (_: Exception) {}
+        GlobalScope.launch(Dispatchers.IO) {
+            try {
+                com.duta.movie.data.remote.RepoSyncWorker.schedulePeriodicSync(this@MovieApplication)
+            } catch (_: Exception) {}
+        }
     }
 
     override fun newImageLoader(): ImageLoader = imageLoader

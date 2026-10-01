@@ -87,7 +87,7 @@ object Nuker {
                             if (inputs.length >= 2) return true;
 
                             // Standard Ad Gates (NEVER include real video player elements here!)
-                            var sel = '.fujihide-play, .click-gate, .player-click-gate, img[src*="dm21"], img[src*="no_video"], img[src*="deleted"], .vjs-error-display, .vjs-error, .get-started, #btn-login';
+                            var sel = '.click-gate, .player-click-gate, img[src*="dm21"], img[src*="no_video"], img[src*="deleted"], .vjs-error-display, .vjs-error, .get-started, #btn-login';
                             var gateEl = document.querySelector(sel);
                             if (gateEl) return true;
                             
@@ -153,6 +153,7 @@ object Nuker {
                     if (!window.playerBridge) {
                         window.playerBridge = {
                             heartbeat: function() {
+                                if (window.successNotified) return;
                                 if (window.AndroidPlayer) {
                                     var v = this.findVideo();
                                     var status = v ? (v.isProxy ? "Proxy Active" : ("Video Found (" + v.readyState + ")")) : "Video NOT Found";
@@ -266,10 +267,18 @@ object Nuker {
                                     }
                                 } catch(err){}
                             },
-                            reportState: function(isPlaying, time, duration) {
+                            reportState: function(isPlaying, time, duration, force) {
                                 try {
-                                    if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
-                                        window.AndroidPlayer.onPlayerState(isPlaying ? 1 : 0, time, duration);
+                                    var state = isPlaying ? 1 : 0;
+                                    var curSec = Math.floor(time || 0);
+                                    var now = Date.now();
+                                    if (force || state !== window._lastReportedState || (curSec !== window._lastReportedTime && (now - (window._lastReportTimestamp || 0)) >= 1000)) {
+                                        window._lastReportedState = state;
+                                        window._lastReportedTime = curSec;
+                                        window._lastReportTimestamp = now;
+                                        if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
+                                            window.AndroidPlayer.onPlayerState(state, time, duration);
+                                        }
                                     }
                                 } catch(e){}
                                 try {
@@ -374,6 +383,7 @@ object Nuker {
                                             try {
                                                 var pOverlays = (targetDoc || document).querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                                 for (var pi = 0; pi < pOverlays.length; pi++) {
+                                                    try { pOverlays[pi].click(); } catch(e){}
                                                     pOverlays[pi].style.setProperty('display', 'none', 'important');
                                                     pOverlays[pi].style.setProperty('opacity', '0', 'important');
                                                     pOverlays[pi].style.setProperty('visibility', 'hidden', 'important');
@@ -390,7 +400,10 @@ object Nuker {
                                                 if (jw && typeof jw.getState === 'function') {
                                                     var jwState = jw.getState();
                                                     if (jwState !== 'playing' && jwState !== 'buffering') {
-                                                        try { jw.play(); } catch(e){}
+                                                        try {
+                                                            if (typeof jw.setMute === 'function') jw.setMute(false);
+                                                            jw.play();
+                                                        } catch(e){}
                                                     }
                                                     if (!win._jwHooked && typeof jw.on === 'function') {
                                                         win._jwHooked = true;
@@ -496,17 +509,20 @@ object Nuker {
                                                 if (document.body && !document.body.classList.contains('video-active')) {
                                                     document.body.classList.add('video-active', 'video-playing');
                                                 }
-                                                try {
-                                                    var badPOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
-                                                    for (var bi = 0; bi < badPOverlays.length; bi++) {
-                                                        badPOverlays[bi].style.setProperty('display', 'none', 'important');
-                                                        badPOverlays[bi].style.setProperty('opacity', '0', 'important');
-                                                        badPOverlays[bi].style.setProperty('visibility', 'hidden', 'important');
-                                                        badPOverlays[bi].style.setProperty('pointer-events', 'none', 'important');
-                                                        badPOverlays[bi].style.setProperty('width', '0', 'important');
-                                                        badPOverlays[bi].style.setProperty('height', '0', 'important');
-                                                    }
-                                                } catch(e){}
+                                                if (!window._overlaysPurged) {
+                                                    window._overlaysPurged = true;
+                                                    try {
+                                                        var badPOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
+                                                        for (var bi = 0; bi < badPOverlays.length; bi++) {
+                                                            badPOverlays[bi].style.setProperty('display', 'none', 'important');
+                                                            badPOverlays[bi].style.setProperty('opacity', '0', 'important');
+                                                            badPOverlays[bi].style.setProperty('visibility', 'hidden', 'important');
+                                                            badPOverlays[bi].style.setProperty('pointer-events', 'none', 'important');
+                                                            badPOverlays[bi].style.setProperty('width', '0', 'important');
+                                                            badPOverlays[bi].style.setProperty('height', '0', 'important');
+                                                        }
+                                                    } catch(e){}
+                                                }
                                             }
                                         }
                                     }
@@ -1209,7 +1225,7 @@ object Nuker {
                             var inputs = document.querySelectorAll('input[type="password"], input[type="email"], input[name*="user"], input[name*="pass"]');
                             if (inputs.length >= 2) return true;
 
-                            var sel = '.fujihide-play, .click-gate, .player-click-gate, img[src*="dm21"], img[src*="no_video"], img[src*="deleted"], .vjs-error-display, .vjs-error, .get-started, #btn-login';
+                            var sel = '.click-gate, .player-click-gate, img[src*="dm21"], img[src*="no_video"], img[src*="deleted"], .vjs-error-display, .vjs-error, .get-started, #btn-login';
                             var gateEl = document.querySelector(sel);
                             if (gateEl) return true;
                             
@@ -1323,6 +1339,7 @@ object Nuker {
                     if (!window.playerBridge) {
                         window.playerBridge = {
                             heartbeat: function() {
+                                if (window.successNotified) return;
                                 if (window.AndroidPlayer) {
                                     var v = this.findVideo();
                                     var status = v ? (v.isProxy ? "Proxy Active" : ("Video Found (" + v.readyState + ")")) : "Video NOT Found";
@@ -1443,10 +1460,18 @@ object Nuker {
                                     }
                                 } catch(err){}
                             },
-                            reportState: function(isPlaying, time, duration) {
+                            reportState: function(isPlaying, time, duration, force) {
                                 try {
-                                    if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
-                                        window.AndroidPlayer.onPlayerState(isPlaying ? 1 : 0, time, duration);
+                                    var state = isPlaying ? 1 : 0;
+                                    var curSec = Math.floor(time || 0);
+                                    var now = Date.now();
+                                    if (force || state !== window._pmLastReportedState || (curSec !== window._pmLastReportedTime && (now - (window._pmLastReportTimestamp || 0)) >= 1000)) {
+                                        window._pmLastReportedState = state;
+                                        window._pmLastReportedTime = curSec;
+                                        window._pmLastReportTimestamp = now;
+                                        if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
+                                            window.AndroidPlayer.onPlayerState(state, time, duration);
+                                        }
                                     }
                                 } catch(e){}
                                 try {

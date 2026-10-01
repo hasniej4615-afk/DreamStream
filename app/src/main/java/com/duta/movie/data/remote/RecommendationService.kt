@@ -363,4 +363,37 @@ class RecommendationService @Inject constructor(
             Result.failure(e)
         }
     }
+
+    /**
+     * Clears all recommendations from Supabase (Admin function)
+     */
+    suspend fun clearAllRecommendations(): Result<Boolean> = withContext(Dispatchers.IO) {
+        if (!SupabaseConfig.isConfigured) {
+            return@withContext Result.failure(Exception("Supabase is not configured"))
+        }
+
+        try {
+            val url = "${SupabaseConfig.PROJECT_URL.trimEnd('/')}/rest/v1/recommendations?video_id=not.is.null"
+            val request = Request.Builder()
+                .url(url)
+                .addHeader("apikey", SupabaseConfig.ANON_KEY)
+                .addHeader("Authorization", "Bearer ${SupabaseConfig.ANON_KEY}")
+                .delete()
+                .build()
+
+            okHttpClient.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    val errorBody = response.body?.string() ?: ""
+                    Log.e(TAG, "Failed to clear recommendations: HTTP ${response.code} $errorBody")
+                    return@withContext Result.failure(Exception("HTTP ${response.code}: $errorBody"))
+                }
+                Log.d(TAG, "Successfully cleared all recommendations from Supabase")
+                Result.success(true)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error clearing recommendations from Supabase", e)
+            Result.failure(e)
+        }
+    }
 }
+

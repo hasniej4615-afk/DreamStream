@@ -51,6 +51,11 @@ fun RepoManagerScreen(
     val availableOnlineProviders by viewModel.availableOnlineProviders.collectAsStateWithLifecycle()
     val isSyncing by viewModel.isRepoSyncing.collectAsStateWithLifecycle()
 
+    LaunchedEffect(Unit) {
+        // Automatically sync repositories and provider manifests on screen entry
+        viewModel.syncRepositories()
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -297,6 +302,31 @@ fun InstalledProvidersList(
             contentPadding = PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
+            item {
+                Surface(
+                    shape = RoundedCornerShape(8.dp),
+                    color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 4.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.CheckCircle,
+                            contentDescription = null,
+                            tint = androidx.compose.ui.graphics.Color(0xFF4CAF50),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(modifier = Modifier.width(10.dp))
+                        Text(
+                            text = "Automated cloud sync active. Dead repositories and offline domains are automatically excluded.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+            }
             items(providers, key = { it.id }) { provider ->
                 InstalledProviderCard(
                     provider = provider,
@@ -412,10 +442,26 @@ fun InstalledProviderCard(
                     )
                 }
 
-                Spacer(modifier = Modifier.height(4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     BadgeChip(text = provider.mediaType)
                     BadgeChip(text = provider.engineType)
+                    if (isOfficial) {
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = androidx.compose.ui.graphics.Color(0xFF1B5E20).copy(alpha = 0.2f)
+                        ) {
+                            Text(
+                                text = "Live & Verified",
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+                                color = androidx.compose.ui.graphics.Color(0xFF4CAF50),
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+                    }
                 }
             }
 
@@ -714,6 +760,7 @@ fun AddRepositoryDialog(
         listOf(
             "cspr" to "Official CloudStream",
             "megarepo" to "MegaRepo (Multi-source)",
+            "https://balletroyale.com/" to "DutaMovie21 (Official Portal)",
             "indostream" to "IndoStream (Malay / Indo)",
             "storm" to "Storm Extensions",
             "phisher" to "SuperStream (Phisher)"

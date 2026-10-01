@@ -31,25 +31,24 @@ object NetworkModule {
         @ApplicationContext context: Context
     ): ImageLoader {
         val isLowRam = com.duta.movie.util.VideoUtils.isLowRamDevice(context)
-        val isTv = com.duta.movie.util.DeviceUtils.isTvDevice(context)
-        val imageDispatcher = Dispatchers.IO.limitedParallelism(if (isLowRam) 12 else 32)
+        // Full Dispatchers.IO throughput unlocks instant parallel decoding and CDN fetches.
+        val imageDispatcher = if (isLowRam) Dispatchers.IO.limitedParallelism(16) else Dispatchers.IO
 
         return ImageLoader.Builder(context)
             .okHttpClient { NetworkConfig.imageOkHttpClient }
             .dispatcher(imageDispatcher)
-            .bitmapConfig(if (isLowRam) Bitmap.Config.RGB_565 else Bitmap.Config.HARDWARE)
-            .allowRgb565(true)
-            .allowHardware(true)
+            .allowRgb565(true) // 2 bytes/pixel for opaque thumbnails — halves memory, faster decode
+            .allowHardware(true) // Direct GPU texture memory (AHardwareBuffer) for 0ms render
             .memoryCache {
                 MemoryCache.Builder(context)
-                    .maxSizePercent(if (isLowRam) 0.15 else 0.25) 
+                    .maxSizePercent(if (isLowRam) 0.25 else 0.40) 
                     .strongReferencesEnabled(true)
                     .build()
             }
             .diskCache {
                 DiskCache.Builder()
                     .directory(context.cacheDir.resolve("image_cache"))
-                    .maxSizeBytes(if (isLowRam) 256 * 1024 * 1024L else 512 * 1024 * 1024L) 
+                    .maxSizeBytes(if (isLowRam) 384 * 1024 * 1024L else 768 * 1024 * 1024L) 
                     .build()
             }
             .components {

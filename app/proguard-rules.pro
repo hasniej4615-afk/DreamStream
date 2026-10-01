@@ -43,6 +43,8 @@
 -keep class kotlinx.serialization.json.** { *; }
 -keep,allowobfuscation,allowoptimization class com.duta.movie.model.** { *; }
 -keep class com.duta.movie.model.** { *; }
+-keep class com.duta.movie.provider.model.** { *; }
+-keep class com.duta.movie.util.UpdateInfo { *; }
 -keep interface kotlinx.serialization.KSerializer { *; }
 -keep class kotlinx.serialization.internal.** { *; }
 
@@ -137,3 +139,7 @@
 -keep class * extends androidx.work.InputMerger { *; }
 -keep class * extends androidx.work.ListenableWorker { *; }
 -dontwarn androidx.work.**
+
+# Android TV Provider
+-keep class androidx.tvprovider.** { *; }
+-dontwarn androidx.tvprovider.**

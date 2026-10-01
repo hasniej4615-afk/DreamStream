@@ -15,6 +15,7 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -73,15 +74,22 @@ fun PlayerControls(
     playPauseFocusRequester: androidx.compose.ui.focus.FocusRequester? = null,
     onPlayPauseFocusChange: (Boolean) -> Unit = {},
     fallbackDurationMs: Long = 0L,
-    isTV: Boolean = false
+    isTV: Boolean = false,
+    resizeMode: Int = 0,
+    onResizeModeToggle: (() -> Unit)? = null,
+    audioBoostLevel: Int = 0,
+    onAudioBoostToggle: (() -> Unit)? = null,
+    playbackSpeed: Float = 1.0f,
+    onSpeedSelect: ((Float) -> Unit)? = null
 ) {
     val playbackState by rememberPlayerState(player)
-    val isPlaying = rememberIsPlaying(player)
-    val currentPosition = rememberPlayerPosition(player)
-    val rawDuration = rememberPlayerDuration(player, fallbackDurationMs)
+    val isPlaying = rememberIsPlaying(player, isVisible)
+    val currentPosition = rememberPlayerPosition(player, isVisible)
+    val rawDuration = rememberPlayerDuration(player, fallbackDurationMs, isVisible)
     val duration = if (rawDuration > 0L) rawDuration else maxOf(fallbackDurationMs, 1L)
     var isPlayFocused by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
+    var showSpeedMenu by remember { mutableStateOf(false) }
 
     Box(
         modifier = modifier
@@ -141,6 +149,69 @@ fun PlayerControls(
                         maxLines = 1,
                         modifier = Modifier.weight(1f).padding(horizontal = 24.dp)
                     )
+
+                    // Playback Speed button
+                    if (onSpeedSelect != null) {
+                        var isSpeedFocused by remember { mutableStateOf(false) }
+                        val speedScale by animateFloatAsState(if (isSpeedFocused) 1.2f else 1f)
+                        IconButton(
+                            onClick = { showSpeedMenu = true },
+                            modifier = Modifier
+                                .scale(speedScale)
+                                .onFocusChanged { isSpeedFocused = it.isFocused }
+                                .focusable()
+                                .background(if (isSpeedFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
+                                .border(if (isSpeedFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                        ) {
+                            Icon(
+                                Icons.Default.Speed,
+                                contentDescription = stringResource(R.string.playback_speed),
+                                tint = if (playbackSpeed != 1.0f) Color(0xFFFF5252) else Color.White
+                            )
+                        }
+                    }
+
+                    // Audio Boost button
+                    if (onAudioBoostToggle != null) {
+                        var isAudioFocused by remember { mutableStateOf(false) }
+                        val audioScale by animateFloatAsState(if (isAudioFocused) 1.2f else 1f)
+                        IconButton(
+                            onClick = onAudioBoostToggle,
+                            modifier = Modifier
+                                .scale(audioScale)
+                                .onFocusChanged { isAudioFocused = it.isFocused }
+                                .focusable()
+                                .background(if (isAudioFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
+                                .border(if (isAudioFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                        ) {
+                            Icon(
+                                Icons.Default.GraphicEq,
+                                contentDescription = stringResource(R.string.audio_boost),
+                                tint = if (audioBoostLevel > 0) Color(0xFFFF5252) else Color.White
+                            )
+                        }
+                    }
+
+                    // Aspect Ratio button
+                    if (onResizeModeToggle != null) {
+                        var isAspectFocused by remember { mutableStateOf(false) }
+                        val aspectScale by animateFloatAsState(if (isAspectFocused) 1.2f else 1f)
+                        IconButton(
+                            onClick = onResizeModeToggle,
+                            modifier = Modifier
+                                .scale(aspectScale)
+                                .onFocusChanged { isAspectFocused = it.isFocused }
+                                .focusable()
+                                .background(if (isAspectFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
+                                .border(if (isAspectFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                        ) {
+                            Icon(
+                                Icons.Default.AspectRatio,
+                                contentDescription = stringResource(R.string.aspect_ratio),
+                                tint = if (resizeMode != 0) Color(0xFFFF5252) else Color.White
+                            )
+                        }
+                    }
 
                     // Quality selector button
                     if (qualityTracks.isNotEmpty() && onQualitySelect != null) {
@@ -549,6 +620,53 @@ fun PlayerControls(
                 containerColor = Color(0xFF1A1A1A)
             )
         }
+
+        if (showSpeedMenu && onSpeedSelect != null) {
+            val speeds = listOf(0.75f, 1.0f, 1.25f, 1.5f, 2.0f)
+            AlertDialog(
+                onDismissRequest = { showSpeedMenu = false },
+                title = { Text(stringResource(R.string.playback_speed), color = Color.White) },
+                text = {
+                    val firstSpeedFocusRequester = remember { FocusRequester() }
+                    LaunchedEffect(Unit) {
+                        try { firstSpeedFocusRequester.requestFocus() } catch (_: Exception) {}
+                    }
+                    LazyColumn {
+                        itemsIndexed(speeds) { index, speed ->
+                            val isSelected = (playbackSpeed == speed)
+                            var isFocused by remember { mutableStateOf(false) }
+                            val label = if (speed == 1.0f) stringResource(R.string.speed_normal) else "${speed}x"
+                            ListItem(
+                                headlineContent = { Text(label, color = Color.White) },
+                                trailingContent = { if (isSelected) Icon(Icons.Default.Check, null, tint = Color.Red) },
+                                modifier = Modifier
+                                    .then(if (index == 0) Modifier.focusRequester(firstSpeedFocusRequester) else Modifier)
+                                    .onFocusChanged { isFocused = it.isFocused }
+                                    .focusable()
+                                    .clickable {
+                                        onSpeedSelect(speed)
+                                        showSpeedMenu = false
+                                    }
+                                    .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                                colors = ListItemDefaults.colors(containerColor = if (isFocused) Color.White.copy(alpha = 0.1f) else Color.Transparent)
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    var isCloseSpeedFocused by remember { mutableStateOf(false) }
+                    TextButton(
+                        onClick = { showSpeedMenu = false },
+                        modifier = Modifier
+                            .onFocusChanged { isCloseSpeedFocused = it.isFocused }
+                            .focusable()
+                            .background(if (isCloseSpeedFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
+                            .border(if (isCloseSpeedFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                    ) { Text(stringResource(R.string.close), color = if (isCloseSpeedFocused) Color.White else Color.Red) }
+                },
+                containerColor = Color(0xFF1A1A1A)
+            )
+        }
     }
 }
 
@@ -599,10 +717,11 @@ fun rememberPlayerState(player: Player?): State<Int> {
 }
 
 @Composable
-fun rememberPlayerPosition(player: Player?): Long {
+fun rememberPlayerPosition(player: Player?, isVisible: Boolean = true): Long {
     var position by remember { mutableLongStateOf(player?.currentPosition ?: 0L) }
-    val delayMs = 100L
-    LaunchedEffect(player) {
+    val delayMs = 250L
+    LaunchedEffect(player, isVisible) {
+        if (!isVisible) return@LaunchedEffect
         while (true) {
             position = player?.currentPosition ?: 0L
             delay(delayMs)
@@ -612,7 +731,7 @@ fun rememberPlayerPosition(player: Player?): Long {
 }
 
 @Composable
-fun rememberPlayerDuration(player: Player?, fallbackDurationMs: Long = 0L): Long {
+fun rememberPlayerDuration(player: Player?, fallbackDurationMs: Long = 0L, isVisible: Boolean = true): Long {
     var duration by remember(player, fallbackDurationMs) { 
         val d = player?.duration?.coerceAtLeast(0L) ?: 0L
         mutableLongStateOf(if (d > 0L) d else fallbackDurationMs) 
@@ -631,21 +750,22 @@ fun rememberPlayerDuration(player: Player?, fallbackDurationMs: Long = 0L): Long
         player?.addListener(listener)
         onDispose { player?.removeListener(listener) }
     }
-    LaunchedEffect(player, fallbackDurationMs) {
+    LaunchedEffect(player, fallbackDurationMs, isVisible) {
+        if (!isVisible) return@LaunchedEffect
         while (true) {
             val d = player?.duration?.coerceAtLeast(0L) ?: 0L
             val target = if (d > 0L) d else fallbackDurationMs
             if (target > 0L && target != duration) {
                 duration = target
             }
-            delay(500)
+            delay(1000L)
         }
     }
     return duration
 }
 
 @Composable
-fun rememberIsPlaying(player: Player?): Boolean {
+fun rememberIsPlaying(player: Player?, isVisible: Boolean = true): Boolean {
     var isPlaying by remember { 
         mutableStateOf(player?.isPlaying == true || (player?.playbackState == Player.STATE_READY && player?.playWhenReady == true)) 
     }
@@ -664,13 +784,14 @@ fun rememberIsPlaying(player: Player?): Boolean {
         player?.addListener(listener)
         onDispose { player?.removeListener(listener) }
     }
-    LaunchedEffect(player) {
+    LaunchedEffect(player, isVisible) {
+        if (!isVisible) return@LaunchedEffect
         while (true) {
             val playing = player?.isPlaying == true || (player?.playbackState == Player.STATE_READY && player?.playWhenReady == true)
             if (playing != isPlaying) {
                 isPlaying = playing
             }
-            delay(250)
+            delay(500L)
         }
     }
     return isPlaying

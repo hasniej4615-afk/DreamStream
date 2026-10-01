@@ -43,7 +43,8 @@ object NetworkConfig {
         return when {
             lowUrl.contains("bestcdn") || lowUrl.contains("morencius") || lowUrl.contains("dhcplay") ||
             lowUrl.contains("ryderjet") || lowUrl.contains("faststream") || lowUrl.contains("iplayer") ||
-            lowUrl.contains("asiastream") || lowUrl.contains("asiatik") -> HeaderProfile.AGGRESSIVE_SPOOF
+            lowUrl.contains("asiastream") || lowUrl.contains("asiatik") ||
+            lowUrl.contains("vidhide") || lowUrl.contains("fujihide") || lowUrl.contains("tnmr.org") -> HeaderProfile.AGGRESSIVE_SPOOF
             lowUrl.contains("hgcloud") || lowUrl.contains("hanerix") || lowUrl.contains("vibuxer") ||
             lowUrl.contains("audinifer") || lowUrl.contains("haneri") || lowUrl.contains("abyss") || 
             lowUrl.contains("bond") || lowUrl.contains("iamcdn") || lowUrl.contains("katakatamutiara") -> HeaderProfile.MOBILE
@@ -105,8 +106,8 @@ object NetworkConfig {
             
             val hostAliases = mutableSetOf(host)
             // Add common subdomains and related mirrors for cookie sharing
-            if (host.contains("masukestin") || host.contains("masukin") || host.contains("dhcplay") || host.contains("audinifer") || host.contains("distributedcomputing") || host.contains("morencius") || host.contains("bestcdn") || host.contains("katakatamutiara") || host.contains("scphi") || host.contains("grisham") || host.contains("bullerswood") || host.contains("mantab") || host.contains("dfm2u") || host.contains("kepala-bergetar") || host.contains("kepalabergetar")) {
-                hostAliases.addAll(listOf("masukestin.com", "masukestin.net", "masukin.vip", "masuk.link", "masukin.lol", "masukin.top", "dhcplay.com", "audinifer.com", "audinifer.lol", "audinifer.top", "distributedcomputing.space", "morencius.com", "bestcdn.me", "bestcdn.pro", "katakatamutiara.com", "scphi.org", "grishamfarms.org", "bullerswood.org", "tv12.lk21official.cc", "dfm2u.org", "kepalabergetar9.net", "kepala-bergetar.com"))
+            if (host.contains("masukestin") || host.contains("masukin") || host.contains("dhcplay") || host.contains("audinifer") || host.contains("distributedcomputing") || host.contains("morencius") || host.contains("bestcdn") || host.contains("katakatamutiara") || host.contains("scphi") || host.contains("grisham") || host.contains("bullerswood") || host.contains("inlionsforisbvi") || host.contains("mantab") || host.contains("dfm2u") || host.contains("kepala-bergetar") || host.contains("kepalabergetar") || host.contains("dutamovie") || host.contains("204.3.234.75") || host.contains("balletroyale")) {
+                hostAliases.addAll(listOf("masukestin.com", "masukestin.net", "masukin.vip", "masuk.link", "masukin.lol", "masukin.top", "dhcplay.com", "audinifer.com", "audinifer.lol", "audinifer.top", "distributedcomputing.space", "morencius.com", "bestcdn.me", "bestcdn.pro", "katakatamutiara.com", "inlionsforisbvi.org", "scphi.org", "grishamfarms.org", "bullerswood.org", "tv12.lk21official.cc", "dfm2u.org", "kepalabergetar9.net", "kepala-bergetar.com", "dutamovie21.art", "dutamovie21.cam", "204.3.234.75", "balletroyale.com"))
             }
             if (host.contains("vibuxer") || host.contains("hanerix") || host.contains("duvidun") || host.contains("fujihide") || host.contains("wellnessspace") || host.contains("harmonix") || host.contains("veev")) {
                 hostAliases.addAll(listOf("vibuxer.com", "vibuxer.net", "hanerix.com", "hanerix.net", "duvidun.com", "duvidun.net", "fujihide.com", "fujihide.net", "wellnessspace.shop", "wellnessspace.online", "harmonixinnovationlab.store", "harmonixinnovationlab.com", "veev.to"))
@@ -174,7 +175,7 @@ object NetworkConfig {
                                    host.contains("ryder") || host.contains("hgcdn")
                 
                 if (!isStrictGroup) {
-                    val commonCdnHosts = listOf("hgcdn.com", "hglcdn.com", "meadowpath.com", "wellnessspace.shop", "latestmoviereview.com", "abyss.to", "abysscdn.com", "bond.to", "bondcdn.com", "dhcplay.com", "morencius.com", "scphi.org", "grishamfarms.org", "bullerswood.org", "tv12.lk21official.cc", "mantab.men", "dfm2u.org", "kepalabergetar9.net", "kepala-bergetar.com", "indostream.lol", "vidplay.xyz", "distributedcomputing.space", "seoulschool.org", "ladyriderswear.com", "itoshii-movie.com", "eddieoneverything.com", "dutamovie.com", "iplayerhls.com", "amt1.pro", "amt2.pro", "zeus88.lol", "klikzeus.lol", "katakatamutiara.com")
+                    val commonCdnHosts = listOf("hgcdn.com", "hglcdn.com", "meadowpath.com", "wellnessspace.shop", "latestmoviereview.com", "abyss.to", "abysscdn.com", "bond.to", "bondcdn.com", "dhcplay.com", "morencius.com", "inlionsforisbvi.org", "scphi.org", "grishamfarms.org", "bullerswood.org", "tv12.lk21official.cc", "mantab.men", "dfm2u.org", "kepalabergetar9.net", "kepala-bergetar.com", "indostream.lol", "vidplay.xyz", "distributedcomputing.space", "seoulschool.org", "ladyriderswear.com", "itoshii-movie.com", "eddieoneverything.com", "balletroyale.com", "dutamovie21.art", "dutamovie21.cam", "dutamovie.com", "iplayerhls.com", "amt1.pro", "amt2.pro", "zeus88.lol", "klikzeus.lol", "katakatamutiara.com")
                     commonCdnHosts.forEach { if (host.contains(it.split(".").first())) sessionReferers[it] = referer }
                 }
                 
@@ -396,6 +397,14 @@ object NetworkConfig {
                     builder.header("Referer", "${VideoExtractor.getDutaFilmWebBaseUrl()}/")
                 } else if (host.contains("bullerswood.org")) {
                     builder.header("Referer", "https://bullerswood.org/")
+                } else if (host.contains("inlionsforisbvi.org")) {
+                    builder.header("Referer", "https://inlionsforisbvi.org/")
+                } else if (host.contains("balletroyale.com")) {
+                    builder.header("Referer", "https://balletroyale.com/")
+                } else if (host.contains("dutamovie21.art")) {
+                    builder.header("Referer", "https://dutamovie21.art/")
+                } else if (host.contains("dutamovie21.cam")) {
+                    builder.header("Referer", "https://dutamovie21.cam/")
                 } else {
                     builder.header("Referer", "https://$host/")
                 }
@@ -410,9 +419,14 @@ object NetworkConfig {
                         if (response.isSuccessful) return@addInterceptor response
                         
                         val code = response.code
-                        // If it's a 403/404, don't retry, just return the response
-                        if (code == 403 || code == 404) {
-                            if (code == 403) Log.w(TAG, "Image Load 403: ${request.url}")
+                        // If it's a 403/404/410, don't retry, just return the response
+                        if (code == 403 || code == 404 || code == 410) {
+                            if (code == 404 || code == 410) {
+                                VideoExtractor.markDeadImage(request.url.toString())
+                                Log.w(TAG, "Image Load $code (marked dead): ${request.url}")
+                            } else {
+                                Log.w(TAG, "Image Load 403: ${request.url}")
+                            }
                             return@addInterceptor response
                         }
                         

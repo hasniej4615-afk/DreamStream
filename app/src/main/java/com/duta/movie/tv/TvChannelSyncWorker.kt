@@ -38,7 +38,6 @@ class TvChannelSyncWorker(
          * Works across official Android TV, Google TV, and uncertified AOSP TV boxes.
          */
         fun isTvChannelSupported(context: Context): Boolean {
-            if (DeviceUtils.isTvDevice(context)) return true
             return try {
                 val cursor = context.contentResolver.query(
                     TvContractCompat.Channels.CONTENT_URI,
@@ -48,7 +47,7 @@ class TvChannelSyncWorker(
                 val supported = cursor != null
                 cursor?.close()
                 supported
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.w(TAG, "TvProvider not available on this device: ${e.message}")
                 false
             }
@@ -89,8 +88,10 @@ class TvChannelSyncWorker(
             try {
                 val cursor = context.contentResolver.query(
                     TvContractCompat.Channels.CONTENT_URI,
-                    arrayOf(TvContractCompat.Channels._ID),
-                    null, null, null
+                    arrayOf(TvContractCompat.Channels._ID, TvContractCompat.Channels.COLUMN_PACKAGE_NAME),
+                    "${TvContractCompat.Channels.COLUMN_PACKAGE_NAME} = ?",
+                    arrayOf(context.packageName),
+                    null
                 )
                 var count = 0
                 cursor?.use {
@@ -102,8 +103,8 @@ class TvChannelSyncWorker(
                     }
                 }
                 Log.i(TAG, "Aggressively deleted $count old channels")
-            } catch (e: Exception) {
-                Log.e(TAG, "Failed to delete channels", e)
+            } catch (e: Throwable) {
+                Log.w(TAG, "Failed to delete channels: ${e.message}")
             }
         }
 
@@ -121,7 +122,7 @@ class TvChannelSyncWorker(
                     TvContractCompat.Channels.CONTENT_URI,
                     channel.toContentValues()
                 )
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e(TAG, "Failed to insert channel into TvProvider", e)
                 null
             }
@@ -132,7 +133,7 @@ class TvChannelSyncWorker(
                 setChannelLogo(context, channelId)
                 try {
                     TvContractCompat.requestChannelBrowsable(context, channelId)
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     Log.w(TAG, "requestChannelBrowsable failed: ${e.message}")
                 }
                 Log.d(TAG, "Channel created with ID: $channelId")
@@ -157,7 +158,7 @@ class TvChannelSyncWorker(
                     ChannelLogoUtils.storeChannelLogo(context, channelId, bitmap)
                     Log.d(TAG, "Channel logo set successfully for channel $channelId")
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e(TAG, "Failed to set channel logo", e)
             }
         }
@@ -193,7 +194,7 @@ class TvChannelSyncWorker(
                 if (resultMovies.isNotEmpty()) {
                     Log.d(TAG, "Added ${resultMovies.size} recently watched movies to TV channel")
                 }
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.w(TAG, "Error fetching recently watched for TV channel: ${e.message}")
             }
 
@@ -206,7 +207,7 @@ class TvChannelSyncWorker(
                             resultMovies.add(video)
                         }
                     }
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     Log.w(TAG, "Network fetch failed for TV channel: ${e.message}")
                 }
             }
@@ -231,7 +232,7 @@ class TvChannelSyncWorker(
                             resultMovies.add(video)
                         }
                     }
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     Log.w(TAG, "Room DB fetch failed for TV channel: ${e.message}")
                 }
             }
@@ -265,7 +266,7 @@ class TvChannelSyncWorker(
                 val programsUri = TvContractCompat.buildPreviewProgramsUriForChannel(channelId)
                 val deleted = context.contentResolver.delete(programsUri, null, null)
                 Log.d(TAG, "Cleared $deleted old programs from TV channel $channelId")
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e(TAG, "Failed to clear old programs", e)
             }
 
@@ -307,7 +308,7 @@ class TvChannelSyncWorker(
                     if (inserted != null) {
                         addedCount++
                     }
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     Log.e(TAG, "Failed to add program: ${video.title}", e)
                 }
             }
@@ -336,7 +337,7 @@ class TvChannelSyncWorker(
                     setChannelLogo(context, channelId)
                     try {
                         TvContractCompat.requestChannelBrowsable(context, channelId)
-                    } catch (_: Exception) {}
+                    } catch (_: Throwable) {}
                 }
 
                 if (channelId == -1L) {
@@ -358,7 +359,7 @@ class TvChannelSyncWorker(
                 val added = populateProgramsForChannel(context, channelId, movies)
                 Log.i(TAG, "TV Channel sync succeeded with $added movies")
                 added > 0
-            } catch (e: Exception) {
+            } catch (e: Throwable) {
                 Log.e(TAG, "Error in syncChannelDirectly", e)
                 false
             }

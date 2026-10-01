@@ -27,7 +27,7 @@ object TvWatchNextManager {
             val supported = cursor != null
             cursor?.close()
             supported
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.w(TAG, "WatchNext not supported on this device: ${e.message}")
             false
         }
@@ -53,7 +53,7 @@ object TvWatchNextManager {
                     }
                 }
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.w(TAG, "Error finding WatchNext program for $videoId: ${e.message}")
         }
         return -1L
@@ -117,7 +117,7 @@ object TvWatchNextManager {
                 )
                 Log.d(TAG, "Inserted new WatchNext program for ${video.title} (uri=$insertedUri)")
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to update WatchNext for ${video.title}", e)
         }
     }
@@ -130,7 +130,7 @@ object TvWatchNextManager {
                 val deleted = context.contentResolver.delete(uri, null, null)
                 Log.d(TAG, "Removed WatchNext program for $videoId (deleted=$deleted)")
             }
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.w(TAG, "Failed to remove WatchNext for $videoId: ${e.message}")
         }
     }
@@ -152,7 +152,7 @@ object TvWatchNextManager {
                 }
             }
             Log.i(TAG, "Cleared all WatchNext programs ($count removed)")
-        } catch (e: Exception) {
+        } catch (e: Throwable) {
             Log.e(TAG, "Failed to clear all WatchNext programs", e)
         }
     }

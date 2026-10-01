@@ -63,8 +63,10 @@ class TemplateProvider(
                 }
             }
             "WORDPRESS_MUVIPRO" -> {
-                if (primary.startsWith("http")) {
+                if (id.contains("lk21") && primary.startsWith("http")) {
                     VideoExtractor.setBullerswoodBaseUrl(primary)
+                } else if (id.contains("dutamovie") && primary.startsWith("http")) {
+                    VideoExtractor.setDutaMovieBaseUrl(primary)
                 }
             }
         }
@@ -81,7 +83,8 @@ class TemplateProvider(
                     VideoExtractor.searchDutaFilmWeb(query, page, 25)
                 }
                 "WORDPRESS_MUVIPRO" -> {
-                    VideoExtractor.searchBullerswood(query, page, 25)
+                    val base = baseUrls.firstOrNull() ?: if (id.contains("dutamovie")) VideoExtractor.getDutaMovieBaseUrl() else VideoExtractor.getBullerswoodBaseUrl()
+                    VideoExtractor.searchWordPressMuviPro(base, query, page, 25)
                 }
                 "GENERIC_HTML" -> {
                     if (id.contains("pramlee", ignoreCase = true)) {
@@ -110,7 +113,8 @@ class TemplateProvider(
                     VideoExtractor.fetchDutaFilmWebVideos(path, page, count)
                 }
                 "WORDPRESS_MUVIPRO" -> {
-                    VideoExtractor.fetchBullerswoodVideos(path, page, count)
+                    val base = baseUrls.firstOrNull() ?: if (id.contains("dutamovie")) VideoExtractor.getDutaMovieBaseUrl() else VideoExtractor.getBullerswoodBaseUrl()
+                    VideoExtractor.fetchWordPressMuviProVideos(base, path, page, count)
                 }
                 "GENERIC_HTML" -> {
                     if (id.contains("pramlee", ignoreCase = true)) {

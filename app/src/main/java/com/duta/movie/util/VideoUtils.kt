@@ -62,37 +62,65 @@ object VideoUtils {
         }
     }
 
+    private val optimizedImageCache = java.util.concurrent.ConcurrentHashMap<String, String>(2048)
+    private val optimizedBackdropCache = java.util.concurrent.ConcurrentHashMap<String, String>(1024)
+
+    private val REGEX_TMDB_PATH = Regex("""/t/p/(?:w\d+|original)/""")
+    private val REGEX_SCALED = Regex("""[-_]scaled(\.(?:jpg|png|jpeg|webp|gif|bmp))""", RegexOption.IGNORE_CASE)
+    private val REGEX_DIMENSIONS = Regex("""-\d+x\d+(\.(?:jpg|png|jpeg|webp|gif|bmp))""", RegexOption.IGNORE_CASE)
+    private val REGEX_DAILYMOTION_X = Regex("""/x\d+""")
+    private val REGEX_GOOGLE_S_PARAM = Regex("""=s\d+([-c])?""")
+    private val REGEX_GOOGLE_S_PATH = Regex("""/s\d+(-c)?/""")
+    private val REGEX_WH = Regex("""/w\d+-h\d+/""")
+    private val REGEX_SY = Regex("""_SY\d+_""")
+    private val REGEX_SX = Regex("""_SX\d+_""")
+    private val REGEX_SCALE_TO_WIDTH = Regex("""/scale_to_width/\d+/""")
+    private val REGEX_RESIZE_PARAM_Q = Regex("""\?resize=\d+,\d+""")
+    private val REGEX_RESIZE_PARAM_A = Regex("""&resize=\d+,\d+""")
+    private val REGEX_FIT_PARAM_Q = Regex("""\?fit=\d+,\d+""")
+    private val REGEX_FIT_PARAM_A = Regex("""&fit=\d+,\d+""")
+    private val REGEX_W_H_PARAM_Q = Regex("""\?w=\d+&h=\d+""")
+    private val REGEX_W_H_PARAM_A = Regex("""&w=\d+&h=\d+""")
+    private val REGEX_W_PARAM_Q = Regex("""\?w=\d+""")
+    private val REGEX_W_PARAM_A = Regex("""&w=\d+""")
+    private val REGEX_H_PARAM_Q = Regex("""\?h=\d+""")
+    private val REGEX_H_PARAM_A = Regex("""&h=\d+""")
+    private val REGEX_CROP_PARAM_Q = Regex("""\?crop=\d+""")
+    private val REGEX_CROP_PARAM_A = Regex("""&crop=\d+""")
+    private val REGEX_THUMB = Regex("""(?<!__ia)_thumb(\.(?:jpg|png|jpeg|webp))""", RegexOption.IGNORE_CASE)
+    private val REGEX_WP_CDN = Regex("""i\d\.wp\.com""")
+
     fun getOriginalImage(url: String): String {
         if (url.isEmpty()) return ""
         if (url.contains("dmcdn.net")) {
             // Dailymotion CDN: x720 is the highest standard resolution for video thumbnails.
             // Suffix /x1080 or /x480 returns 404 from Dailymotion CloudFront CDN.
-            return url.replace(Regex("""/x\d+"""), "/x720")
+            return REGEX_DAILYMOTION_X.replace(url, "/x720")
         }
         return url
-            .replace(Regex("""/t/p/(?:w\d+|original)/"""), "/t/p/original/")
-            .replace(Regex("""[-_]scaled(\.(?:jpg|png|jpeg|webp|gif|bmp))""", RegexOption.IGNORE_CASE), "$1")
-            .replace(Regex("""-\d+x\d+(\.(?:jpg|png|jpeg|webp|gif|bmp))""", RegexOption.IGNORE_CASE), "$1")
-            .replace(Regex("""/x\d+"""), "/x1080")
-            .replace(Regex("""=s\d+([-c])?"""), "=s1200")
-            .replace(Regex("""/s\d+(-c)?/"""), "/s1200/")
-            .replace(Regex("""/w\d+-h\d+/"""), "/w1200-h675/")
-            .replace(Regex("""_SY\d+_"""), "_SY1200_")
-            .replace(Regex("""_SX\d+_"""), "_SX1200_")
-            .replace(Regex("""/scale_to_width/\d+/"""), "/scale_to_width/1200/")
-            .replace(Regex("""\?resize=\d+,\d+"""), "")
-            .replace(Regex("""&resize=\d+,\d+"""), "")
-            .replace(Regex("""\?fit=\d+,\d+"""), "")
-            .replace(Regex("""&fit=\d+,\d+"""), "")
-            .replace(Regex("""\?w=\d+&h=\d+"""), "")
-            .replace(Regex("""&w=\d+&h=\d+"""), "")
-            .replace(Regex("""\?w=\d+"""), "")
-            .replace(Regex("""&w=\d+"""), "")
-            .replace(Regex("""\?h=\d+"""), "")
-            .replace(Regex("""&h=\d+"""), "")
-            .replace(Regex("""\?crop=\d+"""), "")
-            .replace(Regex("""&crop=\d+"""), "")
-            .replace(Regex("""(?<!__ia)_thumb(\.(?:jpg|png|jpeg|webp))""", RegexOption.IGNORE_CASE), "$1")
+            .let { REGEX_TMDB_PATH.replace(it, "/t/p/original/") }
+            .let { REGEX_SCALED.replace(it, "$1") }
+            .let { REGEX_DIMENSIONS.replace(it, "$1") }
+            .let { REGEX_DAILYMOTION_X.replace(it, "/x1080") }
+            .let { REGEX_GOOGLE_S_PARAM.replace(it, "=s1200") }
+            .let { REGEX_GOOGLE_S_PATH.replace(it, "/s1200/") }
+            .let { REGEX_WH.replace(it, "/w1200-h675/") }
+            .let { REGEX_SY.replace(it, "_SY1200_") }
+            .let { REGEX_SX.replace(it, "_SX1200_") }
+            .let { REGEX_SCALE_TO_WIDTH.replace(it, "/scale_to_width/1200/") }
+            .let { REGEX_RESIZE_PARAM_Q.replace(it, "") }
+            .let { REGEX_RESIZE_PARAM_A.replace(it, "") }
+            .let { REGEX_FIT_PARAM_Q.replace(it, "") }
+            .let { REGEX_FIT_PARAM_A.replace(it, "") }
+            .let { REGEX_W_H_PARAM_Q.replace(it, "") }
+            .let { REGEX_W_H_PARAM_A.replace(it, "") }
+            .let { REGEX_W_PARAM_Q.replace(it, "") }
+            .let { REGEX_W_PARAM_A.replace(it, "") }
+            .let { REGEX_H_PARAM_Q.replace(it, "") }
+            .let { REGEX_H_PARAM_A.replace(it, "") }
+            .let { REGEX_CROP_PARAM_Q.replace(it, "") }
+            .let { REGEX_CROP_PARAM_A.replace(it, "") }
+            .let { REGEX_THUMB.replace(it, "$1") }
             .replace("quality=70", "quality=100")
             .replace("?quality=low", "?quality=high")
             .replace("?&", "?")
@@ -100,71 +128,62 @@ object VideoUtils {
     }
 
     /**
-     * Optimizes poster resolution based on device type and available hardware memory.
-     * TV gets a crystal-clear high resolution (720px - 780px width) instead of blurry 400px.
+     * Optimizes poster resolution with lightweight CDN dimensions (342px - 400px width).
+     * Unified across TV and Mobile so disk/memory cache is 100% shared and loads instantly.
      */
-    fun getOptimizedImage(url: String, isTV: Boolean, isLowRam: Boolean = false): String {
+    fun getOptimizedImage(url: String, isTV: Boolean = false, isLowRam: Boolean = false): String {
         if (url.isEmpty()) return ""
-        val original = getOriginalImage(url)
+        optimizedImageCache[url]?.let { return it }
 
-        val tmdbSize = when {
-            isTV && !isLowRam -> "w780"
-            isTV && isLowRam -> "w500"
-            else -> "w342"
-        }
-        val wpWidth = when {
-            isTV && !isLowRam -> "720"
-            isTV && isLowRam -> "500"
-            else -> "360"
-        }
-        val googleSize = when {
-            isTV && !isLowRam -> "s800"
-            isTV && isLowRam -> "s500"
-            else -> "s400"
-        }
+        val tmdbSize = "w342"
+        val wpWidth = "360"
+        val googleSize = "s400"
         val dmSize = "x720"
-        val imdbSy = when {
-            isTV && !isLowRam -> "_SY1000_"
-            isTV && isLowRam -> "_SY600_"
-            else -> "_SY500_"
-        }
-        val imdbSx = when {
-            isTV && !isLowRam -> "_SX700_"
-            isTV && isLowRam -> "_SX400_"
-            else -> "_SX360_"
-        }
+        val imdbSy = "_SY500_"
+        val imdbSx = "_SX360_"
 
-        return when {
-            // TMDB optimization (PencuriMovie, TMDB mirrors)
-            original.contains("image.tmdb.org/t/p/") -> {
-                original.replace(Regex("""/t/p/(?:original|w\d+)/"""), "/t/p/$tmdbSize/")
+        val result = when {
+            // TMDB Fast-Path & Optimization (covers 80%+ of movies)
+            url.contains("image.tmdb.org/t/p/") -> {
+                if (url.contains("/t/p/$tmdbSize/")) url
+                else REGEX_TMDB_PATH.replace(url, "/t/p/$tmdbSize/")
             }
-            // IMDb / Amazon optimization
-            original.contains("media-amazon.com") || original.contains("ia.media-imdb.com") -> {
-                original.replace("_SY1200_", imdbSy).replace("_SX1200_", imdbSx)
+            // Google/Blogger Fast-Path & Optimization
+            url.contains("bp.blogspot.com") || url.contains("googleusercontent.com") || url.contains("ggpht.com") -> {
+                if (url.contains("=$googleSize") || url.contains("/$googleSize/")) url
+                else REGEX_GOOGLE_S_PARAM.replace(REGEX_GOOGLE_S_PATH.replace(url, "/$googleSize/"), "=$googleSize")
             }
-            // Google/Blogger optimization
-            original.contains("bp.blogspot.com") || original.contains("googleusercontent.com") || original.contains("ggpht.com") -> {
-                original.replace("=s1200", "=$googleSize").replace("/s1200/", "/$googleSize/")
-            }
-            // Dailymotion optimization
-            original.contains("dmcdn.net") -> {
-                original.replace(Regex("""/x\d+"""), "/$dmSize")
+            // Dailymotion Fast-Path & Optimization
+            url.contains("dmcdn.net") -> {
+                if (url.contains("/$dmSize")) url
+                else REGEX_DAILYMOTION_X.replace(url, "/$dmSize")
             }
             // Bilibili CDN optimization (crops horizontal video thumbnail to vertical 2:3 movie poster)
-            original.contains("hdslb.com") -> {
-                val biliSuffix = if (isTV) "@320w_480h_1c.webp" else "@240w_360h_1c.webp"
-                if (original.contains("@")) original.substringBefore("@") + biliSuffix else original + biliSuffix
+            url.contains("hdslb.com") -> {
+                val biliSuffix = "@240w_360h_1c.webp"
+                if (url.endsWith(biliSuffix)) url
+                else if (url.contains("@")) url.substringBefore("@") + biliSuffix
+                else url + biliSuffix
+            }
+            // IMDb / Amazon optimization
+            url.contains("media-amazon.com") || url.contains("ia.media-imdb.com") -> {
+                val orig = getOriginalImage(url)
+                orig.replace("_SY1200_", imdbSy).replace("_SX1200_", imdbSx)
             }
             // WordPress/Jetpack/Photon resizing (i0.wp.com, i1.wp.com, i2.wp.com, i3.wp.com, etc.)
-            original.contains(Regex("""i\d\.wp\.com""")) || original.contains(".wp.com") -> {
-                if (original.contains("?")) "$original&w=$wpWidth" else "$original?w=$wpWidth"
+            url.contains(REGEX_WP_CDN) || url.contains(".wp.com") -> {
+                if (url.contains("w=$wpWidth")) url
+                else {
+                    val orig = getOriginalImage(url)
+                    if (orig.contains("?")) "$orig&w=$wpWidth" else "$orig?w=$wpWidth"
+                }
             }
-            else -> {
-                // Preserve small lightweight thumbnail from site; avoid downloading multi-megabyte master files
-                if (url.isNotEmpty()) url else original
-            }
+            else -> url
         }
+
+        if (optimizedImageCache.size > 4000) optimizedImageCache.clear()
+        optimizedImageCache[url] = result
+        return result
     }
 
     /**
@@ -179,7 +198,8 @@ object VideoUtils {
      */
     fun getOptimizedBackdrop(url: String, isTV: Boolean, isLowRam: Boolean = false): String {
         if (url.isEmpty()) return ""
-        val original = getOriginalImage(url)
+        val cacheKey = "${isTV}_${isLowRam}_$url"
+        optimizedBackdropCache[cacheKey]?.let { return it }
 
         val tmdbBackdrop = when {
             isTV && isLowRam -> "w780"
@@ -197,30 +217,42 @@ object VideoUtils {
             else -> "s1024"
         }
 
-        return when {
+        val result = when {
             // TMDB backdrop optimization
-            original.contains("image.tmdb.org/t/p/") -> {
-                original.replace(Regex("""/t/p/(?:original|w\d+)/"""), "/t/p/$tmdbBackdrop/")
-            }
-            // IMDb / Amazon backdrop
-            original.contains("media-amazon.com") || original.contains("ia.media-imdb.com") -> {
-                original.replace("_SY1200_", if (isTV) "_SX1920_" else "_SX1280_")
-                    .replace("_SX1200_", if (isTV) "_SX1920_" else "_SX1280_")
+            url.contains("image.tmdb.org/t/p/") -> {
+                if (url.contains("/t/p/$tmdbBackdrop/")) url
+                else REGEX_TMDB_PATH.replace(url, "/t/p/$tmdbBackdrop/")
             }
             // Google/Blogger backdrop
-            original.contains("bp.blogspot.com") || original.contains("googleusercontent.com") || original.contains("ggpht.com") -> {
-                original.replace("=s1200", "=$googleBackdrop").replace("/s1200/", "/$googleBackdrop/")
+            url.contains("bp.blogspot.com") || url.contains("googleusercontent.com") || url.contains("ggpht.com") -> {
+                if (url.contains("=$googleBackdrop") || url.contains("/$googleBackdrop/")) url
+                else REGEX_GOOGLE_S_PARAM.replace(REGEX_GOOGLE_S_PATH.replace(url, "/$googleBackdrop/"), "=$googleBackdrop")
             }
             // Dailymotion backdrop
-            original.contains("dmcdn.net") -> {
-                original.replace(Regex("""/x\d+"""), "/x720")
+            url.contains("dmcdn.net") -> {
+                if (url.contains("/x720")) url
+                else REGEX_DAILYMOTION_X.replace(url, "/x720")
+            }
+            // IMDb / Amazon backdrop
+            url.contains("media-amazon.com") || url.contains("ia.media-imdb.com") -> {
+                val orig = getOriginalImage(url)
+                orig.replace("_SY1200_", if (isTV) "_SX1920_" else "_SX1280_")
+                    .replace("_SX1200_", if (isTV) "_SX1920_" else "_SX1280_")
             }
             // WordPress/Jetpack/Photon backdrop
-            original.contains(Regex("""i\d\.wp\.com""")) || original.contains(".wp.com") -> {
-                if (original.contains("?")) "$original&w=$wpBackdropWidth" else "$original?w=$wpBackdropWidth"
+            url.contains(REGEX_WP_CDN) || url.contains(".wp.com") -> {
+                if (url.contains("w=$wpBackdropWidth")) url
+                else {
+                    val orig = getOriginalImage(url)
+                    if (orig.contains("?")) "$orig&w=$wpBackdropWidth" else "$orig?w=$wpBackdropWidth"
+                }
             }
-            else -> original
+            else -> url
         }
+
+        if (optimizedBackdropCache.size > 2000) optimizedBackdropCache.clear()
+        optimizedBackdropCache[cacheKey] = result
+        return result
     }
 
     /**

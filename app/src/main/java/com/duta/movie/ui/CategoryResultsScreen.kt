@@ -71,24 +71,27 @@ fun CategoryResultsScreen(
     
     val isEndReached by viewModel.isEndReached.collectAsStateWithLifecycle()
     
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val isRealTV = remember { com.duta.movie.util.DeviceUtils.isTvDevice(context) }
     val isExpanded = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded
     val isMedium = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Medium
+    val isTV = isExpanded || isMedium || isRealTV
     
     val columns = when {
-        isExpanded -> if (uiThumbnailScaleFactor > 1.3f) 4 else if (uiThumbnailScaleFactor > 1.15f) 5 else if (uiThumbnailScaleFactor > 0.8f) 6 else 8
+        isRealTV || isExpanded -> if (uiThumbnailScaleFactor > 1.3f) 4 else if (uiThumbnailScaleFactor > 1.15f) 5 else if (uiThumbnailScaleFactor > 0.8f) 6 else 8
         isMedium -> if (uiThumbnailScaleFactor > 1.2f) 3 else 4
         else -> 2
     }
 
     // TV Optimization: Safe area padding to prevent content from being cut off on old TVs (overscan)
-    val screenPadding = if (isExpanded) 48.dp else 0.dp
+    val screenPadding = if (isRealTV || isExpanded) 48.dp else 0.dp
 
     val isSearchActive by viewModel.isSearchActive.collectAsStateWithLifecycle()
     val gridState = rememberLazyGridState()
     val scope = rememberCoroutineScope()
     
     // TV Optimization: Focus requesters
-    val firstItemFocusRequester = viewModel.contentFocusRequester
+    val firstItemFocusRequester = remember { FocusRequester() }
     val clickedItemFocusRequester = remember { FocusRequester() }
     var lastClickedVideoId by rememberSaveable { mutableStateOf<String?>(null) }
 
@@ -99,8 +102,11 @@ fun CategoryResultsScreen(
 
     var localSearchQuery by rememberSaveable(isSearchActive) { mutableStateOf(if (isSearchActive) searchQuery else "") }
 
-    LaunchedEffect(isLoading, videos) {
-        if (isExpanded && !isLoading && videos.isNotEmpty()) {
+    var hasRequestedInitialFocus by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(isExpanded, isRealTV, videos.isNotEmpty()) {
+        if ((isExpanded || isRealTV) && !hasRequestedInitialFocus && videos.isNotEmpty()) {
+            hasRequestedInitialFocus = true
             delay(200)
             try {
                 if (lastClickedVideoId != null && videos.any { it.id == lastClickedVideoId }) {
@@ -108,6 +114,15 @@ fun CategoryResultsScreen(
                 } else {
                     firstItemFocusRequester.requestFocus()
                 }
+            } catch(_: Exception) {}
+        }
+    }
+
+    LaunchedEffect(lastClickedVideoId) {
+        if ((isExpanded || isRealTV) && lastClickedVideoId != null && videos.any { it.id == lastClickedVideoId }) {
+            delay(100)
+            try {
+                clickedItemFocusRequester.requestFocus()
             } catch(_: Exception) {}
         }
     }
@@ -277,49 +292,50 @@ fun CategoryResultsScreen(
             }
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
+                val distinctVideos = remember(videos) { videos.distinctBy { it.id } }
                 if (isLoading && videos.isEmpty()) {
                     CircularProgressIndicator(
                         modifier = Modifier.align(Alignment.Center),
                         color = Color.Red
                     )
                 } else if (error != null && videos.isEmpty()) {
-                Column(
-                    modifier = Modifier.fillMaxSize().padding(16.dp),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
-                ) {
-                    Text(text = error!!, color = Color.White, textAlign = TextAlign.Center)
-                    Spacer(modifier = Modifier.height(16.dp))
-                    var isRetryFocused by remember { mutableStateOf(false) }
-                    Button(
-                        onClick = { 
-                            if (isSearchActive && localSearchQuery.isNotEmpty()) {
-                                scope.launch { viewModel.searchVideos(localSearchQuery, categoryPath = categoryPath) }
-                            } else {
-                                viewModel.selectCategory(categoryPath) 
-                            }
-                        },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isRetryFocused) Color.LightGray else Color.Red
-                        ),
-                        modifier = Modifier.onFocusChanged { isRetryFocused = it.isFocused }.focusable()
+                    Column(
+                        modifier = Modifier.fillMaxSize().padding(16.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.Center
                     ) {
-                        Text(stringResource(R.string.retry), color = if (isRetryFocused) Color.Black else Color.White)
+                        Text(text = error!!, color = Color.White, textAlign = TextAlign.Center)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        var isRetryFocused by remember { mutableStateOf(false) }
+                        Button(
+                            onClick = { 
+                                if (isSearchActive && localSearchQuery.isNotEmpty()) {
+                                    scope.launch { viewModel.searchVideos(localSearchQuery, categoryPath = categoryPath) }
+                                } else {
+                                    viewModel.selectCategory(categoryPath) 
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isRetryFocused) Color.LightGray else Color.Red
+                            ),
+                            modifier = Modifier.onFocusChanged { isRetryFocused = it.isFocused }.focusable()
+                        ) {
+                            Text(stringResource(R.string.retry), color = if (isRetryFocused) Color.Black else Color.White)
+                        }
                     }
-                }
-            } else {
-                LazyVerticalGrid(
-                    columns = GridCells.Fixed(columns),
-                    state = gridState,
-                    modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(8.dp)
-                ) {
-                    itemsIndexed(
-                        items = videos,
-                        contentType = { _, _ -> "video_thumbnail" }
-                    ) { index, video ->
+                } else {
+                    LazyVerticalGrid(
+                        columns = GridCells.Fixed(columns),
+                        state = gridState,
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(8.dp)
+                    ) {
+                        itemsIndexed(
+                            items = distinctVideos,
+                            key = { _, video -> video.id },
+                            contentType = { _, _ -> "video_thumbnail" }
+                        ) { index, video ->
                         val isFirst = index == 0
-                        val isTV = isExpanded || isMedium
                         val isFirstColumn = index % columns == 0
                         val itemModifier = Modifier
                             .fillMaxWidth()
@@ -331,11 +347,6 @@ fun CategoryResultsScreen(
                                     Modifier.focusRequester(firstItemFocusRequester)
                                 } else Modifier
                             )
-                            .focusProperties {
-                                if (isFirstColumn && isTV) {
-                                    left = viewModel.sidebarFocusRequester
-                                }
-                            }
                         NetflixThumbnail(
                             video = video,
                             modifier = itemModifier,
@@ -343,6 +354,7 @@ fun CategoryResultsScreen(
                             showTitle = true,
                             errorPlaceholder = errorPlaceholder,
                             isTV = isTV,
+                            isRealTV = isRealTV,
                             onFocus = { focusedVideo = video }
                         ) { 
                             lastClickedVideoId = video.id

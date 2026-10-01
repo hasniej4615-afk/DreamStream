@@ -8,6 +8,12 @@ import kotlinx.coroutines.runBlocking
 import org.junit.Test
 
 class VideoExtractorTest {
+    @org.junit.Before
+    fun setUp() {
+        VideoExtractor.setBaseUrl("https://ww44.pencurimovie.baby")
+        VideoExtractor.setPencuriBaseUrl("https://ww44.pencurimovie.baby")
+    }
+
     @Test
     fun testNormalizePath() {
         assert(VideoExtractor.normalizePath("https://ww44.pencurimovie.baby/country/malaysia/") == "/country/malaysia/")
@@ -59,6 +65,23 @@ class VideoExtractorTest {
         assert(merged[0].id == "munafik-2") { "Expected munafik-2 first, got ${merged[0].id}" }
         assert(merged[1].id == "pm_pagari-bulan") { "Expected pm_pagari-bulan second, got ${merged[1].id}" }
         assert(merged[2].id == "tarung") { "Expected tarung third, got ${merged[2].id}" }
+    }
+
+    @Test
+    fun testYearAwareDeduplication() {
+        // Remakes/reboots with same name from different years MUST be preserved as separate movies!
+        val moana2016 = com.duta.movie.model.Video(id = "bw_moana", title = "Moana (2016)", thumbnailUrl = "", duration = "", videoUrl = "https://inlionsforisbvi.org/moana/")
+        val moana2026 = com.duta.movie.model.Video(id = "pm_moana", title = "Moana (2026)", thumbnailUrl = "", duration = "", videoUrl = "https://ww44.pencurimovie.baby/moana-2026/")
+        val moana2026Mirror = com.duta.movie.model.Video(id = "dm_moana", title = "Moana (2026)", thumbnailUrl = "", duration = "", videoUrl = "https://dutamovie21.cam/film/1108427-moana/")
+
+        val list1 = listOf(moana2016, moana2026)
+        val list2 = listOf(moana2026Mirror)
+
+        val merged = VideoExtractor.mergeAndInterleave(list1, list2, 10)
+        // moana2026 and moana2026Mirror should deduplicate, but moana2016 MUST be kept!
+        assert(merged.size == 2) { "Expected 2 movies (2016 and 2026), got ${merged.size}" }
+        assert(merged.any { it.title.contains("2016") }) { "Expected 2016 original movie to be kept" }
+        assert(merged.any { it.title.contains("2026") }) { "Expected 2026 remake movie to be kept" }
     }
 
     @Test
@@ -158,11 +181,11 @@ class VideoExtractorTest {
 
         println("Provider priorities: VOE=$voeScore, ArchiveFast=$archiveFastScore, Streamtape=$streamtapeScore, Hgcloud=$hgScore, IndoStream=$indoScore, ArchiveMirror=$archiveMirrorScore, Abyss=$abyssScore")
 
-        assert(voeScore == 160) { "VOE must have top priority 160" }
-        assert(archiveFastScore == 150) { "Archive.org Fast Direct must have priority 150" }
-        assert(streamtapeScore == 135) { "Streamtape must have priority 135" }
-        assert(hgScore == 130) { "Hgcloud must have priority 130" }
-        assert(indoScore == 125) { "IndoStream must have priority 125" }
+        assert(voeScore == 160) { "VOE must have priority 160" }
+        assert(archiveFastScore == 155) { "Archive.org Fast Direct must have priority 155" }
+        assert(streamtapeScore == 138) { "Streamtape must have priority 138" }
+        assert(hgScore == 185) { "Hgcloud must have priority 185" }
+        assert(indoScore == 170) { "IndoStream must have priority 170" }
         assert(archiveMirrorScore == 45) { "Archive.org slow mirror must be demoted to 45" }
         val indoP2pScore = VideoExtractor.getProviderPriority("IndoStream-VIP", "https://algarvebuzz.com/?player=3")
         val p2pDirectScore = VideoExtractor.getProviderPriority("PlayerP2P", "https://live.playerp2p.online/#trejkm")
@@ -170,19 +193,23 @@ class VideoExtractorTest {
         val veevScore = VideoExtractor.getProviderPriority("Veev", "https://algarvebuzz.com/?player=5")
         val hglinkScore = VideoExtractor.getProviderPriority("HGLink", "https://hglink.to/e/ij5agybkx3a9")
 
-        assert(indoP2pScore == 125) { "IndoStream player=3 must have priority 125" }
+        assert(indoP2pScore == 170) { "IndoStream player=3 must have priority 170" }
         assert(p2pDirectScore == 35) { "PlayerP2P direct must be demoted to 35" }
-        assert(upnsScore == 125) { "UPNS player=8 must have priority 125" }
+        assert(upnsScore == 170) { "IndoStream player=8 must have priority 170" }
         assert(veevScore == 55) { "Veev player=5 must be demoted to 55" }
-        assert(hglinkScore == 20) { "HGLink ad-gate must be demoted to 20" }
+        assert(hglinkScore == 200) { "HGLink must have top priority 200" }
 
+        assert(hglinkScore > hgScore) { "HGLink must beat Hgcloud" }
+        assert(hgScore > indoScore) { "Hgcloud must beat IndoStream" }
+        assert(indoScore > voeScore) { "IndoStream must beat VOE" }
+        assert(voeScore > archiveFastScore) { "VOE must beat Fast Direct" }
+        assert(archiveFastScore > streamtapeScore) { "Fast Direct must beat Streamtape" }
         assert(indoScore > veevScore) { "IndoStream must beat Veev" }
         assert(indoP2pScore > veevScore) { "IndoStream PlayerP2P must beat Veev" }
         assert(veevScore > p2pDirectScore) { "Veev must beat demoted PlayerP2P" }
         assert(p2pDirectScore > abyssScore) { "PlayerP2P must beat Abyss" }
         assert(veevScore > archiveMirrorScore) { "Veev must beat slow Archive Mirror" }
         assert(archiveMirrorScore > abyssScore) { "Archive Mirror must beat Abyss" }
-        assert(abyssScore > hglinkScore) { "Abyss must beat HGLink" }
 
         val playstreamScore = VideoExtractor.getProviderPriority("Playstream", "https://playstream.video/v/noMHvPqwxqC3/")
         val embedpyroxScore = VideoExtractor.getProviderPriority("EmbedPyrox", "https://embedpyrox.xyz/video/35925d9ed5219fe76f27b74b862fd34b")
@@ -191,11 +218,10 @@ class VideoExtractorTest {
 
         assert(playstreamScore == 95) { "Playstream must have priority 95" }
         assert(embedpyroxScore == 95) { "EmbedPyrox must have priority 95" }
-        assert(dailymotionScore == 65) { "Dailymotion fallback must have priority 65" }
-        assert(bilibiliScore == 45) { "Bilibili fallback must have priority 45" }
+        assert(dailymotionScore == 10) { "Dailymotion fallback must have priority 10" }
+        assert(bilibiliScore == 10) { "Bilibili fallback must have priority 10" }
         assert(playstreamScore > bilibiliScore) { "Dedicated Playstream must beat fallback Bilibili" }
         assert(embedpyroxScore > bilibiliScore) { "Dedicated EmbedPyrox must beat fallback Bilibili" }
-        assert(dailymotionScore > bilibiliScore) { "Dailymotion must beat Bilibili" }
     }
 
     @Test
@@ -240,12 +266,14 @@ class VideoExtractorTest {
         altSources.forEach { println(" - ${it.name} -> ${it.url}") }
 
         if (altSources.isEmpty()) {
-            println("Archive.org network currently unreachable; skipping assertion.")
+            println("Alternative source providers currently unreachable; skipping assertion.")
             return@runBlocking
         }
 
-        assert(altSources.isNotEmpty()) { "Expected to find Archive.org alternative stream for Ali Baba Bujang Lapok" }
-        assert(altSources.any { it.url.contains("archive.org") }) { "Alternative source must be from Archive.org" }
+        assert(altSources.isNotEmpty()) { "Expected to find alternative stream for Ali Baba Bujang Lapok" }
+        assert(altSources.any { it.url.contains("archive.org") || it.name.contains("(Pencuri)") || it.name.contains("(DutaFilm)") || it.name.contains("(LK21)") }) { 
+            "Alternative source must be from Archive.org or a recognized partner provider" 
+        }
     }
 
     @Test
@@ -1252,6 +1280,114 @@ class VideoExtractorTest {
         // 4. Verify mismatched slug is rejected
         val mismatchedServer = VideoServer("Hardsub Indo", "https://df31.mantab.men/watch/alien-earth-2025-x9y2.html?epid=123")
         assert(!VideoExtractor.isServerMatchingMovie(videoTitle, mismatchedServer)) { "Mismatched partner slug must be rejected" }
+    }
+
+    @Test
+    fun testRefinedServerDisplayAndJunkExclusion() {
+        val targetTitle = "Setannya Cuan (2026)"
+
+        // 1. Junk buttons must be rejected by isGenuineMirror
+        assert(!VideoExtractor.isGenuineMirror("Download", "https://ww44.pencurimovie.baby/download/123"))
+        assert(!VideoExtractor.isGenuineMirror("Report", "https://ww44.pencurimovie.baby/report"))
+        assert(!VideoExtractor.isGenuineMirror("Lapor", "https://ww44.pencurimovie.baby/lapor"))
+        assert(!VideoExtractor.isGenuineMirror("Unduh", "https://ww44.pencurimovie.baby/unduh"))
+        assert(!VideoExtractor.isGenuineMirror("Trailer", "https://ww44.pencurimovie.baby/trailer"))
+
+        // 2. Internal CMS navigation URLs without player parameters must be rejected
+        assert(!VideoExtractor.isGenuineMirror("Boss (2013)", "https://ww44.pencurimovie.baby/movie/boss-2013/"))
+        assert(!VideoExtractor.isGenuineMirror("Borderlands (2024)", "https://ww44.pencurimovie.baby/movie/borderlands-2024/"))
+
+        // 3. Mismatched movie title servers must be rejected by isServerMatchingMovie
+        val junkServer1 = VideoServer("Download", "https://ww44.pencurimovie.baby/download/123")
+        val junkServer2 = VideoServer("Report", "https://ww44.pencurimovie.baby/report")
+        val mismatched1 = VideoServer("Hdtv 720p Boss (2013)", "https://ww44.pencurimovie.baby/movie/boss-2013/")
+        val mismatched2 = VideoServer("Web-dl 1080p 720p Borderlands (2024)", "https://ww44.pencurimovie.baby/movie/borderlands-2024/")
+        val mismatched3 = VideoServer("Web-dl 1080p 720p Mumun (2022)", "https://ww44.pencurimovie.baby/movie/mumun-2022/")
+        val mismatched4 = VideoServer("Web-dl 1080p Bikeman (2018)", "https://ww44.pencurimovie.baby/movie/bikeman-2018/")
+
+        assert(!VideoExtractor.isServerMatchingMovie(targetTitle, junkServer1))
+        assert(!VideoExtractor.isServerMatchingMovie(targetTitle, junkServer2))
+        assert(!VideoExtractor.isServerMatchingMovie(targetTitle, mismatched1))
+        assert(!VideoExtractor.isServerMatchingMovie(targetTitle, mismatched2))
+        assert(!VideoExtractor.isServerMatchingMovie(targetTitle, mismatched3))
+        assert(!VideoExtractor.isServerMatchingMovie(targetTitle, mismatched4))
+
+        // 4. Valid primary servers must match
+        val validPrimary1 = VideoServer("VOE", "https://voe.sx/e/abc12345")
+        val validPrimary2 = VideoServer("Server 1 Web-dl", "https://ww44.pencurimovie.baby/?player=1")
+        val validPrimary3 = VideoServer("IndoStream-VIP", "https://indostream.example/amt/stream1")
+
+        assert(VideoExtractor.isServerMatchingMovie(targetTitle, validPrimary1))
+        assert(VideoExtractor.isServerMatchingMovie(targetTitle, validPrimary2))
+        assert(VideoExtractor.isServerMatchingMovie(targetTitle, validPrimary3))
+    }
+
+    @Test
+    fun testPrimaryAndExternalPartnerMirrorsHierarchy() {
+        // 1. Playback Priority Hierarchy:
+        // Priority 1: HgLink & HgCloud (180)
+        // Priority 2: IndoStream & AMT (170)
+        // Priority 3: VOE / Johnfullwonder (160)
+        // Priority 4: Fast Direct (155)
+        // Priority 5: VidHide / Cluster (150)
+        // Priority 6: Dsvplay (145)
+        // Priority 7: Streamtape (140)
+        // Priority 8: LuluStream (135)
+        // Last-Resort Fallbacks: YouTube, Bilibili, Dailymotion (10)
+        val hgLinkPrio = VideoExtractor.getProviderPriority("HgLink VIP", "https://hgcloud.to/e/test1")
+        val indoStreamPrio = VideoExtractor.getProviderPriority("IndoStream 1080p", "https://indostream.example/amt/v1")
+        val voePrio = VideoExtractor.getProviderPriority("VOE", "https://voe.sx/e/test2")
+        val fastDirectPrio = VideoExtractor.getProviderPriority("Fast Direct", "https://ia800100.us.archive.org/1/items/test.mp4")
+        val vidHidePrio = VideoExtractor.getProviderPriority("VidHide", "https://vidhide.org/embed/test3")
+        val dsvplayPrio = VideoExtractor.getProviderPriority("Dsvplay", "https://dsvplay.com/embed/test4")
+        val streamtapePrio = VideoExtractor.getProviderPriority("Streamtape", "https://streamtape.com/get_video?id=test5")
+        val streamtapeEmbedPrio = VideoExtractor.getProviderPriority("Streamtape", "https://streamtape.com/e/test5")
+        val luluPrio = VideoExtractor.getProviderPriority("LuluStream", "https://luluvdo.com/e/test6")
+        val ytPrio = VideoExtractor.getProviderPriority("YouTube HD (Full Movie)", "https://www.youtube-nocookie.com/embed/test7")
+        val biliPrio = VideoExtractor.getProviderPriority("Bilibili HD", "https://player.bilibili.com/player.html?bvid=test8")
+        val dmPrio = VideoExtractor.getProviderPriority("Dailymotion", "https://www.dailymotion.com/embed/video/test9")
+
+        org.junit.Assert.assertEquals(200, hgLinkPrio)
+        org.junit.Assert.assertEquals(170, indoStreamPrio)
+        org.junit.Assert.assertEquals(160, voePrio)
+        org.junit.Assert.assertEquals(155, fastDirectPrio)
+        org.junit.Assert.assertEquals(150, vidHidePrio)
+        org.junit.Assert.assertEquals(75, dsvplayPrio)
+        org.junit.Assert.assertEquals(140, streamtapePrio)
+        org.junit.Assert.assertEquals(138, streamtapeEmbedPrio)
+        org.junit.Assert.assertEquals(135, luluPrio)
+        org.junit.Assert.assertEquals(10, ytPrio)
+        org.junit.Assert.assertEquals(10, biliPrio)
+        org.junit.Assert.assertEquals(10, dmPrio)
+
+        org.junit.Assert.assertTrue("HgLink must have higher priority than IndoStream", hgLinkPrio > indoStreamPrio)
+        org.junit.Assert.assertTrue("IndoStream must have higher priority than VOE", indoStreamPrio > voePrio)
+        org.junit.Assert.assertTrue("VOE must have higher priority than VidHide", voePrio > vidHidePrio)
+        org.junit.Assert.assertTrue("VidHide must have higher priority than Dsvplay", vidHidePrio > dsvplayPrio)
+        org.junit.Assert.assertTrue("All primary mirrors must have higher priority than YouTube/Bilibili/Dailymotion fallbacks", luluPrio > ytPrio)
+
+        // 2. Primary vs Alternative Partner Server detection:
+        val primaryServers = listOf(
+            VideoServer("HgLink VIP", "https://hgcloud.to/e/test1"),
+            VideoServer("IndoStream", "https://indostream.example/amt/v1"),
+            VideoServer("VOE", "https://voe.sx/e/test2"),
+            VideoServer("VidHide", "https://vidhide.org/embed/test3")
+        )
+        val fallbackServers = listOf(
+            VideoServer("YouTube HD (Full Movie)", "https://www.youtube-nocookie.com/embed/test7"),
+            VideoServer("Bilibili HD", "https://player.bilibili.com/player.html?bvid=test8"),
+            VideoServer("Dailymotion", "https://www.dailymotion.com/embed/video/test9")
+        )
+
+        primaryServers.forEach {
+            org.junit.Assert.assertFalse("Server ${it.name} must NOT be identified as alternative partner server", VideoExtractor.isAlternativePartnerServer(it.name, it.url))
+            org.junit.Assert.assertFalse("Host ${it.url} must NOT be identified as alternative partner host", VideoExtractor.isAlternativePartnerHost(it.url))
+        }
+
+        fallbackServers.forEach {
+            org.junit.Assert.assertTrue("Server ${it.name} MUST be identified as alternative partner server", VideoExtractor.isAlternativePartnerServer(it.name, it.url))
+            org.junit.Assert.assertTrue("Host ${it.url} MUST be identified as alternative partner host", VideoExtractor.isAlternativePartnerHost(it.url))
+        }
     }
 }
 

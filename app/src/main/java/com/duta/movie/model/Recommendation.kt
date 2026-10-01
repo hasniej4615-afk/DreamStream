@@ -18,12 +18,21 @@ data class Recommendation(
     @SerialName("updated_at") val updatedAt: String? = null
 )
 
-fun Recommendation.toVideo(): Video = Video(
-    id = videoId,
-    title = title,
-    thumbnailUrl = thumbnailUrl,
-    videoUrl = com.duta.movie.util.VideoExtractor.resolveVideoUrl(videoId, videoUrl),
-    quality = quality,
-    duration = "",
-    views = recommendCount.toString()
-)
+fun Recommendation.toVideo(): Video {
+    val verified = com.duta.movie.util.VideoExtractor.getVerifiedPoster(title, videoId)
+    val effectiveThumb = when {
+        verified.isNotEmpty() -> verified
+        com.duta.movie.util.VideoExtractor.isDeadImage(thumbnailUrl) -> ""
+        else -> thumbnailUrl
+    }
+    return Video(
+        id = videoId,
+        title = title,
+        thumbnailUrl = effectiveThumb,
+        backdropUrl = if (effectiveThumb.isNotEmpty()) effectiveThumb else "",
+        videoUrl = com.duta.movie.util.VideoExtractor.resolveVideoUrl(videoId, videoUrl),
+        quality = quality,
+        duration = "",
+        views = recommendCount.toString()
+    )
+}

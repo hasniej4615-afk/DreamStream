@@ -24,10 +24,23 @@ data class UpdateInfo(
 
 object UpdateChecker {
     private val client = OkHttpClient()
-    private val json = Json { ignoreUnknownKeys = true }
+    private val json = Json { 
+        ignoreUnknownKeys = true 
+        isLenient = true
+        coerceInputValues = true
+    }
 
     // Use the raw Gist URL provided by the user (removed commit hash for latest version)
     private const val UPDATE_URL = "https://gist.githubusercontent.com/hasniej4615-afk/2f535093cc562e77ed8f68c9e596b17c/raw/update.json"
+
+    fun sanitizeJson(raw: String): String {
+        val withCommas = raw.replace(Regex("""([^,\{\[\s])\s*\r?\n(\s*")""")) { match ->
+            "${match.groupValues[1]},\n${match.groupValues[2]}"
+        }
+        return withCommas.replace(Regex(""",\s*([\]\}])""")) { match ->
+            match.groupValues[1]
+        }
+    }
 
     suspend fun checkForUpdate(): UpdateInfo? = withContext(Dispatchers.IO) {
         try {
@@ -39,7 +52,8 @@ object UpdateChecker {
                 if (response.isSuccessful) {
                     val body = response.body?.string()
                     if (body != null) {
-                        return@withContext json.decodeFromString<UpdateInfo>(body)
+                        val sanitized = sanitizeJson(body)
+                        return@withContext json.decodeFromString<UpdateInfo>(sanitized)
                     }
                 }
             }

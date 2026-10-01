@@ -99,6 +99,9 @@ class MainActivity : AppCompatActivity() {
     @Inject
     lateinit var preferenceManager: com.duta.movie.data.PreferenceManager
 
+    @Inject
+    lateinit var providerManager: com.duta.movie.provider.core.ProviderManager
+
     private var isPipMode = mutableStateOf(false)
     private var isPlayerActiveGlobal = false
 
@@ -112,6 +115,17 @@ class MainActivity : AppCompatActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isPipMode.value = isInPictureInPictureMode
+    }
+
+    override fun onResume() {
+        super.onResume()
+        lifecycleScope.launch(Dispatchers.IO) {
+            try {
+                providerManager.autoSyncIfNeeded()
+            } catch (e: Exception) {
+                Log.w("MainActivity", "Auto-sync onResume notice: ${e.message}")
+            }
+        }
     }
 
     fun enterPipMode() {
@@ -138,19 +152,17 @@ class MainActivity : AppCompatActivity() {
             } catch(_: Exception) {}
         }
 
-        // Initialize CastContext when UI thread is idle (required by Cast SDK on Main thread), using async executor for heavy work
+        // Initialize CastContext in background after UI settles smoothly (delayed to avoid initial frame contention)
         if (!isTVMode) {
-            android.os.Looper.myQueue().addIdleHandler {
-                lifecycleScope.launch(Dispatchers.Main) {
-                    try {
-                        if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this@MainActivity) == ConnectionResult.SUCCESS) {
-                            CastContext.getSharedInstance(applicationContext, java.util.concurrent.Executors.newSingleThreadExecutor())
-                        }
-                    } catch (e: Exception) {
-                        Log.e("MainActivity", "Safe Cast check error", e)
+            lifecycleScope.launch(Dispatchers.Main) {
+                kotlinx.coroutines.delay(4000)
+                try {
+                    if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this@MainActivity) == ConnectionResult.SUCCESS) {
+                        CastContext.getSharedInstance(applicationContext, java.util.concurrent.Executors.newSingleThreadExecutor())
                     }
+                } catch (e: Exception) {
+                    Log.w("MainActivity", "Safe Cast init notice: ${e.message}")
                 }
-                false // Run once and remove from queue
             }
         }
         
@@ -162,7 +174,7 @@ class MainActivity : AppCompatActivity() {
                     if (com.duta.movie.tv.TvChannelSyncWorker.isTvChannelSupported(this@MainActivity)) {
                         com.duta.movie.tv.TvChannelSyncWorker.syncChannelDirectly(applicationContext)
                     }
-                } catch (e: Exception) {
+                } catch (e: Throwable) {
                     Log.w("MainActivity", "Direct TV sync error: ${e.message}")
                 }
             }
@@ -177,32 +189,11 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        if (isTVMode) {
+        // Schedule periodic background auto-sync for extensions & repositories via WorkManager on IO dispatcher
+        lifecycleScope.launch(Dispatchers.IO) {
             try {
-                if (com.duta.movie.tv.TvChannelSyncWorker.isTvChannelSupported(this@MainActivity)) {
-                    val syncRequest = androidx.work.OneTimeWorkRequestBuilder<com.duta.movie.tv.TvChannelSyncWorker>().build()
-                    androidx.work.WorkManager.getInstance(this).enqueueUniqueWork(
-                        "TvChannelSync", 
-                        androidx.work.ExistingWorkPolicy.REPLACE, 
-                        syncRequest
-                    )
-                }
-            } catch (e: Exception) {
-                Log.e("MainActivity", "Failed to enqueue TV sync", e)
-            }
-        }
-
-        // Pre-warm Android System WebView on Activity context when UI thread is idle
-        // Eliminates the 570ms main-thread freeze when launching WebView embeds
-        android.os.Looper.myQueue().addIdleHandler {
-            try {
-                val dummyWv = android.webkit.WebView(this@MainActivity)
-                dummyWv.destroy()
-                Log.i("MainActivity", "WebView engine pre-warmed on Activity context successfully")
-            } catch (e: Throwable) {
-                Log.w("MainActivity", "WebView pre-warm skipped: ${e.message}")
-            }
-            false // Run once and remove from queue
+                com.duta.movie.data.remote.RepoSyncWorker.schedulePeriodicSync(applicationContext)
+            } catch (_: Exception) {}
         }
 
         setContent {
@@ -319,9 +310,9 @@ class MainActivity : AppCompatActivity() {
                                 var sidebarFocused by remember { mutableStateOf(false) }
                                 val sidebarWidth by androidx.compose.animation.core.animateDpAsState(
                                     if (sidebarFocused) 200.dp else 72.dp,
-                                    animationSpec = androidx.compose.animation.core.spring(
-                                        dampingRatio = androidx.compose.animation.core.Spring.DampingRatioLowBouncy,
-                                        stiffness = androidx.compose.animation.core.Spring.StiffnessLow
+                                    animationSpec = androidx.compose.animation.core.tween(
+                                        durationMillis = 200,
+                                        easing = androidx.compose.animation.core.FastOutSlowInEasing
                                     ),
                                     label = "sidebar_width"
                                 )
@@ -347,8 +338,7 @@ class MainActivity : AppCompatActivity() {
                                     Column(
                                         modifier = Modifier
                                             .focusGroup()
-                                            .fillMaxHeight()
-                                            .verticalScroll(rememberScrollState()),
+                                            .fillMaxHeight(),
                                         verticalArrangement = Arrangement.spacedBy(10.dp),
                                         horizontalAlignment = Alignment.Start
                                     ) {
@@ -357,11 +347,11 @@ class MainActivity : AppCompatActivity() {
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
                                             Text(
-                                                "DM", 
-                                                color = Color.Red, 
-                                                fontWeight = FontWeight.Black, 
-                                                fontSize = 28.sp,
-                                                letterSpacing = (-1.5).sp
+                                                 "DM", 
+                                                 color = Color.Red, 
+                                                 fontWeight = FontWeight.Black, 
+                                                 fontSize = 28.sp,
+                                                 letterSpacing = (-1.5).sp
                                             )
                                             androidx.compose.animation.AnimatedVisibility(
                                                 visible = sidebarFocused,
@@ -387,8 +377,6 @@ class MainActivity : AppCompatActivity() {
                                             isSelected = isSearchActive,
                                             isExpanded = sidebarFocused,
                                             isRealTV = isRealTV,
-                                            focusRequester = if (isSearchActive) videoViewModel.sidebarFocusRequester else null,
-                                            rightFocusRequester = videoViewModel.contentFocusRequester,
                                             onClick = {
                                                 videoViewModel.setSearchActive(!isSearchActive)
                                                 if (currentDestination?.hasRoute<Destination.Home>() == false) {
@@ -405,8 +393,6 @@ class MainActivity : AppCompatActivity() {
                                                 isSelected = selected,
                                                 isExpanded = sidebarFocused,
                                                 isRealTV = isRealTV,
-                                                focusRequester = if (selected && !isSearchActive) videoViewModel.sidebarFocusRequester else null,
-                                                rightFocusRequester = videoViewModel.contentFocusRequester,
                                                 onClick = {
                                                     videoViewModel.setSearchActive(false)
                                                     videoViewModel.onSearchQueryChange("")
@@ -428,8 +414,6 @@ class MainActivity : AppCompatActivity() {
                                             isSelected = currentDestination?.hasRoute<Destination.Settings>() == true,
                                             isExpanded = sidebarFocused,
                                             isRealTV = isRealTV,
-                                            focusRequester = if (currentDestination?.hasRoute<Destination.Settings>() == true) videoViewModel.sidebarFocusRequester else null,
-                                            rightFocusRequester = videoViewModel.contentFocusRequester,
                                             onClick = { navController.navigate(Destination.Settings) }
                                         )
 
@@ -569,8 +553,6 @@ fun SidebarIcon(
     isSelected: Boolean,
     isExpanded: Boolean,
     isRealTV: Boolean = false,
-    focusRequester: FocusRequester? = null,
-    rightFocusRequester: FocusRequester? = null,
     onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
@@ -579,7 +561,7 @@ fun SidebarIcon(
     val isPressed by interactionSource.collectIsPressedAsState()
     
     val scale by animateFloatAsState(
-        targetValue = if (isPressed) 0.95f else if (isFocused) 1.12f else 1f,
+        targetValue = if (isPressed) 0.95f else if (isFocused) 1.10f else 1f,
         animationSpec = spring(stiffness = Spring.StiffnessLow, dampingRatio = Spring.DampingRatioLowBouncy)
     )
 
@@ -590,13 +572,6 @@ fun SidebarIcon(
             .fillMaxWidth()
             .scale(scale)
             .onFocusChanged { isFocused = it.isFocused }
-            .then(if (focusRequester != null) Modifier.focusRequester(focusRequester) else Modifier)
-            .focusProperties {
-                if (rightFocusRequester != null) {
-                    right = rightFocusRequester
-                }
-            }
-            .focusable()
             .then(
                 if (isFocused && isRealTV) Modifier.border(3.dp, Color.White, androidx.compose.foundation.shape.RoundedCornerShape(12.dp))
                 else Modifier

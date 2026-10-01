@@ -91,6 +91,9 @@ class VideoRepository @Inject constructor(
         videoDao.updateLastWatched(videoId, System.currentTimeMillis())
     }
 
+    val allVideoProgress: Flow<Map<String, Long>> = preferenceManager.allVideoProgress
+    val allVideoDuration: Flow<Map<String, Long>> = preferenceManager.allVideoDuration
+
     fun getVideoProgress(videoId: String): Flow<Long> = preferenceManager.getVideoProgress(videoId)
     fun getVideoDuration(videoId: String): Flow<Long> = preferenceManager.getVideoDuration(videoId)
     fun getWatchedEpisodes(videoId: String): Flow<Set<String>> = preferenceManager.getWatchedEpisodes(videoId)
@@ -157,13 +160,13 @@ class VideoRepository @Inject constructor(
         val seen = mutableSetOf<String>()
         val combined = mutableListOf<Video>()
         for (v in extractorResults) {
-            val key = v.title.trim().lowercase()
+            val key = VideoExtractor.normalizeForDedup(v)
             seen.add(key)
             seen.add(v.id)
             combined.add(v)
         }
         for (v in customResults) {
-            val key = v.title.trim().lowercase()
+            val key = VideoExtractor.normalizeForDedup(v)
             if (seen.add(key) && seen.add(v.id)) {
                 combined.add(v)
             }
@@ -222,17 +225,44 @@ class VideoRepository @Inject constructor(
 
     suspend fun insertOrUpdateVideos(videos: List<Video>) = withContext(Dispatchers.IO) {
         if (videos.isEmpty()) return@withContext
-        videos.forEach { videoCache[it.id] = it }
-        videoDao.insertOrUpdateVideos(videos.map { it.toEntity() })
+        val processed = videos.map { v ->
+            val verified = VideoExtractor.getVerifiedPoster(v.title, v.id)
+            if (verified.isNotEmpty()) {
+                v.copy(
+                    thumbnailUrl = verified,
+                    backdropUrl = if (v.backdropUrl.isEmpty() || VideoExtractor.isDeadImage(v.backdropUrl) || v.backdropUrl.contains("3EJTMtsHSwLcF9BrKEx1cWjsstW") || v.backdropUrl == verified) verified else v.backdropUrl
+                )
+            } else v
+        }
+        processed.forEach { videoCache[it.id] = it }
+        videoDao.insertOrUpdateVideos(processed.map { it.toEntity() })
     }
 
     suspend fun getCachedOrDbVideo(videoId: String): Video? = withContext(Dispatchers.IO) {
-        videoCache[videoId] ?: videoDao.getVideoById(videoId)?.toDomain()
+        val v = videoCache[videoId] ?: videoDao.getVideoById(videoId)?.toDomain()
+        if (v != null) {
+            val verified = VideoExtractor.getVerifiedPoster(v.title, v.id)
+            if (verified.isNotEmpty() && (VideoExtractor.isDeadImage(v.thumbnailUrl) || v.thumbnailUrl != verified || VideoExtractor.isDeadImage(v.backdropUrl) || v.backdropUrl.contains("3EJTMtsHSwLcF9BrKEx1cWjsstW"))) {
+                val fixed = v.copy(thumbnailUrl = verified, backdropUrl = verified)
+                videoCache[videoId] = fixed
+                videoDao.insertOrUpdateVideos(listOf(fixed.toEntity()))
+                return@withContext fixed
+            }
+        }
+        v
     }
 
     suspend fun fetchVideoDetails(videoId: String): Video? = withContext(Dispatchers.IO) {
         try {
-            val video = videoCache[videoId] ?: videoDao.getVideoById(videoId)?.toDomain()
+            var video = videoCache[videoId] ?: videoDao.getVideoById(videoId)?.toDomain()
+            if (video != null) {
+                val verified = VideoExtractor.getVerifiedPoster(video.title, video.id)
+                if (verified.isNotEmpty() && (VideoExtractor.isDeadImage(video.thumbnailUrl) || video.thumbnailUrl != verified || VideoExtractor.isDeadImage(video.backdropUrl) || video.backdropUrl.contains("3EJTMtsHSwLcF9BrKEx1cWjsstW"))) {
+                    video = video.copy(thumbnailUrl = verified, backdropUrl = verified)
+                    videoCache[videoId] = video
+                    videoDao.insertOrUpdateVideos(listOf(video.toEntity()))
+                }
+            }
             if (video == null) {
                 if (videoId.startsWith("yt_") || videoId.startsWith("bili_") || videoId.startsWith("dm_")) {
                     return@withContext null
@@ -404,8 +434,20 @@ class VideoRepository @Inject constructor(
     suspend fun fetchCategories(): List<Map<String, String>> = VideoExtractor.fetchCategories()
 
     private fun mergeVideos(new: Video, old: Video?): Video {
-        if (old == null) return new.copy(title = VideoExtractor.cleanTitle(new.title))
+        if (old == null) {
+            val verified = VideoExtractor.getVerifiedPoster(new.title, new.id)
+            return if (verified.isNotEmpty()) {
+                new.copy(
+                    title = VideoExtractor.cleanTitle(new.title),
+                    thumbnailUrl = verified,
+                    backdropUrl = verified
+                )
+            } else new.copy(title = VideoExtractor.cleanTitle(new.title))
+        }
         
+        val verifiedPoster = VideoExtractor.getVerifiedPoster(new.title, new.id)
+            .ifEmpty { VideoExtractor.getVerifiedPoster(old.title, old.id) }
+
         val isPramlee = new.id.startsWith("ia_pramlee")
         val isOldThumbValid = VideoExtractor.isValidImageUrl(old.thumbnailUrl)
         val isNewThumbValid = VideoExtractor.isValidImageUrl(new.thumbnailUrl)
@@ -416,6 +458,7 @@ class VideoRepository @Inject constructor(
             (!new.thumbnailUrl.contains("resize=") && old.thumbnailUrl.contains("resize="))
         )
         val resolvedThumbnail = when {
+            verifiedPoster.isNotEmpty() -> verifiedPoster
             isNewThumbBetter -> new.thumbnailUrl
             isOldThumbValid -> old.thumbnailUrl
             isNewThumbValid -> new.thumbnailUrl
@@ -424,8 +467,8 @@ class VideoRepository @Inject constructor(
             else -> ""
         }
 
-        val isOldBackdropValid = VideoExtractor.isValidImageUrl(old.backdropUrl)
-        val isNewBackdropValid = VideoExtractor.isValidImageUrl(new.backdropUrl)
+        val isOldBackdropValid = VideoExtractor.isValidImageUrl(old.backdropUrl) && !old.backdropUrl.contains("3EJTMtsHSwLcF9BrKEx1cWjsstW")
+        val isNewBackdropValid = VideoExtractor.isValidImageUrl(new.backdropUrl) && !new.backdropUrl.contains("3EJTMtsHSwLcF9BrKEx1cWjsstW")
         val isNewBackdropBetter = isNewBackdropValid && (
             isPramlee ||
             !isOldBackdropValid ||
@@ -433,6 +476,7 @@ class VideoRepository @Inject constructor(
             (!new.backdropUrl.contains("resize=") && old.backdropUrl.contains("resize="))
         )
         val resolvedBackdrop = when {
+            verifiedPoster.isNotEmpty() -> verifiedPoster
             isNewBackdropBetter -> new.backdropUrl
             isOldBackdropValid -> old.backdropUrl
             isNewBackdropValid -> new.backdropUrl

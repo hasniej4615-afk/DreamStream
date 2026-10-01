@@ -19,6 +19,17 @@ class RepoService @Inject constructor(
 ) {
     companion object {
         private const val TAG = "RepoService"
+
+        val DEAD_DOMAIN_KEYWORDS = setOf(
+            "idlix", "dramaid", "nodrakor", "rebahin", "anoboy", "dramaserial",
+            "bongda365", "expclknb", "oceanfall", "mantenimiento", "kuronime",
+            "nimegami", "animeindo.xyz"
+        )
+
+        fun isDeadOrBlacklisted(target: String): Boolean {
+            val lower = target.lowercase()
+            return DEAD_DOMAIN_KEYWORDS.any { lower.contains(it) }
+        }
     }
 
     private val json = Json {
@@ -110,14 +121,12 @@ class RepoService @Inject constructor(
         val trimmed = input.trim()
         if (trimmed.isBlank()) return emptyList()
 
-        // 1. Known shortcodes
+        // 1. Known active shortcodes (dead repos excluded)
         when (trimmed.lowercase()) {
             "cspr", "official" -> return listOf("https://raw.githubusercontent.com/recloudstream/extensions/master/repo.json")
-            "megarepo", "mega" -> return listOf("https://raw.githubusercontent.com/self-similarity/MegaRepo/builds/repo.json")
-            "indostream", "indo" -> return listOf("https://raw.githubusercontent.com/TeKuma25/IndoStream/builds/repo.json")
-            "storm", "stormunblessed" -> return listOf("https://raw.githubusercontent.com/redblacker8/storm-ext/refs/heads/builds/repo.json")
-            "cinephile" -> return listOf("https://raw.githubusercontent.com/rockhero1234/cinephile/refs/heads/builds/repo.json")
             "phisher" -> return listOf("https://raw.githubusercontent.com/phisher98/cloudstream-extensions-phisher/refs/heads/builds/repo.json")
+            "megarepo", "mega" -> return listOf("https://raw.githubusercontent.com/self-similarity/MegaRepo/builds/repo.json")
+            "dutamovie", "dutamovie21", "204.3.234.75", "dutamovie21.cam", "dutamovie21.art", "balletroyale.com", "balletroyale" -> return listOf("https://balletroyale.com/repo.json", "https://balletroyale.com", "https://dutamovie21.cam/repo.json", "https://dutamovie21.cam", "https://dutamovie21.art/repo.json", "https://dutamovie21.art", "https://204.3.234.75/repo.json", "https://204.3.234.75")
         }
 
         // 2. GitHub Web URL (e.g. https://github.com/owner/repo)
@@ -204,7 +213,15 @@ class RepoService @Inject constructor(
                                 isOfficial = false
                             )
 
-                            val manifests = plugins.map { plugin ->
+                            val validPlugins = plugins.filter { plugin ->
+                                val target = "${plugin.name} ${plugin.internalName ?: ""} ${plugin.url} ${plugin.description ?: ""}"
+                                !isDeadOrBlacklisted(target)
+                            }
+                            if (validPlugins.isEmpty()) {
+                                return@withContext Result.failure(Exception("No active providers found (dead or offline providers excluded)."))
+                            }
+
+                            val manifests = validPlugins.map { plugin ->
                                 val cleanId = "${repo.id}.${plugin.internalName ?: plugin.name}".lowercase().replace("[^a-z0-9._-]".toRegex(), "")
                                 RemoteProviderManifest(
                                     id = cleanId,
@@ -280,7 +297,11 @@ class RepoService @Inject constructor(
                                             val pBody = pResp.body?.string()?.trim() ?: ""
                                             if (pBody.startsWith("[")) {
                                                 val plugins = json.decodeFromString<List<CloudStreamPlugin>>(pBody)
-                                                for (plugin in plugins) {
+                                                val validPlugins = plugins.filter { plugin ->
+                                                    val target = "${plugin.name} ${plugin.internalName ?: ""} ${plugin.url} ${plugin.description ?: ""}"
+                                                    !isDeadOrBlacklisted(target)
+                                                }
+                                                for (plugin in validPlugins) {
                                                     val cleanId = "${repo.id}.${plugin.internalName ?: plugin.name}".lowercase().replace("[^a-z0-9._-]".toRegex(), "")
                                                     if (seenIds.add(cleanId)) {
                                                         allManifests.add(
@@ -319,9 +340,59 @@ class RepoService @Inject constructor(
                                 }
                             }
 
+                            if (allManifests.isEmpty()) {
+                                return@withContext Result.failure(Exception("No active providers found in repository (dead providers excluded)."))
+                            }
+
                             return@withContext Result.success(Pair(repo, allManifests))
                         } catch (e: Exception) {
                             lastException = e
+                        }
+                    }
+
+                    // Case C: Direct Native Streaming / WordPress MuviPro site (e.g. https://204.3.234.75/)
+                    if (body.contains("<html", ignoreCase = true) || body.contains("<!doctype", ignoreCase = true)) {
+                        val isMuviProOrStreaming = body.contains("muvipro", ignoreCase = true) ||
+                                                  body.contains("gmr-", ignoreCase = true) ||
+                                                  body.contains("dutamovie", ignoreCase = true) ||
+                                                  body.contains("playsobat", ignoreCase = true) ||
+                                                  body.contains("gmr-box-content", ignoreCase = true)
+                        if (isMuviProOrStreaming) {
+                            val cleanHost = targetUrl.substringAfter("://").substringBefore("/").replace("[^a-zA-Z0-9]".toRegex(), "-")
+                            val titleMatch = Regex("""<title>(.*?)</title>""", RegexOption.IGNORE_CASE).find(body)
+                            val rawTitle = titleMatch?.groupValues?.getOrNull(1)?.substringBefore("-")?.substringBefore("–")?.trim() ?: "Web Streaming Source"
+                            val cleanName = rawTitle.replace("[^a-zA-Z0-9 ]".toRegex(), "").trim().ifBlank { "Custom Web Source ($cleanHost)" }
+                            
+                            val repoId = "repo-" + cleanHost.take(20).trim('-')
+                            val repo = RemoteRepository(
+                                id = repoId,
+                                name = cleanName,
+                                description = "Direct native streaming portal from $cleanHost",
+                                url = targetUrl.substringBefore("/repo.json").trimEnd('/'),
+                                isOfficial = false
+                            )
+
+                            val providerId = "com.duta.provider." + cleanName.lowercase().replace("[^a-z0-9]".toRegex(), "")
+                            val manifest = RemoteProviderManifest(
+                                id = providerId,
+                                repoId = repo.id,
+                                name = cleanName,
+                                displayName = cleanName,
+                                description = "Native web streaming provider for $cleanName",
+                                author = cleanHost,
+                                version = 1,
+                                versionName = "1.0.0",
+                                iconUrl = "",
+                                mediaType = ProviderMediaType.MULTI,
+                                engineType = ProviderEngineType.TEMPLATE,
+                                templateType = TemplateType.WORDPRESS_MUVIPRO,
+                                baseUrls = listOf(targetUrl.substringBefore("/repo.json").trimEnd('/')),
+                                config = buildJsonObject {},
+                                pluginUrl = "",
+                                status = ProviderStatus.ACTIVE,
+                                isEnabledDefault = true
+                            )
+                            return@withContext Result.success(Pair(repo, listOf(manifest)))
                         }
                     }
                 }

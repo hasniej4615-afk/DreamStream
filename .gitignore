@@ -28,3 +28,4 @@ push_to_github.bat
 build_log.txt
 node_modules/
 __pycache__/
+/*.png

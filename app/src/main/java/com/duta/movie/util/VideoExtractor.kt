@@ -53,10 +53,85 @@ object VideoExtractor {
 
     private val confirmedDeadMirrors = ConcurrentHashMap.newKeySet<String>()
 
+    fun clearConfirmedDead(url: String) {
+        val clean = url.trimEnd('/')
+        confirmedDeadMirrors.remove(clean)
+        confirmedDeadMirrors.remove(url)
+    }
+
+    fun clearAllConfirmedDead() {
+        confirmedDeadMirrors.clear()
+    }
+
+    val deadImageUrls: MutableSet<String> = ConcurrentHashMap.newKeySet<String>().apply {
+        add("eadihYb1QcOzOa4lvsaWecG065r.jpg")
+        add("https://image.tmdb.org/t/p/original/eadihYb1QcOzOa4lvsaWecG065r.jpg")
+        add("3EJTMtsHSwLcF9BrKEx1cWjsstW.jpg")
+        add("https://image.tmdb.org/t/p/original/3EJTMtsHSwLcF9BrKEx1cWjsstW.jpg")
+    }
+
+    fun markDeadImage(url: String?) {
+        if (!url.isNullOrBlank()) {
+            val trimmed = url.trim()
+            deadImageUrls.add(trimmed)
+            val clean = trimmed.substringBefore('?')
+            if (clean != trimmed) deadImageUrls.add(clean)
+            if (trimmed.contains("image.tmdb.org/t/p/")) {
+                val fileName = clean.substringAfterLast('/')
+                if (fileName.isNotEmpty()) {
+                    deadImageUrls.add(fileName)
+                }
+            }
+        }
+    }
+
+    fun isDeadImage(url: String?): Boolean {
+        if (url.isNullOrBlank()) return true
+        val trimmed = url.trim()
+        if (deadImageUrls.contains(trimmed)) return true
+        val clean = trimmed.substringBefore('?')
+        if (deadImageUrls.contains(clean)) return true
+        if (trimmed.contains("image.tmdb.org/t/p/")) {
+            val fileName = clean.substringAfterLast('/')
+            if (deadImageUrls.contains(fileName)) return true
+        }
+        return false
+    }
+
+    fun isImageReachableFast(url: String): Boolean {
+        if (!isValidImageUrl(url) || isDeadImage(url)) return false
+        return try {
+            val req = okhttp3.Request.Builder()
+                .url(url)
+                .head()
+                .header("User-Agent", NetworkConfig.SHARED_USER_AGENT)
+                .build()
+            val resp = NetworkConfig.fastOkHttpClient.newCall(req).execute()
+            val success = resp.isSuccessful
+            if (!success && (resp.code == 404 || resp.code == 410)) {
+                markDeadImage(url)
+            }
+            resp.close()
+            success
+        } catch (_: Exception) {
+            true
+        }
+    }
+
+    fun isDefunctDomain(hostOrUrl: String?): Boolean {
+        if (hostOrUrl == null) return false
+        val low = hostOrUrl.lowercase()
+        return low.contains("streamango.") || low.contains("openload.") || low.contains("oload.") ||
+               low.contains("rapidvideo.") || low.contains("verystream.") || low.contains("vidcloud.") ||
+               low.contains("gounlimited.")
+    }
+
     fun isConfirmedDead(url: String): Boolean {
+        if (isDefunctDomain(url)) return true
         val host = try { android.net.Uri.parse(url).host?.lowercase() } catch(_: Throwable) { null }
             ?: try { java.net.URI(url).host?.lowercase() } catch(_: Throwable) { null }
             ?: url.lowercase().substringBefore("/").substringBefore(":")
+        if (isDefunctDomain(host)) return true
         val path = try { android.net.Uri.parse(url).path } catch(_: Throwable) { null }
             ?: try { java.net.URI(url).path } catch(_: Throwable) { null }
             ?: ""
@@ -136,10 +211,11 @@ object VideoExtractor {
         null
     }
 
-    const val BULLERSWOOD_BASE_URL = "https://bullerswood.org"
+    const val BULLERSWOOD_BASE_URL = "https://inlionsforisbvi.org"
     private var activeBullerswoodBaseUrl: String = BULLERSWOOD_BASE_URL
 
     val BULLERSWOOD_FALLBACKS = listOf(
+        "https://inlionsforisbvi.org",
         "https://bullerswood.org",
         "https://scphi.org",
         "https://grishamfarms.org",
@@ -166,6 +242,45 @@ object VideoExtractor {
                             val root = "${response.request.url.scheme}://${response.request.url.host}"
                             setBullerswoodBaseUrl(root)
                             Log.i(TAG, "SCOUTING: Live LK21/Bullerswood domain confirmed: $root")
+                            return@withContext root
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        null
+    }
+
+    const val DUTAMOVIE_BASE_URL = "https://balletroyale.com"
+    private var activeDutaMovieBaseUrl: String = DUTAMOVIE_BASE_URL
+
+    val DUTAMOVIE_FALLBACKS = listOf(
+        "https://balletroyale.com",
+        "https://dutamovie21.cam",
+        "https://dutamovie21.art",
+        "https://204.3.234.75"
+    )
+
+    fun getDutaMovieBaseUrl(): String = activeDutaMovieBaseUrl
+
+    fun setDutaMovieBaseUrl(url: String) {
+        val trimmed = url.trimEnd('/')
+        if (trimmed.isNotBlank()) activeDutaMovieBaseUrl = trimmed
+    }
+
+    suspend fun probeDutaMovieDomain(): String? = withContext(Dispatchers.IO) {
+        val candidates = listOf("https://balletroyale.com", activeDutaMovieBaseUrl) + DUTAMOVIE_FALLBACKS
+        for (candidate in candidates.distinct()) {
+            try {
+                val testUrl = "$candidate/"
+                val request = Request.Builder().url(testUrl).header("User-Agent", USER_AGENT).build()
+                NetworkConfig.fastOkHttpClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string() ?: ""
+                        if (body.contains("gmr-") || body.contains("muvipro") || body.contains("movie") || body.contains("film") || body.contains("dutamovie")) {
+                            val root = "${response.request.url.scheme}://${response.request.url.host}"
+                            setDutaMovieBaseUrl(root)
+                            Log.i(TAG, "SCOUTING: Live DutaMovie21 domain confirmed: $root")
                             return@withContext root
                         }
                     }
@@ -424,7 +539,20 @@ object VideoExtractor {
         if (host.contains("archive.org")) return url
         if (host.contains("kepalabergetar") || host.contains("kepala-bergetar")) return url
         if (host.contains("159.89.249.45") || host.contains("dutafilm") || isClusterSite(host)) return url
-        if (host.contains("mantab.men") || host.contains("bullerswood.org") || host.contains("scphi.org") || host.contains("grishamfarms.org") || host.contains("lk21official")) return url
+        if (host.contains("mantab.men") || host.contains("bullerswood.org") || host.contains("scphi.org") || host.contains("grishamfarms.org") || host.contains("inlionsforisbvi.org") || host.contains("lk21official")) return url
+        // Auto-heal for DutaMovie21 standalone catalog
+        if (host.contains("204.3.234.75") || host.contains("dutamovie21.cam") || host.contains("dutamovie21.art") || host.contains("balletroyale.com")) {
+            val currentDutaMovie = getDutaMovieBaseUrl()
+            val dmHost = try { android.net.Uri.parse(currentDutaMovie).host?.lowercase() } catch(_: Throwable) { null }
+                ?: try { java.net.URI(currentDutaMovie).host?.lowercase() } catch(_: Throwable) { null }
+            if (dmHost != null && !host.equals(dmHost, ignoreCase = true)) {
+                val pathWithQuery = url.substringAfter(host)
+                val migrated = "$currentDutaMovie$pathWithQuery"
+                Log.d(TAG, "DUTAMOVIE AUTO-HEAL MIGRATION: $url -> $migrated")
+                return migrated
+            }
+            return url
+        }
         
         // Auto-heal for PencuriMovie standalone catalog
         if (host.contains("pencurimovie") || host.contains("pencurifilm") || host.contains("pencurivideo")) {
@@ -445,7 +573,7 @@ object VideoExtractor {
         val isBasePoisoned = lowBase.contains("katherineschoolphone") || lowBase.contains("voe") || 
             lowBase.contains("player") || lowBase.contains("dutamovie.com") || lowBase.contains("dutamovie21.xyz") ||
             lowBase.contains("algarvebuzz.com") || lowBase.contains("digitalpapercuts.com") ||
-            lowBase.contains("204.3.234.75") || lowBase.contains("rebahin") || lowBase.contains("rebahinxxi") ||
+            lowBase.contains("204.3.234.75") || lowBase.contains("dutamovie21.cam") || lowBase.contains("dutamovie21.art") || lowBase.contains("balletroyale.com") || lowBase.contains("rebahin") || lowBase.contains("rebahinxxi") ||
             (!lowBase.contains("pencurimovie") && (lowBase.contains("ww38") || Regex("""^https?://ww\d+\.""").containsMatchIn(lowBase))) ||
             lowBase.contains("parking") || lowBase.contains("sedo") || lowBase.contains("abovedomains") ||
             lowBase.contains("dan.com") || lowBase.contains("godaddy") ||
@@ -478,9 +606,15 @@ object VideoExtractor {
             cleanId.startsWith("pm_") -> "${getPencuriBaseUrl()}/${cleanId.removePrefix("pm_").trim('/')}/"
             cleanId.startsWith("dfw_") -> "${getDutaFilmWebBaseUrl()}/watch/${cleanId.removePrefix("dfw_").removeSuffix(".html")}.html"
             cleanId.startsWith("df_") -> "$DUTAFILM_BASE_URL/${cleanId.removePrefix("df_").trim('/')}/"
-            cleanId.startsWith("bw_") -> "${getBullerswoodBaseUrl()}/${cleanId.removePrefix("bw_").trim('/')}/"
+            cleanId.startsWith("bw_") -> "${getBullerswoodBaseUrl()}/${cleanId.removePrefix("pf_")
+            .removePrefix("bw_").trim('/')}/"
+            cleanId.startsWith("dm_") -> {
+                val sub = cleanId.removePrefix("dm_").trim('/')
+                if (sub.startsWith("film_")) "${getDutaMovieBaseUrl()}/film/${sub.removePrefix("film_")}/"
+                else "${getDutaMovieBaseUrl()}/$sub/"
+            }
             cleanId.startsWith("kb_") || cleanId.startsWith("ia_pramlee") ||
-            cleanId.startsWith("yt_") || cleanId.startsWith("bili_") || cleanId.startsWith("dm_") -> ""
+            cleanId.startsWith("yt_") || cleanId.startsWith("bili_") -> ""
             else -> "${getBaseUrl()}/$cleanId/"
         }
     }
@@ -499,9 +633,19 @@ object VideoExtractor {
      * Identifies if a video or server belongs to LK21 / Bullerswood / Scphi source.
      */
     fun isBullerswood(videoId: String? = null, videoUrl: String? = null, streamUrl: String? = null): Boolean {
-        if (videoId?.startsWith("bw_") == true) return true
-        if (videoUrl?.contains("bullerswood.org", ignoreCase = true) == true || videoUrl?.contains("scphi.org", ignoreCase = true) == true || videoUrl?.contains("grishamfarms.org", ignoreCase = true) == true || videoUrl?.contains("lk21official", ignoreCase = true) == true) return true
-        if (streamUrl?.contains("bullerswood.org", ignoreCase = true) == true || streamUrl?.contains("scphi.org", ignoreCase = true) == true || streamUrl?.contains("grishamfarms.org", ignoreCase = true) == true || streamUrl?.contains("lk21official", ignoreCase = true) == true) return true
+        if (videoId?.startsWith("bw_") == true || videoId?.startsWith("pf_") == true) return true
+        if (videoUrl?.contains("bullerswood.org", ignoreCase = true) == true || videoUrl?.contains("scphi.org", ignoreCase = true) == true || videoUrl?.contains("grishamfarms.org", ignoreCase = true) == true || videoUrl?.contains("inlionsforisbvi.org", ignoreCase = true) == true || videoUrl?.contains("lk21official", ignoreCase = true) == true || videoUrl?.contains("pusatfilm", ignoreCase = true) == true) return true
+        if (streamUrl?.contains("bullerswood.org", ignoreCase = true) == true || streamUrl?.contains("scphi.org", ignoreCase = true) == true || streamUrl?.contains("grishamfarms.org", ignoreCase = true) == true || streamUrl?.contains("inlionsforisbvi.org", ignoreCase = true) == true || streamUrl?.contains("lk21official", ignoreCase = true) == true || streamUrl?.contains("pusatfilm", ignoreCase = true) == true) return true
+        return false
+    }
+
+    /**
+     * Identifies if a video or server belongs to Pusatfilm21 source.
+     */
+    fun isPusatfilm(videoId: String? = null, videoUrl: String? = null, streamUrl: String? = null): Boolean {
+        if (videoId?.startsWith("pf_") == true) return true
+        if (videoUrl?.contains("pusatfilm", ignoreCase = true) == true) return true
+        if (streamUrl?.contains("pusatfilm", ignoreCase = true) == true) return true
         return false
     }
 
@@ -541,13 +685,25 @@ object VideoExtractor {
     }
 
     /**
+     * Identifies if a video or server belongs to DutaMovie21 (204.3.234.75) source.
+     */
+    fun isDutaMovie(videoId: String? = null, videoUrl: String? = null, streamUrl: String? = null): Boolean {
+        if (videoId?.startsWith("dm_") == true) return true
+        if (videoUrl?.contains("204.3.234.75", ignoreCase = true) == true || videoUrl?.contains("dutamovie", ignoreCase = true) == true || videoUrl?.contains("balletroyale.com", ignoreCase = true) == true) return true
+        if (streamUrl?.contains("204.3.234.75", ignoreCase = true) == true || streamUrl?.contains("dutamovie", ignoreCase = true) == true || streamUrl?.contains("balletroyale.com", ignoreCase = true) == true) return true
+        return false
+    }
+
+    /**
      * Identifies if a URL originates from any of our primary scraped provider domains.
      */
     fun isPrimaryProviderServer(url: String?): Boolean {
         if (url.isNullOrBlank()) return false
         return isDutaFilmWeb(videoUrl = url) ||
                isDutaFilm(videoUrl = url) ||
+               isDutaMovie(videoUrl = url) ||
                isBullerswood(videoUrl = url) ||
+               isPusatfilm(videoUrl = url) ||
                isPencuriMovie(videoUrl = url) ||
                isKepalaBergetar(videoUrl = url)
     }
@@ -557,6 +713,7 @@ object VideoExtractor {
         val low = html.lowercase()
         if (low.contains("content delivery network (cdn) & video cloud") || low.contains("<title>voe")) return false
         if (low.contains("may be for sale") || low.contains("domain may be for sale") ||
+            low.contains("domain is for sale") || low.contains("site-offline") || low.contains("expireddomains") ||
             low.contains("buy this domain") || low.contains("is available for sale") ||
             low.contains("inquire about this domain") || low.contains("abovedomains") ||
             low.contains("sedoparking") || low.contains("domain parking") ||
@@ -578,6 +735,7 @@ object VideoExtractor {
                low.contains("muvipro") ||
                low.contains("pencurimovie") || low.contains("pencurifilm") ||
                low.contains("bullerswood") || low.contains("scphi") || low.contains("grisham") ||
+               low.contains("pusatfilm") ||
                low.contains("layarkaca") || low.contains("lk21") ||
                low.contains("katakatamutiara") || low.contains("ohionewsnow")
     }
@@ -1122,6 +1280,50 @@ object VideoExtractor {
         null
     }
 
+    /**
+     * Dedicated direct extractor for Hgcloud / Hglink / Hanerix / Vibuxer embeds.
+     * Unpacks Dean Edwards obfuscated JavaScript to extract direct master.m3u8 stream and embedded subtitles.
+     */
+    suspend fun extractHgcloudStream(pageUrl: String, referer: String? = null): ExtractionResult? = withContext(Dispatchers.IO) {
+        try {
+            val low = pageUrl.lowercase()
+            val targetUrl = if (low.contains("hglink.to/e/")) pageUrl.replace("hglink.to/e/", "hanerix.com/e/")
+                            else if (low.contains("hgcloud.to/e/")) pageUrl.replace("hgcloud.to/e/", "hanerix.com/e/")
+                            else if (low.contains("hglink.icu/e/")) pageUrl.replace("hglink.icu/e/", "hanerix.com/e/")
+                            else pageUrl
+
+            val html = fetchHtml(targetUrl, referer ?: targetUrl) ?: return@withContext null
+            val unpacked = unpackDeanEdwards(html)
+
+            val mStream = Regex("""["'](https?://[^"']+\.m3u8[^"']*)["']""").find(unpacked)
+                ?: Regex("""file:\s*["']([^"']+\.m3u8[^"']*)["']""").find(unpacked)
+                ?: Regex("""["'](/stream/[^"']+\.m3u8[^"']*)["']""").find(unpacked)
+
+            if (mStream != null) {
+                var streamUrl = mStream.groupValues[1]
+                if (streamUrl.startsWith("/")) {
+                    val host = try { android.net.Uri.parse(targetUrl).host } catch(_: Exception) { "hanerix.com" }
+                    val scheme = try { android.net.Uri.parse(targetUrl).scheme ?: "https" } catch(_: Exception) { "https" }
+                    streamUrl = "$scheme://$host$streamUrl"
+                }
+
+                val subtitles = mutableListOf<Subtitle>()
+                val trackMatches = Regex("""file:\s*["'](https?://[^"']+\.vtt[^"']*)["'][^}]*label:\s*["']([^"']+)["']""").findAll(unpacked)
+                for (t in trackMatches) {
+                    val vttUrl = t.groupValues[1]
+                    val label = t.groupValues[2]
+                    subtitles.add(Subtitle(label = label.uppercase(), url = vttUrl, language = label))
+                }
+
+                Log.i(TAG, "Hgcloud/Hanerix direct m3u8 extracted: $streamUrl (from $pageUrl, subs=${subtitles.size})")
+                return@withContext ExtractionResult(videoUrl = streamUrl, subtitles = subtitles, referer = targetUrl)
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Hgcloud/Hanerix extraction failed for $pageUrl: ${e.message}")
+        }
+        null
+    }
+
     suspend fun extractVideoUrl(pageUrl: String, depth: Int = 0, referer: String? = null, visited: MutableSet<String> = mutableSetOf()): ExtractionResult? = withContext(Dispatchers.IO) {
         if (depth > 3 || !visited.add(pageUrl) || pageUrl.lowercase().contains("listeamed")) return@withContext null
         val actualReferer = referer ?: pageUrl
@@ -1209,6 +1411,17 @@ object VideoExtractor {
                 return@withContext vidhideResult
             }
         }
+
+        // OWL'S EYE: Dedicated Direct Extractor for Hgcloud / Hglink / Hanerix / Vibuxer (Ultra Fast Direct HLS)
+        if (lowPage.contains("hgcloud") || lowPage.contains("hglink") || lowPage.contains("hanerix") ||
+            lowPage.contains("vibuxer") || lowPage.contains("audinifer") || lowPage.contains("duvidun") ||
+            lowPage.contains("ghbrisk") || lowPage.contains("hgplayer") || lowPage.contains("masukestin")) {
+            val hgResult = extractHgcloudStream(pageUrl, actualReferer)
+            if (hgResult != null) {
+                Log.i(TAG, "Hgcloud/Hanerix direct extracted: ${hgResult.videoUrl}")
+                return@withContext hgResult
+            }
+        }
         
         // OWL'S EYE: Dedicated Direct Extractor for Dailymotion (ExoPlayer Native Playback)
         if (lowPage.contains("dailymotion.com") || lowPage.contains("dai.ly")) {
@@ -1284,7 +1497,6 @@ object VideoExtractor {
                     probeHtml.contains("pending in queue", ignoreCase = true) ||
                     probeHtml.contains("is being converted", ignoreCase = true) ||
                     probeHtml.contains("video is converting", ignoreCase = true) ||
-                    probeHtml.contains("over_player_msg", ignoreCase = true) ||
                     probeHtml.contains("can't find the file", ignoreCase = true) ||
                     probeHtml.contains("cant find the file", ignoreCase = true) ||
                     probeHtml.contains("deleted by the owner", ignoreCase = true) ||
@@ -1726,7 +1938,7 @@ object VideoExtractor {
             "huntrex", "bestcdn", "faststream", "morencius", "abyss", "bond", "iamcdn",
             "hgcloud", "hglink", "indostream", "amt", "iplayer", "haneri", "audinifer", "vibuxer", "masuk",
             "veev", "dood", "upns", "d-s.io", "swishsrv", "swish", "swishembed",
-            "waaw", "netu", "hqq", "vkspeed", "luluvdo", "lulustream"
+            "waaw", "netu", "hqq", "vkspeed", "luluvdo", "lulustream", "plyr", "freeon"
         )
         val cleanUrl = low.substringBefore("?").substringBefore("#")
         return jsOnlyHosts.any { cleanUrl.contains(it) }
@@ -1742,9 +1954,10 @@ object VideoExtractor {
         if (activeBaseHost != null && (low == activeBaseHost || low.contains(activeBaseHost))) return true
         if (pencuriHost != null && (low == pencuriHost || low.contains(pencuriHost))) return true
         if (isClusterSite(low)) return true
-        return low.contains("archive.org") || low.contains("bullerswood") || low.contains("pencurimovie") || low.contains("pencurifilm") ||
+        return low.contains("archive.org") || low.contains("pusatfilm") || low.contains("kotakajaib") ||
+            low.contains("bullerswood") || low.contains("pencurimovie") || low.contains("pencurifilm") ||
             low.contains("159.89.249.45") || low.contains("dutafilm") || low.contains("mantab.men") || low.contains("df31") ||
-            low.contains("dutamovie") ||
+            low.contains("dutamovie") || low.contains("204.3.234.75") || low.contains("balletroyale") || low.contains("freeon") || low.contains("plyr") ||
             low.contains("algarvebuzz") || low.contains("actors-pictures") ||
             low.contains("playsobat") || low.contains("asiastream") || low.contains("asiatik") || low.contains("streamsobat") ||
             low.contains("youtube") || low.contains("youtu.be") || low.contains("googlevideo") ||
@@ -1757,7 +1970,7 @@ object VideoExtractor {
             low.contains("voe") || low.contains("johnfullwonder") || low.contains("cloudwindow") ||
             low.contains("playerp2p") || low.contains("embed4me") || low.contains("upns") ||
             low.contains("p2p") || low.contains("4meplayer") || low.contains("abyss") || low.contains("bond") ||
-            low.contains("hgcloud") || low.contains("hanerix") || low.contains("vibuxer") || low.contains("audinifer") || low.contains("hglink") ||
+            low.contains("hgcloud") || low.contains("hanerix") || low.contains("vibuxer") || low.contains("audinifer") || low.contains("hglink") || low.contains("premilkyway") ||
             low.contains("vide0") || low.contains("dsvplay") || low.contains("playmogo") ||
             low.contains("dhcplay") || low.contains("morencius") || low.contains("vidhide") || low.contains("fujihide") ||
             low.contains("streamwish") || low.contains("wishonly") || low.contains("strwish") || low.contains("wishembed") ||
@@ -1782,13 +1995,15 @@ object VideoExtractor {
                low.contains("/stream/") || low.contains("/hls/") || low.contains("mirror") ||
                low.contains("player") || low.contains("swhoi") || low.contains("playstream") ||
                low.contains("asiastream") || low.contains("playsobat") || low.contains("/watch?") || low.contains("watch.") ||
-               low.contains("/watch/") || low.contains("epid=") || isPrimaryProviderServer(url) ||
+               low.contains("/watch/") || low.contains("epid=") || 
+               (isPrimaryProviderServer(url) && (low.contains("player=") || low.contains("epid=") || low.contains("server=") || low.contains("mirror=") || low.contains("source=") || low.contains("opt=") || low.startsWith("ajax:"))) ||
                low.contains("pyrox") || low.contains("embedpyrox") || low.contains("amt") ||
                low.contains("haneri") || low.contains("audinifer") || low.contains("vibuxer") ||
                low.contains("morencius") || low.contains("bestcdn") ||
                low.contains("vide0") || low.contains("dsvplay") || low.contains("playmogo") ||
                low.contains("luluvdo") || low.contains("lulustream") || low.contains("tnmr.org") || low.contains("lulucdn") ||
-               low.contains("waaw") || low.contains("netu") || low.contains("hqq") || low.contains("vkspeed")
+               low.contains("waaw") || low.contains("netu") || low.contains("hqq") || low.contains("vkspeed") ||
+               low.contains("plyr") || low.contains("freeon")
     }
 
     fun buildDutaCategoryUrl(dutaBase: String, path: String, currPage: Int): String {
@@ -1799,8 +2014,11 @@ object VideoExtractor {
         }
         val norm = normalizePath(path).removePrefix("/").removeSuffix("/")
         return when {
-            norm == "movies" || norm.isEmpty() || norm.contains("dutafilm") -> {
+            norm.isEmpty() -> {
                 if (currPage > 1) "$cleanBase/page/$currPage/" else "$cleanBase/"
+            }
+            norm == "movies" || norm.contains("dutafilm") -> {
+                if (currPage > 1) "$cleanBase/page/$currPage/?post_type=post" else "$cleanBase/?post_type=post"
             }
             norm == "series" -> {
                 if (currPage > 1) "$cleanBase/page/$currPage/?post_type=tv" else "$cleanBase/?post_type=tv"
@@ -1829,7 +2047,10 @@ object VideoExtractor {
         }
         val norm = normalizePath(path).removePrefix("/").removeSuffix("/")
         return when {
-            norm == "movies" || norm.isEmpty() -> {
+            norm.isEmpty() -> {
+                if (currPage > 1) "$cleanBase/page/$currPage/" else "$cleanBase/"
+            }
+            norm == "movies" -> {
                 if (currPage > 1) "$cleanBase/movies/page/$currPage/" else "$cleanBase/movies/"
             }
             norm == "series" -> {
@@ -1854,6 +2075,155 @@ object VideoExtractor {
         }
     }
 
+    fun buildWordPressMuviProCategoryUrl(baseUrl: String, path: String, currPage: Int): String {
+        val cleanBase = baseUrl.trimEnd('/')
+        if (path.startsWith("http")) {
+            val eff = path.removeSuffix("/")
+            return if (currPage > 1) "$eff/page/$currPage/" else "$eff/"
+        }
+        val norm = normalizePath(path).removePrefix("/").removeSuffix("/")
+        return when {
+            norm.contains("drama-korea") || norm.contains("k-drama") || norm.contains("kdrama") -> {
+                if (currPage > 1) "$cleanBase/drama-korea/page/$currPage/" else "$cleanBase/drama-korea/"
+            }
+            norm.contains("drama-china") || norm.contains("c-drama") -> {
+                if (currPage > 1) "$cleanBase/drama-china/page/$currPage/" else "$cleanBase/drama-china/"
+            }
+            norm.contains("west-series") -> {
+                if (currPage > 1) "$cleanBase/west-series/page/$currPage/" else "$cleanBase/west-series/"
+            }
+            norm.contains("series-netflix") -> {
+                if (currPage > 1) "$cleanBase/series-netflix/page/$currPage/" else "$cleanBase/series-netflix/"
+            }
+            norm.contains("series-terbaru") || norm == "series" -> {
+                if (cleanBase.contains("pusatfilm")) {
+                    if (currPage > 1) "$cleanBase/series-terbaru/page/$currPage/" else "$cleanBase/series-terbaru/"
+                } else {
+                    if (currPage > 1) "$cleanBase/page/$currPage/?post_type=tv" else "$cleanBase/?post_type=tv"
+                }
+            }
+            norm.isEmpty() -> {
+                if (currPage > 1) "$cleanBase/page/$currPage/" else "$cleanBase/"
+            }
+            norm.contains("film-terbaru") || norm == "movies" || norm.contains("bullerswood") || norm.contains("lk21") || norm.contains("pusatfilm") -> {
+                if (cleanBase.contains("pusatfilm")) {
+                    if (currPage > 1) "$cleanBase/film-terbaru/page/$currPage/" else "$cleanBase/film-terbaru/"
+                } else {
+                    if (currPage > 1) "$cleanBase/page/$currPage/?post_type=post" else "$cleanBase/?post_type=post"
+                }
+            }
+            norm == "trending" -> {
+                if (currPage > 1) "$cleanBase/trending/page/$currPage/" else "$cleanBase/trending/"
+            }
+            norm == "top-imdb" || norm == "most-viewed" || norm == "best-rating" -> {
+                if (currPage > 1) "$cleanBase/best-rating/page/$currPage/" else "$cleanBase/best-rating/"
+            }
+            norm.startsWith("release-year/") || norm.startsWith("year/") -> {
+                val year = norm.substringAfter('/')
+                if (currPage > 1) "$cleanBase/year/$year/page/$currPage/" else "$cleanBase/year/$year/"
+            }
+            norm.startsWith("country/") -> {
+                val country = norm.substringAfter('/')
+                if (currPage > 1) "$cleanBase/country/$country/page/$currPage/" else "$cleanBase/country/$country/"
+            }
+            norm.startsWith("genre/") -> {
+                val genre = norm.substringAfter('/')
+                if (currPage > 1) "$cleanBase/genre/$genre/page/$currPage/" else "$cleanBase/genre/$genre/"
+            }
+            else -> {
+                if (currPage > 1) "$cleanBase/$norm/page/$currPage/" else "$cleanBase/$norm/"
+            }
+        }
+    }
+
+    suspend fun fetchWordPressMuviProVideos(baseUrl: String, path: String, page: Int = 1, count: Int = 20): List<Video> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<Video>()
+        val seen = mutableSetOf<String>()
+        val pagesToFetch = when {
+            page > 1 -> 1
+            count >= 100 -> 4
+            count >= 50 -> 2
+            else -> 1
+        }
+        val pageJobs = (0 until pagesToFetch).map { offset ->
+            async(Dispatchers.IO) {
+                val currPage = page + offset
+                val url = buildWordPressMuviProCategoryUrl(baseUrl, path, currPage)
+                try {
+                    var html = fetchHtml(url)
+                    if (html.isNullOrEmpty() && currPage == 1) {
+                        if (baseUrl.contains("bullerswood")) {
+                            val liveDomain = probeBullerswoodDomain()
+                            if (liveDomain != null) {
+                                val retryUrl = buildWordPressMuviProCategoryUrl(liveDomain, path, currPage)
+                                html = fetchHtml(retryUrl)
+                            }
+                        } else if (baseUrl.contains("dutamovie") || baseUrl.contains("204.3.234.75")) {
+                            val liveDomain = probeDutaMovieDomain()
+                            if (liveDomain != null) {
+                                val retryUrl = buildWordPressMuviProCategoryUrl(liveDomain, path, currPage)
+                                html = fetchHtml(retryUrl)
+                            }
+                        }
+                    }
+                    if (!html.isNullOrEmpty()) {
+                        scrapeVideosFromHtml(html, url)
+                    } else emptyList()
+                } catch (e: Exception) {
+                    Log.w(TAG, "WordPress MuviPro category fetch failed for $url: ${e.message}")
+                    emptyList()
+                }
+            }
+        }
+        pageJobs.awaitAll().flatten().forEach { video ->
+            if (seen.add(video.id)) results.add(video)
+        }
+        sortVideosByNewestRelease(results).take(count)
+    }
+
+    suspend fun searchWordPressMuviPro(baseUrl: String, query: String, page: Int = 1, count: Int = 20): List<Video> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<Video>()
+        val seen = mutableSetOf<String>()
+        val encodedQuery = encodeQuery(query)
+        val cleanBase = baseUrl.trimEnd('/')
+        val url = if (cleanBase.contains("pusatfilm")) {
+            if (page <= 1) "$cleanBase/?s=$encodedQuery&post_type[]=post&post_type[]=tv"
+            else "$cleanBase/page/$page/?s=$encodedQuery&post_type[]=post&post_type[]=tv"
+        } else {
+            if (page <= 1) "$cleanBase/?s=$encodedQuery"
+            else "$cleanBase/page/$page/?s=$encodedQuery"
+        }
+        try {
+            var html = fetchHtml(url)
+            if (html.isNullOrEmpty() && page == 1) {
+                if (baseUrl.contains("bullerswood")) {
+                    val liveDomain = probeBullerswoodDomain()
+                    if (liveDomain != null) {
+                        val retryBase = liveDomain.trimEnd('/')
+                        val retryUrl = if (page <= 1) "$retryBase/?s=$encodedQuery" else "$retryBase/page/$page/?s=$encodedQuery"
+                        html = fetchHtml(retryUrl)
+                    }
+                } else if (baseUrl.contains("dutamovie") || baseUrl.contains("204.3.234.75")) {
+                    val liveDomain = probeDutaMovieDomain()
+                    if (liveDomain != null) {
+                        val retryBase = liveDomain.trimEnd('/')
+                        val retryUrl = if (page <= 1) "$retryBase/?s=$encodedQuery" else "$retryBase/page/$page/?s=$encodedQuery"
+                        html = fetchHtml(retryUrl)
+                    }
+                }
+            }
+            if (!html.isNullOrEmpty()) {
+                val scraped = scrapeVideosFromHtml(html, url)
+                scraped.forEach { video ->
+                    if (seen.add(video.id)) results.add(video)
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "WordPress MuviPro search failed for $url: ${e.message}")
+        }
+        filterAndSortByRelevance(results, query).take(count)
+    }
+
     fun buildBullerswoodCategoryUrl(path: String, currPage: Int): String {
         val cleanBase = getBullerswoodBaseUrl().trimEnd('/')
         if (path.startsWith("http")) {
@@ -1862,8 +2232,11 @@ object VideoExtractor {
         }
         val norm = normalizePath(path).removePrefix("/").removeSuffix("/")
         return when {
-            norm.contains("bullerswood") || norm.contains("lk21") || norm.isEmpty() || norm == "movies" -> {
+            norm.isEmpty() -> {
                 if (currPage > 1) "$cleanBase/page/$currPage/" else "$cleanBase/"
+            }
+            norm.contains("bullerswood") || norm.contains("lk21") || norm.contains("inlionsforisbvi") || norm == "movies" -> {
+                if (currPage > 1) "$cleanBase/page/$currPage/?post_type=post" else "$cleanBase/?post_type=post"
             }
             norm == "top-imdb" || norm == "most-viewed" || norm == "best-rating" -> {
                 if (currPage > 1) "$cleanBase/best-rating/page/$currPage/" else "$cleanBase/best-rating/"
@@ -1890,9 +2263,9 @@ object VideoExtractor {
         val results = mutableListOf<Video>()
         val seen = mutableSetOf<String>()
         val pagesToFetch = when {
+            page > 1 -> 1
             count >= 100 -> 4
-            count >= 40 -> 3
-            count >= 20 -> 2
+            count >= 50 -> 2
             else -> 1
         }
         val pageJobs = (0 until pagesToFetch).map { offset ->
@@ -1976,7 +2349,10 @@ object VideoExtractor {
             norm == "series" || norm == "tv" || norm == "tv-series" -> {
                 if (currPage > 1) "$cleanBase/explore?media_type=tv&page=$currPage" else "$cleanBase/explore?media_type=tv"
             }
-            norm.contains("dutafilm") || norm.isEmpty() || norm == "movies" -> {
+            norm.isEmpty() -> {
+                if (currPage > 1) "$cleanBase/explore?page=$currPage" else "$cleanBase/explore"
+            }
+            norm.contains("dutafilm") || norm == "movies" -> {
                 if (currPage > 1) "$cleanBase/explore?media_type=movie&page=$currPage" else "$cleanBase/explore?media_type=movie"
             }
             norm.startsWith("country/") -> {
@@ -2072,9 +2448,9 @@ object VideoExtractor {
         val results = mutableListOf<Video>()
         val seen = mutableSetOf<String>()
         val pagesToFetch = when {
+            page > 1 -> 1
             count >= 100 -> 4
-            count >= 40 -> 3
-            count >= 20 -> 2
+            count >= 50 -> 2
             else -> 1
         }
         val pageJobs = (0 until pagesToFetch).map { offset ->
@@ -2177,9 +2553,9 @@ object VideoExtractor {
     suspend fun fetchVideosBySection(path: String, page: Int, count: Int): List<Video> = withContext(Dispatchers.IO) {
         if (path.contains("dutafilm", ignoreCase = true) || path.contains("mantab.men", ignoreCase = true) || path.contains("df31", ignoreCase = true)) {
             val pagesToFetch = when {
+                page > 1 -> 1
                 count >= 100 -> 4
-                count >= 40 -> 3
-                count >= 20 -> 2
+                count >= 50 -> 2
                 else -> 1
             }
             val dutaWebDeferred = async(Dispatchers.IO) {
@@ -2247,13 +2623,16 @@ object VideoExtractor {
         }
 
         val pagesToFetch = when {
-            count >= 200 -> 6
+            page > 1 -> 1
             count >= 100 -> 4
-            count >= 40 -> 3
-            else -> 2
+            count >= 50 -> 2
+            else -> 1
         }
 
-        val isSeriesCategory = path.contains("serial-tv", ignoreCase = true) || path.contains("/tv/", ignoreCase = true) || path.contains("/series/", ignoreCase = true)
+        val isNewlyUpdatedCategory = path == "/" || path.isBlank()
+        val isSeriesCategory = !isNewlyUpdatedCategory && (path.contains("serial-tv", ignoreCase = true) || path.contains("/tv/", ignoreCase = true) || path.contains("/series/", ignoreCase = true))
+        val isMoviesOnlyCategory = !isNewlyUpdatedCategory && (path == "/movies/" || path == "/movie/" || path.equals("movies", ignoreCase = true))
+        val isMoviesCategory = isMoviesOnlyCategory || (!isNewlyUpdatedCategory && !isSeriesCategory && (path.contains("movie") || path.contains("top-imdb") || path.contains("most-viewed")))
 
         val dutaDeferred = async(Dispatchers.IO) {
             val results = mutableListOf<Video>()
@@ -2320,8 +2699,7 @@ object VideoExtractor {
             results
         }
 
-        val isMoviesCategory = path == "/" || path == "/movies/" || path.contains("movie") || path.contains("top-imdb") || path.contains("most-viewed")
-        val bullerswoodDeferred = if (path.contains("country/indonesia", ignoreCase = true) || isMoviesCategory) {
+        val bullerswoodDeferred = if (path.contains("country/indonesia", ignoreCase = true) || isMoviesCategory || isNewlyUpdatedCategory) {
             async(Dispatchers.IO) { fetchBullerswoodVideos(path, page, count) }
         } else null
 
@@ -2329,14 +2707,16 @@ object VideoExtractor {
             async(Dispatchers.IO) { fetchDutaFilmWebVideos("/explore?country=indonesia", page, count) }
         } else if (isSeriesCategory) {
             async(Dispatchers.IO) { fetchDutaFilmWebVideos("/explore?media_type=tv", page, count) }
+        } else if (isNewlyUpdatedCategory) {
+            async(Dispatchers.IO) { fetchDutaFilmWebVideos("/explore", page, count) }
         } else if (isMoviesCategory) {
             async(Dispatchers.IO) { fetchDutaFilmWebVideos("/explore?media_type=movie", page, count) }
         } else null
 
-        val dutaVideos = dutaDeferred.await()
-        val pencuriVideos = pencuriDeferred.await()
-        val bullerswoodVideos = bullerswoodDeferred?.await() ?: emptyList()
-        val dutaWebVideos = dutaWebDeferred?.await()?.let { list ->
+        val dutaVideos = withTimeoutOrNull(4000L) { dutaDeferred.await() } ?: emptyList()
+        val pencuriVideos = withTimeoutOrNull(4000L) { pencuriDeferred.await() } ?: emptyList()
+        val bullerswoodVideos = bullerswoodDeferred?.let { withTimeoutOrNull(4000L) { it.await() } } ?: emptyList()
+        val dutaWebVideos = dutaWebDeferred?.let { withTimeoutOrNull(4000L) { it.await() } }?.let { list ->
             if (isSeriesCategory) list.map { it.copy(isSeries = true) } else list
         } ?: emptyList()
 
@@ -2352,21 +2732,40 @@ object VideoExtractor {
         }
         val sorted = sortVideosByNewestRelease(merged)
 
-        sorted.take(count)
+        val filtered = if (isMoviesOnlyCategory) {
+            sorted.filter { it.isSeries != true && !it.title.contains(Regex("""\b(?:Season|Episode|Ep|S\d+E\d+)\b""", RegexOption.IGNORE_CASE)) }
+        } else {
+            sorted
+        }
+
+        filtered.take(maxOf(count, 50))
     }
 
-    fun normalizeForDedup(title: String): String =
-        title.lowercase()
+    fun normalizeForDedup(
+        title: String,
+        date: String? = null,
+        url: String? = null,
+        includeYear: Boolean = true
+    ): String {
+        val cleanBase = title.lowercase()
             .replace(Regex("""\((?:19|20)\d{2}\)"""), "")
+            .replace(Regex("""\b(?:19|20)\d{2}\b"""), "")
             .replace(Regex("[^a-z0-9]"), "")
             .trim()
+        if (!includeYear) return cleanBase
+        val year = extractReleaseYear(title, date, url)
+        return if (year > 0) "${cleanBase}_$year" else cleanBase
+    }
+
+    fun normalizeForDedup(video: Video, includeYear: Boolean = true): String =
+        normalizeForDedup(video.title, video.date, video.videoUrl, includeYear)
 
     /**
      * Cross-searches alternative streaming aggregators (DutaMovie <-> PencuriMovie <-> Archive.org)
      * to find fresh live mirrors when the primary movie's mirrors are expired, 404'd, or deleted.
      */
     suspend fun findAlternativeSources(video: Video): List<VideoServer> = withContext(Dispatchers.IO) {
-        val targetNorm = normalizeForDedup(video.title)
+        val targetNorm = normalizeForDedup(video)
         if (targetNorm.isEmpty()) return@withContext emptyList()
 
         val isPm = isPencuriMovie(videoId = video.id, videoUrl = video.videoUrl)
@@ -2374,16 +2773,18 @@ object VideoExtractor {
         val isDf = isDutaFilm(videoId = video.id, videoUrl = video.videoUrl)
         val isBw = isBullerswood(videoId = video.id, videoUrl = video.videoUrl)
         val isDfw = isDutaFilmWeb(videoId = video.id, videoUrl = video.videoUrl)
+        val isDm = isDutaMovie(videoId = video.id, videoUrl = video.videoUrl)
         val partners = when {
-            isPm -> listOf(DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb")
-            isDfw -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21")
-            isDf -> listOf(getPencuriBaseUrl() to "Pencuri", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb")
-            isBw -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getDutaFilmWebBaseUrl() to "DutaFilmWeb")
+            isPm -> listOf(DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb", getDutaMovieBaseUrl() to "DutaMovie21")
+            isDfw -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21", getDutaMovieBaseUrl() to "DutaMovie21")
+            isDf -> listOf(getPencuriBaseUrl() to "Pencuri", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb", getDutaMovieBaseUrl() to "DutaMovie21")
+            isBw -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getDutaFilmWebBaseUrl() to "DutaFilmWeb", getDutaMovieBaseUrl() to "DutaMovie21")
             isKb -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb")
-            else -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb")
+            isDm -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb")
+            else -> listOf(getPencuriBaseUrl() to "Pencuri", DUTAFILM_BASE_URL to "DutaFilm", getBullerswoodBaseUrl() to "LK21", getDutaFilmWebBaseUrl() to "DutaFilmWeb", getDutaMovieBaseUrl() to "DutaMovie21")
         }
 
-        Log.i(TAG, "Finding alternative sources for '${video.title}' (isPm=$isPm, isDf=$isDf, isKb=$isKb, isBw=$isBw, isDfw=$isDfw)...")
+        Log.i(TAG, "Finding alternative sources for '${video.title}' (isPm=$isPm, isDf=$isDf, isKb=$isKb, isBw=$isBw, isDfw=$isDfw, isDm=$isDm)...")
 
         val distinctQueries = buildAlternativeSearchQueries(video.title)
         val altServers = mutableListOf<VideoServer>()
@@ -2398,6 +2799,7 @@ object VideoExtractor {
                             "DutaFilmWeb" -> searchDutaFilmWeb(q, page = 1, count = 20)
                             "DutaFilm" -> searchClusterMirrors(q, page = 1, count = 20)
                             "LK21" -> searchBullerswood(q, page = 1, count = 20)
+                            "DutaMovie21" -> searchWordPressMuviPro(getDutaMovieBaseUrl(), q, page = 1, count = 20)
                             else -> {
                                 var res = searchDomain(partnerDomain, q, startPage = 1, maxCount = 20)
                                 if (res.isEmpty() && partnerTag == "Pencuri") {
@@ -2464,7 +2866,7 @@ object VideoExtractor {
         if (!video.videoUrl.contains("archive.org")) {
             try {
                 val classicMatch = fetchArchivePramleeVideos().find {
-                    normalizeForDedup(it.title) == targetNorm
+                    normalizeForDedup(it.title, includeYear = false) == normalizeForDedup(video.title, includeYear = false)
                 }
                 if (classicMatch != null && video.servers.none { it.url.contains("archive.org") }) {
                     Log.i(TAG, "Discovered Archive.org classic mirror for '${video.title}'")
@@ -2479,62 +2881,72 @@ object VideoExtractor {
 
         // Full movie & universal stream fallbacks (YouTube, Bilibili, Dailymotion):
         // Only engage if no mirrors found yet, and video is not an unreleased or future movie
-        val isExplicitSeries = video.videoUrl.contains("/series/") || video.videoUrl.contains("/tv/") || video.videoUrl.contains("/serial-tv/")
-        if (altServers.isEmpty() && (!isExplicitSeries || video.isSeries != true || video.episodes.isEmpty())) {
-            // Extract effective target release year from title, date, or URL slug
-            val targetYear = parseMovieTitleMeta(video.title, video.date).year
-                ?: Regex("""\b(19\d{2}|20\d{2})\b""").find(video.videoUrl)?.groupValues?.get(1)?.toIntOrNull()
-            val effectiveDate = targetYear?.toString() ?: video.date
-
-            val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
-            val isUnreleased = targetYear != null && (targetYear > currentYear || (targetYear >= currentYear && (video.quality.contains("tba", ignoreCase = true) || video.quality.contains("coming", ignoreCase = true) || video.quality.contains("cam", ignoreCase = true))))
-
-            // Only query YouTube, Bilibili, and Dailymotion if movie is released and not already found
-            if (!isUnreleased && altServers.isEmpty()) {
-                // Search YouTube Full Movie for modern Malaysian movies and titles whose filehosts are dead
-                try {
-                    val ytServers = searchYouTubeFullMovie(video.title, effectiveDate)
-                    if (ytServers.isNotEmpty()) {
-                        Log.i(TAG, "Discovered ${ytServers.size} YouTube Full Movie mirrors for '${video.title}'")
-                        altServers.addAll(ytServers)
-                    }
-                } catch (e: Exception) {
-                    Log.w(TAG, "YouTube full movie search error: ${e.message}")
-                }
-
-                // Search Bilibili Full Movie for anime, asian films, and full movies (ad-free & globally accessible)
-                if (altServers.isEmpty()) {
-                    try {
-                        val biliServers = searchBilibiliFullMovie(video.title, effectiveDate)
-                        if (biliServers.isNotEmpty()) {
-                            Log.i(TAG, "Discovered ${biliServers.size} Bilibili Full Movie mirrors for '${video.title}'")
-                            altServers.addAll(biliServers)
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Bilibili full movie search error: ${e.message}")
-                    }
-                }
-
-                // Search Dailymotion Full Movie for user uploads, malay/indo films, and full movies
-                if (altServers.isEmpty()) {
-                    try {
-                        val dmServers = searchDailymotionFullMovie(video.title, effectiveDate)
-                        if (dmServers.isNotEmpty()) {
-                            Log.i(TAG, "Discovered ${dmServers.size} Dailymotion Full Movie mirrors for '${video.title}'")
-                            altServers.addAll(dmServers)
-                        }
-                    } catch (e: Exception) {
-                        Log.w(TAG, "Dailymotion full movie search error: ${e.message}")
-                    }
-                }
-            }
+        if (altServers.isEmpty()) {
+            val partnerMirrors = searchExternalPartnerMirrors(video)
+            altServers.addAll(partnerMirrors)
         }
 
         altServers.filter { isServerMatchingMovie(video.title, it) }.distinctBy { it.url }
     }
 
+    /**
+     * Searches external fallback partner mirrors (YouTube, Bilibili, Dailymotion).
+     * Triggered when all primary mirrors are dead or unavailable.
+     */
+    suspend fun searchExternalPartnerMirrors(video: Video): List<VideoServer> = withContext(Dispatchers.IO) {
+        val targetNorm = normalizeForDedup(video)
+        if (targetNorm.isEmpty()) return@withContext emptyList()
+
+        val isExplicitSeries = video.videoUrl.contains("/series/") || video.videoUrl.contains("/tv/") || video.videoUrl.contains("/serial-tv/")
+        if (isExplicitSeries || video.isSeries == true || video.episodes.isNotEmpty()) {
+            return@withContext emptyList()
+        }
+
+        val targetYear = parseMovieTitleMeta(video.title, video.date).year
+            ?: Regex("""\b(19\d{2}|20\d{2})\b""").find(video.videoUrl)?.groupValues?.get(1)?.toIntOrNull()
+        val effectiveDate = targetYear?.toString() ?: video.date
+
+        val currentYear = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+        val isUnreleased = targetYear != null && (targetYear > currentYear || (targetYear >= currentYear && (video.quality.contains("tba", ignoreCase = true) || video.quality.contains("coming", ignoreCase = true) || video.quality.contains("cam", ignoreCase = true))))
+        if (isUnreleased) return@withContext emptyList()
+
+        val partnerServers = mutableListOf<VideoServer>()
+        coroutineScope {
+            val ytDeferred = async {
+                try {
+                    searchYouTubeFullMovie(video.title, effectiveDate)
+                } catch (e: Exception) {
+                    Log.w(TAG, "YouTube mirror search failed: ${e.message}")
+                    emptyList()
+                }
+            }
+            val biliDeferred = async {
+                try {
+                    searchBilibiliFullMovie(video.title, effectiveDate)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Bilibili mirror search failed: ${e.message}")
+                    emptyList()
+                }
+            }
+            val dmDeferred = async {
+                try {
+                    searchDailymotionFullMovie(video.title, effectiveDate)
+                } catch (e: Exception) {
+                    Log.w(TAG, "Dailymotion mirror search failed: ${e.message}")
+                    emptyList()
+                }
+            }
+
+            partnerServers.addAll(ytDeferred.await())
+            partnerServers.addAll(biliDeferred.await())
+            partnerServers.addAll(dmDeferred.await())
+        }
+
+        partnerServers.filter { isServerMatchingMovie(video.title, it) }.distinctBy { it.url }
+    }
+
     suspend fun healVideoFromAlternativeSources(video: Video): Video? = withContext(Dispatchers.IO) {
-        val targetNorm = normalizeForDedup(video.title)
+        val targetNorm = normalizeForDedup(video)
         if (targetNorm.isEmpty()) return@withContext null
 
         val isPm = isPencuriMovie(videoId = video.id, videoUrl = video.videoUrl)
@@ -2595,12 +3007,15 @@ object VideoExtractor {
                         }
 
                         if (taggedServers.isNotEmpty() || resolvedEpisodes.isNotEmpty() || isValidImageUrl(details.thumbnailUrl)) {
+                            val verifiedPoster = getVerifiedPoster(video.title, video.id)
                             val bestThumb = when {
+                                verifiedPoster.isNotEmpty() -> verifiedPoster
                                 isValidImageUrl(details.thumbnailUrl) && (!isValidImageUrl(video.thumbnailUrl) || details.thumbnailUrl.contains("tmdb.org")) -> details.thumbnailUrl
                                 isValidImageUrl(video.thumbnailUrl) -> video.thumbnailUrl
                                 else -> details.thumbnailUrl
                             }
                             val bestBackdrop = when {
+                                verifiedPoster.isNotEmpty() -> verifiedPoster
                                 isValidImageUrl(details.backdropUrl) && (!isValidImageUrl(video.backdropUrl) || details.backdropUrl.contains("tmdb.org")) -> details.backdropUrl
                                 isValidImageUrl(video.backdropUrl) -> video.backdropUrl
                                 else -> details.backdropUrl.ifEmpty { bestThumb }
@@ -2786,8 +3201,8 @@ object VideoExtractor {
         if (targetTokens.isEmpty() || candTokens.isEmpty()) return false
 
         // Quick equality check on normalized dedup string
-        val targetDedup = normalizeForDedup(target.title)
-        val candDedup = normalizeForDedup(candidate.title)
+        val targetDedup = normalizeForDedup(target)
+        val candDedup = normalizeForDedup(candidate)
         if (targetDedup == candDedup) {
             return true
         }
@@ -2832,6 +3247,11 @@ object VideoExtractor {
     suspend fun findPosterForTitle(title: String, releaseDate: String? = null): String = withContext(Dispatchers.IO) {
         val clean = cleanTitle(title)
         if (clean.length < 2) return@withContext ""
+        val verified = getVerifiedPoster(clean)
+        if (verified.isNotEmpty() && isValidImageUrl(verified)) {
+            Log.i(TAG, "findPosterForTitle: Found verified poster for '$title': $verified")
+            return@withContext verified
+        }
         val queries = buildAlternativeSearchQueries(clean)
 
         // 1. Try DutaFilm Web (has crisp TMDB posters directly in search/explore results)
@@ -2841,7 +3261,7 @@ object VideoExtractor {
             val match = dfwResults.find { cand ->
                 isCrossProviderMovieMatch(targetDummy, cand)
             }
-            if (match != null && isValidImageUrl(match.thumbnailUrl)) {
+            if (match != null && isValidImageUrl(match.thumbnailUrl) && !isDeadImage(match.thumbnailUrl) && isImageReachableFast(match.thumbnailUrl)) {
                 Log.i(TAG, "findPosterForTitle: Discovered DutaFilm Web poster for '$title': ${match.thumbnailUrl}")
                 return@withContext match.thumbnailUrl
             }
@@ -2854,7 +3274,7 @@ object VideoExtractor {
             val match = bwResults.find { cand ->
                 isCrossProviderMovieMatch(targetDummy, cand)
             }
-            if (match != null && isValidImageUrl(match.thumbnailUrl)) {
+            if (match != null && isValidImageUrl(match.thumbnailUrl) && !isDeadImage(match.thumbnailUrl) && isImageReachableFast(match.thumbnailUrl)) {
                 Log.i(TAG, "findPosterForTitle: Discovered Bullerswood poster for '$title': ${match.thumbnailUrl}")
                 return@withContext match.thumbnailUrl
             }
@@ -2869,7 +3289,7 @@ object VideoExtractor {
                 val match = results.find { cand ->
                     isCrossProviderMovieMatch(targetDummy, cand)
                 }
-                if (match != null && isValidImageUrl(match.thumbnailUrl)) {
+                if (match != null && isValidImageUrl(match.thumbnailUrl) && !isDeadImage(match.thumbnailUrl) && isImageReachableFast(match.thumbnailUrl)) {
                     Log.i(TAG, "findPosterForTitle: Discovered PencuriMovie poster for '$title': ${match.thumbnailUrl}")
                     return@withContext match.thumbnailUrl
                 }
@@ -2884,7 +3304,7 @@ object VideoExtractor {
                 val match = clusterResults.find { cand ->
                     isCrossProviderMovieMatch(targetDummy, cand)
                 }
-                if (match != null && isValidImageUrl(match.thumbnailUrl)) {
+                if (match != null && isValidImageUrl(match.thumbnailUrl) && !isDeadImage(match.thumbnailUrl) && isImageReachableFast(match.thumbnailUrl)) {
                     Log.i(TAG, "findPosterForTitle: Discovered LK21 cluster poster for '$title': ${match.thumbnailUrl}")
                     return@withContext match.thumbnailUrl
                 }
@@ -2899,7 +3319,7 @@ object VideoExtractor {
                 val match = dfResults.find { cand ->
                     isCrossProviderMovieMatch(targetDummy, cand)
                 }
-                if (match != null && isValidImageUrl(match.thumbnailUrl)) {
+                if (match != null && isValidImageUrl(match.thumbnailUrl) && !isDeadImage(match.thumbnailUrl) && isImageReachableFast(match.thumbnailUrl)) {
                     Log.i(TAG, "findPosterForTitle: Discovered DutaFilm poster for '$title': ${match.thumbnailUrl}")
                     return@withContext match.thumbnailUrl
                 }
@@ -2955,6 +3375,12 @@ object VideoExtractor {
         return false
     }
 
+    fun isGenericFallbackServerName(name: String): Boolean {
+        return name.contains("Full Movie", ignoreCase = true) ||
+            name.contains("Fast Direct", ignoreCase = true) ||
+            name.matches(Regex("""(?i)^(?:YouTube|Bilibili|Dailymotion|Archive)\s*(?:HD)?\s*(?:\(.*\))?$"""))
+    }
+
     /**
      * Validates whether a server genuinely matches the movie title being displayed,
      * rejecting ad/spam servers, mismatched YouTube/Dailymotion titles, unreleased future titles,
@@ -2962,8 +3388,9 @@ object VideoExtractor {
      */
     fun isServerMatchingMovie(videoTitle: String, server: VideoServer): Boolean {
         val isAlt = isAlternativePartnerHost(server.url) || isAlternativePartnerServer(server.name, server.url) || server.url.contains("archive.org")
-        val isPrimary = isPrimaryProviderServer(server.url)
-        if (!isAlt && !isPrimary && !isGenuineMirror(server.name, server.url)) return false
+        
+        // Every server must be a genuine video mirror
+        if (!isGenuineMirror(server.name, server.url)) return false
 
         val targetMeta = parseMovieTitleMeta(videoTitle)
         if (targetMeta.baseTokens.isEmpty()) return true
@@ -2976,22 +3403,36 @@ object VideoExtractor {
             }
         }
 
+        // Generic fallback mirrors created by full-movie search engines (YouTube, Bilibili, Dailymotion, Archive.org)
+        val isGenericFallbackName = isGenericFallbackServerName(server.name)
+        if (isGenericFallbackName) return true
+
         // Name title check: If server.name embeds an explicit movie title
-        // e.g. "YouTube HD: Inception", "Dailymotion: Adnan Sempit", "Bilibili HD: Naruto"
-        if (isAlt && (server.name.contains(":") || server.name.contains(" - "))) {
-            val candidateTitlePart = when {
+        // e.g. "YouTube HD: Inception", "Dailymotion: Adnan Sempit", "Bilibili HD: Naruto",
+        // or leaked CMS related title e.g. "Hdtv 720p Boss (2013)", "Web-dl 1080p 720p Borderlands (2024)"
+        val hasYearPattern = Regex("""(?:\(|\[)?(?:19|20)\d{2}(?:\)|\])?""").containsMatchIn(server.name)
+        val hasQualityPrefix = Regex("""(?i)^\s*(?:web-?dl|hdtv|bluray|bdrip|hdrip|cam|dvdrip|1080p|720p|4k)""").containsMatchIn(server.name)
+        val hasColonOrDash = server.name.contains(":") || server.name.contains(" - ")
+
+        if (isAlt || hasYearPattern || (hasQualityPrefix && hasYearPattern) || hasColonOrDash) {
+            var candidateTitlePart = when {
                 server.name.contains(":") -> server.name.substringAfter(":").trim()
-                else -> server.name.substringAfter(" - ").trim()
+                server.name.contains(" - ") -> server.name.substringAfter(" - ").trim()
+                else -> server.name.replace(Regex("""(?i)^\s*(?:web-?dl|hdtv|bluray|bdrip|hdrip|cam|dvdrip|1080p|720p|4k|\s+)+\s*"""), "").trim()
             }
             val ignoredSuffixes = setOf(
                 "full movie", "fast direct", "vip", "backup", "mirror", "hd", "720p", "1080p", "4k",
                 "hls", "direct", "embed", "server 1", "server 2", "server 3", "server 4", "server 5",
                 "versi klasik", "versi warna", "pencuri", "dutafilm", "dutafilmweb", "lk21",
                 "streamtape", "voe", "doodstream", "mixdrop", "upstream", "filelions", "vidguard",
-                "hxfile", "gofile", "mp4upload", "streamwish", "vidsrc", "superembed"
+                "hxfile", "gofile", "mp4upload", "streamwish", "vidsrc", "superembed",
+                "s1", "s2", "s3", "s4", "s5", "main", "utama", "hgcloud", "hglink", "indostream",
+                "hanerix", "vibuxer", "playstream", "faststream", "dsvplay", "lulu", "lulustream", "amt", "iplayer"
             )
             val isEpisodeSuffix = candidateTitlePart.matches(Regex("""(?i)^(?:\s*ep(?:isode|isod)?\s*\d+.*|\s*s\d+\s*ep?\d+.*)$"""))
-            if (candidateTitlePart.isNotEmpty() && !isEpisodeSuffix && !ignoredSuffixes.contains(candidateTitlePart.lowercase())) {
+            val isNonMovieServerTag = candidateTitlePart.matches(Regex("""(?i)^(?:s\d+|server\s*\d+|mirror\s*\d+|pilihan\s*\d+|opt\s*\d+|vip|main|utama|embed|player|stream|fast\s*direct)$""")) ||
+                candidateTitlePart.lowercase() in ignoredSuffixes
+            if (candidateTitlePart.isNotEmpty() && !isEpisodeSuffix && !isNonMovieServerTag) {
                 val candMeta = parseMovieTitleMeta(candidateTitlePart)
                 if (candMeta.baseTokens.isNotEmpty()) {
                     // Check sequel
@@ -3727,7 +4168,7 @@ object VideoExtractor {
 
         val dutaClean = mutableListOf<Video>()
         for (video in dutaResults) {
-            val normTitle = normalizeForDedup(video.title)
+            val normTitle = normalizeForDedup(video)
             if (seenTitles.add(normTitle) && seenIds.add(video.id)) {
                 dutaClean.add(video)
             }
@@ -3735,7 +4176,7 @@ object VideoExtractor {
 
         val pencuriClean = mutableListOf<Video>()
         for (video in pencuriResults) {
-            val normTitle = normalizeForDedup(video.title)
+            val normTitle = normalizeForDedup(video)
             if (seenTitles.add(normTitle) && seenIds.add(video.id)) {
                 pencuriClean.add(video)
             }
@@ -3897,6 +4338,45 @@ object VideoExtractor {
         "penarik-beca" to "Filem pertama arahan Tan Sri P. Ramlee mengisahkan Amran, seorang penarik beca miskin berhati mulia yang jatuh cinta dengan Azizah, gadis bangsawan. Hubungan mereka dicemburui oleh pemuda kaya Ghazali yang cuba merancang pelbagai tipu muslihat.",
         "penarikbeca" to "Filem pertama arahan Tan Sri P. Ramlee mengisahkan Amran, seorang penarik beca miskin berhati mulia yang jatuh cinta dengan Azizah, gadis bangsawan. Hubungan mereka dicemburui oleh pemuda kaya Ghazali yang cuba merancang pelbagai tipu muslihat."
     )
+
+    /**
+     * Resolves verified, authoritative TMDB/official posters for high-profile Malaysian films
+     * to safeguard against 404 dead images, scraper corruption, or mismatched related films.
+     */
+    fun getVerifiedPoster(title: String, slugOrId: String? = null): String {
+        val norm = normalizeForDedup(title, includeYear = false)
+        val cleanSlug = (slugOrId ?: "").lowercase().replace("_", "-")
+        val cleanCombined = (cleanSlug + " " + title).lowercase()
+        
+        // Munafik franchise: Carefully differentiate Munafik (2016) vs Munafik 2 (2018)
+        // Strictly avoid false matching on "2016" (which starts with digit '2')
+        val isMunafik2 = norm == "munafik2" || norm == "munafikii" || 
+                         Regex("""(?i)\bmunafik\s*(?:2|ii)\b(?!\d)""").containsMatchIn(title) ||
+                         Regex("""(?i)\bmunafik\s*(?:2|ii)\b(?!\d)""").containsMatchIn(cleanSlug) ||
+                         Regex("""(?i)munafik-?2(?:-|$)""").containsMatchIn(cleanSlug)
+        if (isMunafik2) {
+            return "https://image.tmdb.org/t/p/original/sH7f3INRroTnr7szZ8Vdq9y1w7k.jpg"
+        }
+        val isMunafik1 = norm == "munafik" || norm == "munafik1" || norm == "munafiki" ||
+                         cleanSlug.contains("munafik-2016") || cleanCombined.contains("munafik (2016)") ||
+                         cleanSlug.contains("munafik") || cleanCombined.contains("munafik")
+        if (isMunafik1) {
+            return "https://image.tmdb.org/t/p/original/2QCDn4Z8RTOwSo2WweeoexWfV8W.jpg"
+        }
+
+        // P. Ramlee catalog
+        for ((key, poster) in PRAMLEE_POSTERS) {
+            val keyNorm = normalizeForDedup(key, includeYear = false)
+            if (norm == keyNorm || (keyNorm.length >= 5 && norm.contains(keyNorm))) {
+                return poster
+            }
+            if (cleanCombined.contains(key) || (keyNorm.length >= 5 && cleanCombined.contains(keyNorm))) {
+                return poster
+            }
+        }
+
+        return ""
+    }
 
     @Volatile
     private var archivePramleeCache: List<Video>? = null
@@ -4261,7 +4741,7 @@ object VideoExtractor {
             }
 
             for (addition in standaloneAdditions) {
-                val norm = normalizeForDedup(addition.title)
+                val norm = normalizeForDedup(addition.title, includeYear = false)
                 if (seenTitles.add(norm)) {
                     movies.add(addition)
                 }
@@ -4583,7 +5063,7 @@ object VideoExtractor {
                     }
                 }
                 val allResults = jobs.awaitAll().flatten()
-                allResults.distinctBy { normalizeForDedup(it.title) }.take(count)
+                allResults.distinctBy { normalizeForDedup(it) }.take(count)
             }
         } catch (e: Exception) {
             Log.w(TAG, "Cluster mirrors search error for '$query': ${e.message}")
@@ -4744,7 +5224,10 @@ object VideoExtractor {
                 if (epMatch != null) "dfw_${slug.removeSuffix(".html")}_ep${epMatch.groupValues[1]}"
                 else "dfw_${slug.removeSuffix(".html")}"
             }
-            url.contains("bullerswood", ignoreCase = true) || url.contains("lk21", ignoreCase = true) -> "bw_$slug"
+            url.contains("pusatfilm", ignoreCase = true) -> "pf_$slug"
+            url.contains("dutamovie21.cam", ignoreCase = true) || (url.contains("/film/", ignoreCase = true) && url.contains("dutamovie", ignoreCase = true)) -> "dm_film_$slug"
+            url.contains("204.3.234.75", ignoreCase = true) || url.contains("dutamovie", ignoreCase = true) || url.contains("balletroyale.com", ignoreCase = true) -> "dm_$slug"
+            url.contains("bullerswood", ignoreCase = true) || url.contains("lk21", ignoreCase = true) || url.contains("inlionsforisbvi", ignoreCase = true) -> "bw_$slug"
             url.contains("pencurimovie", ignoreCase = true) || url.contains("pencurifilm", ignoreCase = true) -> "pm_$slug"
             isClusterSite(url) || url.contains("159.89.249.45") || url.contains("dutafilm", ignoreCase = true) -> "df_$slug"
             else -> slug
@@ -4754,7 +5237,10 @@ object VideoExtractor {
     fun stripSourcePrefix(id: String): String {
         return id.removePrefix("kb_")
             .removePrefix("pm_")
+            .removePrefix("pf_")
             .removePrefix("bw_")
+            .removePrefix("dm_film_")
+            .removePrefix("dm_")
             .removePrefix("df_")
             .removePrefix("dfw_")
             .replace(Regex("""_ep\d+$"""), "")
@@ -4801,9 +5287,9 @@ object VideoExtractor {
         val doc = Jsoup.parse(html, baseUrl)
         
         // Use a more optimized selector path for high-performance parsing
-        val mainContent = doc.selectFirst("#archive-content, .items, .movies-list, #main-content, .post-listing, #gmr-main-load, .archive-container, .grid-container, .list-container, main, #primary, #content, .site-content") ?: doc
+        val mainContent = doc.selectFirst("#archive-content, .items, .movies-list, #main-content, .post-listing, #gmr-main-load, .archive-container, .grid-container, .list-container, main, #primary, #content, .site-content, .kisi") ?: doc
         
-        val items = mainContent.select(".ml-item, article.item, .post-item, .item-movie, .movie-item, .post-entry, .gmr-item, .movie-post, .item, .post, .T-Post, .movie-list-item, .post-box, article.post, article.item-list, .item-list, [id^='post-'], .grid-item")
+        val items = mainContent.select(".ml-item, article.item, .post-item, .item-movie, .movie-item, .post-entry, .gmr-item, .movie-post, .item, .post, .T-Post, .movie-list-item, .post-box, article.post, article.item-list, .item-list, [id^='post-'], .grid-item, article.kartu, .kartu")
         
         if (items.isEmpty()) return emptyList()
 
@@ -4815,7 +5301,7 @@ object VideoExtractor {
             }
             if (isBadContainer) return@mapNotNull null
 
-            var titleEl = el.selectFirst(".post-box-title, .entry-title, h2, h3, .title, .title-movie")
+            var titleEl = el.selectFirst(".post-box-title, .entry-title, h2, h3, .title, .title-movie, .judul, a.judul")
             var rawTitle = titleEl?.text()?.trim() ?: ""
             
             if (rawTitle.isEmpty()) {
@@ -4831,7 +5317,7 @@ object VideoExtractor {
             // Filter out junk titles or broken scrape results
             if (title.isEmpty() || title.lowercase() == "error" || title.length < 2) return@mapNotNull null
 
-            val link = el.selectFirst(".post-box-title a, .entry-title a, h2 a, h3 a, a")?.attr("abs:href") ?: ""
+            val link = el.selectFirst(".post-box-title a, .entry-title a, h2 a, h3 a, a.poster-tautan, a.judul, a")?.attr("abs:href") ?: ""
             
             if (title.isNotEmpty() && link.isNotEmpty() && 
                 !link.contains("/genre/") && !link.contains("/year/") && 
@@ -4839,13 +5325,17 @@ object VideoExtractor {
                 !link.contains("/tag/") && !link.contains("/author/") &&
                 !link.contains("facebook.com") && !link.contains("twitter.com")) {
                 
-                val img = extractPosterFromElement(el, baseUrl)
+                var img = extractPosterFromElement(el, baseUrl)
+                val verifiedPoster = getVerifiedPoster(title, link)
+                if (verifiedPoster.isNotEmpty()) {
+                    img = verifiedPoster
+                }
                 
                 // OWL'S EYE: Extract quality tag (HD, HDCAM, etc) directly from list view
-                val quality = el.select(".quality, .gmr-quality-item, .res, .resolution, .status").text().trim()
-                val rawRating = el.select(".imdb-rating, .rating, .score, .gmr-rating-item, .post-ratings").text()
+                val quality = el.select(".quality, .gmr-quality-item, .res, .resolution, .status, .lencana").text().trim()
+                val rawRating = el.select(".imdb-rating, .rating, .score, .gmr-rating-item, .post-ratings, .nilai").text()
                 val rating = Regex("""\d+(?:\.\d+)?""").find(rawRating)?.value ?: ""
-                val rawDate = el.select("time, .date, .posted-on, .post-date, .entry-date, .gmr-year-item, .year").text().trim()
+                val rawDate = el.select("time, .date, .posted-on, .post-date, .entry-date, .gmr-year-item, .year, .kartu-kaki").text().trim()
                 
                 Video(id = extractStableId(link), title = title, thumbnailUrl = img, videoUrl = link, duration = "", quality = quality, views = rating, date = rawDate)
             } else null
@@ -4964,6 +5454,7 @@ object VideoExtractor {
     fun isValidImageUrl(url: String?): Boolean {
         if (url.isNullOrBlank()) return false
         val u = url.trim()
+        if (isDeadImage(u)) return false
         if (u.startsWith("data:image/", ignoreCase = true) || 
             u.startsWith("blob:", ignoreCase = true) || 
             u.startsWith("javascript:", ignoreCase = true)) return false
@@ -5111,6 +5602,11 @@ object VideoExtractor {
     }
 
     fun extractPosterFromDoc(doc: Document, baseUrl: String = "", title: String = ""): String {
+        val verified = getVerifiedPoster(title, baseUrl)
+        if (verified.isNotEmpty() && isValidImageUrl(verified)) return verified
+
+        val relatedSelector = ".related, .related-mv-pic, .recommendations, #sidebar, .sidebar, .related-posts, .related-movies, .movies-list, .ml-item, .post-item, .gmr-related-movie, .widget, .similar-movies, .widget_categories"
+
         // 1. Meta tags (specifically checking content is non-blank and valid image)
         val metaSelectors = listOf(
             "meta[property='og:image']",
@@ -5152,12 +5648,14 @@ object VideoExtractor {
             ".feature-img img",
             ".entry-thumb img",
             "#muvipro_player_content_id img",
+            ".poster-kecil",
+            "img.poster-kecil",
             ".item-poster img"
         )
         for (sel in posterImgSelectors) {
             val images = doc.select(sel)
             for (img in images) {
-                if (img.hasClass("related-mv-pic") || img.parents().`is`(".related, .related-mv-pic, .recommendations, #sidebar, .sidebar, .related-posts, .related-movies")) continue
+                if (img.hasClass("related-mv-pic") || img.parents().`is`(relatedSelector)) continue
                 val candidate = extractBestImageUrlFromTag(img)
                 if (isValidImageUrl(candidate)) {
                     val normalized = normalizeImageUrl(candidate, baseUrl)
@@ -5166,23 +5664,22 @@ object VideoExtractor {
             }
         }
 
-        // 3. Fallback: Any <img> matching title or common poster paths (excluding related movie elements)
+        // 3. Fallback: Any <img> matching title (strictly excluding related movie elements)
         val clean = cleanTitle(title).lowercase()
         val titleTokens = clean.split(Regex("""\s+""")).filter { it.length >= 3 }
         val allImages = doc.select("img")
         for (img in allImages) {
-            if (img.hasClass("related-mv-pic") || img.parents().`is`(".related, .related-mv-pic, .recommendations, #sidebar, .sidebar, .related-posts, .related-movies")) continue
+            if (img.hasClass("related-mv-pic") || img.parents().`is`(relatedSelector)) continue
             val alt = img.attr("alt").lowercase()
             val candidate = extractBestImageUrlFromTag(img)
             if (!isValidImageUrl(candidate)) continue
 
-            val isTitleMatch = titleTokens.isNotEmpty() && titleTokens.count { alt.contains(it) } >= minOf(2, titleTokens.size)
-            val isPosterPath = candidate.contains("/gambar/", ignoreCase = true) ||
-                               candidate.contains("tmdb.org", ignoreCase = true) ||
-                               candidate.contains("/poster", ignoreCase = true) ||
-                               candidate.contains("wp-content/uploads", ignoreCase = true)
+            val isTitleMatch = titleTokens.isNotEmpty() && (
+                titleTokens.count { alt.contains(it) } >= minOf(2, titleTokens.size) ||
+                alt.contains(clean)
+            )
 
-            if (isTitleMatch || isPosterPath) {
+            if (isTitleMatch) {
                 val normalized = normalizeImageUrl(candidate, baseUrl)
                 if (isValidImageUrl(normalized)) return normalized
             }
@@ -5192,6 +5689,8 @@ object VideoExtractor {
     }
 
     fun extractBackdropFromDoc(doc: Document, baseUrl: String = "", fallbackPoster: String = ""): String {
+        val relatedSelector = ".related, .related-mv-pic, .recommendations, #sidebar, .sidebar, .related-posts, .related-movies, .movies-list, .ml-item, .post-item, .gmr-related-movie, .widget, .similar-movies, .widget_categories"
+
         // 1. Meta tags for backdrop
         val metaSelectors = listOf(
             "meta[property='og:image:backdrop']",
@@ -5209,6 +5708,7 @@ object VideoExtractor {
 
         // 2. Backdrop DOM elements (excluding related movies/recommendations/sidebars)
         val backdropSelectors = listOf(
+            ".film-sampul img",
             ".backdrop img",
             "#background img",
             ".backdrop-image img",
@@ -5219,7 +5719,7 @@ object VideoExtractor {
         )
         for (sel in backdropSelectors) {
             val img = doc.selectFirst(sel) ?: continue
-            if (img.hasClass("related-mv-pic") || img.parents().`is`(".related, .related-mv-pic, .recommendations, #sidebar, .sidebar, .related-posts, .related-movies")) continue
+            if (img.hasClass("related-mv-pic") || img.parents().`is`(relatedSelector)) continue
             val candidate = extractBestImageUrlFromTag(img)
             if (isValidImageUrl(candidate)) {
                 val normalized = normalizeImageUrl(candidate, baseUrl)
@@ -5230,7 +5730,7 @@ object VideoExtractor {
         // 3. Elements with inline style background-image (EXCLUDING related movie containers)
         val styleElements = doc.select("*[style*='background-image'], *[style*='background:url'], *[data-background]")
         for (el in styleElements) {
-            if (el.hasClass("related-mv-pic") || el.parents().`is`(".related, .related-mv-pic, .recommendations, #sidebar, .sidebar, .related-posts, .related-movies")) continue
+            if (el.hasClass("related-mv-pic") || el.parents().`is`(relatedSelector)) continue
             val style = el.attr("style") + " " + el.attr("data-background")
             val match = Regex("""url\(['"]?([^'"]+)['"]?\)""").find(style)
             val candidate = match?.groupValues?.get(1) ?: el.attr("data-background")
@@ -5289,8 +5789,12 @@ object VideoExtractor {
     }
 
     fun identifyMirrorName(name: String, url: String): String {
+        val sanitizedName = name
+            .replace(Regex("""[\p{So}\p{Sk}\p{Cs}\uD83C-\uDBFF\uDC00-\uDFFF\u2600-\u26FF\u2700-\u27BF]"""), "")
+            .replace(Regex("""\s+"""), " ")
+            .trim()
         val lowUrl = url.lowercase()
-        val lowName = name.lowercase()
+        val lowName = sanitizedName.lowercase()
         
         val hgHosts = setOf("hgcloud", "hglink", "hgcdn", "hanerix", "vibuxer", "dhcplay", "masukestin", "audinifer", "duvidun", "fujihide", "distributedcomputing", "harmonixinnovationlab", "ryder", "hglcdn", "movearnpre", "movienu", "movielite", "garylarge", "huntrex", "bestcdn")
         val indoHosts = setOf("indostream", "amt", "iplayer", "masuk.link", "masukin", "listeamed", "rebeccasciencestreet", "morencius", "playstream", "embed4me", "pm21", "dm21", "zeus", "klik", "playerp2p", "faststream")
@@ -5324,6 +5828,7 @@ object VideoExtractor {
             lowUrl.contains("youtube") || lowUrl.contains("youtu.be") -> "YouTube HD"
             lowUrl.contains("bilibili") -> "Bilibili HD"
             lowUrl.contains("dailymotion") || lowUrl.contains("dai.ly") -> "Dailymotion"
+            lowUrl.contains("plyr") || lowUrl.contains("freeon") -> "DutaMovie Player"
             else -> null
         }
         if (provider != null) return provider
@@ -5335,18 +5840,36 @@ object VideoExtractor {
                 else -> null
             }
             if (provider != null) {
-                val cleanName = name.replace(Regex("(?i)server\\s*"), "S").replace(Regex("(?i)mirror\\s*"), "M").ifEmpty { "S1" }
+                val cleanName = sanitizedName.replace(Regex("(?i)server\\s*"), "S").replace(Regex("(?i)mirror\\s*"), "M").ifEmpty { "S1" }
                 return "$provider-VIP ($cleanName)"
             }
         }
         
         if (lowName.isEmpty() || lowName == "server" || lowName == "s1") return "Server 1 (Main)"
-        return name
+        return sanitizedName
     }
 
     fun isGenuineMirror(name: String, url: String): Boolean {
-        val lowName = name.lowercase()
-        val lowUrl = url.lowercase()
+        val lowName = name.lowercase().trim()
+        val lowUrl = url.lowercase().trim()
+
+        if (lowName.isEmpty()) return false
+
+        // Immediate rejection of non-video buttons / actions
+        val junkKeywords = listOf(
+            "download", "unduh", "muat turun",
+            "report", "lapor", "laporkan", "komentar", "comment",
+            "trailer", "preview", "teaser", "cuplikan",
+            "review", "ulasan", "share", "bagikan", "kongsi",
+            "subscene", "request", "dmca", "privacy", "disclaimer",
+            "terms", "kontak", "contact", "login", "register",
+            "daftar", "masuk", "vip member", "search", "cari",
+            "filter", "home", "beranda", "next", "prev", "previous",
+            "halaman", "page", "selanjutnya", "sebelumnya"
+        )
+        if (junkKeywords.any { lowName == it || lowName.startsWith("$it ") || lowName.endsWith(" $it") || lowName == "$it:" }) {
+            return false
+        }
 
         // Efficiency: High-level ad domain blocking
         val adDomains = listOf(
@@ -5355,37 +5878,64 @@ object VideoExtractor {
             "qpon", "butynejutes", "parklogic", "lucky", "linkfast", "shope.ee", "tokopedia",
             "lazada", "t.me", "bit.ly", "tinyurl", "cutt.ly"
         )
-        val host = try { android.net.Uri.parse(url).host?.lowercase() ?: "" } catch(_: Exception) { "" }
+        val host = try {
+            android.net.Uri.parse(url).host?.lowercase()
+        } catch(_: Throwable) { null } ?: try {
+            java.net.URI(url).host?.lowercase()
+        } catch(_: Throwable) { null } ?: ""
         if (adDomains.any { host.contains(it) || lowName.contains(it) }) return false
 
         if (lowUrl.contains("utm_medium=ads") || lowUrl.contains("utm_source=") || 
             lowUrl.contains("utm_medium=") || lowUrl.contains("lucky77") || lowUrl.contains("linkfast") ||
             lowUrl.contains("/ads") || lowUrl.contains("banner") || lowUrl.contains("aff_")) return false
         
-        if (lowUrl.contains("youtube") || lowUrl.contains("trailer") || lowUrl.contains("preview") || 
-            lowUrl.contains("google.com") || lowUrl.contains("googleapis.com") || lowUrl.contains("imasdk")) return false
+        val isTrailerOrPreview = lowUrl.contains("trailer") || lowUrl.contains("preview") || lowUrl.contains("teaser") ||
+                                 lowName.contains("trailer") || lowName.contains("preview") || lowName.contains("teaser")
+        if (isTrailerOrPreview) return false
 
-        // Recognized video hosts, JS-only embeds, or primary provider mirrors are always genuine
-        if (isProbablyVideoHost(url) || isJsOnlyHost(url) || isPrimaryProviderServer(url)) return true
-
-        // Block known related/recommendation movie paths from the same CMS site that might be detected as mirrors
-        val isInternalCmsPage = host.contains("dutamovie") || host.contains("layarkaca") || host.contains("lk21") ||
-                                host.contains("pencuri") || host.contains("kepalabergetar")
-        if (isInternalCmsPage && (lowUrl.contains("/movie/") || lowUrl.contains("/tv/") || lowUrl.contains("/horror/") || lowUrl.contains("/action/"))) {
-             if (!lowUrl.contains("player=") && !lowUrl.contains("mirror=") && !lowUrl.contains("server=") &&
-                 !lowUrl.contains("source=") && !lowUrl.contains("srv=") && !lowUrl.contains("opt=") &&
-                 !lowUrl.contains("action=") && !lowUrl.contains("/embed/")) {
-                  return false
-             }
+        val isYouTube = lowUrl.contains("youtube") || lowUrl.contains("youtu.be")
+        if (isYouTube) {
+            val isYtEmbedOrFull = lowUrl.contains("/embed/") || isGenericFallbackServerName(name) ||
+                                  lowName.contains("full movie") || lowName.contains("youtube hd") || lowName.contains("fast direct")
+            if (!isYtEmbedOrFull) return false
+            return true
         }
-        
-        val hasPlayerIndicator = isProbablyVideoHost(url) || isJsOnlyHost(url) || isPrimaryProviderServer(url) ||
+
+        val isAltPartner = isAlternativePartnerServer(name, url) || lowUrl.contains("archive.org")
+        if (isAltPartner) {
+            if (lowUrl.contains("imasdk") || lowUrl.contains("googleapis.com") || lowUrl.contains("google.com/recaptcha")) return false
+            return true
+        }
+
+        if (lowUrl.contains("google.com") || lowUrl.contains("googleapis.com") || lowUrl.contains("imasdk")) return false
+
+        val hasPlayerIndicator = isProbablyVideoHost(url) || isJsOnlyHost(url) ||
             lowUrl.contains("player=") || lowUrl.contains("mirror=") || lowUrl.contains("server=") ||
             lowUrl.contains("source=") || lowUrl.contains("srv=") || lowUrl.contains("opt=") ||
             lowUrl.contains("stream=") || lowUrl.contains("embed=") || lowUrl.contains("action=") ||
             lowUrl.contains("epid=") || lowUrl.contains("/watch/") ||
             lowUrl.startsWith("ajax:") || lowUrl.contains(".m3u8") || lowUrl.contains(".mp4") ||
-            lowUrl.contains("/e/") || lowUrl.contains("/v/") || lowUrl.contains("/embed/")
+            lowUrl.contains("/e/") || lowUrl.contains("/v/") || lowUrl.contains("/embed/") ||
+            lowUrl.contains("#player") || lowUrl.contains("#server")
+
+        // Block internal CMS pages (articles, related movies, download pages) that lack player parameters
+        val isInternalCmsPage = isPrimaryProviderServer(url) || host.contains("dutamovie") || host.contains("layarkaca") ||
+                                host.contains("lk21") || host.contains("pencuri") || host.contains("kepalabergetar") ||
+                                host.contains("mantab") || host.contains("pusatfilm")
+        if (isInternalCmsPage) {
+            val isNavPath = lowUrl.contains("/movie/") || lowUrl.contains("/tv/") || lowUrl.contains("/film/") ||
+                            lowUrl.contains("/series/") || lowUrl.contains("/horror/") || lowUrl.contains("/action/") ||
+                            lowUrl.contains("/genre/") || lowUrl.contains("/download/") || lowUrl.contains("/tag/")
+            if (isNavPath && !hasPlayerIndicator) {
+                return false
+            }
+            if (!hasPlayerIndicator && !isProbablyVideoHost(url) && !isJsOnlyHost(url)) {
+                return false
+            }
+        }
+
+        // Recognized external video hosts or JS-only embeds are genuine
+        if (isProbablyVideoHost(url) || isJsOnlyHost(url)) return true
 
         if (lowName.contains("server") || lowName.contains("mirror") || lowName.contains("vip") || 
             lowName.contains("player") || lowName.contains("stream") || lowName.contains("hd") ||
@@ -5568,7 +6118,7 @@ object VideoExtractor {
             ?: doc.select("article, #primary, .main-content, #content").firstOrNull()
             ?: doc
 
-        val explicitTrailer = contentArea.select("a.gmr-trailer-popup, a.gmr-trailer, a.trailer, .trailer-link, .trailer, [class*=\"trailer\"], .do-player-option[data-type=\"trailer\"], [id*=\"trailer\"]")
+        val explicitTrailer = contentArea.select("a.gmr-trailer-popup, a.gmr-trailer, a.trailer, .trailer-link, .trailer, [class*=\"trailer\"], .do-player-option[data-type=\"trailer\"], [id*=\"trailer\"], a:contains(Trailer), a[data-trailer]")
             .firstOrNull { el ->
                 val parent = el.parents()
                 if (parent.`is`(".related-movies, .recommendations, .widget_related_posts, #sidebar, .sidebar, .related-posts, .related-items")) return@firstOrNull false
@@ -5808,7 +6358,7 @@ object VideoExtractor {
         }
 
         // 3. Iframe/Object Scan (Real mirrors often auto-load in an iframe below the video area)
-        val videoArea = doc.select(".gmr-pagi-player, .player-wrap, .video-player, #player, #player2, .movieplay, .embed-responsive, .muvipro-player-wrap, .gmr-embed-responsive, #pembed, .video-content")
+        val videoArea = doc.select(".gmr-pagi-player, .player-wrap, .video-player, #player, #player2, .movieplay, .embed-responsive, .muvipro-player-wrap, .gmr-embed-responsive, #pembed, .video-content, .pemutar")
         val iframesToScan = if (videoArea.isNotEmpty() && videoArea.select("iframe, embed").isNotEmpty()) videoArea.select("iframe, embed") else doc.select("iframe, embed")
 
         iframesToScan.forEach { iframe ->
@@ -6072,7 +6622,8 @@ object VideoExtractor {
                 }
             } else if (effectiveUrl.contains("kepalabergetar") || effectiveUrl.contains("kepala-bergetar") || effectiveUrl.contains("archive.org") || 
                        effectiveUrl.contains("youtube") || effectiveUrl.contains("bilibili") || 
-                       effectiveUrl.contains("dailymotion")) {
+                       effectiveUrl.contains("dailymotion") || effectiveUrl.contains("204.3.234.75") ||
+                       effectiveUrl.contains("dutamovie")) {
                 // External provider failed or 404 - do not trigger DutaMovie domain probe
                 return@withContext null
             } else {
@@ -6088,6 +6639,7 @@ object VideoExtractor {
         if (html == null) return@withContext null
         val doc = Jsoup.parse(html, effectiveUrl)
         val titleSelectors = listOf(
+            ".film-kepala h1",
             ".vid-details-right h3",
             ".vid-details h3",
             ".mv-title",
@@ -6122,11 +6674,11 @@ object VideoExtractor {
             doc.select("meta[property='og:title']").firstOrNull()?.attr("content")?.trim() ?: "Unknown"
         }
         val title = cleanTitle(rawTitle)
+        val verifiedPoster = getVerifiedPoster(title, effectiveUrl).ifEmpty { getVerifiedPoster(title, videoUrl) }
+        val poster = if (verifiedPoster.isNotEmpty()) verifiedPoster else extractPosterFromDoc(doc, baseUrl = effectiveUrl, title = title)
+        val backdrop = if (verifiedPoster.isNotEmpty()) verifiedPoster else extractBackdropFromDoc(doc, baseUrl = effectiveUrl, fallbackPoster = poster)
         
-        val poster = extractPosterFromDoc(doc, baseUrl = effectiveUrl, title = title)
-        val backdrop = extractBackdropFromDoc(doc, baseUrl = effectiveUrl, fallbackPoster = poster)
-        
-        val descriptions = doc.select(".synopsis p, .description p, .entry-content p, .desc p, .synopsis, .description, .plot, #muvipro_player_content_id p, article.item p")
+        val descriptions = doc.select(".sinopsis, p.sinopsis, .synopsis p, .description p, .entry-content p, .desc p, .synopsis, .description, .plot, #muvipro_player_content_id p, article.item p")
         var bestDesc = ""
         for (p in descriptions) {
             val t = cleanDescription(p.text())
@@ -6142,7 +6694,7 @@ object VideoExtractor {
         val actresses = mutableListOf<String>()
         val actressPaths = mutableMapOf<String, String>()
         val actressImages = mutableMapOf<String, String>()
-        doc.select(".mvp-actor-list a, .cast-item a, a[href*='/actor/'], .cast-list a").forEach { 
+        doc.select(".mvp-actor-list a, .cast-item a, a[href*='/actor/'], a[href*='/pemain/'], .cast-list a").forEach { 
             val name = it.text().trim()
             if (name.isNotEmpty()) {
                 actresses.add(name)
@@ -6202,6 +6754,30 @@ object VideoExtractor {
         // 2b, 2c, 3, 3b. Tabs, Iframes, and Hex divs
         rawServers.addAll(extractTabAndIframeServers(doc, activeServerName))
 
+        // 2d. Dedicated DutaMovie nonton sub-page resolution
+        if (rawServers.isEmpty() && (effectiveUrl.contains("dutamovie") || doc.select("a[href*='/nonton/']").isNotEmpty())) {
+            val nontonLink = doc.select("a[href*='/nonton/'], a.tombol.utama").firstOrNull()?.attr("abs:href")
+            if (!nontonLink.isNullOrEmpty()) {
+                val nontonHtml = fetchHtml(nontonLink, effectiveUrl)
+                if (nontonHtml != null) {
+                    val nontonDoc = Jsoup.parse(nontonHtml, nontonLink)
+                    rawServers.addAll(extractTabAndIframeServers(nontonDoc, "DutaMovie Player"))
+                    if (rawServers.isEmpty()) {
+                        nontonDoc.select(".pemutar iframe, iframe, embed").forEach { iframe ->
+                            var src = iframe.attr("abs:src")
+                            if (src.isEmpty() || src.startsWith("about:") || src.startsWith("data:")) {
+                                src = iframe.attr("abs:data-src").ifEmpty { iframe.attr("data-src") }
+                            }
+                            if (src.isNotEmpty() && !src.contains("ads") && isProbablyVideoHost(src)) {
+                                val name = identifyMirrorName("DutaMovie Player", src)
+                                rawServers.add(VideoServer(name, src))
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         val isExplicitSeries = videoUrl.contains("/series/") || videoUrl.contains("/tv/") || videoUrl.contains("/serial-tv/")
         val hasEpisodeContainer = doc.select(".gmr-listseries, .muvipro-listepisode, .list-episode, .episodios, .eps-item, .list-eps, .list-series, .seasons, .season, [class*='listseries'], .episode-list-container, .episodes-grid, #seasons, #season, .tvseason, [id*='season']").isNotEmpty()
         val isEpisodePage = videoUrl.contains("/eps/") || videoUrl.contains("/episode/") || videoUrl.contains("-episode-") ||
@@ -6244,23 +6820,10 @@ object VideoExtractor {
         val finalIsSeries = (rawEpisodes.isNotEmpty() && hasRealEpisodes) || isExplicitSeries || isEpisodePage
         val episodes = if (finalIsSeries) rawEpisodes.filter { !it.name.contains("unnamed", ignoreCase = true) } else emptyList()
 
-        val isPmSource = isPencuriMovie(videoUrl = videoUrl)
-        val sortedRawServers = if (isPmSource) {
-            rawServers.distinctBy { it.url }.sortedWith(Comparator { a, b ->
-                fun serverPriority(url: String): Int {
-                    val low = url.lowercase()
-                    return when {
-                        low.contains("voe") || low.contains("johnfullwonder") -> 0
-                        low.contains("listeamed") || low.contains("indostream") || low.contains("audinifer") -> 1
-                        low.contains("hglink") || low.contains("hgcloud") -> 2
-                        else -> 3
-                    }
-                }
-                serverPriority(a.url).compareTo(serverPriority(b.url))
-            })
-        } else {
-            rawServers.distinctBy { it.url }
-        }
+        val sortedRawServers = rawServers.distinctBy { it.url }.sortedWith(
+            compareByDescending<VideoServer> { getProviderPriority(it.name, it.url) }
+                .thenBy { it.name }
+        )
 
         val finalServers = mutableListOf<VideoServer>()
         val nameCounts = mutableMapOf<String, Int>()
@@ -6335,14 +6898,17 @@ object VideoExtractor {
         val quality = doc.select(".quality, .resolution, .res, .gmr-quality-item").firstOrNull()?.text() ?: ""
         val year = doc.select(".date, .release-date, .year").firstOrNull()?.text()?.filter { it.isDigit() }?.takeLast(4) ?: ""
 
-        var finalPoster = if (poster.isNotEmpty() && isValidImageUrl(poster)) poster else ""
-        var finalBackdrop = if (backdrop.isNotEmpty() && isValidImageUrl(backdrop)) backdrop else ""
-
-        if (finalPoster.isEmpty()) {
-            finalPoster = if (finalBackdrop.isNotEmpty()) finalBackdrop else ""
+        var finalPoster = when {
+            verifiedPoster.isNotEmpty() -> verifiedPoster
+            poster.isNotEmpty() && isValidImageUrl(poster) -> poster
+            backdrop.isNotEmpty() && isValidImageUrl(backdrop) -> backdrop
+            else -> ""
         }
-        if (finalBackdrop.isEmpty()) {
-            finalBackdrop = if (finalPoster.isNotEmpty()) finalPoster else ""
+        var finalBackdrop = when {
+            verifiedPoster.isNotEmpty() -> verifiedPoster
+            backdrop.isNotEmpty() && isValidImageUrl(backdrop) -> backdrop
+            finalPoster.isNotEmpty() -> finalPoster
+            else -> ""
         }
 
         if (finalPoster.isEmpty() || !isValidImageUrl(finalPoster)) {
@@ -6364,7 +6930,7 @@ object VideoExtractor {
             quality = quality,
             views = rating, // Re-purpose views as Rating for UI dashboard
             season = parsedSeason,
-            servers = discoveredServers.sortedByDescending { getProviderPriority(it.name, it.url) },
+            servers = discoveredServers.filter { !isDefunctDomain(it.url) }.sortedByDescending { getProviderPriority(it.name, it.url) },
             episodes = episodes, isSeries = finalIsSeries
         )
     }
@@ -6400,38 +6966,51 @@ object VideoExtractor {
         val lowUrl = url?.lowercase() ?: ""
         
         return when {
-            // OWL'S EYE: Priority Tier 0 - VOE / Johnfullwonder (Direct Stream Decrypted)
-            lowUrl.contains("voe.sx") || lowUrl.contains("voe") || lowUrl.contains("johnfullwonder") || lowUrl.contains("cloudwindow") || lowName.contains("voe") -> 160
+            isDefunctDomain(lowUrl) || isDefunctDomain(lowName) -> -100
 
-            // ARCHIVE.ORG FAST DIRECT: High-speed direct US storage node (350+ KB/s)
-            lowName.contains("fast direct") || lowUrl.contains(".us.archive.org") -> 150
+            // OWL'S EYE: Demoted/Trap/Dead hosts MUST be evaluated before positive name matches
+            // so single-page P2P or ad wrappers cannot masquerade behind "IndoStream-VIP" or "VIP" button labels
+            lowUrl.contains("listeamed") || lowName.contains("listeamed") -> -100
+            lowUrl.contains("playerp2p") -> 35
+            lowUrl.contains("embed4me") -> 15
+            lowUrl.contains("upns") && !lowUrl.contains("player=") -> 15
+            lowUrl.contains("abyss") || lowUrl.contains("bond") || lowUrl.contains("iamcdn") -> 30
 
-            // OWL'S EYE: Priority Tier 1 - Streamtape (Direct MP4 Extraction Enabled)
-            lowUrl.contains("streamtape") && (lowUrl.contains("get_video") || lowUrl.contains("tapecontent")) -> 140
-            lowUrl.contains("streamtape") || lowName.contains("streamtape") -> 135
+            // OWL'S EYE: Priority Tier 1 - HgLink (Ultra Stable Top Tier Priority)
+            lowUrl.contains("hglink") || lowName.contains("hglink") -> 200
 
-            // OWL'S EYE: Priority Tier 1 - Native Clean Embeds (Dsvplay - PencuriMovie Native Server 1)
-            lowUrl.contains("dsvplay") || lowName.contains("dsvplay") -> 145
-
-            // OWL'S EYE: Priority Tier 1a - LuluStream (Ultra Fast Direct HLS 720p)
-            lowUrl.contains("luluvdo") || lowUrl.contains("lulustream") || lowUrl.contains("player=7") ||
-            lowName.contains("lulustream") || lowName.contains("lulu") -> 138
-
-            // OWL'S EYE: Priority Tier 1b - HgCloud (Ultra Stable)
+            // OWL'S EYE: Priority Tier 1b - HgCloud & Cluster Hosts (hanerix, vibuxer, dhcplay, bestcdn, player=1, etc.)
             lowUrl.contains("hgcloud") || lowUrl.contains("hanerix") || lowUrl.contains("vibuxer") ||
             lowUrl.contains("dhcplay") || lowUrl.contains("morencius") || lowUrl.contains("bestcdn") ||
-            lowUrl.contains("player=1") ||
-            lowName.contains("hgcloud") || lowName.contains("hgvip") -> 130
-            
-            // OWL'S EYE: Priority Tier 1c - VidHide / Cluster Primary Mirrors (Ultra Fast Direct HLS Extracted)
-            lowUrl.contains("vidhide") || lowUrl.contains("vidsrc") || lowUrl.contains("fujihide") ||
-            lowName.contains("vidhide") || lowName.contains("cluster") -> 128
+            lowUrl.contains("player=1") || lowUrl.contains("player=4") ||
+            lowName.contains("hgcloud") || lowName.contains("hgvip") -> 185
 
             // OWL'S EYE: Priority Tier 2 - IndoStream (Local Favorite & High-Speed SEA CDN)
             lowUrl.contains("indostream") || isIndoStreamAmt(lowUrl) || lowUrl.contains("iplayer") || 
             lowUrl.contains("pm21") || lowUrl.contains("dm21") || lowUrl.contains("player=2") ||
             lowUrl.contains("player=3") || lowUrl.contains("player=6") || lowUrl.contains("player=8") ||
-            lowName.contains("indostream") || lowName.contains("indovip") || (lowName.contains("amt") && !lowName.contains("stream")) -> 125
+            lowName.contains("indostream") || lowName.contains("indovip") || (lowName.contains("amt") && !lowName.contains("stream")) -> 170
+
+            // OWL'S EYE: Priority Tier 3 - VOE / Johnfullwonder (Direct Stream Decrypted)
+            lowUrl.contains("voe.sx") || lowUrl.contains("voe") || lowUrl.contains("johnfullwonder") || lowUrl.contains("cloudwindow") || lowName.contains("voe") -> 160
+
+            // ARCHIVE.ORG FAST DIRECT: High-speed direct US storage node (350+ KB/s)
+            lowName.contains("fast direct") || lowUrl.contains(".us.archive.org") -> 155
+
+            // OWL'S EYE: Priority Tier 4 - VidHide / Cluster Primary Mirrors (Ultra Fast Direct HLS Extracted)
+            lowUrl.contains("vidhide") || lowUrl.contains("vidsrc") || lowUrl.contains("fujihide") ||
+            lowName.contains("vidhide") || lowName.contains("cluster") -> 150
+
+            // OWL'S EYE: Priority Tier 5 - Native Clean Embeds (Dsvplay - PencuriMovie Native Server 1)
+            lowUrl.contains("dsvplay") || lowName.contains("dsvplay") -> 75
+
+            // OWL'S EYE: Priority Tier 6 - Streamtape (Direct MP4 Extraction Enabled)
+            lowUrl.contains("streamtape") && (lowUrl.contains("get_video") || lowUrl.contains("tapecontent")) -> 140
+            lowUrl.contains("streamtape") || lowName.contains("streamtape") -> 138
+
+            // OWL'S EYE: Priority Tier 7 - LuluStream (Ultra Fast Direct HLS 720p)
+            lowUrl.contains("luluvdo") || lowUrl.contains("lulustream") || lowUrl.contains("player=7") ||
+            lowName.contains("lulustream") || lowName.contains("lulu") -> 135
 
             // OWL'S EYE: Priority Tier 2c - Dedicated Streaming Video Hosts (Playstream, EmbedPyrox, Faststream, Upstream, etc.)
             lowUrl.contains("playstream") || lowName.contains("playstream") ||
@@ -6450,26 +7029,16 @@ object VideoExtractor {
 
             // OWL'S EYE: Demoted unreliable / heavily protected hosts
             lowUrl.contains("veev") || lowName.contains("veev") || lowUrl.contains("player=5") -> 55
-
-            lowUrl.contains("playerp2p") || lowName.contains("playerp2p") -> 35
+            lowName.contains("playerp2p") -> 35
+            lowName.contains("embed4me") || lowName.contains("upns") -> 15
+            lowName.contains("abyss") || lowName.contains("bond") -> 30
 
             // OWL'S EYE: External Alternative Partner Mirrors (YouTube, Dailymotion, Bilibili) - Last-Resort Fallbacks
             // Only triggered when all primary mirrors & streaming hosts are dead/exhausted
             lowUrl.contains("youtube") || lowUrl.contains("youtu.be") || lowName.contains("youtube") -> 10
-            lowUrl.contains("dailymotion") || lowUrl.contains("dai.ly") || lowName.contains("dailymotion") -> 65
-            lowUrl.contains("bilibili") || lowName.contains("bilibili") -> 45
+            lowUrl.contains("dailymotion") || lowUrl.contains("dai.ly") || lowName.contains("dailymotion") -> 10
+            lowUrl.contains("bilibili") || lowName.contains("bilibili") -> 10
 
-            // OWL'S EYE: Demoted Steganographic / Fake Chunk wrapper embeds
-            lowUrl.contains("embed4me") || lowUrl.contains("upns") ||
-            lowName.contains("embed4me") || lowName.contains("upns") -> 15
-
-            lowUrl.contains("hglink") || lowName.contains("hglink") -> 20
-            
-            // OWL'S EYE: Demoted Trap / Ad-gate hosts (Abyss & Bond) to lowest tier
-            lowUrl.contains("abyss") || lowUrl.contains("bond") || lowUrl.contains("iamcdn") ||
-            lowName.contains("abyss") || lowName.contains("bond") -> 30
-            
-            lowUrl.contains("listeamed") || lowName.contains("listeamed") -> -100
             else -> 50
         }
     }
@@ -6705,7 +7274,7 @@ object VideoExtractor {
             else -> listOf(type, "movie")
         }
 
-        val clusterHosts = listOf("scphi.org", "bullerswood.org", "grishamfarms.org", "tv12.lk21official.cc", "b7510.com")
+        val clusterHosts = listOf("inlionsforisbvi.org", "scphi.org", "bullerswood.org", "grishamfarms.org", "tv12.lk21official.cc", "b7510.com")
         val candidateHosts = (listOf(primaryHost) + clusterHosts).distinct().filter { it.isNotEmpty() }
 
         val commonActions = listOf(

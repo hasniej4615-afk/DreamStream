@@ -83,10 +83,11 @@ import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshDefaults
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.ui.focus.focusRestorer
 import android.util.Log
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 @Composable
 fun Modifier.shimmerEffect(): Modifier {
@@ -114,7 +115,7 @@ fun Modifier.shimmerEffect(): Modifier {
     )
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun VideoListScreen(
     viewModel: VideoViewModel = hiltViewModel(),
@@ -127,6 +128,11 @@ fun VideoListScreen(
     val error by viewModel.error.collectAsStateWithLifecycle()
     val selectedCategory by viewModel.selectedCategory.collectAsStateWithLifecycle()
     val categories by viewModel.categories.collectAsStateWithLifecycle()
+    val distinctCategories = remember(categories) {
+        categories.filter {
+            (it["path"] ?: "").isNotBlank() && (it["name"] ?: "").isNotBlank()
+        }.distinctBy { it["path"] }
+    }
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val isSearching by viewModel.isSearching.collectAsStateWithLifecycle()
     val lastCompletedSearchQuery by viewModel.lastCompletedSearchQuery.collectAsStateWithLifecycle()
@@ -170,7 +176,7 @@ fun VideoListScreen(
     val searchSort by viewModel.searchSort.collectAsStateWithLifecycle()
     val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
     val firstItemFocusRequester = remember { FocusRequester() }
-    val firstCategoryFocusRequester = viewModel.contentFocusRequester
+    val firstCategoryFocusRequester = remember { FocusRequester() }
     val clickedItemFocusRequester = remember { FocusRequester() }
     var lastClickedVideoId by rememberSaveable { mutableStateOf<String?>(null) }
     var lastFocusedSearchVideoId by rememberSaveable { mutableStateOf<String?>(null) }
@@ -192,7 +198,7 @@ fun VideoListScreen(
                     } else {
                         firstItemFocusRequester.requestFocus()
                     }
-                } else if (!isSearchActive && viewModel.lastFocusedHomeVideoId == null && !isLoading) {
+                } else if (!isSearchActive && !initialHomeFocusRequested && viewModel.lastFocusedHomeVideoId == null && !isLoading) {
                     for (attempt in 1..5) {
                         delay(150L * attempt)
                         try {
@@ -347,11 +353,11 @@ fun VideoListScreen(
     }
     
     LaunchedEffect(focusedVideo) {
-        if (focusedVideo == null) return@LaunchedEffect
-        kotlinx.coroutines.delay(if (isImmersiveMode) 200L else 1000L)
-        debouncedHeroVideo = focusedVideo
+        val target = focusedVideo ?: return@LaunchedEffect
+        kotlinx.coroutines.delay(if (isImmersiveMode) 350L else 1000L)
+        debouncedHeroVideo = target
         if (isImmersiveMode || isRealTV) {
-            viewModel.prefetchVideoDetails(focusedVideo!!)
+            viewModel.prefetchVideoDetails(target)
         }
     }
 
@@ -473,6 +479,14 @@ fun VideoListScreen(
                                 contentPadding = PaddingValues(top = 4.dp, bottom = 80.dp, start = 16.dp, end = 16.dp)
                             ) {
                                 itemsIndexed(items = videos, key = { _, video -> video.id }) { index, video ->
+                                    LaunchedEffect(index) {
+                                        if (index + 1 < videos.size) {
+                                            try {
+                                                val lookahead = videos.subList(index + 1, minOf(videos.size, index + 9))
+                                                viewModel.prefetchThumbnails(lookahead, limit = 8)
+                                            } catch (_: Exception) {}
+                                        }
+                                    }
                                     val itemModifier = Modifier.padding(4.dp).then(
                                         if (video.id == lastClickedVideoId) {
                                             Modifier.focusRequester(clickedItemFocusRequester)
@@ -504,12 +518,25 @@ fun VideoListScreen(
                         }
                     }
                 } else if (selectedCategory != null) {
+                    val catGridState = rememberLazyGridState()
                     LazyVerticalGrid(
                         columns = GridCells.Fixed(columns),
+                        state = catGridState,
                         modifier = Modifier.fillMaxSize(),
                         contentPadding = PaddingValues(top = if (isImmersiveMode) 48.dp else 84.dp, bottom = 80.dp, start = 16.dp, end = 16.dp)
                     ) {
-                        itemsIndexed(items = videos) { index, video ->
+                        itemsIndexed(
+                            items = videos,
+                            key = { _, video -> video.id }
+                        ) { index, video ->
+                            LaunchedEffect(index) {
+                                if (index + 1 < videos.size) {
+                                    try {
+                                        val lookahead = videos.subList(index + 1, minOf(videos.size, index + 9))
+                                        viewModel.prefetchThumbnails(lookahead, limit = 8)
+                                    } catch (_: Exception) {}
+                                }
+                            }
                             NetflixThumbnail(
                                 video = video,
                                 modifier = Modifier.padding(4.dp).then(if (index == 0) Modifier.focusRequester(firstItemFocusRequester) else Modifier),
@@ -543,7 +570,7 @@ fun VideoListScreen(
                                         onMyListClick = { viewModel.toggleMyList(video.id) },
                                         isLargeLayout = true,
                                         isRealTV = isImmersiveMode,
-                                        downFocusRequester = firstCategoryFocusRequester,
+                                        downFocusRequester = null,
                                         onPosterMissing = { viewModel.healMissingPoster(video) },
                                         onClick = { onVideoClick(video.id) }
                                     )
@@ -563,10 +590,9 @@ fun VideoListScreen(
                             ) {
                                 if (recentlyWatchedVideos.isNotEmpty()) {
                                     item(key = "section_continue_watching") {
-                                        val scope = rememberCoroutineScope()
                                         var isRowFocused by remember { mutableStateOf(false) }
                                         val rowAlpha by animateFloatAsState(if (isRowFocused) 1f else 0.65f)
-                                        
+
                                         Column(modifier = Modifier
                                             .onFocusChanged { isRowFocused = it.hasFocus }
                                         ) {
@@ -590,6 +616,7 @@ fun VideoListScreen(
                                                  },
                                                  thumbnailScale = uiThumbnailScaleFactor,
                                                  firstItemFocusRequester = firstCategoryFocusRequester,
+                                                 showProgress = true,
                                                  modifier = Modifier.graphicsLayer { alpha = rowAlpha }
                                              )
                                          }
@@ -600,7 +627,8 @@ fun VideoListScreen(
                                      item(key = "section_pakcik_rekomen") {
                                       var isRowFocused by remember { mutableStateOf(false) }
                                       val rowAlpha by animateFloatAsState(if (isRowFocused) 1f else 0.65f)
-                                      
+                                      val pakcikRowIndex = if (recentlyWatchedVideos.isNotEmpty()) 1 else 0
+
                                       Column(modifier = Modifier
                                           .onFocusChanged { isRowFocused = it.hasFocus }
                                       ) {
@@ -618,7 +646,7 @@ fun VideoListScreen(
                                               isTV = true,
                                               isRealTV = isImmersiveMode,
                                               viewModel = viewModel,
-                                              rowIndex = if (recentlyWatchedVideos.isNotEmpty()) 1 else 0,
+                                              rowIndex = pakcikRowIndex,
                                               isPakcikRekomen = true,
                                               onVideoFocus = { video -> 
                                                   focusedVideo = video 
@@ -631,7 +659,9 @@ fun VideoListScreen(
                                   }
                               }
 
-                              itemsIndexed(categories, key = { _, cat -> cat["path"] ?: cat["name"] ?: "" }) { index, category ->
+
+
+                              itemsIndexed(distinctCategories, key = { index, cat -> cat["path"] ?: "cat_$index" }) { index, category ->
                                   val name = translateCategoryName(category["name"] ?: "")
                                   val path = category["path"] ?: ""
                                   if (name.isNotEmpty() && path.isNotEmpty()) {
@@ -645,19 +675,26 @@ fun VideoListScreen(
 
                                       val hasLoadedAndEmpty = !isRowLoading && rowVideos.isEmpty() && categoryVideos.containsKey(path)
                                        if (!hasLoadedAndEmpty) {
-                                          val scope = rememberCoroutineScope()
                                           var isRowFocused by remember { mutableStateOf(false) }
                                           val rowAlpha by animateFloatAsState(if (isRowFocused) 1f else 0.65f)
                                           val baseRowIndex = (if (recentlyWatchedVideos.isNotEmpty()) 1 else 0) + (if (pakcikRekomenVideos.isNotEmpty()) 1 else 0)
                                           val actualRowIndex = baseRowIndex + index
                                           val isFirstRow = actualRowIndex == 0
-                                          
+
                                           Column(modifier = Modifier
                                               .onFocusChanged { 
                                                   isRowFocused = it.hasFocus 
                                                   if (it.hasFocus) {
                                                       if (rowVideos.isEmpty() && !isRowLoading) {
                                                           viewModel.fetchVideosForCategoryRow(path)
+                                                      }
+                                                      val nextIdx = index + 1
+                                                      if (nextIdx < distinctCategories.size) {
+                                                          distinctCategories[nextIdx]["path"]?.let { nextPath ->
+                                                              if (categoryVideos[nextPath].isNullOrEmpty() && categoryLoading[nextPath] != true) {
+                                                                  viewModel.fetchVideosForCategoryRow(nextPath)
+                                                              }
+                                                          }
                                                       }
                                                   }
                                               }
@@ -679,16 +716,6 @@ fun VideoListScreen(
                                                  rowIndex = actualRowIndex,
                                                  onVideoFocus = { video -> 
                                                      focusedVideo = video 
-                                                     val nextIdx = index + 1
-                                                     if (nextIdx < categories.size) {
-                                                         categories[nextIdx]["path"]?.let { nextPath ->
-                                                             viewModel.fetchVideosForCategoryRow(nextPath)
-                                                             val nextRowVideos = categoryVideos[nextPath]
-                                                             if (!nextRowVideos.isNullOrEmpty()) {
-                                                                 viewModel.prefetchThumbnails(nextRowVideos, limit = 8)
-                                                             }
-                                                         }
-                                                     }
                                                  },
                                                  thumbnailScale = uiThumbnailScaleFactor,
                                                  categoryPath = path,
@@ -739,76 +766,92 @@ fun VideoListScreen(
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             if (recentlyWatchedVideos.isNotEmpty()) {
-                            item { 
-                                Spacer(Modifier.height(12.dp))
-                                ListSectionHeader("Continue Watching", isLargeLayout = false, isRealTV = false) 
-                            }
-                                item {
-                                    HorizontalVideoRow(
-                                        videos = recentlyWatchedVideos,
-                                        isLoading = false,
-                                        errorPlaceholder = errorPlaceholder,
-                                        onVideoClick = onVideoClick,
-                                        isTV = isLargeLayout,
-                                        isRealTV = false,
-                                        viewModel = viewModel,
-                                        onVideoFocus = { video -> focusedVideo = video },
-                                        thumbnailScale = uiThumbnailScaleFactor
-                                    )
+                                item(key = "section_continue_watching") { 
+                                    Column {
+                                        Spacer(Modifier.height(12.dp))
+                                        ListSectionHeader("Continue Watching", isLargeLayout = false, isRealTV = false) 
+                                        HorizontalVideoRow(
+                                            videos = recentlyWatchedVideos,
+                                            isLoading = false,
+                                            errorPlaceholder = errorPlaceholder,
+                                            onVideoClick = onVideoClick,
+                                            isTV = false,
+                                            isRealTV = false,
+                                            viewModel = viewModel,
+                                            onVideoFocus = { video -> focusedVideo = video },
+                                            thumbnailScale = uiThumbnailScaleFactor,
+                                            showProgress = true
+                                        )
+                                    }
                                 }
                             }
 
                             if (pakcikRekomenVideos.isNotEmpty()) {
-                                item {
-                                    Spacer(Modifier.height(12.dp))
-                                    ListSectionHeader(stringResource(R.string.pakcik_rekomen), isLargeLayout = false, isRealTV = false)
-                                }
-                                item {
-                                    HorizontalVideoRow(
-                                        videos = pakcikRekomenVideos,
-                                        isLoading = isPakcikRekomenLoading,
-                                        errorPlaceholder = errorPlaceholder,
-                                        onVideoClick = onVideoClick,
-                                        isTV = isLargeLayout,
-                                        isRealTV = false,
-                                        viewModel = viewModel,
-                                        isPakcikRekomen = true,
-                                        onVideoFocus = { video -> focusedVideo = video },
-                                        thumbnailScale = uiThumbnailScaleFactor
-                                    )
+                                item(key = "section_pakcik_rekomen") {
+                                    Column {
+                                        Spacer(Modifier.height(12.dp))
+                                        ListSectionHeader(stringResource(R.string.pakcik_rekomen), isLargeLayout = false, isRealTV = false)
+                                        HorizontalVideoRow(
+                                            videos = pakcikRekomenVideos,
+                                            isLoading = isPakcikRekomenLoading,
+                                            errorPlaceholder = errorPlaceholder,
+                                            onVideoClick = onVideoClick,
+                                            isTV = false,
+                                            isRealTV = false,
+                                            viewModel = viewModel,
+                                            isPakcikRekomen = true,
+                                            onVideoFocus = { video -> focusedVideo = video },
+                                            thumbnailScale = uiThumbnailScaleFactor
+                                        )
+                                    }
                                 }
                             }
 
                             if (isLoading && categories.isEmpty()) {
-                                items(3) {
-                                    ListSectionHeader("Loading...", isLargeLayout = false, isRealTV = false)
-                                    Box(Modifier.fillMaxWidth().height(230.dp).padding(horizontal = 16.dp).clip(RoundedCornerShape(12.dp)).shimmerEffect())
+                                items(3, key = { "loading_shimmer_$it" }) {
+                                    Column {
+                                        ListSectionHeader("Loading...", isLargeLayout = false, isRealTV = false)
+                                        Box(Modifier.fillMaxWidth().height(230.dp).padding(horizontal = 16.dp).clip(RoundedCornerShape(12.dp)).shimmerEffect())
+                                    }
                                 }
                             }
 
-                            itemsIndexed(categories, key = { _, cat -> cat["path"] ?: cat["name"] ?: "" }) { _, category ->
+                            itemsIndexed(distinctCategories, key = { index, cat -> cat["path"] ?: "cat_$index" }) { index, category ->
                                 val name = translateCategoryName(category["name"] ?: "")
                                 val path = category["path"] ?: ""
                                 if (name.isNotEmpty() && path.isNotEmpty()) {
                                     val rowVideos = categoryVideos[path] ?: emptyList()
                                     val isRowLoading = categoryLoading[path] ?: false
                                     
-                                    LaunchedEffect(path) { if (rowVideos.isEmpty()) viewModel.fetchVideosForCategoryRow(path) }
+                                    LaunchedEffect(path) { 
+                                        if (rowVideos.isEmpty()) viewModel.fetchVideosForCategoryRow(path) 
+                                        val nextIdx = index + 1
+                                        if (nextIdx < distinctCategories.size) {
+                                            distinctCategories[nextIdx]["path"]?.let { nextCatPath ->
+                                                if (categoryVideos[nextCatPath].isNullOrEmpty()) {
+                                                    viewModel.fetchVideosForCategoryRow(nextCatPath)
+                                                }
+                                            }
+                                        }
+                                    }
 
-                                    if (rowVideos.isNotEmpty() || isRowLoading) {
-                                        ListSectionHeader(name, isLargeLayout = false, isRealTV = false)
-                                        HorizontalVideoRow(
-                                            videos = rowVideos,
-                                            isLoading = isRowLoading,
-                                            errorPlaceholder = errorPlaceholder,
-                                            onVideoClick = onVideoClick,
-                                            isTV = isLargeLayout,
-                                            isRealTV = false,
-                                            viewModel = viewModel,
-                                            onVideoFocus = { video -> focusedVideo = video },
-                                            thumbnailScale = uiThumbnailScaleFactor,
-                                            categoryPath = path
-                                        )
+                                    val hasLoadedAndEmpty = !isRowLoading && rowVideos.isEmpty() && categoryVideos.containsKey(path)
+                                    if (!hasLoadedAndEmpty) {
+                                        Column {
+                                            ListSectionHeader(name, isLargeLayout = false, isRealTV = false)
+                                            HorizontalVideoRow(
+                                                videos = rowVideos,
+                                                isLoading = isRowLoading || rowVideos.isEmpty(),
+                                                errorPlaceholder = errorPlaceholder,
+                                                onVideoClick = onVideoClick,
+                                                isTV = false,
+                                                isRealTV = false,
+                                                viewModel = viewModel,
+                                                onVideoFocus = { video -> focusedVideo = video },
+                                                thumbnailScale = uiThumbnailScaleFactor,
+                                                categoryPath = path
+                                            )
+                                        }
                                     }
                                 }
                             }
@@ -862,27 +905,29 @@ fun HorizontalVideoRow(
     categoryPath: String? = null,
     firstItemFocusRequester: FocusRequester? = null,
     isPakcikRekomen: Boolean = false,
+    showProgress: Boolean = false,
     modifier: Modifier = Modifier
 ) {
-    val listState = rememberLazyListState()
-    val scope = rememberCoroutineScope()
+    val listState = androidx.compose.runtime.saveable.rememberSaveable(
+        categoryPath ?: rowIndex.toString(),
+        saver = androidx.compose.foundation.lazy.LazyListState.Saver
+    ) { androidx.compose.foundation.lazy.LazyListState() }
     var hasFocus by remember { mutableStateOf(false) }
     val rowFirstItemFocusRequester = remember { FocusRequester() }
     var shimmerHadFocus by remember { mutableStateOf(false) }
 
-    LaunchedEffect(listState, categoryPath) {
-        if (categoryPath == null || viewModel == null) return@LaunchedEffect
-        snapshotFlow {
-            val layoutInfo = listState.layoutInfo
-            val totalItems = layoutInfo.totalItemsCount
-            val lastVisible = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            totalItems to lastVisible
-        }.collect { (totalItems, lastVisible) ->
-            if (totalItems > 0 && lastVisible >= totalItems - 8) {
-                viewModel.loadMoreForCategoryRow(categoryPath)
-            }
-        }
+    val allProgress by if (showProgress && viewModel != null) {
+        viewModel.allVideoProgress.collectAsStateWithLifecycle()
+    } else {
+        remember { mutableStateOf(emptyMap()) }
     }
+    val allDuration by if (showProgress && viewModel != null) {
+        viewModel.allVideoDuration.collectAsStateWithLifecycle()
+    } else {
+        remember { mutableStateOf(emptyMap()) }
+    }
+
+    val uniqueVideos = remember(videos) { videos.distinctBy { it.id } }
 
     LaunchedEffect(videos.isNotEmpty()) {
         if (videos.isNotEmpty() && shimmerHadFocus) {
@@ -894,21 +939,27 @@ fun HorizontalVideoRow(
         }
     }
 
+    // ROW PRE-WARMING: Eagerly prefetch ALL thumbnails as soon as videos are available
+    LaunchedEffect(uniqueVideos.size) {
+        if (uniqueVideos.isNotEmpty() && viewModel != null) {
+            viewModel.prefetchThumbnails(uniqueVideos)
+        }
+    }
+
     LazyRow(
         state = listState,
         contentPadding = PaddingValues(horizontal = if (isRealTV) 48.dp else 16.dp, vertical = 8.dp),
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         modifier = modifier
-            .focusRestorer { firstItemFocusRequester ?: rowFirstItemFocusRequester }
             .focusGroup()
             .fillMaxWidth()
             .height(((if (isRealTV) 240 else if (isTV) 260 else 340) * thumbnailScale).dp)
             .onFocusChanged { hasFocus = it.hasFocus }
     ) {
         if (isLoading && videos.isEmpty()) {
-            items(5) { shimmerIndex ->
+            items(5, contentType = { "shimmer" }) { shimmerIndex ->
                 var isShimmerFocused by remember { mutableStateOf(false) }
-                val shimmerRequester = if (shimmerIndex == 0) (firstItemFocusRequester ?: rowFirstItemFocusRequester) else null
+                val shimmerRequester = if (shimmerIndex == 0) rowFirstItemFocusRequester else null
                 Box(
                     modifier = Modifier
                         .width((if (isRealTV) 140 * thumbnailScale else if (isTV) 130 * thumbnailScale else 165f).dp)
@@ -917,9 +968,6 @@ fun HorizontalVideoRow(
                         .focusProperties {
                             if (rowIndex == 0 && isRealTV) {
                                 up = FocusRequester.Cancel
-                            }
-                            if (shimmerIndex == 0 && isRealTV) {
-                                left = viewModel?.sidebarFocusRequester ?: FocusRequester.Default
                             }
                         }
                         .onFocusChanged { 
@@ -937,27 +985,43 @@ fun HorizontalVideoRow(
                 )
             }
         } else {
-            itemsIndexed(videos, key = { _, video -> video.id }) { index, video ->
-                val progressFlow = remember(video.id) { viewModel?.getVideoProgress(video.id) ?: kotlinx.coroutines.flow.flowOf(0L) }
-                val durationFlow = remember(video.id) { viewModel?.getVideoDuration(video.id) ?: kotlinx.coroutines.flow.flowOf(0L) }
-                val progress by progressFlow.collectAsState(0L)
-                val duration by durationFlow.collectAsState(0L)
-                
-                var itemFocused by remember { mutableStateOf(false) }
+            itemsIndexed(uniqueVideos, key = { _, video -> video.id }, contentType = { _, _ -> "video_card" }) { index, video ->
+                // SIDE-SCROLL LOOKAHEAD: Prefetch next 20 items ahead on every visible item
+                // (inFlightPrefetches dedup + memory cache check make repeated calls nearly free)
+                if (index + 1 < uniqueVideos.size) {
+                    LaunchedEffect(index) {
+                        if (viewModel != null) {
+                            try {
+                                val lookahead = uniqueVideos.subList(index + 1, minOf(uniqueVideos.size, index + 21))
+                                viewModel.prefetchThumbnails(lookahead, limit = 20)
+                            } catch (_: Exception) {}
+                        }
+                    }
+                }
+                // ON-DEMAND PAGINATION: Load next page when within 15 items of row end
+                if (categoryPath != null && uniqueVideos.size >= 15 && index >= uniqueVideos.size - 15) {
+                    LaunchedEffect(categoryPath, uniqueVideos.size) {
+                        viewModel?.loadMoreForCategoryRow(categoryPath)
+                    }
+                }
+                val progress = if (showProgress) allProgress[video.id] ?: 0L else 0L
+                val duration = if (showProgress) allDuration[video.id] ?: 0L else 0L
 
                 val isTargetRestorationItem = isRealTV && viewModel != null && video.id == viewModel.pendingRestoreVideoId
-                val itemFocusRequester = remember { FocusRequester() }
+                val itemFocusRequester = if (isRealTV) remember { FocusRequester() } else null
 
-                LaunchedEffect(isTargetRestorationItem) {
-                    if (isTargetRestorationItem) {
-                        try {
-                            listState.scrollToItem(index)
-                        } catch (_: Exception) {}
-                        delay(100)
-                        try {
-                            itemFocusRequester.requestFocus()
-                        } catch (_: Exception) {}
-                        viewModel.pendingRestoreVideoId = null
+                if (isRealTV && itemFocusRequester != null) {
+                    LaunchedEffect(isTargetRestorationItem) {
+                        if (isTargetRestorationItem) {
+                            try {
+                                listState.scrollToItem(index)
+                            } catch (_: Exception) {}
+                            delay(100)
+                            try {
+                                itemFocusRequester.requestFocus()
+                            } catch (_: Exception) {}
+                            viewModel.pendingRestoreVideoId = null
+                        }
                     }
                 }
 
@@ -980,29 +1044,28 @@ fun HorizontalVideoRow(
                     isPakcikRekomen = isPakcikRekomen,
                     onPosterMissing = { viewModel?.healMissingPoster(video) },
                     onFocus = { 
-                        itemFocused = true
                         viewModel?.lastFocusedHomeVideoId = video.id
                         viewModel?.lastFocusedCategoryRowIndex = rowIndex
                         onVideoFocus(video)
-                        if (isRealTV) {
-                            scope.launch { listState.animateScrollToItem(index) }
-                            // TV D-PAD LOOKAHEAD PREFETCH: Proactively decode next 4 upcoming items in this row
-                            if (index + 1 < videos.size) {
-                                val lookahead = videos.subList(index + 1, minOf(videos.size, index + 5))
-                                viewModel?.prefetchThumbnails(lookahead, limit = 4)
+                        if (isRealTV || isTV) {
+                            // PROACTIVE TV PAGINATION: Trigger next page immediately via D-Pad if close to the end
+                            if (categoryPath != null && index >= maxOf(0, uniqueVideos.size - 25)) {
+                                viewModel?.loadMoreForCategoryRow(categoryPath)
                             }
+                            // TV D-PAD LOOKAHEAD PREFETCH: Proactively decode next 30 upcoming items in this row
+                            try {
+                                if (index + 1 < uniqueVideos.size) {
+                                    val lookahead = uniqueVideos.subList(index + 1, minOf(uniqueVideos.size, index + 31))
+                                    viewModel?.prefetchThumbnails(lookahead, limit = 30)
+                                }
+                            } catch (_: Exception) {}
                         }
                     },
                     modifier = Modifier
-                        .zIndex(if (itemFocused) 10f else 1f)
-                        .onFocusChanged { itemFocused = it.isFocused }
                         .then(if (effectiveFocusRequester != null) Modifier.focusRequester(effectiveFocusRequester) else Modifier)
                         .focusProperties {
                             if (rowIndex == 0 && isRealTV) {
                                 up = FocusRequester.Cancel
-                            }
-                            if (index == 0 && isRealTV) {
-                                left = viewModel?.sidebarFocusRequester ?: FocusRequester.Default
                             }
                         }
                 ) {
@@ -1012,8 +1075,8 @@ fun HorizontalVideoRow(
                     onVideoClick(video.id)
                 }
             }
-            if (isLoading && videos.isNotEmpty()) {
-                item(key = "row_loading_indicator") {
+            if (isLoading && uniqueVideos.isNotEmpty() && listState.firstVisibleItemIndex >= maxOf(0, uniqueVideos.size - 8)) {
+                item(key = "row_loading_${categoryPath ?: rowIndex}") {
                     val loaderWidth = (if (isRealTV) 90 * thumbnailScale else if (isTV) 80 * thumbnailScale else 100f).dp
                     val loaderHeight = (if (isRealTV) 210 * thumbnailScale else if (isTV) 195 * thumbnailScale else 245f).dp
                     Box(
@@ -1034,6 +1097,19 @@ fun HorizontalVideoRow(
     }
 }
 
+private val CARD_SHAPE_TV = RoundedCornerShape(16.dp)
+private val CARD_SHAPE_MOBILE = RoundedCornerShape(12.dp)
+private val CARD_BORDER_MOBILE = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+private val CARD_BORDER_TV_FOCUSED_REAL = BorderStroke(3.5.dp, Color.White)
+private val CARD_BORDER_TV_FOCUSED = BorderStroke(2.5.dp, Color.White)
+private val CARD_BORDER_TV_UNFOCUSED = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
+private val CARD_CONTAINER_COLOR = Color(0xFF1A1A1A)
+private val CARD_PLACEHOLDER_PAINTER = androidx.compose.ui.graphics.painter.ColorPainter(Color(0xFF222222))
+private val RATING_REGEX = Regex("""\d+(?:\.\d+)?""")
+private val TITLE_YEAR_REGEX_1 = Regex("""\s*\(\d{4}\)""")
+private val TITLE_YEAR_REGEX_2 = Regex("""\s*\[\d{4}\]""")
+private val TITLE_YEAR_REGEX_3 = Regex("""\s*\d{4}$""")
+
 @Composable
 fun NetflixThumbnail(
     video: Video,
@@ -1052,64 +1128,81 @@ fun NetflixThumbnail(
     onClick: () -> Unit
 ) {
     val baseModifier = if (width != null) modifier.width(width) else modifier
+    val isTvLayout = isRealTV || isTV
     var isFocused by remember { mutableStateOf(false) }
     
-    // TACTILE TAP ANIMATION
-    val interactionSource = remember { MutableInteractionSource() }
-    val isPressed by interactionSource.collectIsPressedAsState()
-       val scale by animateFloatAsState(
-        targetValue = when {
-            isPressed -> 0.96f
-            isFocused && isRealTV -> 1.25f // Elite scale for TV
-            isFocused -> 1.12f // Tactile scale for Mobile
-            else -> 1f
-        }, 
-        animationSpec = tween(if (isPressed) 100 else 250, easing = LinearOutSlowInEasing),
-        label = "scale"
-    )
+    // Scale animation strictly gated to TV / D-pad focus, eliminating touch-drag scale conflicts on mobile
+    val scaleModifier = if (isTvLayout) {
+        val targetScale = if (isFocused) {
+            if (isRealTV) 1.10f else 1.06f
+        } else 1f
+        val scale by animateFloatAsState(
+            targetValue = targetScale, 
+            animationSpec = tween(120, easing = FastOutSlowInEasing),
+            label = "focus_scale"
+        )
+        Modifier.graphicsLayer {
+            scaleX = scale
+            scaleY = scale
+            clip = false
+        }
+    } else {
+        Modifier
+    }
     
-    Column(
-        modifier = baseModifier
+    val interactionSource = remember { MutableInteractionSource() }
+    val cardShape = if (isRealTV) CARD_SHAPE_TV else CARD_SHAPE_MOBILE
+
+    val focusModifier = if (isTvLayout) {
+        Modifier
             .onFocusChanged { 
                 isFocused = it.isFocused 
                 if (it.isFocused) onFocus()
             }
-            .graphicsLayer { 
-                scaleX = scale
-                scaleY = scale
-                clip = false 
-            }
-            .clip(RoundedCornerShape(if (isRealTV) 16.dp else 12.dp))
+            .then(scaleModifier)
             .zIndex(if (isFocused) 50f else 1f)
+    } else {
+        Modifier
+    }
+
+    Column(
+        modifier = baseModifier
+            .then(focusModifier)
             .clickable(
                 interactionSource = interactionSource,
-                indication = null, // Custom scale is our indication
+                indication = null,
                 onClick = onClick
             )
     ) {
         Card(
-            shape = RoundedCornerShape(if (isRealTV) 16.dp else 12.dp), // Premium Matched
-            border = BorderStroke(
-                width = if (isFocused && isRealTV) 3.5.dp else if (isFocused) 2.5.dp else 1.dp, 
-                color = if (isFocused) Color.White else Color.White.copy(alpha = 0.1f)
-            ),
+            shape = cardShape,
+            border = if (isTvLayout) {
+                if (isFocused) {
+                    if (isRealTV) CARD_BORDER_TV_FOCUSED_REAL else CARD_BORDER_TV_FOCUSED
+                } else CARD_BORDER_TV_UNFOCUSED
+            } else {
+                CARD_BORDER_MOBILE
+            },
             modifier = Modifier
                 .height(height)
-                .graphicsLayer(clip = false)
-                .shadow(
-                    elevation = if (isFocused && isRealTV) 40.dp else if (isFocused) 20.dp else 0.dp,
-                    shape = RoundedCornerShape(if (isRealTV) 16.dp else 12.dp),
-                    ambientColor = if (isFocused) Color.White else Color.Transparent,
-                    spotColor = if (isFocused) Color.White else Color.Transparent
+                .then(
+                    if (isFocused && isTvLayout) {
+                        Modifier.shadow(
+                            elevation = if (isRealTV) 6.dp else 4.dp,
+                            shape = cardShape,
+                            clip = false
+                        )
+                    } else Modifier
                 ),
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1A1A1A))
+            colors = CardDefaults.cardColors(containerColor = CARD_CONTAINER_COLOR)
         ) {
             Box(modifier = Modifier.fillMaxSize()) {
                 val context = LocalContext.current
                 val effectiveThumb = video.thumbnailUrl.ifEmpty { video.backdropUrl }
 
-                LaunchedEffect(video.id, effectiveThumb) {
-                    if (effectiveThumb.isEmpty() || !VideoExtractor.isValidImageUrl(effectiveThumb)) {
+                val isMissingPoster = effectiveThumb.isEmpty() || !VideoExtractor.isValidImageUrl(effectiveThumb)
+                if (isMissingPoster) {
+                    LaunchedEffect(video.id) {
                         onPosterMissing?.invoke()
                     }
                 }
@@ -1117,12 +1210,17 @@ fun NetflixThumbnail(
                 val optimizedThumbUrl = remember(effectiveThumb, isTV) {
                     VideoUtils.getOptimizedImage(effectiveThumb, isTV, context)
                 }
-                val imageRequest = remember(optimizedThumbUrl, isTV) {
+                val imageRequest = remember(optimizedThumbUrl) {
                     ImageRequest.Builder(context)
                         .data(optimizedThumbUrl)
-                        .size(if (isTV) coil.size.Size(342, 513) else coil.size.Size(240, 360))
+                        .memoryCacheKey(optimizedThumbUrl)
+                        .diskCacheKey(optimizedThumbUrl)
+                        .placeholderMemoryCacheKey(optimizedThumbUrl)
+                        .size(coil.size.Size(342, 513))
                         .precision(coil.size.Precision.INEXACT)
+                        .allowHardware(true)
                         .crossfade(false)
+                        .dispatcher(Dispatchers.IO)
                         .diskCachePolicy(coil.request.CachePolicy.ENABLED)
                         .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
                         .networkCachePolicy(coil.request.CachePolicy.ENABLED)
@@ -1133,7 +1231,8 @@ fun NetflixThumbnail(
                     contentDescription = video.title,
                     modifier = Modifier.fillMaxSize(),
                     contentScale = ContentScale.Crop,
-                    error = errorPlaceholder,
+                    placeholder = CARD_PLACEHOLDER_PAINTER,
+                    error = errorPlaceholder ?: CARD_PLACEHOLDER_PAINTER,
                     onError = {
                         onPosterMissing?.invoke()
                     }
@@ -1255,7 +1354,7 @@ fun NetflixThumbnail(
                     }
                 } else {
                     val cleanRating = remember(video.views) {
-                        val num = Regex("""\d+(?:\.\d+)?""").find(video.views)?.value
+                        val num = RATING_REGEX.find(video.views)?.value
                         if (num != null && (num.toDoubleOrNull() ?: 0.0) > 0.0) num else ""
                     }
                     if (cleanRating.isNotEmpty()) {
@@ -1291,9 +1390,9 @@ fun NetflixThumbnail(
         if (showTitle) {
             val displayTitle = remember(video.title) {
                 if (isRealTV) { // Gated to TV only
-                    video.title.replace(Regex("\\s*\\(\\d{4}\\)"), "")
-                               .replace(Regex("\\s*\\[\\d{4}\\]"), "")
-                               .replace(Regex("\\s*\\d{4}$"), "")
+                    video.title.replace(TITLE_YEAR_REGEX_1, "")
+                               .replace(TITLE_YEAR_REGEX_2, "")
+                               .replace(TITLE_YEAR_REGEX_3, "")
                                .trim()
                 } else video.title
             }
@@ -1332,13 +1431,21 @@ fun FeaturedHero(
 
     Box(modifier = Modifier.fillMaxSize().then(if (!isRealTV) Modifier.clickable(onClick = onClick) else Modifier)) {
         val context = LocalContext.current
-        AsyncImage(
-            model = ImageRequest.Builder(context)
-                .data(VideoUtils.getOptimizedBackdrop(heroImage, isRealTV, context))
-                .crossfade(500)
+        val backdropRequest = remember(heroImage, isRealTV) {
+            val opt = VideoUtils.getOptimizedBackdrop(heroImage, isRealTV, context)
+            ImageRequest.Builder(context)
+                .data(opt)
+                .memoryCacheKey(opt)
+                .diskCacheKey(opt)
+                .allowHardware(true)
+                .crossfade(false)
                 .diskCachePolicy(coil.request.CachePolicy.ENABLED)
                 .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-                .build(),
+                .networkCachePolicy(coil.request.CachePolicy.ENABLED)
+                .build()
+        }
+        AsyncImage(
+            model = backdropRequest,
             contentDescription = null,
             modifier = Modifier.fillMaxSize(),
             contentScale = ContentScale.Crop,
@@ -1511,15 +1618,24 @@ fun FeaturedHero(
             if (isRealTV) {
                  val errorPlaceholder = rememberVectorPainter(Icons.Default.Warning)
                  val context = LocalContext.current
-                  AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(VideoUtils.getOptimizedImage(video.thumbnailUrl.ifEmpty { video.backdropUrl }, isRealTV, context))
-                        .size(coil.size.Size(300, 450))
-                        .precision(coil.size.Precision.INEXACT)
-                        .diskCachePolicy(coil.request.CachePolicy.ENABLED)
-                        .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-                        .networkCachePolicy(coil.request.CachePolicy.ENABLED)
-                        .build(),
+                 val posterThumb = video.thumbnailUrl.ifEmpty { video.backdropUrl }
+                 val posterRequest = remember(video.id, posterThumb, isRealTV) {
+                     val opt = VideoUtils.getOptimizedImage(posterThumb, isRealTV, context)
+                     ImageRequest.Builder(context)
+                         .data(opt)
+                         .memoryCacheKey(opt)
+                         .diskCacheKey(opt)
+                         .size(coil.size.Size(342, 513))
+                         .precision(coil.size.Precision.INEXACT)
+                         .allowHardware(true)
+                         .crossfade(false)
+                         .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                         .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                         .networkCachePolicy(coil.request.CachePolicy.ENABLED)
+                         .build()
+                 }
+                 AsyncImage(
+                    model = posterRequest,
                     contentDescription = null,
                     modifier = Modifier
                         .width(100.dp) // Compact size for TV Dashboard
@@ -1527,7 +1643,7 @@ fun FeaturedHero(
                         .clip(RoundedCornerShape(12.dp))
                         .border(1.dp, Color.White.copy(alpha = 0.15f), RoundedCornerShape(12.dp))
                         .shadow(
-                            elevation = 30.dp,
+                            elevation = 8.dp,
                             shape = RoundedCornerShape(12.dp),
                             ambientColor = Color.White.copy(alpha = 0.2f),
                             spotColor = Color.White.copy(alpha = 0.2f)
@@ -1698,6 +1814,7 @@ fun NetflixTopBar(
 
 @Composable
 fun ListSectionHeader(title: String, isLargeLayout: Boolean = false, isRealTV: Boolean = false, isFocused: Boolean = false) {
+    val contentAlpha by animateFloatAsState(if (isFocused || !isRealTV) 1f else 0.6f, label = "header_alpha")
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1706,24 +1823,22 @@ fun ListSectionHeader(title: String, isLargeLayout: Boolean = false, isRealTV: B
                 top = if (isRealTV) 16.dp else if (isLargeLayout) 16.dp else 16.dp, 
                 bottom = if (isRealTV) 4.dp else if (isLargeLayout) 8.dp else 8.dp,
                 end = 16.dp
-            ),
+            )
+            .graphicsLayer { alpha = contentAlpha },
         verticalAlignment = Alignment.CenterVertically
     ) {
-        val contentAlpha by animateFloatAsState(if (isFocused || !isRealTV) 1f else 0.6f, label = "header_alpha")
-        
         // Red indicator dash (4dp x 22dp matched to reference)
         Box(
             modifier = Modifier
                 .width(if (isRealTV) 6.dp else 4.dp)
                 .height(if (isRealTV) 22.dp else 22.dp)
-                .graphicsLayer { alpha = contentAlpha }
                 .background(Color.Red, RoundedCornerShape(2.dp))
         )
         Spacer(Modifier.width(if (isRealTV) 12.dp else 12.dp))
 
         Text(
             text = title.uppercase(), 
-            color = Color.White.copy(alpha = contentAlpha), 
+            color = Color.White, 
             style = if (isRealTV) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleMedium, 
             fontWeight = FontWeight.Black, 
             letterSpacing = 1.sp // Professional spacing for uppercase

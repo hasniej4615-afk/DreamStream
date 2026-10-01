@@ -71,8 +71,8 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
                 low.contains("dutamovie.com") ||
                 low.contains("dutamovie21.xyz") ||
                 low.contains("algarvebuzz.com") ||
-                low.contains("digitalpapercuts.com") ||
                 low.contains("204.3.234.75") ||
+                low.contains("balletroyale") ||
                 low.contains("rebahin") ||
                 low.contains("rebahinxxi") ||
                 (!low.contains("pencurimovie") && (low.contains("ww38") || Regex("""^https?://ww\d+\.""").containsMatchIn(low))) ||
@@ -102,7 +102,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
             low.contains("159.89.249.45") || low.contains("dutafilm") || low.contains("mantab.men") ||
             low.contains("dutamovie.com") || low.contains("dutamovie21.xyz") ||
             low.contains("algarvebuzz.com") || low.contains("digitalpapercuts.com") ||
-            low.contains("204.3.234.75") || low.contains("rebahin") || low.contains("rebahinxxi") ||
+            low.contains("204.3.234.75") || low.contains("balletroyale") || low.contains("rebahin") || low.contains("rebahinxxi") ||
             (!low.contains("pencurimovie") && (low.contains("ww38") || Regex("""^https?://ww\d+\.""").containsMatchIn(low))) ||
             low.contains("parking") || low.contains("sedo") || low.contains("abovedomains") ||
             low.contains("dan.com") || low.contains("godaddy") ||
@@ -219,6 +219,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
             preferences.remove(UI_HERO_HEIGHT_OFFSET_KEY)
             preferences.remove(UI_SCALE_FACTOR_KEY)
             preferences.remove(UI_THUMBNAIL_SCALE_FACTOR_KEY)
+            preferences.remove(MOBILE_LANDSCAPE_ENABLED_KEY)
         }
     }
 
@@ -461,6 +462,18 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
     }
 
     private fun isTV(): Boolean = com.duta.movie.util.DeviceUtils.isTvDevice(context)
+
+    val allVideoProgress: Flow<Map<String, Long>> = context.dataStore.data.map { prefs ->
+        prefs.asMap().entries
+            .filter { it.key.name.startsWith("progress_") }
+            .associate { it.key.name.removePrefix("progress_") to ((it.value as? Long) ?: 0L) }
+    }
+
+    val allVideoDuration: Flow<Map<String, Long>> = context.dataStore.data.map { prefs ->
+        prefs.asMap().entries
+            .filter { it.key.name.startsWith("duration_") }
+            .associate { it.key.name.removePrefix("duration_") to ((it.value as? Long) ?: 0L) }
+    }
 
     fun getVideoProgress(videoId: String): Flow<Long> = context.dataStore.data.map { it[longPreferencesKey("progress_$videoId")] ?: 0L }
     fun getVideoDuration(videoId: String): Flow<Long> = context.dataStore.data.map { it[longPreferencesKey("duration_$videoId")] ?: 0L }

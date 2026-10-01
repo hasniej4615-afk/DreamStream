@@ -53,7 +53,7 @@ import com.duta.movie.util.CacheManager
 
 enum class SettingsSection(val label: String, val icon: ImageVector) {
     LANGUAGE("LANGUAGE / BAHASA", Icons.Default.Translate),
-    DISPLAY("DISPLAY ADJUSTMENT (TV)", Icons.Default.Tv),
+    DISPLAY("DISPLAY & LAYOUT", Icons.Default.Tv),
     SUBTITLES("SUBTITLES", Icons.Default.ClosedCaption),
     CATEGORIES("MANAGE CATEGORIES", Icons.AutoMirrored.Filled.List),
     STORAGE("STORAGE", Icons.Default.Home),
@@ -93,6 +93,7 @@ fun SettingsScreen(
 
     var showChangelogDialog by remember { mutableStateOf(false) }
     var cacheSize by remember { mutableStateOf(context.getString(R.string.calculating)) }
+    var versionTapCount by remember { mutableStateOf(0) }
 
     var pinInput by remember { mutableStateOf("") }
     var pinError by remember { mutableStateOf<String?>(null) }
@@ -117,6 +118,9 @@ fun SettingsScreen(
     val scope = rememberCoroutineScope()
     var manualUpdateInfo by remember { mutableStateOf<com.duta.movie.util.UpdateInfo?>(null) }
     var isCheckingUpdate by remember { mutableStateOf(false) }
+
+    var showClearPakcikDialog by remember { mutableStateOf(false) }
+    var isClearingPakcik by remember { mutableStateOf(false) }
 
     var showBaseUrlDialog by remember { mutableStateOf(false) }
     var baseUrlInput by remember { mutableStateOf("") }
@@ -222,6 +226,95 @@ fun SettingsScreen(
         )
     }
 
+    if (showClearPakcikDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isClearingPakcik) showClearPakcikDialog = false
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.Warning,
+                        contentDescription = null,
+                        tint = Color.Red,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Padam Data Pakcik Rekomen?",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                }
+            },
+            text = {
+                Column {
+                    Text(
+                        text = "Tindakan ini akan memadam SEMUA rekod 'Pakcik Rekomen' dari database cloud Supabase secara kekal.",
+                        color = Color.LightGray,
+                        fontSize = 14.sp
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(
+                        text = "Semua senarai undian dan cadangan video akan direset menjadi kosong untuk semua pengguna.",
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
+                    if (isClearingPakcik) {
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color.Red,
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Text(
+                                text = "Sedang memadam dari Supabase...",
+                                color = Color.White,
+                                fontSize = 13.sp
+                            )
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        isClearingPakcik = true
+                        viewModel.clearPakcikRekomenFromCloud { success, message ->
+                            isClearingPakcik = false
+                            showClearPakcikDialog = false
+                            android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_LONG).show()
+                        }
+                    },
+                    enabled = !isClearingPakcik,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color.Red,
+                        contentColor = Color.White,
+                        disabledContainerColor = Color.DarkGray
+                    )
+                ) {
+                    Text("Padam Semua", fontWeight = FontWeight.Bold)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = { showClearPakcikDialog = false },
+                    enabled = !isClearingPakcik
+                ) {
+                    Text(stringResource(R.string.cancel), color = Color.Gray)
+                }
+            },
+            containerColor = Color(0xFF1E1E1E)
+        )
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -239,7 +332,7 @@ fun SettingsScreen(
                 }
             }
     ) {
-        Column(modifier = Modifier.fillMaxSize()) {
+        Column(modifier = Modifier.fillMaxSize().statusBarsPadding()) {
             // Header
             Row(
                 modifier = Modifier
@@ -291,7 +384,6 @@ fun SettingsScreen(
                 ) {
                     SettingsSection.entries.forEach { section ->
                         if (section == SettingsSection.DEBUG && !isDebugModeEnabled) return@forEach
-                        if (section == SettingsSection.DISPLAY && !isTV) return@forEach
                         
                         val isSelected = selectedSection == section
                         var isFocused by remember(section) { mutableStateOf(false) }
@@ -405,63 +497,75 @@ fun SettingsScreen(
                             }
     
                             SettingsSection.DISPLAY -> {
-                                item {
-                                    Text(
-                                        stringResource(R.string.fine_tune_interface_desc),
-                                        color = Color.Gray,
-                                        fontSize = 14.sp,
-                                        modifier = Modifier.padding(bottom = 8.dp)
-                                    )
-                                }
-                                item {
-                                    DisplayAdjustmentSlider(
-                                        label = stringResource(R.string.screen_edge_margin),
-                                        value = uiSafeAreaPadding.toFloat(),
-                                        range = 0f..100f,
-                                        onValueChange = { 
-                                            viewModel.setUiSafeAreaPadding(it.toInt())
-                                            showCalibration = true
-                                        },
-                                        displayValue = "${uiSafeAreaPadding}dp"
-                                    )
-                                }
-                                item {
-                                    DisplayAdjustmentSlider(
-                                        label = stringResource(R.string.headliner_height_offset),
-                                        value = uiHeroHeightOffset.toFloat(),
-                                        range = -100f..100f,
-                                        onValueChange = { viewModel.setUiHeroHeightOffset(it.toInt()) },
-                                        displayValue = if (uiHeroHeightOffset >= 0) "+${uiHeroHeightOffset}dp" else "${uiHeroHeightOffset}dp"
-                                    )
-                                }
-                                item {
-                                    val tvScope = rememberCoroutineScope()
-                                    SettingsActionCard(
-                                        title = "Add to Home Screen",
-                                        description = "Publish DreamStream channel with movies to your Android TV home screen",
-                                        icon = Icons.Default.Tv,
-                                        onClick = {
-                                            tvScope.launch(kotlinx.coroutines.Dispatchers.IO) {
-                                                try {
-                                                    val currentMovies = viewModel.latestMovies.value.ifEmpty { 
-                                                        viewModel.featuredVideos.value 
-                                                    }
-                                                    val success = com.duta.movie.tv.TvChannelSyncWorker.syncChannelDirectly(context, currentMovies)
-                                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                                        if (success) {
-                                                            android.widget.Toast.makeText(context, "Channel published with movies! Check your home screen.", android.widget.Toast.LENGTH_LONG).show()
-                                                        } else {
-                                                            android.widget.Toast.makeText(context, "Channel created. Check TV home screen settings to enable DMStreaM row.", android.widget.Toast.LENGTH_LONG).show()
+                                if (isTV) {
+                                    item {
+                                        Text(
+                                            stringResource(R.string.fine_tune_interface_desc),
+                                            color = Color.Gray,
+                                            fontSize = 14.sp,
+                                            modifier = Modifier.padding(bottom = 8.dp)
+                                        )
+                                    }
+                                    item {
+                                        DisplayAdjustmentSlider(
+                                            label = stringResource(R.string.screen_edge_margin),
+                                            value = uiSafeAreaPadding.toFloat(),
+                                            range = 0f..100f,
+                                            onValueChange = { 
+                                                viewModel.setUiSafeAreaPadding(it.toInt())
+                                                showCalibration = true
+                                            },
+                                            displayValue = "${uiSafeAreaPadding}dp"
+                                        )
+                                    }
+                                    item {
+                                        DisplayAdjustmentSlider(
+                                            label = stringResource(R.string.headliner_height_offset),
+                                            value = uiHeroHeightOffset.toFloat(),
+                                            range = -100f..100f,
+                                            onValueChange = { viewModel.setUiHeroHeightOffset(it.toInt()) },
+                                            displayValue = if (uiHeroHeightOffset >= 0) "+${uiHeroHeightOffset}dp" else "${uiHeroHeightOffset}dp"
+                                        )
+                                    }
+                                    item {
+                                        val tvScope = rememberCoroutineScope()
+                                        SettingsActionCard(
+                                            title = "Add to Home Screen",
+                                            description = "Publish DreamStream channel with movies to your Android TV home screen",
+                                            icon = Icons.Default.Tv,
+                                            onClick = {
+                                                tvScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                                    try {
+                                                        val currentMovies = viewModel.latestMovies.value.ifEmpty { 
+                                                            viewModel.featuredVideos.value 
                                                         }
-                                                    }
-                                                } catch (e: Exception) {
-                                                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
-                                                        android.widget.Toast.makeText(context, "FAILED: ${e.javaClass.simpleName}: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                                                        val success = com.duta.movie.tv.TvChannelSyncWorker.syncChannelDirectly(context, currentMovies)
+                                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                            if (success) {
+                                                                android.widget.Toast.makeText(context, "Channel published with movies! Check your home screen.", android.widget.Toast.LENGTH_LONG).show()
+                                                            } else {
+                                                                android.widget.Toast.makeText(context, "Channel created. Check TV home screen settings to enable DMStreaM row.", android.widget.Toast.LENGTH_LONG).show()
+                                                            }
+                                                        }
+                                                    } catch (e: Exception) {
+                                                        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
+                                                            android.widget.Toast.makeText(context, "FAILED: ${e.javaClass.simpleName}: ${e.message}", android.widget.Toast.LENGTH_LONG).show()
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
-                                    )
+                                        )
+                                    }
+                                } else {
+                                    item {
+                                        val isMobileLandscapeEnabled by viewModel.isMobileLandscapeEnabled.collectAsStateWithLifecycle()
+                                        SettingsToggleCard(
+                                            title = stringResource(R.string.enable_mobile_landscape),
+                                            description = stringResource(R.string.allow_main_app_ui_rotate),
+                                            checked = isMobileLandscapeEnabled,
+                                            onCheckedChange = { viewModel.setMobileLandscapeEnabled(it) }
+                                        )
+                                    }
                                 }
                                 item {
                                     DisplayAdjustmentSlider(
@@ -481,13 +585,15 @@ fun SettingsScreen(
                                         displayValue = "%.2f x".format(uiThumbnailScaleFactor)
                                     )
                                 }
-                                item {
-                                    SettingsToggleCard(
-                                        title = stringResource(R.string.show_calibration_border),
-                                        description = stringResource(R.string.displays_red_border_alignment),
-                                        checked = showCalibration,
-                                        onCheckedChange = { showCalibration = it }
-                                    )
+                                if (isTV) {
+                                    item {
+                                        SettingsToggleCard(
+                                            title = stringResource(R.string.show_calibration_border),
+                                            description = stringResource(R.string.displays_red_border_alignment),
+                                            checked = showCalibration,
+                                            onCheckedChange = { showCalibration = it }
+                                        )
+                                    }
                                 }
                                 item {
                                     SettingsActionCard(
@@ -813,6 +919,16 @@ fun SettingsScreen(
                                 }
                                 item {
                                     SettingsActionCard(
+                                        title = "Clear 'Pakcik Rekomen' (Supabase Cloud)",
+                                        description = "Admin: Padam semua data cadangan video dari cloud database Supabase",
+                                        icon = Icons.Default.DeleteForever,
+                                        onClick = {
+                                            showClearPakcikDialog = true
+                                        }
+                                    )
+                                }
+                                item {
+                                    SettingsActionCard(
                                         title = stringResource(R.string.view_app_logcat),
                                         description = stringResource(R.string.read_copy_logcat),
                                         icon = Icons.Default.Info,
@@ -829,15 +945,6 @@ fun SettingsScreen(
                                                 }
                                             }
                                         }
-                                    )
-                                }
-                                item {
-                                    val isMobileLandscapeEnabled by viewModel.isMobileLandscapeEnabled.collectAsStateWithLifecycle()
-                                    SettingsToggleCard(
-                                        title = stringResource(R.string.enable_mobile_landscape),
-                                        description = stringResource(R.string.allow_main_app_ui_rotate),
-                                        checked = isMobileLandscapeEnabled,
-                                        onCheckedChange = { viewModel.setMobileLandscapeEnabled(it) }
                                     )
                                 }
                                 item {
@@ -1007,13 +1114,31 @@ fun SettingsScreen(
                                     SettingsActionCard(
                                         title = stringResource(R.string.version_info),
                                         annotatedDescription = androidx.compose.ui.text.buildAnnotatedString {
-                                            append("DreamStream, Premium v2.0.5 Run Forrest Run\n")
+                                            append("DreamStream, Premium v${com.duta.movie.BuildConfig.VERSION_NAME}\n")
                                             withStyle(style = SpanStyle(color = Color.Red)) {
                                                 append(if (isCheckingUpdate) checkingUpdatesText else clickToCheckText)
                                             }
                                         },
                                         icon = Icons.Default.Info,
                                         onClick = {
+                                            versionTapCount++
+                                            if (versionTapCount >= 7) {
+                                                versionTapCount = 0
+                                                val newDebugState = !isDebugModeEnabled
+                                                viewModel.setDebugModeEnabled(newDebugState)
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    if (newDebugState) "Developer mode unlocked!" else "Developer mode hidden.",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                            } else if (versionTapCount in 3..6) {
+                                                android.widget.Toast.makeText(
+                                                    context,
+                                                    "Tap ${7 - versionTapCount} more times to toggle Developer Mode",
+                                                    android.widget.Toast.LENGTH_SHORT
+                                                ).show()
+                                            }
+
                                             if (!isCheckingUpdate) {
                                                 scope.launch {
                                                     isCheckingUpdate = true
@@ -1087,7 +1212,7 @@ fun SettingsScreen(
 
         AlertDialog(
             onDismissRequest = { showChangelogDialog = false },
-            title = { Text(stringResource(R.string.changelog_v2_0_5), color = Color.White) },
+            title = { Text(stringResource(R.string.changelog_v2_0_6), color = Color.White) },
             text = {
                 Column(
                     modifier = Modifier
@@ -1175,6 +1300,14 @@ fun SettingsScreen(
                         .verticalScroll(changelogScrollState)
                         .padding(end = 8.dp)
                 ) {
+                    Text(stringResource(R.string.v2_0_6_updates), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_0_6_highlight_1), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_0_6_highlight_2), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_0_6_highlight_3), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_0_6_highlight_4), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_0_6_highlight_5), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(stringResource(R.string.v2_0_5_updates), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
                     Text(stringResource(R.string.v2_0_5_highlight_1), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
                     Text(stringResource(R.string.v2_0_5_highlight_2), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
@@ -1929,7 +2062,7 @@ fun LanguageSelectionCard(
 fun translateSettingsSection(label: String): String {
     return when(label) {
         "LANGUAGE / BAHASA" -> stringResource(R.string.language)
-        "DISPLAY ADJUSTMENT (TV)" -> stringResource(R.string.display_adjustment_tv)
+        "DISPLAY & LAYOUT", "DISPLAY ADJUSTMENT (TV)" -> stringResource(R.string.display_and_layout)
         "SUBTITLES" -> stringResource(R.string.subtitles)
         "MANAGE CATEGORIES" -> stringResource(R.string.manage_home_categories)
         "STORAGE" -> stringResource(R.string.storage)

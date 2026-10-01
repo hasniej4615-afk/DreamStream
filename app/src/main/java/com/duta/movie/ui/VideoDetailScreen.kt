@@ -280,7 +280,17 @@ fun TrailerPlayer(
         }
 
         DisposableEffect(exoPlayer) {
-            onDispose { exoPlayer.release() }
+            onDispose {
+                try {
+                    exoPlayer.stop()
+                    exoPlayer.clearMediaItems()
+                } catch (_: Exception) {}
+                android.os.Handler(android.os.Looper.getMainLooper()).post {
+                    try {
+                        exoPlayer.release()
+                    } catch (_: Exception) {}
+                }
+            }
         }
 
         AndroidView(
@@ -344,15 +354,19 @@ fun VideoDetailScreen(
 
     val currentVideo = video
     androidx.compose.runtime.LaunchedEffect(currentVideo?.id, currentVideo?.thumbnailUrl, currentVideo?.backdropUrl) {
-        if (currentVideo != null && currentVideo.thumbnailUrl.isEmpty() && currentVideo.backdropUrl.isEmpty()) {
-            viewModel.healMissingPoster(currentVideo)
+        if (currentVideo != null && (
+            (currentVideo.thumbnailUrl.isEmpty() && currentVideo.backdropUrl.isEmpty()) ||
+            !com.duta.movie.util.VideoExtractor.isValidImageUrl(currentVideo.thumbnailUrl) ||
+            com.duta.movie.util.VideoExtractor.isDeadImage(currentVideo.thumbnailUrl)
+        )) {
+            viewModel.healMissingPoster(currentVideo, currentVideo.thumbnailUrl.takeIf { it.isNotEmpty() })
         }
     }
 
-    // Auto-focus play button on TV mode with smooth debounce
-    LaunchedEffect(isTVLayout) {
-        if (isTVLayout) {
-            delay(400)
+    // Auto-focus play button for TV and remote navigation with smooth debounce
+    LaunchedEffect(video?.id, isTVLayout) {
+        if (video != null && isTVLayout) {
+            delay(350)
             try { playButtonFocusRequester.requestFocus() } catch(_: Exception) {}
         }
     }
@@ -404,7 +418,7 @@ fun VideoDetailScreen(
                             context = context,
                             showTrailer = showTrailer,
                             isTV = true,
-                            onPosterMissing = { viewModel.healMissingPoster(currentVideo) }
+                            onPosterMissing = { failedUrl -> viewModel.healMissingPoster(currentVideo, failedUrl) }
                         )
                         DetailGradients()
                         DetailNavigation(onBackClick, onSettingsClick, isAddedToMyList) { viewModel.toggleMyList(currentVideo.id) }
@@ -416,7 +430,7 @@ fun VideoDetailScreen(
                             .verticalScroll(rememberScrollState())
                             .padding(24.dp)
                     ) {
-                        VideoDetailInfo(currentVideo, safePlayClick, onActressClick, onTrailerClick = { showTrailer = true }, playFocusRequester = playButtonFocusRequester, viewModel = viewModel)
+                        VideoDetailInfo(currentVideo, safePlayClick, onActressClick, onTrailerClick = { showTrailer = true }, playFocusRequester = playButtonFocusRequester, viewModel = viewModel, isTV = true)
                         Spacer(modifier = Modifier.height(100.dp))
                     }
                 }
@@ -433,13 +447,13 @@ fun VideoDetailScreen(
                             context = context,
                             showTrailer = showTrailer,
                             isTV = isTV,
-                            onPosterMissing = { viewModel.healMissingPoster(currentVideo) }
+                            onPosterMissing = { failedUrl -> viewModel.healMissingPoster(currentVideo, failedUrl) }
                         )
                         DetailGradients()
                         DetailNavigation(onBackClick, onSettingsClick, isAddedToMyList) { viewModel.toggleMyList(currentVideo.id) }
                     }
                     Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 16.dp).fillMaxWidth()) {
-                        VideoDetailInfo(currentVideo, safePlayClick, onActressClick, onTrailerClick = { showTrailer = true }, playFocusRequester = playButtonFocusRequester, viewModel = viewModel)
+                        VideoDetailInfo(currentVideo, safePlayClick, onActressClick, onTrailerClick = { showTrailer = true }, playFocusRequester = playButtonFocusRequester, viewModel = viewModel, isTV = isTVLayout)
                         Spacer(modifier = Modifier.height(120.dp))
                     }
                 }
@@ -455,7 +469,7 @@ fun VideoDetailMedia(
     context: android.content.Context, 
     showTrailer: Boolean, 
     isTV: Boolean = false,
-    onPosterMissing: (() -> Unit)? = null
+    onPosterMissing: ((String?) -> Unit)? = null
 ) {
     val isPreviewVideo = video.previewUrl.let { com.duta.movie.util.VideoExtractor.isDirectVideoUrl(it) || it.contains("youtube.com") || it.contains("youtu.be") }
     
@@ -504,31 +518,38 @@ fun DetailStaticImage(
     fallbackUrl: String? = null, 
     context: android.content.Context, 
     isTV: Boolean = false,
-    onPosterMissing: (() -> Unit)? = null
+    onPosterMissing: ((String?) -> Unit)? = null
 ) {
     var currentUrl by remember(url) { mutableStateOf(url) }
 
     LaunchedEffect(currentUrl) {
-        if (currentUrl.isEmpty() || !com.duta.movie.util.VideoExtractor.isValidImageUrl(currentUrl)) {
-            onPosterMissing?.invoke()
+        if (currentUrl.isEmpty() || !com.duta.movie.util.VideoExtractor.isValidImageUrl(currentUrl) || com.duta.movie.util.VideoExtractor.isDeadImage(currentUrl)) {
+            onPosterMissing?.invoke(currentUrl)
         }
     }
 
-    val detailRequest = ImageRequest.Builder(context)
-        .data(VideoUtils.getOptimizedBackdrop(currentUrl, isTV, context))
-        .crossfade(true)
-        .diskCachePolicy(coil.request.CachePolicy.ENABLED)
-        .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-        .listener(
-            onError = { _, _ ->
-                if (!fallbackUrl.isNullOrEmpty() && currentUrl != fallbackUrl) {
-                    currentUrl = fallbackUrl
-                } else {
-                    onPosterMissing?.invoke()
+    val detailRequest = remember(currentUrl, isTV) {
+        val opt = VideoUtils.getOptimizedBackdrop(currentUrl, isTV, context)
+        ImageRequest.Builder(context)
+            .data(opt)
+            .memoryCacheKey(opt)
+            .diskCacheKey(opt)
+            .allowHardware(true)
+            .crossfade(false)
+            .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+            .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+            .networkCachePolicy(coil.request.CachePolicy.ENABLED)
+            .listener(
+                onError = { _, _ ->
+                    if (!fallbackUrl.isNullOrEmpty() && currentUrl != fallbackUrl && !com.duta.movie.util.VideoExtractor.isDeadImage(fallbackUrl)) {
+                        currentUrl = fallbackUrl
+                    } else {
+                        onPosterMissing?.invoke(currentUrl)
+                    }
                 }
-            }
-        )
-        .build()
+            )
+            .build()
+    }
 
     val errorPlaceholder = rememberVectorPainter(Icons.Default.Warning)
 
@@ -540,7 +561,7 @@ fun DetailStaticImage(
         error = errorPlaceholder,
         placeholder = errorPlaceholder,
         onError = {
-            onPosterMissing?.invoke()
+            onPosterMissing?.invoke(currentUrl)
         }
     )
 }
@@ -649,8 +670,12 @@ fun VideoDetailInfo(
     onActressClick: (String, String) -> Unit,
     onTrailerClick: () -> Unit,
     playFocusRequester: androidx.compose.ui.focus.FocusRequester? = null,
-    viewModel: VideoViewModel
+    viewModel: VideoViewModel,
+    isTV: Boolean = false
 ) {
+    val context = LocalContext.current
+    val isRealTV = remember { com.duta.movie.util.DeviceUtils.isTvDevice(context) }
+    val effectiveTV = isTV || isRealTV
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
         val isLikelySeries = remember(video.videoUrl, video.isSeries, video.episodes) {
             val validEpisodes = video.episodes.filter { !it.name.contains("unnamed", ignoreCase = true) }
@@ -715,7 +740,17 @@ fun VideoDetailInfo(
                         .then(if (playFocusRequester != null) Modifier.focusRequester(playFocusRequester) else Modifier)
                         .graphicsLayer(scaleX = playScale, scaleY = playScale)
                         .onFocusChanged { isPlayFocused = it.isFocused }
-                        .shadow(if (isPlayFocused) 15.dp else 0.dp, RoundedCornerShape(8.dp), spotColor = Color.White)
+                        .onKeyEvent { keyEvent ->
+                            if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                 keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                 keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                val targetEpUrl = if (isLikelySeries) currentOrFirstEpisode?.url else null
+                                onPlayClick(video.id, targetEpUrl)
+                                true
+                            } else false
+                        }
+                        .shadow(if (isPlayFocused) 8.dp else 0.dp, RoundedCornerShape(8.dp), spotColor = Color.White)
                         .border(if (isPlayFocused) BorderStroke(3.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
                     shape = RoundedCornerShape(8.dp)
@@ -737,9 +772,20 @@ fun VideoDetailInfo(
                         .height(54.dp)
                         .graphicsLayer(scaleX = trailerScale, scaleY = trailerScale)
                         .onFocusChanged { isTrailerFocused = it.isFocused }
-                        .shadow(if (isTrailerFocused && hasTrailer) 15.dp else 0.dp, RoundedCornerShape(8.dp), spotColor = Color.Red)
+                        .onKeyEvent { keyEvent ->
+                            if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                 keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                 keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                if (hasTrailer) onTrailerClick()
+                                true
+                            } else false
+                        }
+                        .shadow(if (isTrailerFocused && hasTrailer) 8.dp else 0.dp, RoundedCornerShape(8.dp), spotColor = Color.White)
                         .border(
-                            if (isTrailerFocused && hasTrailer) BorderStroke(3.dp, Color.Red) 
+                            if (isTrailerFocused && hasTrailer) {
+                                if (effectiveTV) BorderStroke(3.5.dp, Color.White) else BorderStroke(3.dp, Color.Red)
+                            }
                             else if (hasTrailer) BorderStroke(1.dp, Color.White)
                             else BorderStroke(1.dp, Color.DarkGray), 
                             RoundedCornerShape(8.dp)
@@ -780,7 +826,7 @@ fun VideoDetailInfo(
                         } else false
                     }
                     .shadow(
-                        elevation = if (isRecommendFocused) 20.dp else 0.dp,
+                        elevation = if (isRecommendFocused) 8.dp else 0.dp,
                         shape = RoundedCornerShape(8.dp),
                         spotColor = Color.Red,
                         ambientColor = Color.White
@@ -874,9 +920,9 @@ fun VideoDetailInfo(
             val cleaned = com.duta.movie.util.VideoExtractor.cleanEpisodeTitle(raw, video.title, video.videoUrl)
             Regex("""\d+""").find(cleaned)?.value
         }
-        val headerText = if (isLikelySeries && activeEpNum != null && video.episodes.size > 1) "Servers (Ep $activeEpNum)" else "Servers"
+        var showAllSources by remember { mutableStateOf(false) }
 
-        val displayServers = remember(video.servers, video.title, isLikelySeries) {
+        val allValidServers = remember(video.servers, video.title, isLikelySeries) {
             val filtered = video.servers.asSequence()
                 .filter { server ->
                     if (isLikelySeries) true else com.duta.movie.util.VideoExtractor.isServerMatchingMovie(video.title, server)
@@ -886,7 +932,59 @@ fun VideoDetailInfo(
                     com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url)
                 }.thenBy { it.name })
                 .toList()
-            if (filtered.isEmpty() && video.servers.isNotEmpty()) video.servers else filtered
+            if (filtered.isEmpty() && video.servers.isNotEmpty()) {
+                video.servers.filter { com.duta.movie.util.VideoExtractor.isGenuineMirror(it.name, it.url) }
+            } else filtered
+        }
+
+        val primaryServers = remember(allValidServers) {
+            allValidServers.filter { server ->
+                !com.duta.movie.util.VideoExtractor.isAlternativePartnerServer(server.name, server.url) &&
+                !com.duta.movie.util.VideoExtractor.isAlternativePartnerHost(server.url)
+            }
+        }
+
+        val alivePrimaryServers = remember(primaryServers, viewModel.deadMirrors) {
+            primaryServers.filter { 
+                !com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url) && 
+                !viewModel.deadMirrors.contains(it.url) 
+            }
+        }
+
+        val displayServers = remember(primaryServers, allValidServers, isLikelySeries, showAllSources) {
+            if (isLikelySeries) {
+                if (primaryServers.isNotEmpty()) primaryServers else allValidServers
+            } else if (showAllSources) {
+                allValidServers
+            } else {
+                if (primaryServers.isNotEmpty()) {
+                    primaryServers
+                } else {
+                    allValidServers
+                }
+            }
+        }
+
+        val headerText = if (isLikelySeries && activeEpNum != null && video.episodes.size > 1) {
+            "Servers (Ep $activeEpNum)"
+        } else if (primaryServers.isNotEmpty()) {
+            "Primary Mirrors"
+        } else if (displayServers.isNotEmpty()) {
+            "Alternative Mirrors"
+        } else {
+            "Primary Mirrors"
+        }
+
+        // When all primary mirrors are dead or missing, automatically trigger the mirror link from YouTube, Bilibili, and Dailymotion
+        LaunchedEffect(video.id, primaryServers.isEmpty(), isDetailLoading) {
+            if (!isDetailLoading && primaryServers.isEmpty() && (!isLikelySeries || video.episodes.isEmpty())) {
+                val hasAltPartners = allValidServers.any { 
+                    com.duta.movie.util.VideoExtractor.isAlternativePartnerServer(it.name, it.url) 
+                }
+                if (!hasAltPartners) {
+                    viewModel.searchExternalPartnerMirrors(video.id)
+                }
+            }
         }
 
         Spacer(modifier = Modifier.height(32.dp))
@@ -927,13 +1025,20 @@ fun VideoDetailInfo(
             val altScale by animateFloatAsState(if (isAltFocused) 1.08f else 1f)
             Button(
                 onClick = {
+                    showAllSources = true
                     if (!isSearchingAlternatives) {
                         Toast.makeText(localContext, localContext.getString(R.string.searching_other_sources), Toast.LENGTH_SHORT).show()
-                        viewModel.searchAlternativeSources(video.id) { foundCount ->
+                        viewModel.searchExternalPartnerMirrors(video.id) { foundCount ->
                             if (foundCount > 0) {
                                 Toast.makeText(localContext, localContext.getString(R.string.sources_found, foundCount), Toast.LENGTH_LONG).show()
                             } else {
-                                Toast.makeText(localContext, localContext.getString(R.string.no_other_sources_found), Toast.LENGTH_SHORT).show()
+                                viewModel.searchAlternativeSources(video.id) { secondCount ->
+                                    if (secondCount > 0) {
+                                        Toast.makeText(localContext, localContext.getString(R.string.sources_found, secondCount), Toast.LENGTH_LONG).show()
+                                    } else {
+                                        Toast.makeText(localContext, localContext.getString(R.string.no_other_sources_found), Toast.LENGTH_SHORT).show()
+                                    }
+                                }
                             }
                         }
                     }
@@ -951,7 +1056,37 @@ fun VideoDetailInfo(
                     .graphicsLayer(scaleX = altScale, scaleY = altScale)
                     .defaultMinSize(minHeight = 36.dp)
                     .onFocusChanged { isAltFocused = it.isFocused }
-                    .border(if (isAltFocused) BorderStroke(2.dp, Color.Red) else BorderStroke(1.dp, Color.DarkGray), RoundedCornerShape(8.dp))
+                    .onKeyEvent { keyEvent ->
+                        if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                            (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                            showAllSources = true
+                            if (!isSearchingAlternatives) {
+                                Toast.makeText(localContext, localContext.getString(R.string.searching_other_sources), Toast.LENGTH_SHORT).show()
+                                viewModel.searchExternalPartnerMirrors(video.id) { foundCount ->
+                                    if (foundCount > 0) {
+                                        Toast.makeText(localContext, localContext.getString(R.string.sources_found, foundCount), Toast.LENGTH_LONG).show()
+                                    } else {
+                                        viewModel.searchAlternativeSources(video.id) { secondCount ->
+                                            if (secondCount > 0) {
+                                                Toast.makeText(localContext, localContext.getString(R.string.sources_found, secondCount), Toast.LENGTH_LONG).show()
+                                            } else {
+                                                Toast.makeText(localContext, localContext.getString(R.string.no_other_sources_found), Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            true
+                        } else false
+                    }
+                    .border(
+                        if (isAltFocused && effectiveTV) BorderStroke(3.5.dp, Color.White)
+                        else if (isAltFocused) BorderStroke(2.dp, Color.Red)
+                        else BorderStroke(1.dp, Color.DarkGray), 
+                        RoundedCornerShape(8.dp)
+                    )
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
@@ -979,21 +1114,58 @@ fun VideoDetailInfo(
             ) {
                 displayServers.forEach { server ->
                     var isServerFocused by remember { mutableStateOf(false) }
+                    val isDead = viewModel.deadMirrors.contains(server.url) || com.duta.movie.util.VideoExtractor.isConfirmedDead(server.url)
                     val serverScale by animateFloatAsState(if (isServerFocused) 1.08f else 1f)
+
+                    val cleanServerName = remember(server.name) {
+                        server.name
+                            .replace(Regex("""[\p{So}\p{Sk}\p{Cs}\uD83C-\uDBFF\uDC00-\uDFFF\u2600-\u26FF\u2700-\u27BF]"""), "")
+                            .replace(Regex("""\s+"""), " ")
+                            .trim()
+                            .ifEmpty { "Server" }
+                    }
+
                     Button(
                         onClick = { onPlayClick(video.id, server.url) },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isServerFocused) Color.White else Color(0xFF1A1A1A),
-                            contentColor = if (isServerFocused) Color.Black else Color.White
+                            containerColor = if (isServerFocused) Color.White else if (isDead) Color(0xFF141414) else Color(0xFF1E1E1E),
+                            contentColor = if (isServerFocused) Color.Black else if (isDead) Color.Gray else Color.White
                         ),
                         modifier = Modifier
                             .graphicsLayer(scaleX = serverScale, scaleY = serverScale)
                             .onFocusChanged { isServerFocused = it.isFocused }
-                            .border(if (isServerFocused) BorderStroke(3.dp, Color.Red) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                            .onKeyEvent { keyEvent ->
+                                if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                    (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                    onPlayClick(video.id, server.url)
+                                    true
+                                } else false
+                            }
+                            .shadow(
+                                elevation = if (isServerFocused && effectiveTV) 8.dp else 0.dp,
+                                shape = RoundedCornerShape(8.dp),
+                                spotColor = Color.White,
+                                ambientColor = Color.White
+                            )
+                            .border(
+                                if (isServerFocused && effectiveTV) BorderStroke(3.5.dp, Color.White)
+                                else if (isServerFocused) BorderStroke(2.dp, Color.Red)
+                                else if (isDead) BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+                                else if (effectiveTV) BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
+                                else BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), 
+                                RoundedCornerShape(8.dp)
+                            ),
                         shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 8.dp)
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 9.dp)
                     ) {
-                        Text(server.name, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = cleanServerName, 
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 13.sp,
+                            style = if (isDead) androidx.compose.ui.text.TextStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough) else androidx.compose.ui.text.TextStyle.Default
+                        )
                     }
                 }
             }
@@ -1127,6 +1299,7 @@ fun VideoDetailInfo(
                     index = index + 1, 
                     episode = cleanEp, 
                     isWatched = watchedEpisodes.contains(progressId),
+                    isTV = effectiveTV,
                     onClick = { onPlayClick(video.id, episode.url) }
                 )
                 Spacer(modifier = Modifier.height(8.dp))
@@ -1219,11 +1392,20 @@ fun VideoDetailInfo(
                         ) {
                             if (!imageUrl.isNullOrEmpty()) {
                                 val actressPlaceholder = rememberVectorPainter(Icons.Default.Person)
-                                AsyncImage(
-                                    model = ImageRequest.Builder(LocalContext.current)
+                                val context = LocalContext.current
+                                val castRequest = remember(imageUrl) {
+                                    ImageRequest.Builder(context)
                                         .data(imageUrl)
-                                        .crossfade(true)
-                                        .build(),
+                                        .memoryCacheKey(imageUrl)
+                                        .diskCacheKey(imageUrl)
+                                        .allowHardware(true)
+                                        .crossfade(false)
+                                        .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                                        .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                                        .build()
+                                }
+                                AsyncImage(
+                                    model = castRequest,
                                     contentDescription = actressName,
                                     modifier = Modifier.fillMaxSize(),
                                     contentScale = ContentScale.Crop,
@@ -1959,17 +2141,37 @@ fun DetailSectionHeader(title: String, badge: String? = null) {
 }
 
 @Composable
-fun EpisodeRow(index: Int, episode: com.duta.movie.model.Episode, isWatched: Boolean = false, onClick: () -> Unit) {
+fun EpisodeRow(
+    index: Int, 
+    episode: com.duta.movie.model.Episode, 
+    isWatched: Boolean = false, 
+    isTV: Boolean = false,
+    onClick: () -> Unit
+) {
     var isFocused by remember { mutableStateOf(false) }
     val scale by animateFloatAsState(if (isFocused) 1.03f else 1f)
     Surface(
-        color = if (isFocused) Color(0xFF222222) else Color(0xFF111111),
+        color = if (isFocused) (if (isTV) Color(0xFF2A2A2A) else Color(0xFF222222)) else Color(0xFF111111),
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer(scaleX = scale, scaleY = scale)
             .onFocusChanged { isFocused = it.isFocused }
-            .border(border = if (isFocused) BorderStroke(3.dp, Color.Red) else BorderStroke(1.dp, Color.White.copy(alpha = 0.05f)), shape = RoundedCornerShape(12.dp))
+            .border(
+                border = if (isFocused && isTV) BorderStroke(3.5.dp, Color.White) 
+                         else if (isFocused) BorderStroke(3.dp, Color.Red) 
+                         else BorderStroke(1.dp, Color.White.copy(alpha = 0.05f)), 
+                shape = RoundedCornerShape(12.dp)
+            )
+            .onKeyEvent { keyEvent ->
+                if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                    (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                    onClick()
+                    true
+                } else false
+            }
             .clickable { onClick() }
             .focusable(),
         border = null

@@ -989,9 +989,14 @@ fun VideoPlayerScreen(
                         postSeekCooldown--
                         stallSeconds = 0
                         lastPos = currentPos
-                    } else if (currentPos > 0L && currentPos == lastPos) {
+                    } else if (currentPos >= 0L && currentPos == lastPos) {
                         stallSeconds++
-                        if (stallSeconds >= stallThreshold) {
+                        val effectiveThreshold = if (currentPos <= 1000L) {
+                            if (isJsProtected) 8 else 6
+                        } else {
+                            stallThreshold
+                        }
+                        if (stallSeconds >= effectiveThreshold) {
                             Log.w("VideoPlayerScreen", "Owl's Eye: WebView playback stall detected (frozen at ${currentPos}ms for ${stallSeconds}s). Failing over...")
                             val failingUrl = extractedUrl ?: currentServerUrlFromVm ?: ""
                             if (currentPos > 2000) {
@@ -1559,7 +1564,7 @@ fun VideoPlayerScreen(
         video = video,
         exoPlayer = exoPlayer,
         castPlayer = castPlayer,
-        webPlayerState = webPlayerState.value,
+        webPlayerState = webPlayerState,
         webViewRef = webViewRef,
         qualityTracks = qualityTracks,
         selectedQualityGroupIndex = selectedQualityGroupIndex,
@@ -2156,7 +2161,7 @@ fun VideoPlayerScreen(
                 LazyColumn(
                     modifier = Modifier.fillMaxWidth().heightIn(max = 400.dp)
                 ) {
-                    itemsIndexed(episodes) { index, ep ->
+                    itemsIndexed(episodes, key = { index, ep -> ep.url.ifEmpty { "${ep.name}_$index" } }) { index, ep ->
                         val isSelected = currentEpisode?.url == ep.url
                         var isFocused by remember { mutableStateOf(false) }
                         val displayName = remember(ep.name, video?.title, video?.videoUrl) {
@@ -2232,7 +2237,7 @@ fun VideoPlayerContent(
     video: Video?,
     exoPlayer: ExoPlayer,
     castPlayer: CastPlayer?,
-    webPlayerState: WebPlayerState,
+    webPlayerState: State<WebPlayerState>,
     webViewRef: MutableState<android.webkit.WebView?>,
     qualityTracks: List<VideoQualityTrack>,
     selectedQualityGroupIndex: Int,
@@ -2285,7 +2290,7 @@ fun VideoPlayerContent(
     val isDailymotion = remember(extractedUrl) {
         extractedUrl?.let { it.contains("dailymotion.com") || it.contains("dai.ly") } ?: false
     }
-    val currentWebState by rememberUpdatedState(webPlayerState)
+    val currentWebState by rememberUpdatedState(webPlayerState.value)
     val webListeners = remember { java.util.concurrent.CopyOnWriteArraySet<Player.Listener>() }
 
     val webForwardingPlayer = remember(webViewRef.value, fallbackDurationMs) {
@@ -2444,12 +2449,12 @@ fun VideoPlayerContent(
         }
     }
 
-    LaunchedEffect(webPlayerState.isPlaying, isVideoReady) {
+    LaunchedEffect(webPlayerState.value.isPlaying, isVideoReady) {
         val state = if (isVideoReady) Player.STATE_READY else Player.STATE_BUFFERING
         webListeners.forEach { listener ->
             listener.onPlaybackStateChanged(state)
-            listener.onPlayWhenReadyChanged(webPlayerState.isPlaying, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
-            listener.onIsPlayingChanged(webPlayerState.isPlaying)
+            listener.onPlayWhenReadyChanged(webPlayerState.value.isPlaying, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
+            listener.onIsPlayingChanged(webPlayerState.value.isPlaying)
         }
     }
 
@@ -3022,11 +3027,29 @@ fun VideoPlayerWebView(
                     webViewRef.value = this
                     setBackgroundColor(android.graphics.Color.BLACK)
                 
-                // TV FOCUS FIX: Prevent WebView from stealing DPAD focus from Compose controls
+                // TV FOCUS FIX: Block DPAD focus traversal into WebView children,
+                // but keep the WebView itself focusable so JS click() events and
+                // touch dispatching still work (needed for JWPlayer in VidHide).
                 val isTVDevice = isTV || com.duta.movie.util.DeviceUtils.isTvDevice(ctx)
                 if (isTVDevice) {
-                    isFocusable = false
-                    isFocusableInTouchMode = false
+                    descendantFocusability = android.view.ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                    // Dispatch a synthetic touch so JWPlayer's gesture detector initializes
+                    post {
+                        val e = android.view.MotionEvent.obtain(
+                            android.os.SystemClock.uptimeMillis(),
+                            android.os.SystemClock.uptimeMillis(),
+                            android.view.MotionEvent.ACTION_DOWN, width / 2f, height / 2f, 0
+                        )
+                        dispatchTouchEvent(e)
+                        val eUp = android.view.MotionEvent.obtain(
+                            android.os.SystemClock.uptimeMillis(),
+                            android.os.SystemClock.uptimeMillis(),
+                            android.view.MotionEvent.ACTION_UP, width / 2f, height / 2f, 0
+                        )
+                        dispatchTouchEvent(eUp)
+                        e.recycle()
+                        eUp.recycle()
+                    }
                 }
 
                 settings.apply {
@@ -3053,6 +3076,7 @@ fun VideoPlayerWebView(
                         low.contains("ryderjet") || low.contains("faststream") || low.contains("veev") ||
                         low.contains("dood") || low.contains("ohio") || low.contains("vplay") ||
                         low.contains("swhoi") || low.contains("bestcdn") ||
+                        low.contains("vidhide") || low.contains("fujihide") || low.contains("tnmr.org") ||
                         forceWebViewHosts.any { low.contains(it) }
                     )
                     userAgentString = if (isStrict || isBilibili || (isDailymotion && isTVDevice)) NetworkConfig.MOBILE_USER_AGENT else NetworkConfig.SHARED_USER_AGENT
@@ -3075,6 +3099,7 @@ fun VideoPlayerWebView(
                     fun isVideoReady(): Boolean = isVideoReady
                     @android.webkit.JavascriptInterface
                     fun notifyVideoPlaying() {
+                        if (isVideoReady) return
                         onPlaybackSuccess(url)
                         this@apply.post {
                             safeEvaluateJavascript(this@apply, """
@@ -3870,7 +3895,8 @@ fun VideoPlayerWebView(
                                                                   if (typeof jw.on === 'function' && !f.contentWindow._jwDutaHooked) {
                                                                       f.contentWindow._jwDutaHooked = true;
                                                                       var notifySuccess = function() {
-                                                                          if (window.AndroidPlayer && window.AndroidPlayer.notifyVideoPlaying) {
+                                                                          if (!window.successNotified && window.AndroidPlayer && window.AndroidPlayer.notifyVideoPlaying) {
+                                                                              window.successNotified = true;
                                                                               window.AndroidPlayer.notifyVideoPlaying();
                                                                           }
                                                                       };
@@ -3884,8 +3910,12 @@ fun VideoPlayerWebView(
                                                                       jw.on('time', function(e) {
                                                                           if (e && e.currentTime > 0.3) {
                                                                               notifySuccess();
-                                                                              if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
-                                                                                  window.AndroidPlayer.onPlayerState(1, e.currentTime, e.duration || (jw.getDuration ? jw.getDuration() : 0));
+                                                                              var curSec = Math.floor(e.currentTime);
+                                                                              if (curSec !== f._lastJwSec) {
+                                                                                  f._lastJwSec = curSec;
+                                                                                  if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
+                                                                                      window.AndroidPlayer.onPlayerState(1, e.currentTime, e.duration || (jw.getDuration ? jw.getDuration() : 0));
+                                                                                  }
                                                                               }
                                                                           }
                                                                       });
@@ -3917,11 +3947,16 @@ fun VideoPlayerWebView(
                                                                       });
                                                                       vid.addEventListener('timeupdate', function() {
                                                                           if (this.currentTime > 0.3) {
-                                                                              if (window.AndroidPlayer && window.AndroidPlayer.notifyVideoPlaying) {
+                                                                              if (!window.successNotified && window.AndroidPlayer && window.AndroidPlayer.notifyVideoPlaying) {
+                                                                                  window.successNotified = true;
                                                                                   window.AndroidPlayer.notifyVideoPlaying();
                                                                               }
-                                                                              if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
-                                                                                  window.AndroidPlayer.onPlayerState(1, this.currentTime, this.duration || 0);
+                                                                              var curSec = Math.floor(this.currentTime);
+                                                                              if (curSec !== this._lastSec) {
+                                                                                  this._lastSec = curSec;
+                                                                                  if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
+                                                                                      window.AndroidPlayer.onPlayerState(1, this.currentTime, this.duration || 0);
+                                                                                  }
                                                                               }
                                                                           }
                                                                       });
@@ -3931,8 +3966,9 @@ fun VideoPlayerWebView(
                                                                           }
                                                                       });
                                                                   }
-                                                                  if (!vid.paused && (vid.currentTime > 0.3 || vid.readyState >= 2)) {
+                                                                  if (!window.successNotified && !vid.paused && (vid.currentTime > 0.3 || vid.readyState >= 2)) {
                                                                       if (window.AndroidPlayer && window.AndroidPlayer.notifyVideoPlaying) {
+                                                                          window.successNotified = true;
                                                                           window.AndroidPlayer.notifyVideoPlaying();
                                                                       }
                                                                   }
@@ -4071,6 +4107,11 @@ fun ServerSelectionDialog(
                     val lowN = server.name.lowercase()
                     val platformBadge = remember(server.url, server.name) {
                         when {
+                            lowU.contains("hglink") || lowN.contains("hglink") -> "HGLink (Top)" to Color(0xFF00E676)
+                            lowU.contains("hgcloud") || lowN.contains("hgcloud") -> "HgCloud" to Color(0xFF00B0FF)
+                            lowU.contains("indostream") || lowN.contains("indostream") || com.duta.movie.util.VideoExtractor.isIndoStreamAmt(server.url) -> "IndoStream" to Color(0xFFFF9100)
+                            lowU.contains("voe") || lowN.contains("voe") -> "VOE" to Color(0xFFE040FB)
+                            lowU.contains("vidhide") || lowN.contains("vidhide") -> "VidHide" to Color(0xFFFF5252)
                             lowU.contains("youtube") || lowU.contains("youtu.be") || lowN.contains("youtube") -> "YouTube" to Color(0xFFFF0000)
                             lowU.contains("bilibili") || lowN.contains("bilibili") -> "Bilibili" to Color(0xFF00AEEC)
                             lowU.contains("dailymotion") || lowU.contains("dai.ly") || lowN.contains("dailymotion") -> "Dailymotion" to Color(0xFF0066DC)
@@ -4122,9 +4163,18 @@ fun ServerSelectionDialog(
                             .fillMaxWidth()
                             .then(if (index == 0) Modifier.focusRequester(firstItemFocusRequester) else Modifier)
                             .onFocusChanged { isFocused = it.isFocused }
+                            .onKeyEvent { keyEvent ->
+                                if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                    (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                    onServerSelect(server.url, forceWebView)
+                                    true
+                                } else false
+                            }
                             .clickable { onServerSelect(server.url, forceWebView) }
                             .focusable()
-                            .border(if (isFocused) BorderStroke(if (isTV) 2.5.dp else 2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                            .border(if (isFocused) BorderStroke(if (isTV) 3.dp else 2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
                         colors = ListItemDefaults.colors(
                             containerColor = if (isSelected) Color.Red.copy(alpha = 0.25f) 
                                             else if (isFocused) Color.White.copy(alpha = 0.2f)

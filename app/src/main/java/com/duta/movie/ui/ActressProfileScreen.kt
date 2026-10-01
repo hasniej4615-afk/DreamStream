@@ -78,9 +78,11 @@ fun ActressProfileScreen(
     val isSearchActive by viewModel.isSearchActive.collectAsStateWithLifecycle()
     val uiThumbnailScaleFactor by viewModel.uiThumbnailScaleFactor.collectAsStateWithLifecycle()
 
+    val context = LocalContext.current
+    val isRealTV = remember { com.duta.movie.util.DeviceUtils.isTvDevice(context) }
     val isExpanded = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Expanded
     val isMedium = windowSizeClass.widthSizeClass == WindowWidthSizeClass.Medium
-    val isTV = isExpanded || isMedium
+    val isTV = isExpanded || isMedium || isRealTV
     
     val columns = if (isTV) {
         if (uiThumbnailScaleFactor > 1.3f) 5 else if (uiThumbnailScaleFactor > 1.15f) 6 else if (uiThumbnailScaleFactor > 0.8f) 8 else 10
@@ -292,14 +294,20 @@ fun ActressProfileScreen(
                         ) {
                             // Profile Image
                             if (data.image.isNotEmpty()) {
-                                val context = LocalContext.current
-                                AsyncImage(
-                                    model = ImageRequest.Builder(context)
-                                        .data(VideoUtils.getOptimizedImage(data.image, isTV, context))
-                                        .crossfade(true)
+                                val imageRequest = remember(data.image, isTV) {
+                                    val opt = VideoUtils.getOptimizedImage(data.image, isTV, context)
+                                    ImageRequest.Builder(context)
+                                        .data(opt)
+                                        .memoryCacheKey(opt)
+                                        .diskCacheKey(opt)
+                                        .allowHardware(true)
+                                        .crossfade(false)
                                         .diskCachePolicy(coil.request.CachePolicy.ENABLED)
                                         .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
-                                        .build(),
+                                        .build()
+                                }
+                                AsyncImage(
+                                    model = imageRequest,
                                     contentDescription = data.name,
                                     modifier = Modifier
                                         .size(if (isTV) 100.dp else 120.dp)
@@ -395,6 +403,7 @@ fun ActressProfileScreen(
                     ) {
                         itemsIndexed(
                             items = videos,
+                            key = { _, video -> video.id },
                             contentType = { _, _ -> "video_thumbnail" }
                         ) { index, video ->
                             val itemModifier = Modifier
@@ -412,6 +421,7 @@ fun ActressProfileScreen(
                                 showTitle = !isTV,
                                 errorPlaceholder = errorPlaceholder,
                                 isTV = isTV,
+                                isRealTV = isRealTV,
                                 height = if (isTV) (150 * uiThumbnailScaleFactor).dp else (180 * uiThumbnailScaleFactor).dp,
                                 onFocus = { focusedVideo = video }
                             ) { 
