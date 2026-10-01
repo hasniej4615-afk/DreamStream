@@ -916,7 +916,7 @@ fun VideoPlayerScreen(
         if (useWebView && !isVideoReady && extractedUrl != null) {
             var stuckCount = 0
             val isPm = videoId?.startsWith("pm_") == true
-            val maxStuck = if (isPm) 25 else 30 // WebView embeds need warmup time for JS & ad nuking
+            val maxStuck = if (isPm) 18 else 14 // Fast-failover: embeds start within 3-7s, no need to stall for 30s
             
             while(!isVideoReady && stuckCount < maxStuck) {
                 webViewRef.value?.let { wv -> injectNuker(wv) }
@@ -3357,13 +3357,16 @@ fun VideoPlayerWebView(
 
                             val host = request?.url?.host?.lowercase() ?: ""
                             val path = request?.url?.path?.lowercase() ?: ""
+                            val query = request?.url?.query?.lowercase() ?: ""
                             val isTargetEmbed = request?.isForMainFrame == true || 
                                                 host.contains("dood") || host.contains("voe") ||
                                                 host.contains("indostream") || host.contains("embedo") ||
                                                 host.contains("embed4me") || host.contains("playerp2p") || host.contains("upns") ||
                                                 host.contains("dutamovie21.xyz") ||
+                                                host.contains("abyss") || host.contains("bond") || host.contains("playsobat") ||
                                                 path.contains("/api/v1/video") || path.contains("/api/") ||
-                                                path.contains("/e/") || path.contains("/embed/")
+                                                path.contains("/e/") || path.contains("/embed/") ||
+                                                (host.contains("abysscdn.com") && query.contains("v="))
                             if (isTargetEmbed) {
                                 val activeUrl = view?.getTag(R.id.active_url) as? String ?: url
                                 Log.e("VideoPlayerWebView", "HTTP error $statusCode on $failingUrl (mainFrame=${request?.isForMainFrame}) -> declaring mirror dead: $activeUrl")
@@ -3641,6 +3644,14 @@ fun VideoPlayerWebView(
                                         Log.d("VideoPlayerTurbo", "Abyss 200 but not a player page (len=${rawHtml.length}), delegating to WebView: $u")
                                     } else {
                                         Log.d("VideoPlayerTurbo", "Abyss returned HTTP ${response.code} (Cloudflare?), delegating to WebView: $u")
+                                        if (response.code in listOf(403, 404, 410, 500, 502, 503) && 
+                                            (low.contains("abysscdn.com") || low.contains("abyssplayer.com") || low.contains("playsobat.xyz"))) {
+                                            view.post {
+                                                val activeUrl = view.getTag(R.id.active_url) as? String ?: url
+                                                Log.e("VideoPlayerTurbo", "Abyss endpoint returned fatal HTTP ${response.code} ($u), failing fast: $activeUrl")
+                                                onMirrorDead(activeUrl)
+                                            }
+                                        }
                                     }
                                 }
                             } catch (e: Exception) {

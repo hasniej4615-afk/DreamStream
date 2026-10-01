@@ -6386,7 +6386,7 @@ object VideoExtractor {
             lowUrl.contains("playerp2p") -> 35
             lowUrl.contains("embed4me") -> 15
             lowUrl.contains("upns") && !lowUrl.contains("player=") -> 15
-            lowUrl.contains("abyss") || lowUrl.contains("bond") || lowUrl.contains("iamcdn") -> 30
+            lowUrl.contains("abyss") || lowUrl.contains("bond") || lowUrl.contains("iamcdn") || lowUrl.contains("playsobat") -> 30
 
             // OWL'S EYE: Priority Tier 1 - HgLink (Ultra Stable Top Tier Priority)
             lowUrl.contains("hglink") || lowName.contains("hglink") -> 200
@@ -6443,7 +6443,7 @@ object VideoExtractor {
             lowUrl.contains("veev") || lowName.contains("veev") || lowUrl.contains("player=5") -> 55
             lowName.contains("playerp2p") -> 35
             lowName.contains("embed4me") || lowName.contains("upns") -> 15
-            lowName.contains("abyss") || lowName.contains("bond") -> 30
+            lowName.contains("abyss") || lowName.contains("bond") || lowName.contains("playsobat") -> 30
 
             // OWL'S EYE: External Alternative Partner Mirrors (YouTube, Dailymotion, Bilibili) - Last-Resort Fallbacks
             // Only triggered when all primary mirrors & streaming hosts are dead/exhausted
