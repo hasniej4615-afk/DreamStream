@@ -776,6 +776,41 @@ class MyLocalTest {
             assertTrue("Obsession must have servers", movieDetails?.servers?.isNotEmpty() == true)
         }
     }
+
+    @Test
+    fun testMultipleDfwSeries() {
+        kotlinx.coroutines.runBlocking {
+            println("=== TESTING MULTIPLE DFW SERIES TITLES ===")
+            val seriesList = VideoExtractor.fetchDutaFilmWebVideos("/series/", 1, 6)
+            println("Found ${seriesList.size} series in /series/:")
+            seriesList.forEach { v ->
+                println(" - [${v.id}] ${v.title} (isSeries=${v.isSeries}, url=${v.videoUrl})")
+            }
+
+            assertTrue("Should find at least some series in /series/", seriesList.isNotEmpty())
+
+            var verifiedCount = 0
+            for (series in seriesList.take(3)) {
+                val details = VideoExtractor.fetchVideoDetails(series.videoUrl)
+                if (details != null) {
+                    println("\nInspecting ${details.title}:")
+                    println("  isSeries: ${details.isSeries}")
+                    println("  episodes: ${details.episodes.size}")
+                    println("  servers: ${details.servers.size}")
+                    details.episodes.take(3).forEach { println("    Ep: ${it.name} -> ${it.url}") }
+                    details.servers.take(3).forEach { println("    Srv: ${it.name} -> ${it.url}") }
+
+                    if (details.episodes.isNotEmpty()) {
+                        verifiedCount++
+                        assertTrue("Series should be marked isSeries=true", details.isSeries == true)
+                        assertTrue("Series should have servers", details.servers.isNotEmpty())
+                    }
+                }
+            }
+            println("\nVerified $verifiedCount series successfully with episode lists!")
+            assertTrue("At least 1 series must have episodes resolved", verifiedCount > 0)
+        }
+    }
 }
 
 
