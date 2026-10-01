@@ -752,9 +752,10 @@ fun VideoPlayerScreen(
                 val duration = if (useWebView && !isCasting) webPlayerState.value.duration else activePlayer.duration
 
                 // Reject suspiciously short videos (< 60s for full movie or episode) as fake/dead bumper clips
-                val isShortFakeDuration = useWebView && !isCasting && duration in 1..59_999L
+                val isAltPartner = extractedUrl?.let { com.duta.movie.util.VideoExtractor.isAlternativePartnerHost(it) } ?: false
+                val isShortFakeDuration = useWebView && !isCasting && !isAltPartner && duration in 1..59_999L && (currentPos >= duration - 2000L || stallCount >= 3)
                 if (isShortFakeDuration) {
-                    Log.w("VideoPlayer", "Stall Guard: Suspiciously short duration ($duration ms) detected on WebView. Rotating mirror.")
+                    Log.w("VideoPlayer", "Stall Guard: Suspiciously short duration ($duration ms, ended/stuck at $currentPos ms) detected on WebView. Rotating mirror.")
                     if (!isCasting) {
                         extractedUrl?.let { viewModel.notifyPlaybackFailure(it) }
                         viewModel.resolveNextServer(videoId, viewModel.currentServerUrl.value)
@@ -992,7 +993,7 @@ fun VideoPlayerScreen(
                     } else if (currentPos >= 0L && currentPos == lastPos) {
                         stallSeconds++
                         val effectiveThreshold = if (currentPos <= 1000L) {
-                            if (isJsProtected) (if (isTV) 10 else 8) else (if (isTV) 8 else 6)
+                            if (isJsProtected) (if (isTV) 28 else 22) else (if (isTV) 18 else 14)
                         } else {
                             stallThreshold
                         }
