@@ -41,7 +41,6 @@ class ProviderManager @Inject constructor(
             "com.duta.provider.dutafilm",
             "com.duta.provider.pusatfilm",
             "com.duta.provider.lk21",
-            "com.duta.provider.pramlee",
             "com.duta.provider.dutamovie"
         )
     }
@@ -206,23 +205,6 @@ class ProviderManager @Inject constructor(
                     priorityOrder = 4
                 ),
                 InstalledProviderEntity(
-                    id = "com.duta.provider.pramlee",
-                    repoId = OFFICIAL_REPO_ID,
-                    name = "P-Ramlee Archive",
-                    displayName = "Koleksi Filem P. Ramlee",
-                    description = "Heritage collection of classic Tan Sri P. Ramlee masterpieces and Shaw Brothers classics.",
-                    author = "DreamStream Heritage",
-                    version = 1,
-                    versionName = "1.0.0",
-                    mediaType = "MOVIE",
-                    engineType = "TEMPLATE",
-                    templateType = "GENERIC_HTML",
-                    baseUrlsJson = "[\"https://archive.org\"]",
-                    configJson = "{\"archiveCollection\": \"FilemP.ramlee\"}",
-                    isEnabled = true,
-                    priorityOrder = 5
-                ),
-                InstalledProviderEntity(
                     id = "com.duta.provider.dutamovie",
                     repoId = OFFICIAL_REPO_ID,
                     name = "DutaMovie21",
@@ -237,7 +219,7 @@ class ProviderManager @Inject constructor(
                     baseUrlsJson = "[\"https://balletroyale.com\", \"https://dutamovie21.cam\", \"https://dutamovie21.art\", \"https://204.3.234.75\"]",
                     configJson = "{\"searchPath\": \"/?s=\", \"isSeriesSupported\": true}",
                     isEnabled = true,
-                    priorityOrder = 6
+                    priorityOrder = 5
                 )
             )
             repoDao.insertOrUpdateProviders(defaultProviders)
@@ -323,6 +305,9 @@ class ProviderManager @Inject constructor(
                     )
                 )
             }
+
+            // Self-heal: purge removed P. Ramlee provider from database
+            repoDao.deleteProviderById("com.duta.provider.pramlee")
         }
     }
 
@@ -576,8 +561,7 @@ class ProviderManager @Inject constructor(
             (p.id.contains("dutamovie") && VideoExtractor.isDutaMovie(video.id, video.videoUrl)) ||
             (p.id.contains("pencuri") && VideoExtractor.isPencuriMovie(video.id, video.videoUrl)) ||
             (p.id.contains("pusatfilm") && VideoExtractor.isPusatfilm(video.id, video.videoUrl)) ||
-            (p.id.contains("lk21") && VideoExtractor.isBullerswood(video.id, video.videoUrl)) ||
-            (p.id.contains("pramlee") && video.id.startsWith("ia_pramlee"))
+            (p.id.contains("lk21") && VideoExtractor.isBullerswood(video.id, video.videoUrl))
         }
         if (matchingProvider != null) {
             try {

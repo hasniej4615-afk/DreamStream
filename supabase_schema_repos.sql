@@ -155,33 +155,7 @@ insert into providers (
     version_name = excluded.version_name,
     updated_at = timezone('utc'::text, now());
 
--- Provider 4: P-Ramlee Classic Archive
-insert into providers (
-    id, repo_id, name, display_name, description, author, version, version_name,
-    icon_url, media_type, engine_type, template_type, base_urls, config, status, is_enabled_default
-) values (
-    'com.duta.provider.pramlee',
-    'dreamstream-official',
-    'P-Ramlee Archive',
-    'Koleksi Filem P. Ramlee',
-    'Heritage collection of classic Tan Sri P. Ramlee masterpieces and Shaw Brothers classics.',
-    'DreamStream Heritage',
-    1,
-    '1.0.0',
-    'https://raw.githubusercontent.com/hasniej4615-afk/DreamStream/main/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png',
-    'MOVIE',
-    'TEMPLATE',
-    'GENERIC_HTML',
-    '["https://archive.org"]'::jsonb,
-    '{"archiveCollection": "FilemP.ramlee"}'::jsonb,
-    'ACTIVE',
-    true
-) on conflict (id) do update set
-    base_urls = excluded.base_urls,
-    config = excluded.config,
-    updated_at = timezone('utc'::text, now());
-
--- Provider 5: DutaMovie21
+-- Provider 4: DutaMovie21
 insert into providers (
     id, repo_id, name, display_name, description, author, version, version_name,
     icon_url, media_type, engine_type, template_type, base_urls, config, status, is_enabled_default

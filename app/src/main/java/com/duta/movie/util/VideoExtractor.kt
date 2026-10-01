@@ -487,7 +487,6 @@ object VideoExtractor {
         if (yearMatch != null) return "/release-year/${yearMatch.groupValues[1]}/"
         if (path.contains("country/viet-nam", ignoreCase = true) || path.contains("country/vietnam", ignoreCase = true) || pClean.equals("vietnam", ignoreCase = true) || pClean.equals("viet-nam", ignoreCase = true)) return "/country/vietnam/"
         if (path.contains("country/malaysia", ignoreCase = true) || pClean.equals("malaysia", ignoreCase = true)) return "/country/malaysia/"
-        if (path.contains("p-ramlee", ignoreCase = true) || path.contains("FilemP.ramlee", ignoreCase = true) || pClean.equals("p-ramlee", ignoreCase = true)) return "/category/p-ramlee/"
         if (path.contains("country/indonesia", ignoreCase = true) || path.contains("country/indonesian", ignoreCase = true) || pClean.equals("indonesia", ignoreCase = true) || pClean.equals("indonesian", ignoreCase = true)) return "/country/indonesia/"
         if (path.contains("bullerswood", ignoreCase = true) || pClean.equals("bullerswood", ignoreCase = true) || path.contains("lk21", ignoreCase = true) || pClean.equals("lk21", ignoreCase = true) || pClean.equals("layarkaca21", ignoreCase = true)) return "/source/bullerswood/"
         if (path.contains("dutafilm", ignoreCase = true) || pClean.equals("dutafilm", ignoreCase = true) || path.contains("mantab.men", ignoreCase = true) || path.contains("df31", ignoreCase = true)) return "/source/dutafilm/"
@@ -613,7 +612,7 @@ object VideoExtractor {
                 if (sub.startsWith("film_")) "${getDutaMovieBaseUrl()}/film/${sub.removePrefix("film_")}/"
                 else "${getDutaMovieBaseUrl()}/$sub/"
             }
-            cleanId.startsWith("kb_") || cleanId.startsWith("ia_pramlee") ||
+            cleanId.startsWith("kb_") ||
             cleanId.startsWith("yt_") || cleanId.startsWith("bili_") -> ""
             else -> "${getBaseUrl()}/$cleanId/"
         }
@@ -2614,14 +2613,6 @@ object VideoExtractor {
             return@withContext fetchBullerswoodVideos(path, page, count)
         }
 
-        if (path.contains("p-ramlee", ignoreCase = true) || path.contains("FilemP.ramlee", ignoreCase = true)) {
-            val all = sortVideosByNewestRelease(fetchArchivePramleeVideos())
-            val itemsPerPage = 15
-            val start = (page - 1) * itemsPerPage
-            if (start >= all.size) return@withContext emptyList()
-            return@withContext all.drop(start).take(count)
-        }
-
         val pagesToFetch = when {
             page > 1 -> 1
             count >= 100 -> 4
@@ -2860,23 +2851,6 @@ object VideoExtractor {
             results.forEach { servers ->
                 altServers.addAll(servers)
             }
-        }
-
-        // Also check classic P. Ramlee Archive.org catalogue if applicable
-        if (!video.videoUrl.contains("archive.org")) {
-            try {
-                val classicMatch = fetchArchivePramleeVideos().find {
-                    normalizeForDedup(it.title, includeYear = false) == normalizeForDedup(video.title, includeYear = false)
-                }
-                if (classicMatch != null && video.servers.none { it.url.contains("archive.org") }) {
-                    Log.i(TAG, "Discovered Archive.org classic mirror for '${video.title}'")
-                    if (classicMatch.servers.isNotEmpty()) {
-                        altServers.addAll(classicMatch.servers)
-                    } else {
-                        altServers.add(VideoServer(name = "Archive.org HD (Fast Direct)", url = classicMatch.videoUrl))
-                    }
-                }
-            } catch (_: Exception) {}
         }
 
         // Full movie & universal stream fallbacks (YouTube, Bilibili, Dailymotion):
@@ -4229,116 +4203,6 @@ object VideoExtractor {
         )
     }
 
-    val PRAMLEE_POSTERS = mapOf(
-        "abu-hassan-penchuri" to "https://image.tmdb.org/t/p/w500/lLsTOstlADKLrtfWPZTJeOeBADu.jpg",
-        "ahmad-albab" to "https://image.tmdb.org/t/p/w500/ehhqSBEQiS3loFGvXXest8o6gXx.jpg",
-        "bujang-lapok" to "https://image.tmdb.org/t/p/w500/hiLcooHtEwgNkjv7fOlzxzMWPdP.jpg",
-        "do-re-mi" to "https://image.tmdb.org/t/p/w500/wW3VbZ5qKy4C2eSPO4oY6y8VPmu.jpg",
-        "enam-jahanam" to "https://image.tmdb.org/t/p/w500/9APHudzCbMPq787LwBC5iBKeEsd.jpg",
-        "hang-tuah" to "https://image.tmdb.org/t/p/w500/6x59DjnPIUf0ymsXBIlvQo0EkDW.jpg",
-        "kanchan-tirana" to "https://image.tmdb.org/t/p/w500/ckadmVtQQvaW2VAE8sV61TILG89.jpg",
-        "keluarga69" to "https://image.tmdb.org/t/p/w500/jpzzvWFj2IpKtyX4zjJqidZw1eO.jpg",
-        "keluarga-69" to "https://image.tmdb.org/t/p/w500/jpzzvWFj2IpKtyX4zjJqidZw1eO.jpg",
-        "labu-dan-labi" to "https://image.tmdb.org/t/p/w500/nwY3aU6Iq9DIf1EEwsX0Nz3Kbpo.jpg",
-        "laksamana-do-re-mi" to "https://image.tmdb.org/t/p/w500/sMxKmrBkClc7PpXWrgovKoaIiUG.jpg",
-        "masam-masam-manis" to "https://image.tmdb.org/t/p/w500/xbr7r8lkBWQtirXjAw0xD3oFmiN.jpg",
-        "musang-berjanggut" to "https://image.tmdb.org/t/p/w500/hpUYZMwIt72L2FJM6kwwsgnJt1K.jpg",
-        "nasib-do-re-mi" to "https://image.tmdb.org/t/p/w500/6tiXdCbhzQltSz41Vf4FnMEPdJ0.jpg",
-        "nasib-si-labu-labi" to "https://image.tmdb.org/t/p/w500/kzupjs6c7wOtqd9TAZXRz1hM5jB.jpg",
-        "putus-sudah-kasih-sayang" to "https://image.tmdb.org/t/p/w500/6ztYIbZsad860V5G2Jfl0w2FXCt.jpg",
-        "putus-sudah-kaseh-sayang" to "https://image.tmdb.org/t/p/w500/6ztYIbZsad860V5G2Jfl0w2FXCt.jpg",
-        "ragam-p-ramlee" to "https://image.tmdb.org/t/p/w500/kqI0rQ04pjJ0qhQhTmgQih7P2Ce.jpg",
-        "semerah-padi" to "https://image.tmdb.org/t/p/w500/eztSlII8upGsAXLk0dnxx72fqhq.jpg",
-        "sesudah-subuh" to "https://image.tmdb.org/t/p/w500/AuX0gFXGFEV4Pcwama3gzXJTyb7.jpg",
-        "ali-baba-bujang-lapok" to "https://image.tmdb.org/t/p/w500/dYSuQvfc9RDzzvtvj3iIVditp9e.jpg",
-        "alibababujanglapok" to "https://image.tmdb.org/t/p/w500/dYSuQvfc9RDzzvtvj3iIVditp9e.jpg",
-        "nujum-pak-belalang" to "https://image.tmdb.org/t/p/w500/rcwroUjJfTDFVMrX8DRXB6kuuKJ.jpg",
-        "nujumpakbelalang" to "https://image.tmdb.org/t/p/w500/rcwroUjJfTDFVMrX8DRXB6kuuKJ.jpg",
-        "sumpah-orang-minyak" to "https://image.tmdb.org/t/p/w500/wvrMRUoR6X2AKD9LBZTQGryx6Nc.jpg",
-        "sumpahorangminyak" to "https://image.tmdb.org/t/p/w500/wvrMRUoR6X2AKD9LBZTQGryx6Nc.jpg",
-        "tiga-abdul" to "https://image.tmdb.org/t/p/w500/8X9YyahJBDBQ3wjTEN6HubQN6Cg.jpg",
-        "tigaabdul" to "https://image.tmdb.org/t/p/w500/8X9YyahJBDBQ3wjTEN6HubQN6Cg.jpg",
-        "seniman-bujang-lapok" to "https://upload.wikimedia.org/wikipedia/ms/a/a7/SenimanBujangLapok.jpg",
-        "senimanbujanglapok" to "https://upload.wikimedia.org/wikipedia/ms/a/a7/SenimanBujangLapok.jpg",
-        "seniman-bujang-lapuk" to "https://upload.wikimedia.org/wikipedia/ms/a/a7/SenimanBujangLapok.jpg",
-        "senimanbujanglapuk" to "https://upload.wikimedia.org/wikipedia/ms/a/a7/SenimanBujangLapok.jpg",
-        "pendekar-bujang-lapok" to "https://img.youtube.com/vi/1Cij_LQNVHU/hqdefault.jpg",
-        "pendekarbujanglapok" to "https://img.youtube.com/vi/1Cij_LQNVHU/hqdefault.jpg",
-        "pendekar-bujang-lapuk" to "https://img.youtube.com/vi/1Cij_LQNVHU/hqdefault.jpg",
-        "pendekarbujanglapuk" to "https://img.youtube.com/vi/1Cij_LQNVHU/hqdefault.jpg",
-        "madu-tiga" to "https://upload.wikimedia.org/wikipedia/ms/0/0d/MaduTiga.jpg",
-        "madutiga" to "https://upload.wikimedia.org/wikipedia/ms/0/0d/MaduTiga.jpg",
-        "ibu-mertua-ku" to "https://upload.wikimedia.org/wikipedia/ms/f/f4/PosterIbuMertuaKu.jpg",
-        "ibumertuaku" to "https://upload.wikimedia.org/wikipedia/ms/f/f4/PosterIbuMertuaKu.jpg",
-        "ibu-mertuaku" to "https://upload.wikimedia.org/wikipedia/ms/f/f4/PosterIbuMertuaKu.jpg",
-        "anak-ku-sazali" to "https://upload.wikimedia.org/wikipedia/ms/5/5c/Anakku_sazali_01.jpg",
-        "anakku-sazali" to "https://upload.wikimedia.org/wikipedia/ms/5/5c/Anakku_sazali_01.jpg",
-        "anakkusazali" to "https://upload.wikimedia.org/wikipedia/ms/5/5c/Anakku_sazali_01.jpg",
-        "antara-dua-darjat" to "https://upload.wikimedia.org/wikipedia/ms/9/9c/Antara_Dua_Darjat.jpg",
-        "antaraduadarjat" to "https://upload.wikimedia.org/wikipedia/ms/9/9c/Antara_Dua_Darjat.jpg",
-        "sarjan-hassan" to "https://upload.wikimedia.org/wikipedia/ms/e/ec/Sarjan_hassan_01.jpg",
-        "sarjanhassan" to "https://upload.wikimedia.org/wikipedia/ms/e/ec/Sarjan_hassan_01.jpg",
-        "penarek-becha" to "https://upload.wikimedia.org/wikipedia/ms/8/88/Filem-Penarek_Becha.jpg",
-        "penarekbecha" to "https://upload.wikimedia.org/wikipedia/ms/8/88/Filem-Penarek_Becha.jpg",
-        "penarik-beca" to "https://upload.wikimedia.org/wikipedia/ms/8/88/Filem-Penarek_Becha.jpg",
-        "penarikbeca" to "https://upload.wikimedia.org/wikipedia/ms/8/88/Filem-Penarek_Becha.jpg"
-    )
-
-    val PRAMLEE_DESCRIPTIONS = mapOf(
-        "abu-hassan-penchuri" to "Kisah dongeng klasik 1001 Malam mengisahkan pemuda miskin bernama Abu Hassan yang jatuh hati kepada Puteri Faridah dan terpaksa berhadapan dengan Wazir yang zalim.",
-        "ahmad-albab" to "Kisah komedi satirikal Mashood Hakimi yang menguji tiga menantunya. Syawal, pemuda miskin dan jujur yang mengahwini Mastura, akhirnya menemui harta karun Ahmad Albab.",
-        "bujang-lapok" to "Kisah lucu tiga bujang lapok—Ramli, Aziz, dan Sudin—yang menyewa bilik bersama di rumah Mak Tom dan berusaha mencari cinta serta pekerjaan di Singapura.",
-        "do-re-mi" to "Kisah tiga sahabat penganggur yang menggelar diri mereka Do, Re, dan Mi yang sering terlibat dalam pelbagai helah lucu untuk mencari rezeki.",
-        "enam-jahanam" to "Kisah dendam Tantari terhadap kumpulan perompak 'Enam Jahanam' yang telah merompak dan membunuh isterinya Mastura.",
-        "hang-tuah" to "Kisah epik sejarah pahlawan legenda Melayu Laksamana Hang Tuah yang taat setia kepada Sultan Melaka, berhadapan dengan sahabat karibnya Hang Jebat.",
-        "kanchan-tirana" to "Kisah pendekar Kanchan yang menentang kezaliman pendekar Tirana demi menegakkan keadilan dan membela rakyat tertindas.",
-        "keluarga69" to "Kisah komedi kekeluargaan yang rumit apabila Osman berkahwin dengan anak kepada wanita yang berkahwin dengan bapa kandungnya sendiri.",
-        "keluarga-69" to "Kisah komedi kekeluargaan yang rumit apabila Osman berkahwin dengan anak kepada wanita yang berkahwin dengan bapa kandungnya sendiri.",
-        "labu-dan-labi" to "Kisah dua orang gaji setia, Labu dan Labi, yang bekerja di rumah Haji Bakhil bin Haji Lebai Kedekut dan sering berangan-angan tentang kekayaan dan cinta.",
-        "laksamana-do-re-mi" to "Filem terakhir Tan Sri P. Ramlee mengisahkan tiga sahabat Do, Re, dan Mi yang memperoleh kuasa ajaib lalu dilantik menjadi menteri pertahanan negeri Pasir Berdengung.",
-        "masam-masam-manis" to "Kisah Cikgu Shaari yang mengajar di sekolah pada waktu siang dan menyanyi di kelab malam pada waktu malam, lalu jatuh cinta dengan jiran bilik sewanya, Norkiah.",
-        "musang-berjanggut" to "Kisah Nila Utama, anak angkat Sultan Negeri Pura Cendana, yang mencari wanita sejati untuk dijadikan isteri dengan membawa beras bercampur pasir.",
-        "nasib-do-re-mi" to "Kesinambungan pengembaraan Do, Re, dan Mi yang cuba mencari pekerjaan baru dan membuka perniagaan jualan ubat serta menyelamatkan wanita yang dianiaya.",
-        "nasib-si-labu-labi" to "Kesinambungan kisah Labu dan Labi yang menyertai pertandingan peragaan pakaian dan terus berhadapan dengan karenah majikan mereka, Haji Bakhil.",
-        "putus-sudah-kasih-sayang" to "Kisah drama emosi mengenai pengorbanan cinta dan kekeluargaan yang diuji oleh salah faham dan tragedi.",
-        "putus-sudah-kaseh-sayang" to "Kisah drama emosi mengenai pengorbanan cinta dan kekeluargaan yang diuji oleh salah faham dan tragedi.",
-        "ragam-p-ramlee" to "Filem antologi warna yang memaparkan beberapa sketsa lucu dan musikal arahan serta lakonan Tan Sri P. Ramlee.",
-        "semerah-padi" to "Kisah epik zaman Melayu kuno di kampung Semerah Padi mengisahkan persahabatan, hukum Islam, dan cinta antara Aduka dan Dara.",
-        "sesudah-subuh" to "Drama sosial mengisahkan cabaran kehidupan moden, perbezaan generasi, dan keharmonian keluarga di Kuala Lumpur pada era 1960-an.",
-        "ali-baba-bujang-lapok" to "Kisah komedi klasik Ali Baba, seorang pemuda miskin yang menjumpai gua rahsia 40 penyamun yang dipenuhi harta karun, dan abangnya Kassim Baba yang tamak.",
-        "alibababujanglapok" to "Kisah komedi klasik Ali Baba, seorang pemuda miskin yang menjumpai gua rahsia 40 penyamun yang dipenuhi harta karun, dan abangnya Kassim Baba yang tamak.",
-        "nujum-pak-belalang" to "Kisah Pak Belalang dan anaknya Belalang yang berpakat berpura-pura menjadi ahli nujum pintar sehingga dilantik menjadi Ahli Nujum Negara oleh Sultan Negeri Beringin Rendang.",
-        "nujumpakbelalang" to "Kisah Pak Belalang dan anaknya Belalang yang berpakat berpura-pura menjadi ahli nujum pintar sehingga dilantik menjadi Ahli Nujum Negara oleh Sultan Negeri Beringin Rendang.",
-        "sumpah-orang-minyak" to "Kisah Si Bongkok yang dihina kerana kecacatannya, membuat perjanjian dengan syaitan untuk menjadi kacak dan sakti namun terperangkap menjadi Orang Minyak yang mengganas.",
-        "sumpahorangminyak" to "Kisah Si Bongkok yang dihina kerana kecacatannya, membuat perjanjian dengan syaitan untuk menjadi kacak dan sakti namun terperangkap menjadi Orang Minyak yang mengganas.",
-        "tiga-abdul" to "Kisah tiga adik-beradik Abdul Wahab, Abdul Wahid dan Abdul Wahub. Dua abang yang tamak ditipu oleh Sadiq Segaraga, manakala Abdul Wahub yang bijak berjaya menyelamatkan harta dan mengajar mertuanya.",
-        "tigaabdul" to "Kisah tiga adik-beradik Abdul Wahab, Abdul Wahid dan Abdul Wahub. Dua abang yang tamak ditipu oleh Sadiq Segaraga, manakala Abdul Wahub yang bijak berjaya menyelamatkan harta dan mengajar mertuanya.",
-        "seniman-bujang-lapok" to "Kisah tiga bujang lapok—Ramli, Aziz, dan Sudin—yang mencuba nasib menjadi bintang filem di Malay Film Productions (Studio Jalan Ampas). Penuh dengan babak ikonik uji bakat 'Cobaan...' dan gelagat lucu pengarah Ahmad Nisfu.",
-        "senimanbujanglapok" to "Kisah tiga bujang lapok—Ramli, Aziz, dan Sudin—yang mencuba nasib menjadi bintang filem di Malay Film Productions (Studio Jalan Ampas). Penuh dengan babak ikonik uji bakat 'Cobaan...' dan gelagat lucu pengarah Ahmad Nisfu.",
-        "seniman-bujang-lapuk" to "Kisah tiga bujang lapok—Ramli, Aziz, dan Sudin—yang mencuba nasib menjadi bintang filem di Malay Film Productions (Studio Jalan Ampas). Penuh dengan babak ikonik uji bakat 'Cobaan...' dan gelagat lucu pengarah Ahmad Nisfu.",
-        "senimanbujanglapuk" to "Kisah tiga bujang lapok—Ramli, Aziz, dan Sudin—yang mencuba nasib menjadi bintang filem di Malay Film Productions (Studio Jalan Ampas). Penuh dengan babak ikonik uji bakat 'Cobaan...' dan gelagat lucu pengarah Ahmad Nisfu.",
-        "pendekar-bujang-lapok" to "Tiga sahabat bujang lapok merantau ke Kampung Pinang Sebatang untuk menuntut ilmu persilatan dengan Pendekar Mustar demi mempertahankan diri daripada samseng penambang. Sarat dengan babak legenda 'Alif Mim Nun Wau - Sarkas!' dan belajar membaca.",
-        "pendekarbujanglapok" to "Tiga sahabat bujang lapok merantau ke Kampung Pinang Sebatang untuk menuntut ilmu persilatan dengan Pendekar Mustar demi mempertahankan diri daripada samseng penambang. Sarat dengan babak legenda 'Alif Mim Nun Wau - Sarkas!' dan belajar membaca.",
-        "pendekar-bujang-lapuk" to "Tiga sahabat bujang lapok merantau ke Kampung Pinang Sebatang untuk menuntut ilmu persilatan dengan Pendekar Mustar demi mempertahankan diri daripada samseng penambang. Sarat dengan babak legenda 'Alif Mim Nun Wau - Sarkas!' dan belajar membaca.",
-        "pendekarbujanglapuk" to "Tiga sahabat bujang lapok merantau ke Kampung Pinang Sebatang untuk menuntut ilmu persilatan dengan Pendekar Mustar demi mempertahankan diri daripada samseng penambang. Sarat dengan babak legenda 'Alif Mim Nun Wau - Sarkas!' dan belajar membaca.",
-        "madu-tiga" to "Jamil berkahwin dengan tiga wanita berbeza—Latifah, Hasnah, dan Rohani—tanpa pengetahuan mereka berkat bantuan bapa mertuanya Pak Mansor. Situasi menjadi huru-hara apabila ketiga-tiga isteri bertemu di salon kecantikan.",
-        "madutiga" to "Jamil berkahwin dengan tiga wanita berbeza—Latifah, Hasnah, dan Rohani—tanpa pengetahuan mereka berkat bantuan bapa mertuanya Pak Mansor. Situasi menjadi huru-hara apabila ketiga-tiga isteri bertemu di salon kecantikan.",
-        "ibu-mertua-ku" to "Tragedi cinta antara pemuzik saksofon Kassim Selamat dan gadis kaya Sabariah yang ditentang hebat oleh ibu Sabariah, Nyonya Mansoor, sehingga membawa kepada pembohongan, kebutaan, dan pengorbanan menyayat hati.",
-        "ibumertuaku" to "Tragedi cinta antara pemuzik saksofon Kassim Selamat dan gadis kaya Sabariah yang ditentang hebat oleh ibu Sabariah, Nyonya Mansoor, sehingga membawa kepada pembohongan, kebutaan, dan pengorbanan menyayat hati.",
-        "ibu-mertuaku" to "Tragedi cinta antara pemuzik saksofon Kassim Selamat dan gadis kaya Sabariah yang ditentang hebat oleh ibu Sabariah, Nyonya Mansoor, sehingga membawa kepada pembohongan, kebutaan, dan pengorbanan menyayat hati.",
-        "anak-ku-sazali" to "Kisah pengorbanan seorang bapa, Hassan, yang terlalu memanjakan anak tunggalnya Sazali sehingga Sazali membesar menjadi ketua samseng yang kejam. Hassan berhadapan dengan dilema moral antara kasih sayang seorang bapa dan keadilan undang-undang.",
-        "anakku-sazali" to "Kisah pengorbanan seorang bapa, Hassan, yang terlalu memanjakan anak tunggalnya Sazali sehingga Sazali membesar menjadi ketua samseng yang kejam. Hassan berhadapan dengan dilema moral antara kasih sayang seorang bapa dan keadilan undang-undang.",
-        "anakkusazali" to "Kisah pengorbanan seorang bapa, Hassan, yang terlalu memanjakan anak tunggalnya Sazali sehingga Sazali membesar menjadi ketua samseng yang kejam. Hassan berhadapan dengan dilema moral antara kasih sayang seorang bapa dan keadilan undang-undang.",
-        "antara-dua-darjat" to "Kisah Ghazali, pemuzik kampung yang menyelamatkan Engku Zaleha, anak seorang kerabat bangsawan. Cinta mereka ditentang keras oleh keluarga Zaleha kerana perbezaan darjat yang akhirnya membawa kepada tragedi pemisahan kejam.",
-        "antaraduadarjat" to "Kisah Ghazali, pemuzik kampung yang menyelamatkan Engku Zaleha, anak seorang kerabat bangsawan. Cinta mereka ditentang keras oleh keluarga Zaleha kerana perbezaan darjat yang akhirnya membawa kepada tragedi pemisahan kejam.",
-        "sarjan-hassan" to "Kisah pemuda kampung Hassan yang sering diejek sebagai penakut, lalu menyertai Rejimen Askar Melayu dan berjuang dengan penuh keberanian menentang tentera Jepun demi mempertahankan tanah air.",
-        "sarjanhassan" to "Kisah pemuda kampung Hassan yang sering diejek sebagai penakut, lalu menyertai Rejimen Askar Melayu dan berjuang dengan penuh keberanian menentang tentera Jepun demi mempertahankan tanah air.",
-        "penarek-becha" to "Filem pertama arahan Tan Sri P. Ramlee mengisahkan Amran, seorang penarik beca miskin berhati mulia yang jatuh cinta dengan Azizah, gadis bangsawan. Hubungan mereka dicemburui oleh pemuda kaya Ghazali yang cuba merancang pelbagai tipu muslihat.",
-        "penarekbecha" to "Filem pertama arahan Tan Sri P. Ramlee mengisahkan Amran, seorang penarik beca miskin berhati mulia yang jatuh cinta dengan Azizah, gadis bangsawan. Hubungan mereka dicemburui oleh pemuda kaya Ghazali yang cuba merancang pelbagai tipu muslihat.",
-        "penarik-beca" to "Filem pertama arahan Tan Sri P. Ramlee mengisahkan Amran, seorang penarik beca miskin berhati mulia yang jatuh cinta dengan Azizah, gadis bangsawan. Hubungan mereka dicemburui oleh pemuda kaya Ghazali yang cuba merancang pelbagai tipu muslihat.",
-        "penarikbeca" to "Filem pertama arahan Tan Sri P. Ramlee mengisahkan Amran, seorang penarik beca miskin berhati mulia yang jatuh cinta dengan Azizah, gadis bangsawan. Hubungan mereka dicemburui oleh pemuda kaya Ghazali yang cuba merancang pelbagai tipu muslihat."
-    )
-
     /**
      * Resolves verified, authoritative TMDB/official posters for high-profile Malaysian films
      * to safeguard against 404 dead images, scraper corruption, or mismatched related films.
@@ -4364,400 +4228,9 @@ object VideoExtractor {
             return "https://image.tmdb.org/t/p/original/2QCDn4Z8RTOwSo2WweeoexWfV8W.jpg"
         }
 
-        // P. Ramlee catalog
-        for ((key, poster) in PRAMLEE_POSTERS) {
-            val keyNorm = normalizeForDedup(key, includeYear = false)
-            if (norm == keyNorm || (keyNorm.length >= 5 && norm.contains(keyNorm))) {
-                return poster
-            }
-            if (cleanCombined.contains(key) || (keyNorm.length >= 5 && cleanCombined.contains(keyNorm))) {
-                return poster
-            }
-        }
-
         return ""
     }
 
-    @Volatile
-    private var archivePramleeCache: List<Video>? = null
-    private val archivePramleeLock = Any()
-
-    /**
-     * Dedicated P.Ramlee Classic Catalog: Fetches and parses 22+ high-definition (1080p/720p)
-     * classic films from Internet Archive with direct MP4 streams.
-     */
-    suspend fun fetchArchivePramleeVideos(forceRefresh: Boolean = false): List<Video> = withContext(Dispatchers.IO) {
-        if (!forceRefresh && archivePramleeCache != null) {
-            return@withContext archivePramleeCache!!
-        }
-
-        // Standalone classic additions from verified high-speed Archive.org storage nodes
-        val standaloneAdditions = listOf(
-            Video(
-                id = "ia_pramlee_ali-baba-bujang-lapok",
-                title = "Ali Baba Bujang Lapok (1961)",
-                thumbnailUrl = PRAMLEE_POSTERS["ali-baba-bujang-lapok"] ?: "https://image.tmdb.org/t/p/w500/dYSuQvfc9RDzzvtvj3iIVditp9e.jpg",
-                backdropUrl = PRAMLEE_POSTERS["ali-baba-bujang-lapok"] ?: "https://image.tmdb.org/t/p/w500/dYSuQvfc9RDzzvtvj3iIVditp9e.jpg",
-                videoUrl = "https://dn600309.us.archive.org/0/items/p.-ramlee-ali-baba-bujang-lapok/P.%20Ramlee%20-%20Ali%20Baba%20Bujang%20Lapok.mp4",
-                duration = "122 min",
-                views = "Classic",
-                date = "1961",
-                quality = "HD",
-                description = PRAMLEE_DESCRIPTIONS["ali-baba-bujang-lapok"] ?: "",
-                actresses = listOf("Tan Sri P. Ramlee"),
-                servers = listOf(
-                    VideoServer(name = "Archive.org HD (Fast Direct)", url = "https://dn600309.us.archive.org/0/items/p.-ramlee-ali-baba-bujang-lapok/P.%20Ramlee%20-%20Ali%20Baba%20Bujang%20Lapok.mp4"),
-                    VideoServer(name = "Archive.org HD (Mirror)", url = "https://archive.org/download/p.-ramlee-ali-baba-bujang-lapok/P.%20Ramlee%20-%20Ali%20Baba%20Bujang%20Lapok.mp4")
-                )
-            ),
-            Video(
-                id = "ia_pramlee_nujum-pak-belalang",
-                title = "Nujum Pak Belalang (1959)",
-                thumbnailUrl = PRAMLEE_POSTERS["nujum-pak-belalang"] ?: "https://image.tmdb.org/t/p/w500/rcwroUjJfTDFVMrX8DRXB6kuuKJ.jpg",
-                backdropUrl = PRAMLEE_POSTERS["nujum-pak-belalang"] ?: "https://image.tmdb.org/t/p/w500/rcwroUjJfTDFVMrX8DRXB6kuuKJ.jpg",
-                videoUrl = "https://dn601208.us.archive.org/0/items/p-ramlee-nujum-pak-belalang-hd-quality-1/P%20Ramlee%20Nujum%20Pak%20Belalang%20HD%20Quality%20%281%29.mp4",
-                duration = "111 min",
-                views = "Classic",
-                date = "1959",
-                quality = "HD",
-                description = PRAMLEE_DESCRIPTIONS["nujum-pak-belalang"] ?: "",
-                actresses = listOf("Tan Sri P. Ramlee"),
-                servers = listOf(
-                    VideoServer(name = "Archive.org HD (Fast Direct)", url = "https://dn601208.us.archive.org/0/items/p-ramlee-nujum-pak-belalang-hd-quality-1/P%20Ramlee%20Nujum%20Pak%20Belalang%20HD%20Quality%20%281%29.mp4"),
-                    VideoServer(name = "Archive.org HD (Mirror)", url = "https://archive.org/download/p-ramlee-nujum-pak-belalang-hd-quality-1/P%20Ramlee%20Nujum%20Pak%20Belalang%20HD%20Quality%20%281%29.mp4")
-                )
-            ),
-            Video(
-                id = "ia_pramlee_sumpah-orang-minyak",
-                title = "Sumpah Orang Minyak (1958)",
-                thumbnailUrl = PRAMLEE_POSTERS["sumpah-orang-minyak"] ?: "https://image.tmdb.org/t/p/w500/wvrMRUoR6X2AKD9LBZTQGryx6Nc.jpg",
-                backdropUrl = PRAMLEE_POSTERS["sumpah-orang-minyak"] ?: "https://image.tmdb.org/t/p/w500/wvrMRUoR6X2AKD9LBZTQGryx6Nc.jpg",
-                videoUrl = "https://dn601208.us.archive.org/0/items/p-ramlee-nujum-pak-belalang-hd-quality-1/Sumpah%20Orang%20Minyak%20HD%20-%20Pramlee%20%28versi%20warna%29%20FULL.mp4",
-                duration = "84 min",
-                views = "Classic",
-                date = "1958",
-                quality = "720p",
-                description = PRAMLEE_DESCRIPTIONS["sumpah-orang-minyak"] ?: "",
-                actresses = listOf("Tan Sri P. Ramlee"),
-                servers = listOf(
-                    VideoServer(name = "Archive.org HD (Fast Direct)", url = "https://dn601208.us.archive.org/0/items/p-ramlee-nujum-pak-belalang-hd-quality-1/Sumpah%20Orang%20Minyak%20HD%20-%20Pramlee%20%28versi%20warna%29%20FULL.mp4"),
-                    VideoServer(name = "Archive.org HD (Mirror)", url = "https://archive.org/download/p-ramlee-nujum-pak-belalang-hd-quality-1/Sumpah%20Orang%20Minyak%20HD%20-%20Pramlee%20%28versi%20warna%29%20FULL.mp4")
-                )
-            ),
-            Video(
-                id = "ia_pramlee_tiga-abdul",
-                title = "Tiga Abdul (1964)",
-                thumbnailUrl = PRAMLEE_POSTERS["tiga-abdul"] ?: "https://image.tmdb.org/t/p/w500/8X9YyahJBDBQ3wjTEN6HubQN6Cg.jpg",
-                backdropUrl = PRAMLEE_POSTERS["tiga-abdul"] ?: "https://image.tmdb.org/t/p/w500/8X9YyahJBDBQ3wjTEN6HubQN6Cg.jpg",
-                videoUrl = "https://dn600305.us.archive.org/0/items/TigaAbdul1964HQFullMovie/Tiga%20Abdul%20%281964%29%20HQ%20%28Full%20Movie%29.mp4",
-                duration = "113 min",
-                views = "Classic",
-                date = "1964",
-                quality = "HD",
-                description = PRAMLEE_DESCRIPTIONS["tiga-abdul"] ?: "",
-                actresses = listOf("Tan Sri P. Ramlee"),
-                servers = listOf(
-                    VideoServer(name = "Archive.org HD (Fast Direct)", url = "https://dn600305.us.archive.org/0/items/TigaAbdul1964HQFullMovie/Tiga%20Abdul%20%281964%29%20HQ%20%28Full%20Movie%29.mp4"),
-                    VideoServer(name = "Archive.org HD (Mirror)", url = "https://archive.org/download/TigaAbdul1964HQFullMovie/Tiga%20Abdul%20%281964%29%20HQ%20%28Full%20Movie%29.mp4")
-                )
-            ),
-            Video(
-                id = "ia_pramlee_seniman-bujang-lapok",
-                title = "Seniman Bujang Lapok (1961)",
-                thumbnailUrl = PRAMLEE_POSTERS["seniman-bujang-lapok"] ?: "https://img.youtube.com/vi/VwVq6IurDYg/hqdefault.jpg",
-                backdropUrl = "https://img.youtube.com/vi/VwVq6IurDYg/hqdefault.jpg",
-                videoUrl = "https://dn600305.us.archive.org/0/items/p-ramlee-seniman-bujang-lapok-full-movie-warna/P%20Ramlee%20-%20Seniman%20Bujang%20Lapok%20%5BFull%20movie%20warna%5D.mp4",
-                duration = "120 min",
-                views = "Classic",
-                date = "1961",
-                quality = "HD",
-                description = PRAMLEE_DESCRIPTIONS["seniman-bujang-lapok"] ?: "",
-                actresses = listOf("Tan Sri P. Ramlee", "Saloma", "Aziz Sattar", "S. Shamsuddin"),
-                servers = listOf(
-                    VideoServer(name = "Archive.org HD (Warna)", url = "https://dn600305.us.archive.org/0/items/p-ramlee-seniman-bujang-lapok-full-movie-warna/P%20Ramlee%20-%20Seniman%20Bujang%20Lapok%20%5BFull%20movie%20warna%5D.mp4"),
-                    VideoServer(name = "Archive.org HD (Hitam Putih)", url = "https://archive.org/download/p.ramleesenimanbujanglapok1961/P.%20Ramlee%20-%20Seniman%20Bujang%20Lapok%20%281961%29.mp4"),
-                    VideoServer(name = "YouTube HD (Full Movie)", url = "https://www.youtube-nocookie.com/embed/VwVq6IurDYg?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0")
-                )
-            ),
-            Video(
-                id = "ia_pramlee_pendekar-bujang-lapok",
-                title = "Pendekar Bujang Lapok (1959)",
-                thumbnailUrl = PRAMLEE_POSTERS["pendekar-bujang-lapok"] ?: "https://img.youtube.com/vi/1Cij_LQNVHU/hqdefault.jpg",
-                backdropUrl = "https://img.youtube.com/vi/1Cij_LQNVHU/hqdefault.jpg",
-                videoUrl = "https://ia800602.us.archive.org/17/items/pendekar-bujang-lapok-1959/Pendekar_Bujang_Lapok_IA.mp4",
-                duration = "104 min",
-                views = "Classic",
-                date = "1959",
-                quality = "720p",
-                description = PRAMLEE_DESCRIPTIONS["pendekar-bujang-lapok"] ?: "",
-                actresses = listOf("Tan Sri P. Ramlee", "Aziz Sattar", "S. Shamsuddin", "Roseyatimah"),
-                servers = listOf(
-                    VideoServer(name = "Archive.org 720p (Direct HD)", url = "https://ia800602.us.archive.org/17/items/pendekar-bujang-lapok-1959/Pendekar_Bujang_Lapok_IA.mp4"),
-                    VideoServer(name = "Archive.org 720p (Mirror)", url = "https://archive.org/download/pendekar-bujang-lapok-1959/Pendekar_Bujang_Lapok_IA.mp4"),
-                    VideoServer(name = "YouTube HD (Full Movie)", url = "https://www.youtube-nocookie.com/embed/1Cij_LQNVHU?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0"),
-                    VideoServer(name = "Dailymotion HD (Mirror)", url = "https://www.dailymotion.com/embed/video/x9yfnd2?autoplay=1&mute=0&ui-logo=0&sharing-enable=0&ui-start-screen-info=0")
-                )
-            ),
-            Video(
-                id = "ia_pramlee_madu-tiga",
-                title = "Madu Tiga (1964)",
-                thumbnailUrl = PRAMLEE_POSTERS["madu-tiga"] ?: "https://img.youtube.com/vi/ZCfv21EfdzA/hqdefault.jpg",
-                backdropUrl = "https://img.youtube.com/vi/ZCfv21EfdzA/hqdefault.jpg",
-                videoUrl = "https://www.youtube-nocookie.com/embed/ZCfv21EfdzA?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0",
-                duration = "100 min",
-                views = "Classic",
-                date = "1964",
-                quality = "HD",
-                description = PRAMLEE_DESCRIPTIONS["madu-tiga"] ?: "",
-                actresses = listOf("Tan Sri P. Ramlee", "Sarimah", "Jah Mahadi", "Zara Agus"),
-                servers = listOf(
-                    VideoServer(name = "YouTube HD (HQ EngSub)", url = "https://www.youtube-nocookie.com/embed/ZCfv21EfdzA?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0"),
-                    VideoServer(name = "YouTube HD (Versi Warna)", url = "https://www.youtube-nocookie.com/embed/GlcNq7BsCKo?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0"),
-                    VideoServer(name = "YouTube HD (Mirror)", url = "https://www.youtube-nocookie.com/embed/WJ2ieFBb_jc?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0")
-                )
-            ),
-            Video(
-                id = "ia_pramlee_ibu-mertua-ku",
-                title = "Ibu Mertua-ku (1962)",
-                thumbnailUrl = PRAMLEE_POSTERS["ibu-mertua-ku"] ?: "https://img.youtube.com/vi/u2CEfblj-cU/hqdefault.jpg",
-                backdropUrl = "https://img.youtube.com/vi/u2CEfblj-cU/hqdefault.jpg",
-                videoUrl = "https://www.youtube-nocookie.com/embed/u2CEfblj-cU?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0",
-                duration = "115 min",
-                views = "Classic",
-                date = "1962",
-                quality = "HD",
-                description = PRAMLEE_DESCRIPTIONS["ibu-mertua-ku"] ?: "",
-                actresses = listOf("Tan Sri P. Ramlee", "Sarimah", "Mak Dara", "Ahmad Mahmud"),
-                servers = listOf(
-                    VideoServer(name = "YouTube HD (Full Movie)", url = "https://www.youtube-nocookie.com/embed/u2CEfblj-cU?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0"),
-                    VideoServer(name = "YouTube HD (Versi Warna)", url = "https://www.youtube-nocookie.com/embed/RgVDH45tR5A?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0"),
-                    VideoServer(name = "YouTube HD (Mirror)", url = "https://www.youtube-nocookie.com/embed/0egZjfVfkbw?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0")
-                )
-            ),
-            Video(
-                id = "ia_pramlee_anak-ku-sazali",
-                title = "Anak-ku Sazali (1956)",
-                thumbnailUrl = PRAMLEE_POSTERS["anak-ku-sazali"] ?: "https://img.youtube.com/vi/UTBXVBG7fqs/hqdefault.jpg",
-                backdropUrl = "https://img.youtube.com/vi/UTBXVBG7fqs/hqdefault.jpg",
-                videoUrl = "https://www.youtube-nocookie.com/embed/UTBXVBG7fqs?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0",
-                duration = "108 min",
-                views = "Classic",
-                date = "1956",
-                quality = "HD",
-                description = PRAMLEE_DESCRIPTIONS["anak-ku-sazali"] ?: "",
-                actresses = listOf("Tan Sri P. Ramlee", "Zaiton", "Rosnani Jamil"),
-                servers = listOf(
-                    VideoServer(name = "YouTube HD (Full Movie)", url = "https://www.youtube-nocookie.com/embed/UTBXVBG7fqs?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0"),
-                    VideoServer(name = "YouTube 720p (Versi Warna)", url = "https://www.youtube-nocookie.com/embed/eeneWfOQnvk?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0"),
-                    VideoServer(name = "YouTube HD (Mirror)", url = "https://www.youtube-nocookie.com/embed/ZzFeVkmOTEM?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0")
-                )
-            ),
-            Video(
-                id = "ia_pramlee_antara-dua-darjat",
-                title = "Antara Dua Darjat (1960)",
-                thumbnailUrl = PRAMLEE_POSTERS["antara-dua-darjat"] ?: "https://img.youtube.com/vi/_tdHjooqbAk/hqdefault.jpg",
-                backdropUrl = "https://img.youtube.com/vi/_tdHjooqbAk/hqdefault.jpg",
-                videoUrl = "https://www.youtube-nocookie.com/embed/_tdHjooqbAk?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0",
-                duration = "110 min",
-                views = "Classic",
-                date = "1960",
-                quality = "HD",
-                description = PRAMLEE_DESCRIPTIONS["antara-dua-darjat"] ?: "",
-                actresses = listOf("Tan Sri P. Ramlee", "Saadiah", "S. Kadarisman"),
-                servers = listOf(
-                    VideoServer(name = "YouTube HD (Full Movie EngSub)", url = "https://www.youtube-nocookie.com/embed/_tdHjooqbAk?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0"),
-                    VideoServer(name = "YouTube HD (Versi Warna)", url = "https://www.youtube-nocookie.com/embed/kkyS0NqQPuY?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0"),
-                    VideoServer(name = "YouTube HD (Mirror)", url = "https://www.youtube-nocookie.com/embed/YdUqkI-QCXI?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0")
-                )
-            ),
-            Video(
-                id = "ia_pramlee_sarjan-hassan",
-                title = "Sarjan Hassan (1958)",
-                thumbnailUrl = PRAMLEE_POSTERS["sarjan-hassan"] ?: "https://img.youtube.com/vi/syqvPWymshg/hqdefault.jpg",
-                backdropUrl = "https://img.youtube.com/vi/syqvPWymshg/maxresdefault.jpg",
-                videoUrl = "https://www.youtube-nocookie.com/embed/syqvPWymshg?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0",
-                duration = "109 min",
-                views = "Classic",
-                date = "1958",
-                quality = "HD",
-                description = PRAMLEE_DESCRIPTIONS["sarjan-hassan"] ?: "",
-                actresses = listOf("Tan Sri P. Ramlee", "Jins Shamsuddin", "Saadiah"),
-                servers = listOf(
-                    VideoServer(name = "YouTube HD (Full Movie)", url = "https://www.youtube-nocookie.com/embed/syqvPWymshg?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0"),
-                    VideoServer(name = "YouTube HD (Versi Klasik)", url = "https://www.youtube-nocookie.com/embed/GyOhIB-JJqI?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0"),
-                    VideoServer(name = "Dailymotion HD (Full Movie)", url = "https://www.dailymotion.com/embed/video/x9p5kmy?autoplay=1")
-                )
-            ),
-            Video(
-                id = "ia_pramlee_penarek-becha",
-                title = "Penarek Becha (1955)",
-                thumbnailUrl = PRAMLEE_POSTERS["penarek-becha"] ?: "https://img.youtube.com/vi/TNcleBetr70/hqdefault.jpg",
-                backdropUrl = "https://img.youtube.com/vi/TNcleBetr70/hqdefault.jpg",
-                videoUrl = "https://www.youtube-nocookie.com/embed/TNcleBetr70?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0",
-                duration = "110 min",
-                views = "Classic",
-                date = "1955",
-                quality = "HD",
-                description = PRAMLEE_DESCRIPTIONS["penarek-becha"] ?: "",
-                actresses = listOf("Tan Sri P. Ramlee", "Saadiah", "Udo Omar"),
-                servers = listOf(
-                    VideoServer(name = "YouTube HD (Full Movie)", url = "https://www.youtube-nocookie.com/embed/TNcleBetr70?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0"),
-                    VideoServer(name = "YouTube HD (Mirror 1)", url = "https://www.youtube-nocookie.com/embed/hBpXmsQ1anQ?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0"),
-                    VideoServer(name = "YouTube HD (Mirror 2)", url = "https://www.youtube-nocookie.com/embed/6QpUf15uVBo?autoplay=1&controls=0&playsinline=1&enablejsapi=1&rel=0&iv_load_policy=3&fs=0")
-                )
-            )
-        )
-
-        try {
-            val metadataUrl = "https://archive.org/metadata/FilemP.ramlee"
-            val request = Request.Builder()
-                .url(metadataUrl)
-                .header("User-Agent", USER_AGENT)
-                .header("Accept", "application/json")
-                .build()
-            val jsonStr = try {
-                NetworkConfig.okHttpClient.newCall(request).execute().use { resp ->
-                    if (resp.isSuccessful) resp.body?.string() else null
-                }
-            } catch (e: Exception) {
-                Log.w(TAG, "Archive.org metadata fetch failed: ${e.message}")
-                null
-            } ?: return@withContext archivePramleeCache ?: standaloneAdditions
-            val jsonObj = org.json.JSONObject(jsonStr)
-            val filesArray = jsonObj.optJSONArray("files") ?: return@withContext archivePramleeCache ?: standaloneAdditions
-            val storageServer = jsonObj.optString("server", "dn600308.us.archive.org").ifEmpty { "dn600308.us.archive.org" }
-            val storageDir = jsonObj.optString("dir", "/0/items/FilemP.ramlee").ifEmpty { "/0/items/FilemP.ramlee" }
-            val fastBase = "https://$storageServer$storageDir"
-
-            val allFileNames = mutableSetOf<String>()
-            val thumbMap = mutableMapOf<String, MutableList<String>>()
-
-            for (i in 0 until filesArray.length()) {
-                val fObj = filesArray.optJSONObject(i) ?: continue
-                val name = fObj.optString("name", "")
-                if (name.isNotEmpty()) {
-                    allFileNames.add(name)
-                    if (name.contains("thumbs/") && name.endsWith(".jpg", ignoreCase = true)) {
-                        val base = name.substringAfterLast('/').substringBeforeLast('_')
-                        thumbMap.getOrPut(base) { mutableListOf() }.add(name)
-                    }
-                }
-            }
-
-            val bestThumb = mutableMapOf<String, String>()
-            for ((base, list) in thumbMap) {
-                if (list.isNotEmpty()) {
-                    bestThumb[base] = list[list.size / 2]
-                }
-            }
-
-            val movies = mutableListOf<Video>()
-            val seenTitles = mutableSetOf<String>()
-
-            for (i in 0 until filesArray.length()) {
-                val fObj = filesArray.optJSONObject(i) ?: continue
-                val rawName = fObj.optString("name", "")
-                if (!rawName.endsWith(".mp4", ignoreCase = true) && !rawName.endsWith(".mkv", ignoreCase = true)) {
-                    continue
-                }
-                // Skip .ia.mp4 derivatives if primary MP4 or MKV exists
-                if (rawName.endsWith(".ia.mp4", ignoreCase = true)) {
-                    val baseMp4 = rawName.replace(".ia.mp4", ".mp4", ignoreCase = true)
-                    val baseUnderscore = rawName.replace(".", "_").replace("_ia_mp4", ".mp4", ignoreCase = true)
-                    if (allFileNames.contains(baseMp4) || allFileNames.contains(baseUnderscore) || allFileNames.contains("Do_Re_Mi_1966.720p.LEGENDTV.mp4")) continue
-                }
-
-                val baseNoExt = rawName.substringBeforeLast('.')
-                val spaceSeparated = baseNoExt.replace('_', ' ').replace('.', ' ')
-                
-                // Release Year
-                val yearMatch = Regex("""\b(19\d{2})\b""").find(spaceSeparated)
-                val year = yearMatch?.groupValues?.get(1) ?: ""
-
-                // Quality
-                val qual = when {
-                    rawName.contains("1080p", ignoreCase = true) -> "1080p"
-                    rawName.contains("720p", ignoreCase = true) -> "720p"
-                    rawName.contains("576p", ignoreCase = true) -> "576p"
-                    else -> "HD"
-                }
-
-                // Duration
-                val lengthSec = fObj.optString("length", "")
-                val duration = if (lengthSec.isNotEmpty()) {
-                    val sec = lengthSec.toDoubleOrNull()?.toInt() ?: 0
-                    if (sec > 0) "${sec / 60} min" else "90 min"
-                } else "90 min"
-
-                // Clean Title
-                var clean = spaceSeparated.replace(Regex("(?i)\\b(?:720p|1080p|576p|legendtv|versi\\s*warna|ia|mp4|mkv)\\b"), "")
-                if (year.isNotEmpty()) {
-                    clean = clean.replace(year, "")
-                }
-                clean = clean.replace("(", "").replace(")", "").replace(Regex("""\s+"""), " ").trim()
-                val fullTitle = if (year.isNotEmpty()) "$clean ($year)" else clean
-
-                val normForDedup = clean.lowercase().replace("kaseh", "kasih").replace(Regex("[^a-z0-9]"), "")
-                if (normForDedup.isEmpty() || !seenTitles.add(normForDedup)) {
-                    continue
-                }
-
-                val slug = clean.lowercase().replace(Regex("[^a-z0-9]+"), "-").trim('-')
-                val videoId = "ia_pramlee_$slug"
-
-                // Thumbnail, Poster & Video URLs
-                val tFile = bestThumb[baseNoExt] ?: ""
-                val archiveThumb = if (tFile.isNotEmpty()) "https://archive.org/download/FilemP.ramlee/$tFile" else ""
-                val posterUrl = PRAMLEE_POSTERS[slug] 
-                    ?: PRAMLEE_POSTERS[slug.replace("-", "")] 
-                    ?: PRAMLEE_POSTERS[normForDedup] 
-                    ?: archiveThumb
-                val backdropUrl = posterUrl
-                val fastVideoUrl = "$fastBase/$rawName"
-                val fallbackVideoUrl = "https://archive.org/download/FilemP.ramlee/$rawName"
-                val description = PRAMLEE_DESCRIPTIONS[slug] 
-                    ?: PRAMLEE_DESCRIPTIONS[slug.replace("-", "")] 
-                    ?: PRAMLEE_DESCRIPTIONS[normForDedup]
-                    ?: "Koleksi Filem Klasik Tan Sri P. Ramlee dari Arkib Filem (Shaw Brothers / Studio Merdeka). Dihoskan di Internet Archive."
-
-                val movie = Video(
-                    id = videoId,
-                    title = fullTitle,
-                    thumbnailUrl = posterUrl,
-                    backdropUrl = backdropUrl,
-                    videoUrl = fastVideoUrl,
-                    duration = duration,
-                    views = "Classic",
-                    date = year,
-                    quality = qual,
-                    description = description,
-                    actresses = listOf("Tan Sri P. Ramlee"),
-                    servers = listOf(
-                        VideoServer(name = "Archive.org HD (Fast Direct)", url = fastVideoUrl),
-                        VideoServer(name = "Archive.org HD (Mirror)", url = fallbackVideoUrl)
-                    )
-                )
-                movies.add(movie)
-            }
-
-            for (addition in standaloneAdditions) {
-                val norm = normalizeForDedup(addition.title, includeYear = false)
-                if (seenTitles.add(norm)) {
-                    movies.add(addition)
-                }
-            }
-
-            val sorted = movies.sortedBy { it.title }
-            synchronized(archivePramleeLock) {
-                archivePramleeCache = sorted
-            }
-            Log.i(TAG, "Loaded ${sorted.size} P. Ramlee classic movies from archive.org")
-            sorted
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to load P. Ramlee archive: ${e.message}", e)
-            archivePramleeCache ?: standaloneAdditions
-        }
-    }
 
     fun encodeQuery(query: String): String =
         try {
@@ -4926,7 +4399,7 @@ object VideoExtractor {
         val lenDiff = Math.abs(cleanTitleText.length - cleanQ.length)
         score += Math.max(0, 300 - lenDiff * 4)
 
-        // Source priority boost for primary catalog (DutaMovie / PencuriMovie / KepalaBergetar / P.Ramlee)
+        // Source priority boost for primary catalog (DutaMovie / PencuriMovie / KepalaBergetar)
         val isExternal = video.id.startsWith("yt_") || video.id.startsWith("bili_") || video.id.startsWith("dm_")
         if (!isExternal) {
             score += 500
@@ -5123,18 +4596,6 @@ object VideoExtractor {
                 return@withContext filterAndSortByRelevance(merged.distinctBy { it.id }, query).take(count)
             }
 
-            if (categoryPath.contains("p-ramlee", ignoreCase = true) || categoryPath.contains("FilemP.ramlee", ignoreCase = true)) {
-                val all = fetchArchivePramleeVideos()
-                val qNorm = query.lowercase().replace("lapuk", "lapok").replace("kaseh", "kasih")
-                val matched = all.filter { 
-                    val tNorm = it.title.lowercase().replace("lapuk", "lapok").replace("kaseh", "kasih")
-                    tNorm.contains(qNorm) || it.title.contains(query, ignoreCase = true)
-                }
-                val start = (page - 1) * count
-                if (start >= matched.size) return@withContext emptyList()
-                return@withContext filterAndSortByRelevance(matched.drop(start).take(count), query)
-            }
-
             val results = mutableListOf<Video>()
             val seenIds = mutableSetOf<String>()
             var currentPage = page
@@ -5166,21 +4627,12 @@ object VideoExtractor {
         }
 
         // GLOBAL SEARCH: Concurrently query all platforms simultaneously:
-        // PencuriMovie, Bullerswood (LK21), DutaFilm Web (df31.mantab.men), Primary Cluster Mirrors (27 sites), KepalaBergetar, P.Ramlee Archive, YouTube, Bilibili, and Dailymotion
+        // PencuriMovie, Bullerswood (LK21), DutaFilm Web (df31.mantab.men), Primary Cluster Mirrors (27 sites), KepalaBergetar, YouTube, Bilibili, and Dailymotion
         val pencuriDeferred = async { searchDomain(getPencuriBaseUrl(), query, page, count) }
         val bullerswoodDeferred = async { searchBullerswood(query, page, count) }
         val dutaWebDeferred = async { searchDutaFilmWeb(query, page, count) }
         val clusterDeferred = async { searchClusterMirrors(query, page, count) }
         val kepalaDeferred = async { searchKepalaBergetar(query, page, count) }
-        val pramleeDeferred = async {
-            try {
-                val qNorm = query.lowercase().replace("lapuk", "lapok").replace("kaseh", "kasih")
-                fetchArchivePramleeVideos().filter { 
-                    val tNorm = it.title.lowercase().replace("lapuk", "lapok").replace("kaseh", "kasih")
-                    tNorm.contains(qNorm) || it.title.contains(query, ignoreCase = true)
-                }
-            } catch (_: Exception) { emptyList() }
-        }
         val ytDeferred = async { if (page == 1) searchYouTubeAsVideos(query) else emptyList() }
         val biliDeferred = async { if (page == 1) searchBilibiliAsVideos(query) else emptyList() }
         val dmDeferred = async { if (page == 1) searchDailymotionAsVideos(query) else emptyList() }
@@ -5190,8 +4642,7 @@ object VideoExtractor {
         val dutaWebResults = dutaWebDeferred.await()
         val clusterResults = clusterDeferred.await()
         val kepalaResults = kepalaDeferred.await()
-        val pramleeResults = pramleeDeferred.await()
-        val ytResults = ytDeferred.await()
+                val ytResults = ytDeferred.await()
         val biliResults = biliDeferred.await()
         val dmResults = dmDeferred.await()
 
@@ -5207,9 +4658,9 @@ object VideoExtractor {
             }
         }
 
-        Log.i(TAG, "Simultaneous search completed: Pencuri=${pencuriResults.size}, Bullerswood=${bullerswoodResults.size}, DutaWeb=${dutaWebResults.size}, Cluster=${clusterResults.size}, Kepala=${kepalaResults.size}, PRamlee=${pramleeResults.size}, YT=${ytResults.size}, Bili=${biliResults.size}, DM=${dmResults.size}")
+        Log.i(TAG, "Simultaneous search completed: Pencuri=${pencuriResults.size}, Bullerswood=${bullerswoodResults.size}, DutaWeb=${dutaWebResults.size}, Cluster=${clusterResults.size}, Kepala=${kepalaResults.size}, YT=${ytResults.size}, Bili=${biliResults.size}, DM=${dmResults.size}")
 
-        val allMerged = (pencuriResults + bullerswoodResults + dutaWebResults + clusterResults + kepalaResults + pramleeResults + ytResults + biliResults + dmResults)
+        val allMerged = (pencuriResults + bullerswoodResults + dutaWebResults + clusterResults + kepalaResults + ytResults + biliResults + dmResults)
             .distinctBy { it.id }
 
         val relevantResults = filterAndSortByRelevance(allMerged, query)
@@ -5416,9 +4867,6 @@ object VideoExtractor {
         if (sortedResults.none { (it["path"] ?: "").contains("country/malaysia", ignoreCase = true) }) {
             sortedResults.add(mapOf("name" to "Malaysia", "path" to "/country/malaysia/"))
         }
-        if (sortedResults.none { (it["path"] ?: "").contains("p-ramlee", ignoreCase = true) }) {
-            sortedResults.add(mapOf("name" to "P.Ramlee", "path" to "/category/p-ramlee/"))
-        }
         
         // Final fallback if nothing found (safety net)
         if (sortedResults.isEmpty()) {
@@ -5442,7 +4890,6 @@ object VideoExtractor {
                 mapOf("name" to "Korea", "path" to "/country/korea/"),
                 mapOf("name" to "Thailand", "path" to "/country/thailand/"),
                 mapOf("name" to "Vietnam", "path" to "/country/vietnam/"),
-                mapOf("name" to "P.Ramlee", "path" to "/category/p-ramlee/")
             )
         }
 
@@ -6591,24 +6038,6 @@ object VideoExtractor {
     }
 
     suspend fun fetchVideoDetails(videoUrl: String, referer: String? = null, isRecursive: Boolean = false): Video? = withContext(Dispatchers.IO) {
-        if (videoUrl.contains("archive.org") || videoUrl.startsWith("ia_pramlee")) {
-            val cached = archivePramleeCache?.find { 
-                it.videoUrl == videoUrl || 
-                it.id == videoUrl ||
-                (videoUrl.contains('/') && it.videoUrl.contains(videoUrl.substringAfterLast('/'))) ||
-                it.servers.any { s -> s.url == videoUrl }
-            }
-            if (cached != null) return@withContext cached
-
-            val all = fetchArchivePramleeVideos()
-            val found = all.find { 
-                it.videoUrl == videoUrl || 
-                it.id == videoUrl ||
-                (videoUrl.contains('/') && it.videoUrl.contains(videoUrl.substringAfterLast('/'))) ||
-                it.servers.any { s -> s.url == videoUrl }
-            }
-            if (found != null) return@withContext found
-        }
 
         var effectiveUrl = migrateUrlToBase(videoUrl)
         var html = fetchHtml(effectiveUrl, referer)
@@ -6940,26 +6369,9 @@ object VideoExtractor {
      * Prevents archive.org from 302-redirecting requests to slow edge caches (e.g. Canadian proxy at 19 KB/s),
      * ensuring immediate fast download at 350-450+ KB/s.
      */
-    fun optimizeArchiveUrl(url: String): String {
-        if (!url.contains("archive.org/download/")) return url
-        return when {
-            url.contains("p.-ramlee-ali-baba-bujang-lapok") ->
-                url.replace("archive.org/download/p.-ramlee-ali-baba-bujang-lapok", "dn600309.us.archive.org/0/items/p.-ramlee-ali-baba-bujang-lapok")
-            url.contains("p-ramlee-nujum-pak-belalang-hd-quality-1") ->
-                url.replace("archive.org/download/p-ramlee-nujum-pak-belalang-hd-quality-1", "dn601208.us.archive.org/0/items/p-ramlee-nujum-pak-belalang-hd-quality-1")
-            url.contains("TigaAbdul1964HQFullMovie") ->
-                url.replace("archive.org/download/TigaAbdul1964HQFullMovie", "dn600305.us.archive.org/0/items/TigaAbdul1964HQFullMovie")
-            url.contains("p-ramlee-seniman-bujang-lapok-full-movie-warna") ->
-                url.replace("archive.org/download/p-ramlee-seniman-bujang-lapok-full-movie-warna", "dn600305.us.archive.org/0/items/p-ramlee-seniman-bujang-lapok-full-movie-warna")
-            url.contains("pendekar-bujang-lapok-1959") ->
-                url.replace("archive.org/download/pendekar-bujang-lapok-1959", "ia800602.us.archive.org/17/items/pendekar-bujang-lapok-1959")
-            url.contains("p.ramleesenimanbujanglapok1961") ->
-                url.replace("archive.org/download/p.ramleesenimanbujanglapok1961", "dn711000.ca.archive.org/0/items/p.ramleesenimanbujanglapok1961")
-            url.contains("FilemP.ramlee") ->
-                url.replace("archive.org/download/FilemP.ramlee", "dn600308.us.archive.org/0/items/FilemP.ramlee")
-            else -> url
-        }
-    }
+    fun optimizeArchiveUrl(url: String): String = url
+
+
 
     fun getProviderPriority(name: String, url: String? = null): Int {
         val lowName = name.lowercase()

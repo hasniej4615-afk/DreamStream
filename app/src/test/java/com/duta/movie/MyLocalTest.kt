@@ -142,7 +142,6 @@ class MyLocalTest {
         assertEquals(VideoViewModel.CategoryGroup.CORE, VideoViewModel.getCategoryGroup("/box-office/", "Box-Office"))
 
         assertEquals(VideoViewModel.CategoryGroup.REGIONAL, VideoViewModel.getCategoryGroup("/country/malaysia/", "Malaysia"))
-        assertEquals(VideoViewModel.CategoryGroup.REGIONAL, VideoViewModel.getCategoryGroup("/category/p-ramlee/", "P.Ramlee"))
         assertEquals(VideoViewModel.CategoryGroup.REGIONAL, VideoViewModel.getCategoryGroup("/country/viet-nam/", "Viet Nam"))
         assertEquals(VideoViewModel.CategoryGroup.REGIONAL, VideoViewModel.getCategoryGroup("/country/japan/", "Japan"))
 
@@ -663,14 +662,8 @@ class MyLocalTest {
             assertTrue("DutaMovie21 (.cam) should return results", dmCamResults.isNotEmpty())
             println("       Sample: ${dmCamResults.first().title} -> ${dmCamResults.first().videoUrl}")
 
-            // 6. Internet Archive P. Ramlee
-            val pramleeResults = VideoExtractor.fetchArchivePramleeVideos()
-            println("[6/6] Internet Archive (P. Ramlee): Fetched ${pramleeResults.size} titles")
-            assertTrue("P. Ramlee archive should return titles", pramleeResults.isNotEmpty())
-            println("      Sample: ${pramleeResults.first().title}")
-
             println("==========================================")
-            println(" ALL 6 REPOSITORY PROVIDERS ARE FULLY FUNCTIONAL!")
+            println(" ALL 5 REPOSITORY PROVIDERS ARE FULLY FUNCTIONAL!")
             println("==========================================\n")
         }
     }

@@ -35,8 +35,7 @@ enum class SearchFilter(val label: String) {
     ALL("All"),
     MOVIES("Movies"),
     SERIES("Series"),
-    MALAY("Malay"),
-    PRAMLEE("P. Ramlee")
+    MALAY("Malay")
 }
 
 enum class SearchSort(val label: String) {
@@ -548,7 +547,6 @@ class VideoViewModel @Inject constructor(
 
         val CURATED_REGIONAL_ORDER = listOf(
             "/country/malaysia/",
-            "/category/p-ramlee/",
             "/country/vietnam/",
             "/country/indonesia/",
             "/source/bullerswood/",
@@ -604,8 +602,8 @@ class VideoViewModel @Inject constructor(
                 normPath == "/" || lowPath.contains("/movie") || lowPath.contains("/series") || lowPath.contains("/serial-tv") || lowPath.contains("/tv") || lowPath.contains("box-office") || lowPath.contains("top-imdb") || lowPath.contains("most-viewed") ||
                 lowName in listOf("newly updated", "movies", "movie", "tv series", "serial tv", "series", "box-office", "top imdb", "most viewed") -> CategoryGroup.CORE
 
-                lowPath.startsWith("/country/") || lowPath.contains("p-ramlee") || lowPath.contains("bullerswood") || lowPath.contains("lk21") || lowPath.contains("dutafilm") ||
-                lowName in listOf("malaysia", "p.ramlee", "viet nam", "vietnam", "indonesia", "indonesian", "lk21", "layarkaca21", "bullerswood", "dutafilm", "korea", "south korea", "thailand", "japan", "china", "hong kong", "india", "usa", "united states", "united kingdom", "uk", "australia", "canada", "france", "germany", "italy", "philippines", "spain", "taiwan", "russia", "netherlands") -> CategoryGroup.REGIONAL
+                lowPath.startsWith("/country/") || lowPath.contains("bullerswood") || lowPath.contains("lk21") || lowPath.contains("dutafilm") ||
+                lowName in listOf("malaysia", "viet nam", "vietnam", "indonesia", "indonesian", "lk21", "layarkaca21", "bullerswood", "dutafilm", "korea", "south korea", "thailand", "japan", "china", "hong kong", "india", "usa", "united states", "united kingdom", "uk", "australia", "canada", "france", "germany", "italy", "philippines", "spain", "taiwan", "russia", "netherlands") -> CategoryGroup.REGIONAL
 
                 lowPath.startsWith("/network/") ||
                 lowName in listOf("netflix", "disney+", "disney", "apple tv+", "apple tv", "hbo", "hbo max", "amazon prime", "amazon", "paramount+", "hulu", "peacock") -> CategoryGroup.STREAMING
@@ -642,19 +640,18 @@ class VideoViewModel @Inject constructor(
                     if (idx != -1) idx else {
                         when {
                             lowName.contains("malaysia") -> 0
-                            lowName.contains("p-ramlee") || lowName.contains("p.ramlee") -> 1
-                            lowName.contains("viet") -> 2
-                            lowName.contains("indonesia") -> 3
-                            lowName.contains("lk21") || lowName.contains("layarkaca21") || normPath.contains("bullerswood") -> 4
-                            lowName.contains("dutafilm") || normPath.contains("dutafilm") -> 5
-                            lowName.contains("korea") -> 6
-                            lowName.contains("thailand") -> 7
-                            lowName.contains("japan") -> 8
-                            lowName.contains("china") -> 9
-                            lowName.contains("hong kong") -> 10
-                            lowName.contains("india") -> 11
-                            lowName.contains("usa") || lowName.contains("united states") -> 12
-                            lowName.contains("united kingdom") || lowName == "uk" -> 13
+                            lowName.contains("viet") -> 1
+                            lowName.contains("indonesia") -> 2
+                            lowName.contains("lk21") || lowName.contains("layarkaca21") || normPath.contains("bullerswood") -> 3
+                            lowName.contains("dutafilm") || normPath.contains("dutafilm") -> 4
+                            lowName.contains("korea") -> 5
+                            lowName.contains("thailand") -> 6
+                            lowName.contains("japan") -> 7
+                            lowName.contains("china") -> 8
+                            lowName.contains("hong kong") -> 9
+                            lowName.contains("india") -> 10
+                            lowName.contains("usa") || lowName.contains("united states") -> 11
+                            lowName.contains("united kingdom") || lowName == "uk" -> 12
                             else -> 500
                         }
                     }
@@ -716,10 +713,6 @@ class VideoViewModel @Inject constructor(
                     if (p.contains("country/malaysia", ignoreCase = true) || origName.equals("malaysia", ignoreCase = true)) {
                         p = "/country/malaysia/"
                         put("name", "Malaysia")
-                    }
-                    if (p.contains("p-ramlee", ignoreCase = true) || p.contains("FilemP.ramlee", ignoreCase = true) || origName.equals("p.ramlee", ignoreCase = true)) {
-                        p = "/category/p-ramlee/"
-                        put("name", "P.Ramlee")
                     }
                     if (p.contains("country/indonesia", ignoreCase = true) || p.contains("country/indonesian", ignoreCase = true) || origName.equals("indonesia", ignoreCase = true) || origName.equals("indonesian", ignoreCase = true)) {
                         p = "/country/indonesia/"
@@ -891,7 +884,6 @@ class VideoViewModel @Inject constructor(
             mapOf("name" to "Malay Subbed", "path" to "/genre/subbed/malay-subbed/"),
             mapOf("name" to "Malay Dubbed", "path" to "/genre/dubbed/malay/"),
             mapOf("name" to "Malaysia", "path" to "/country/malaysia/"),
-            mapOf("name" to "P.Ramlee", "path" to "/category/p-ramlee/"),
             mapOf("name" to "Indonesia", "path" to "/country/indonesia/"),
             mapOf("name" to "LK21", "path" to "/source/bullerswood/"),
             mapOf("name" to "DutaFilm", "path" to "/source/dutafilm/"),
@@ -1034,12 +1026,8 @@ class VideoViewModel @Inject constructor(
                 }
                 SearchFilter.MALAY -> processed.filter { 
                     it.id.startsWith("kb_") || it.id.startsWith("pm_") || it.videoUrl.contains("pencurimovie") || 
-                    it.videoUrl.contains("kepalabergetar") || it.id.startsWith("ia_pramlee") || 
+                    it.videoUrl.contains("kepalabergetar") || 
                     it.title.contains("Episod", ignoreCase = true)
-                }
-                SearchFilter.PRAMLEE -> processed.filter { 
-                    it.id.startsWith("ia_pramlee") || it.title.contains("P. Ramlee", ignoreCase = true) || 
-                    it.title.contains("P.Ramlee", ignoreCase = true) || it.title.contains("Bujang Lapok", ignoreCase = true)
                 }
             }
             when (sort) {
@@ -1324,19 +1312,16 @@ class VideoViewModel @Inject constructor(
                     val updatedCleanedTitle = VideoExtractor.cleanTitle(
                         if (cleanedTitle.length > VideoExtractor.cleanTitle(existing.title).length) cleanedTitle else existing.title
                     )
-                    val isPramlee = video.id.startsWith("ia_pramlee")
                     val cleanVideoEps = video.episodes.filter { !it.name.contains("unnamed", ignoreCase = true) }
                     val cleanExistEps = existing.episodes.filter { !it.name.contains("unnamed", ignoreCase = true) }
                     val mergedEps = if (cleanVideoEps.isNotEmpty()) cleanVideoEps else cleanExistEps
                     val resolvedThumb = when {
-                        isPramlee && video.thumbnailUrl.isNotEmpty() -> video.thumbnailUrl
                         video.thumbnailUrl.isNotEmpty() -> video.thumbnailUrl
                         existing.thumbnailUrl.isNotEmpty() -> existing.thumbnailUrl
                         video.backdropUrl.isNotEmpty() -> video.backdropUrl
                         else -> existing.backdropUrl
                     }
                     val resolvedBackdrop = when {
-                        isPramlee && video.backdropUrl.isNotEmpty() -> video.backdropUrl
                         video.backdropUrl.isNotEmpty() -> video.backdropUrl
                         existing.backdropUrl.isNotEmpty() -> existing.backdropUrl
                         resolvedThumb.isNotEmpty() -> resolvedThumb
@@ -1349,8 +1334,7 @@ class VideoViewModel @Inject constructor(
                         actressPaths = (video.actressPaths + existing.actressPaths),
                         date = video.date.ifEmpty { existing.date },
                         quality = video.quality.ifEmpty { existing.quality },
-                        description = if (isPramlee && video.description.isNotEmpty()) video.description
-                                      else if (video.description.length > existing.description.length) video.description 
+                        description = if (video.description.length > existing.description.length) video.description 
                                       else existing.description,
                         previewUrl = if (video.previewUrl.isNotEmpty()) video.previewUrl else existing.previewUrl,
                         backdropUrl = if (resolvedBackdrop.isNotEmpty()) resolvedBackdrop else resolvedThumb,
@@ -1513,15 +1497,6 @@ class VideoViewModel @Inject constructor(
                         _isDetailLoading.value = false
                         _isLoading.value = false
                         return@launch
-                    }
-                }
-
-                if (videoId.startsWith("ia_pramlee")) {
-                    val freshClassic = com.duta.movie.util.VideoExtractor.fetchArchivePramleeVideos().find { it.id == videoId }
-                    if (freshClassic != null) {
-                        _videoMetadata.value = applyMetadata(freshClassic)
-                        metadataCache[videoId] = freshClassic
-                        viewModelScope.launch { videoRepository.updateVideoInDb(freshClassic) }
                     }
                 }
 
@@ -2419,14 +2394,6 @@ class VideoViewModel @Inject constructor(
                         viewModelScope.launch(Dispatchers.IO) { videoRepository.updateVideoInDb(fresh) }
                     } else if (video == null) {
                         video = getVideo(videoId)
-                    }
-                }
-
-                if (videoId.startsWith("ia_pramlee")) {
-                    val freshClassic = com.duta.movie.util.VideoExtractor.fetchArchivePramleeVideos().find { it.id == videoId }
-                    if (freshClassic != null) {
-                        video = freshClassic
-                        metadataCache[videoId] = freshClassic
                     }
                 }
                 
@@ -3766,14 +3733,7 @@ class VideoViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 var video = _videoMetadata.value?.takeIf { it.id == effectiveVideoId } ?: getVideo(effectiveVideoId)
-                if (effectiveVideoId.startsWith("ia_pramlee")) {
-                    val freshClassic = com.duta.movie.util.VideoExtractor.fetchArchivePramleeVideos().find { it.id == effectiveVideoId }
-                    if (freshClassic != null) {
-                        video = freshClassic
-                        metadataCache[effectiveVideoId] = freshClassic
-                        withContext(Dispatchers.Main) { _videoMetadata.value = freshClassic }
-                    }
-                } else if (video == null && effectiveVideoId.isNotEmpty()) {
+                if (video == null && effectiveVideoId.isNotEmpty()) {
                     Log.i("VideoViewModel", "resolveNextServer: video metadata missing, fetching details for '$effectiveVideoId'...")
                     video = videoRepository.fetchVideoDetails(effectiveVideoId)?.also { detailed ->
                         metadataCache[effectiveVideoId] = detailed

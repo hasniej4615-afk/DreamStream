@@ -167,7 +167,7 @@ class TvChannelSyncWorker(
          * Multi-tier movie fetcher:
          * 1. Network scraper for /movie/ (15 items)
          * 2. Room database for cached /movie/ or recent items
-         * 3. Built-in Malaysian classics (P. Ramlee etc.)
+         * 3. Fallback to homepage/featured videos
          * Guaranteed non-empty!
          */
         suspend fun fetchSyncMovies(context: Context): List<Video> = withContext(Dispatchers.IO) {
@@ -237,17 +237,17 @@ class TvChannelSyncWorker(
                 }
             }
 
-            // Step 4: Fallback classics if empty
+            // Step 4: Fallback to homepage/featured movies if empty
             if (resultMovies.isEmpty()) {
                 try {
-                    val classics = VideoExtractor.fetchArchivePramleeVideos()
-                    classics.take(15).forEach { video ->
+                    val fallback = VideoExtractor.fetchVideosBySection("/", 1, 15)
+                    fallback.take(15).forEach { video ->
                         if (video.id.isNotBlank() && seenIds.add(video.id)) {
                             resultMovies.add(video)
                         }
                     }
                 } catch (e: Exception) {
-                    Log.e(TAG, "Classics fetch failed: ${e.message}")
+                    Log.e(TAG, "Fallback fetch failed: ${e.message}")
                 }
             }
 

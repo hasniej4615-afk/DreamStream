@@ -87,12 +87,7 @@ class TemplateProvider(
                     VideoExtractor.searchWordPressMuviPro(base, query, page, 25)
                 }
                 "GENERIC_HTML" -> {
-                    if (id.contains("pramlee", ignoreCase = true)) {
-                        val all = VideoExtractor.fetchArchivePramleeVideos()
-                        all.filter { it.title.contains(query, ignoreCase = true) }
-                    } else {
-                        VideoExtractor.searchVideos(query, page, 25)
-                    }
+                    VideoExtractor.searchVideos(query, page, 25)
                 }
                 else -> {
                     VideoExtractor.searchVideos(query, page, 25)
@@ -117,14 +112,7 @@ class TemplateProvider(
                     VideoExtractor.fetchWordPressMuviProVideos(base, path, page, count)
                 }
                 "GENERIC_HTML" -> {
-                    if (id.contains("pramlee", ignoreCase = true)) {
-                        val all = VideoExtractor.sortVideosByNewestRelease(VideoExtractor.fetchArchivePramleeVideos())
-                        val itemsPerPage = 15
-                        val start = (page - 1) * itemsPerPage
-                        if (start >= all.size) emptyList() else all.drop(start).take(count)
-                    } else {
-                        VideoExtractor.fetchVideosBySection(path, page, count)
-                    }
+                    VideoExtractor.fetchVideosBySection(path, page, count)
                 }
                 else -> {
                     VideoExtractor.fetchVideosBySection(path, page, count)

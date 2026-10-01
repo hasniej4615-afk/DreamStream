@@ -267,15 +267,6 @@ class VideoRepository @Inject constructor(
                 if (videoId.startsWith("yt_") || videoId.startsWith("bili_") || videoId.startsWith("dm_")) {
                     return@withContext null
                 }
-                if (videoId.startsWith("ia_pramlee")) {
-                    val classic = VideoExtractor.fetchArchivePramleeVideos().find { it.id == videoId }
-                    if (classic != null) {
-                        videoDao.insertOrUpdateVideos(listOf(classic.toEntity()))
-                        videoCache[videoId] = classic
-                        return@withContext classic
-                    }
-                    return@withContext null
-                }
 
                 val fallbackUrl = VideoExtractor.resolveVideoUrl(videoId)
                 if (fallbackUrl.isNotBlank()) {
@@ -302,16 +293,6 @@ class VideoRepository @Inject constructor(
             if (videoId.startsWith("yt_") || videoId.startsWith("bili_") || videoId.startsWith("dm_")) {
                 videoCache[videoId] = video
                 return@withContext video
-            }
-
-            if (videoId.startsWith("ia_pramlee")) {
-                val classic = VideoExtractor.fetchArchivePramleeVideos().find { it.id == videoId }
-                if (classic != null) {
-                    val merged = mergeVideos(classic, video)
-                    videoDao.insertOrUpdateVideos(listOf(merged.toEntity()))
-                    videoCache[videoId] = merged
-                    return@withContext merged
-                }
             }
             
             val targetUrl = VideoExtractor.resolveVideoUrl(videoId, video.videoUrl)
@@ -448,11 +429,9 @@ class VideoRepository @Inject constructor(
         val verifiedPoster = VideoExtractor.getVerifiedPoster(new.title, new.id)
             .ifEmpty { VideoExtractor.getVerifiedPoster(old.title, old.id) }
 
-        val isPramlee = new.id.startsWith("ia_pramlee")
         val isOldThumbValid = VideoExtractor.isValidImageUrl(old.thumbnailUrl)
         val isNewThumbValid = VideoExtractor.isValidImageUrl(new.thumbnailUrl)
         val isNewThumbBetter = isNewThumbValid && (
-            isPramlee ||
             !isOldThumbValid || 
             (new.thumbnailUrl.contains("tmdb.org") && !old.thumbnailUrl.contains("tmdb.org")) ||
             (!new.thumbnailUrl.contains("resize=") && old.thumbnailUrl.contains("resize="))
@@ -470,7 +449,6 @@ class VideoRepository @Inject constructor(
         val isOldBackdropValid = VideoExtractor.isValidImageUrl(old.backdropUrl) && !old.backdropUrl.contains("3EJTMtsHSwLcF9BrKEx1cWjsstW")
         val isNewBackdropValid = VideoExtractor.isValidImageUrl(new.backdropUrl) && !new.backdropUrl.contains("3EJTMtsHSwLcF9BrKEx1cWjsstW")
         val isNewBackdropBetter = isNewBackdropValid && (
-            isPramlee ||
             !isOldBackdropValid ||
             (new.backdropUrl.contains("tmdb.org") && !old.backdropUrl.contains("tmdb.org")) ||
             (!new.backdropUrl.contains("resize=") && old.backdropUrl.contains("resize="))
@@ -517,7 +495,7 @@ class VideoRepository @Inject constructor(
 
         return old.copy(
             title = if (cleanedNewTitle.length > cleanedOldTitle.length) cleanedNewTitle else cleanedOldTitle,
-            videoUrl = if (isPramlee && new.videoUrl.isNotEmpty()) new.videoUrl else old.videoUrl,
+            videoUrl = old.videoUrl,
             thumbnailUrl = if (resolvedThumbnail.isNotEmpty()) resolvedThumbnail else resolvedBackdrop,
             backdropUrl = if (resolvedBackdrop.isNotEmpty()) resolvedBackdrop else resolvedThumbnail,
             actresses = (new.actresses + old.actresses).distinct().filter { it.isNotEmpty() },
@@ -527,9 +505,9 @@ class VideoRepository @Inject constructor(
             date = old.date.ifEmpty { new.date },
             quality = old.quality.ifEmpty { new.quality },
             season = resolvedSeason,
-            description = if (isPramlee && new.description.isNotEmpty()) new.description else if (new.description.length > old.description.length) new.description else old.description,
+            description = if (new.description.length > old.description.length) new.description else old.description,
             previewUrl = if (new.previewUrl.isNotEmpty()) new.previewUrl else old.previewUrl,
-            servers = (if (isPramlee) new.servers else (new.servers + old.servers).distinctBy { it.url.trimEnd('/') }).filter {
+            servers = (new.servers + old.servers).distinctBy { it.url.trimEnd('/') }.filter {
                 val lowU = it.url.lowercase()
                 val lowN = it.name.lowercase()
                 !lowU.contains("google.com") && !lowU.contains("pagead") && !lowU.contains("/aclk") &&

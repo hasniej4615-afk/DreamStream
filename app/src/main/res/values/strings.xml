@@ -352,7 +352,6 @@ Tap to re-scout and refresh content</string>
     <string name="fixed_player_dead_stream_ui">Fixed black-screen player freeze: added sub-2s dead stream detection and dedicated error recovery screen.</string>
     <string name="fixed_movie_state_bleed">Fixed stale server URL bleed-through and false rotation signals when switching movies.</string>
     <string name="optimized_subtitle_loading">Optimized background subtitle extraction with fast-break on inactive provider keys.</string>
-    <string name="p_ramlee">P.Ramlee</string>
     <string name="find_other_sources">Find Other Sources</string>
     <string name="searching_other_sources">Searching alternative sources...</string>
     <string name="sources_found">Found %d alternative source(s)</string>

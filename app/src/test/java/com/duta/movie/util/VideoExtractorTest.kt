@@ -19,35 +19,6 @@ class VideoExtractorTest {
         assert(VideoExtractor.normalizePath("https://ww44.pencurimovie.baby/country/malaysia/") == "/country/malaysia/")
         assert(VideoExtractor.normalizePath("/country/malaysia/") == "/country/malaysia/")
         assert(VideoExtractor.normalizePath("country/malaysia") == "/country/malaysia/")
-        assert(VideoExtractor.normalizePath("https://archive.org/details/FilemP.ramlee") == "/category/p-ramlee/")
-        assert(VideoExtractor.normalizePath("/category/p-ramlee/") == "/category/p-ramlee/")
-        assert(VideoExtractor.normalizePath("p-ramlee") == "/category/p-ramlee/")
-    }
-
-    @Test
-    fun testArchivePramleeExtraction() = runBlocking {
-        try {
-            val movies = VideoExtractor.fetchArchivePramleeVideos()
-            println("Fetched ${movies.size} P. Ramlee movies from Archive.org:")
-            movies.forEach { println(" - ${it.title} [${it.quality}, ${it.duration}] -> Poster: ${it.thumbnailUrl}") }
-            if (movies.isEmpty()) {
-                println("Archive.org currently unreachable or timed out; skipping assertion.")
-                return@runBlocking
-            }
-            assert(movies.size >= 22) { "Expected at least 22 P. Ramlee movies, got ${movies.size}" }
-            assert(movies.any { it.title.contains("Bujang Lapok", ignoreCase = true) }) { "Expected Bujang Lapok in archive" }
-            assert(movies.any { it.title.contains("Ahmad Albab", ignoreCase = true) }) { "Expected Ahmad Albab in archive" }
-            assert(movies.any { it.title.contains("Ali Baba Bujang Lapok", ignoreCase = true) }) { "Expected Ali Baba Bujang Lapok in archive" }
-            assert(movies.any { it.title.contains("Nujum Pak Belalang", ignoreCase = true) }) { "Expected Nujum Pak Belalang in archive" }
-            assert(movies.any { it.title.contains("Sumpah Orang Minyak", ignoreCase = true) }) { "Expected Sumpah Orang Minyak in archive" }
-            assert(movies.any { it.title.contains("Tiga Abdul", ignoreCase = true) }) { "Expected Tiga Abdul in archive" }
-            assert(movies.all { it.videoUrl.contains("archive.org") }) { "All video URLs must point to archive.org" }
-            assert(movies.all { it.servers.size >= 2 && it.servers.first().name.contains("Archive.org") }) { "All movies must have Archive.org direct and mirror servers" }
-            assert(movies.all { it.thumbnailUrl.startsWith("https://image.tmdb.org/t/p/") }) { "All movies must have high-res TMDB poster" }
-            assert(movies.all { it.backdropUrl.startsWith("https://image.tmdb.org/t/p/") }) { "All movies must have high-res TMDB backdrop" }
-        } catch (e: Throwable) {
-            println("Archive.org network unavailable or partial: ${e.message}; skipping.")
-        }
     }
 
     @Test
@@ -85,31 +56,6 @@ class VideoExtractorTest {
     }
 
     @Test
-    fun testArchiveStreamHttp() {
-        try {
-            val url = "https://archive.org/download/FilemP.ramlee/Enam.Jahanam.1969.576p.LEGENDTV.mp4"
-            val request = okhttp3.Request.Builder()
-                .url(url)
-                .header("Range", "bytes=0-1024")
-                .build()
-            val response = NetworkConfig.permissiveOkHttpClient.newCall(request).execute()
-            println("Response code: ${response.code}")
-            println("Content-Range: ${response.header("Content-Range")}")
-            println("Content-Type: ${response.header("Content-Type")}")
-            println("Content-Length: ${response.header("Content-Length")}")
-            if (!response.isSuccessful) {
-                println("Archive.org returned non-success code (${response.code}); skipping.")
-                return
-            }
-            val body = response.body?.bytes()
-            println("Read bytes: ${body?.size}")
-            assert(body != null && body.size == 1025) { "Expected 1025 bytes, got ${body?.size}" }
-        } catch (e: Exception) {
-            println("Archive.org network unavailable: ${e.message}; skipping.")
-        }
-    }
-
-    @Test
     fun testUpdateBaseUrlProtection() {
         val initialBase = VideoExtractor.getBaseUrl()
         try {
@@ -141,33 +87,10 @@ class VideoExtractorTest {
 
     @Test
     fun testOptimizeArchiveUrl() {
-        val sumpahUrl = "https://archive.org/download/p-ramlee-nujum-pak-belalang-hd-quality-1/Sumpah%20Orang%20Minyak%20HD%20-%20Pramlee%20%28versi%20warna%29%20FULL.mp4"
-        val optimizedSumpah = VideoExtractor.optimizeArchiveUrl(sumpahUrl)
-        assert(optimizedSumpah.contains("dn601208.us.archive.org/0/items/p-ramlee-nujum-pak-belalang-hd-quality-1")) {
-            "Sumpah Orang Minyak should rewrite to direct fast node, got $optimizedSumpah"
-        }
-
-        val aliBabaUrl = "https://archive.org/download/p.-ramlee-ali-baba-bujang-lapok/P.%20Ramlee%20-%20Ali%20Baba%20Bujang%20Lapok.mp4"
-        val optimizedAliBaba = VideoExtractor.optimizeArchiveUrl(aliBabaUrl)
-        assert(optimizedAliBaba.contains("dn600309.us.archive.org/0/items/p.-ramlee-ali-baba-bujang-lapok")) {
-            "Ali Baba should rewrite to dn600309.us.archive.org, got $optimizedAliBaba"
-        }
-
-        val tigaAbdulUrl = "https://archive.org/download/TigaAbdul1964HQFullMovie/Tiga%20Abdul%20%281964%29%20HQ%20%28Full%20Movie%29.mp4"
-        val optimizedTigaAbdul = VideoExtractor.optimizeArchiveUrl(tigaAbdulUrl)
-        assert(optimizedTigaAbdul.contains("dn600305.us.archive.org/0/items/TigaAbdul1964HQFullMovie")) {
-            "Tiga Abdul should rewrite to dn600305.us.archive.org, got $optimizedTigaAbdul"
-        }
-
-        val filemUrl = "https://archive.org/download/FilemP.ramlee/Enam.Jahanam.1969.576p.LEGENDTV.mp4"
-        val optimizedFilem = VideoExtractor.optimizeArchiveUrl(filemUrl)
-        assert(optimizedFilem.contains("dn600308.us.archive.org/0/items/FilemP.ramlee")) {
-            "Enam Jahanam should rewrite to dn600308.us.archive.org, got $optimizedFilem"
-        }
-
         val normalUrl = "https://actors-pictures.com/movie/test.mp4"
         assert(VideoExtractor.optimizeArchiveUrl(normalUrl) == normalUrl) { "Non-archive URL should remain untouched" }
     }
+
 
     @Test
     fun testProviderPriority() {
@@ -249,31 +172,6 @@ class VideoExtractorTest {
 
         assert(altSources.any { it.name.contains("(Pencuri)") }) { "Servers must be tagged with (Pencuri)" }
         assert(altSources.all { it.url != "https://dead.server/stream" }) { "Dead servers must not be re-added" }
-    }
-
-    @Test
-    fun testFindAlternativeSourcesPramleeClassic() = runBlocking {
-        val aliBabaVideo = com.duta.movie.model.Video(
-            id = "ali-baba-bujang-lapok-1961",
-            title = "Ali Baba Bujang Lapok (1961)",
-            thumbnailUrl = "",
-            duration = "",
-            videoUrl = "https://actors-pictures.com/ali-baba-bujang-lapok-1961/",
-            servers = listOf(com.duta.movie.model.VideoServer("Expired Server", "https://dead.server/stream"))
-        )
-        val altSources = VideoExtractor.findAlternativeSources(aliBabaVideo)
-        println("Discovered ${altSources.size} alternative sources for ${aliBabaVideo.title}:")
-        altSources.forEach { println(" - ${it.name} -> ${it.url}") }
-
-        if (altSources.isEmpty()) {
-            println("Alternative source providers currently unreachable; skipping assertion.")
-            return@runBlocking
-        }
-
-        assert(altSources.isNotEmpty()) { "Expected to find alternative stream for Ali Baba Bujang Lapok" }
-        assert(altSources.any { it.url.contains("archive.org") || it.name.contains("(Pencuri)") || it.name.contains("(DutaFilm)") || it.name.contains("(LK21)") }) { 
-            "Alternative source must be from Archive.org or a recognized partner provider" 
-        }
     }
 
     @Test
@@ -374,82 +272,6 @@ class VideoExtractorTest {
         // Test that Dailymotion internal CDN manifests are strictly rejected as direct video URLs
         assert(!VideoExtractor.isDirectVideoUrl("https://cdndirector.dailymotion.com/cdn/manifest/video/x94s7sq.m3u8?sec=xyz"))
         assert(!VideoExtractor.isDirectVideoUrl("https://www.dailymotion.com/embed/video/x94s7sq"))
-    }
-
-    @Test
-    fun testPramleeCatalogAdditions() = kotlinx.coroutines.runBlocking {
-        val movies = try {
-            VideoExtractor.fetchArchivePramleeVideos()
-        } catch (_: Exception) {
-            emptyList()
-        }
-
-        if (movies.isNotEmpty()) {
-            val titles = movies.map { it.title }
-            assert(titles.any { it.contains("Seniman Bujang Lapok", ignoreCase = true) }) {
-                "Seniman Bujang Lapok must be present in P. Ramlee catalog"
-            }
-            assert(titles.any { it.contains("Pendekar Bujang Lapok", ignoreCase = true) }) {
-                "Pendekar Bujang Lapok must be present in P. Ramlee catalog"
-            }
-            assert(titles.any { it.contains("Madu Tiga", ignoreCase = true) }) {
-                "Madu Tiga must be present in P. Ramlee catalog"
-            }
-            assert(titles.any { it.contains("Ibu Mertua-ku", ignoreCase = true) || it.contains("Ibu Mertuaku", ignoreCase = true) }) {
-                "Ibu Mertua-ku must be present in P. Ramlee catalog"
-            }
-            assert(titles.any { it.contains("Anak-ku Sazali", ignoreCase = true) || it.contains("Anakku Sazali", ignoreCase = true) }) {
-                "Anak-ku Sazali must be present in P. Ramlee catalog"
-            }
-            assert(titles.any { it.contains("Antara Dua Darjat", ignoreCase = true) }) {
-                "Antara Dua Darjat must be present in P. Ramlee catalog"
-            }
-            assert(titles.any { it.contains("Sarjan Hassan", ignoreCase = true) }) {
-                "Sarjan Hassan must be present in P. Ramlee catalog"
-            }
-            assert(titles.any { it.contains("Penarek Becha", ignoreCase = true) }) {
-                "Penarek Becha must be present in P. Ramlee catalog"
-            }
-        }
-
-        // Verify poster & description mappings exist
-        assert(VideoExtractor.PRAMLEE_POSTERS.containsKey("seniman-bujang-lapok"))
-        assert(VideoExtractor.PRAMLEE_POSTERS.containsKey("seniman-bujang-lapuk"))
-        assert(VideoExtractor.PRAMLEE_POSTERS.containsKey("pendekar-bujang-lapok"))
-        assert(VideoExtractor.PRAMLEE_POSTERS.containsKey("madu-tiga"))
-
-        assert(VideoExtractor.PRAMLEE_DESCRIPTIONS.containsKey("seniman-bujang-lapok"))
-        assert(VideoExtractor.PRAMLEE_DESCRIPTIONS.containsKey("pendekar-bujang-lapok"))
-        assert(VideoExtractor.PRAMLEE_DESCRIPTIONS.containsKey("madu-tiga"))
-
-        // Verify optimizeArchiveUrl for new additions
-        val senimanUrl = "https://archive.org/download/p-ramlee-seniman-bujang-lapok-full-movie-warna/P%20Ramlee%20-%20Seniman%20Bujang%20Lapok%20%5BFull%20movie%20warna%5D.mp4"
-        val optSeniman = VideoExtractor.optimizeArchiveUrl(senimanUrl)
-        assert(optSeniman.contains("dn600305.us.archive.org/0/items/p-ramlee-seniman-bujang-lapok-full-movie-warna")) {
-            "Seniman Bujang Lapok must optimize to direct dn600305 storage node"
-        }
-
-        val pendekarUrl = "https://archive.org/download/pendekar-bujang-lapok-1959/Pendekar_Bujang_Lapok_IA.mp4"
-        val optPendekar = VideoExtractor.optimizeArchiveUrl(pendekarUrl)
-        assert(optPendekar.contains("ia800602.us.archive.org/17/items/pendekar-bujang-lapok-1959")) {
-            "Pendekar Bujang Lapok must optimize to direct ia800602 storage node"
-        }
-
-        val senimanBwUrl = "https://archive.org/download/p.ramleesenimanbujanglapok1961/P.%20Ramlee%20-%20Seniman%20Bujang%20Lapok%20%281961%29.mp4"
-        val optSenimanBw = VideoExtractor.optimizeArchiveUrl(senimanBwUrl)
-        assert(optSenimanBw.contains("dn711000.ca.archive.org/0/items/p.ramleesenimanbujanglapok1961")) {
-            "Seniman Bujang Lapok B&W must optimize to direct dn711000 storage node"
-        }
-
-        // Verify Sarjan Hassan has non-restricted stream servers
-        runBlocking {
-            val movies = VideoExtractor.fetchArchivePramleeVideos()
-            val sarjan = movies.find { it.id == "ia_pramlee_sarjan-hassan" }
-            assert(sarjan != null) { "Sarjan Hassan must exist in catalog" }
-            assert(!sarjan!!.videoUrl.contains("1958-sarjan-hassan")) { "Sarjan Hassan videoUrl must not use restricted archive item" }
-            assert(sarjan.servers.isNotEmpty()) { "Sarjan Hassan must have playable servers" }
-            assert(sarjan.servers.all { !it.url.contains("1958-sarjan-hassan") }) { "Sarjan Hassan servers must not contain 403 archive URL" }
-        }
     }
 
     @Test
@@ -614,9 +436,9 @@ class VideoExtractorTest {
         }
 
         // 3. Test Malay transliterations (lapuk -> lapok)
-        val pramleeMovie = Video(id = "bl", title = "Bujang Lapok (1957)", thumbnailUrl = "", videoUrl = "", duration = "")
+        val classicMovie = Video(id = "bl", title = "Bujang Lapok (1957)", thumbnailUrl = "", videoUrl = "", duration = "")
         val translitQuery = "bujang lapuk"
-        val resultsTranslit = VideoExtractor.filterAndSortByRelevance(listOf(noiseMovie, pramleeMovie), translitQuery)
+        val resultsTranslit = VideoExtractor.filterAndSortByRelevance(listOf(noiseMovie, classicMovie), translitQuery)
         assert(resultsTranslit.isNotEmpty() && resultsTranslit[0].id == "bl") {
             "Transliteration 'bujang lapuk' should match 'Bujang Lapok'"
         }
@@ -858,9 +680,7 @@ class VideoExtractorTest {
         assert(!VideoExtractor.isEphemeralOrExpiredStream("https://voe.sx/e/xfjnjp2xd6e5"))
 
         // Permanent direct video sources MUST NOT be marked as ephemeral
-        assert(!VideoExtractor.isEphemeralOrExpiredStream("https://archive.org/download/FilemP.ramlee/Enam.Jahanam.1969.576p.LEGENDTV.mp4"))
-        assert(!VideoExtractor.isEphemeralOrExpiredStream("https://dn601208.us.archive.org/0/items/p-ramlee/test.mp4"))
-        assert(!VideoExtractor.isEphemeralOrExpiredStream("https://www.youtube.com/embed/yY-WOddcmiA"))
+                        assert(!VideoExtractor.isEphemeralOrExpiredStream("https://www.youtube.com/embed/yY-WOddcmiA"))
     }
 
     @Test
@@ -874,13 +694,13 @@ class VideoExtractorTest {
 
     @Test
     fun testArchiveMkvAndWebmDirectDetection() {
-        val kanchanTiranaMkv = "https://dn600308.us.archive.org/0/items/FilemP.ramlee/Kanchan.Tirana.1969.720p.LEGENDTV.mkv"
+        val directMkv = "https://cdn.example.com/items/classic/sample_video.mkv"
         val genericWebm = "https://example.com/videos/classic_movie.webm"
         val genericMkv = "https://example.com/videos/classic_movie.mkv"
 
         // 1. Direct video URL identification
-        assert(VideoExtractor.isDirectVideoUrl(kanchanTiranaMkv)) {
-            "Kanchan Tirana MKV on Archive.org must be recognized as direct video URL"
+        assert(VideoExtractor.isDirectVideoUrl(directMkv)) {
+            "Direct MKV must be recognized as direct video URL"
         }
         assert(VideoExtractor.isDirectVideoUrl(genericMkv)) {
             "Generic MKV must be recognized as direct video URL"
@@ -890,18 +710,18 @@ class VideoExtractorTest {
         }
 
         // 2. Host and ephemeral classification
-        assert(!VideoExtractor.isJsOnlyHost(kanchanTiranaMkv)) {
-            "Kanchan Tirana MKV must NOT be classified as JS-only host"
+        assert(!VideoExtractor.isJsOnlyHost(directMkv)) {
+            "Direct MKV must NOT be classified as JS-only host"
         }
-        assert(!VideoExtractor.isEphemeralOrExpiredStream(kanchanTiranaMkv)) {
-            "Kanchan Tirana MKV on Archive.org must NOT be classified as ephemeral"
+        assert(!VideoExtractor.isEphemeralOrExpiredStream(directMkv)) {
+            "Direct MKV must NOT be classified as ephemeral"
         }
 
         // 3. Short-circuit in extractVideoUrl
         runBlocking {
-            val result = VideoExtractor.extractVideoUrl(kanchanTiranaMkv)
-            assert(result != null && result.videoUrl == kanchanTiranaMkv) {
-                "extractVideoUrl must short-circuit and return direct URL for Kanchan Tirana MKV without scraping HTML"
+            val result = VideoExtractor.extractVideoUrl(directMkv)
+            assert(result != null && result.videoUrl == directMkv) {
+                "extractVideoUrl must short-circuit and return direct URL for Direct MKV without scraping HTML"
             }
         }
     }

@@ -351,7 +351,6 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="fixed_player_dead_stream_ui">Membetulkan skrin hitam pemain: pengesanan strim mati bawah 2s dan skrin pemulihan ralat disediakan.</string>
     <string name="fixed_movie_state_bleed">Membetulkan limpahan URL pelayan lapuk dan isyarat putaran palsu apabila menukar filem.</string>
     <string name="optimized_subtitle_loading">Mengoptimumkan pengekstrakan sarikata latar belakang dengan henti pantas kunci penyedia tidak aktif.</string>
-    <string name="p_ramlee">P.Ramlee</string>
     <string name="find_other_sources">Cari Sumber Lain</string>
     <string name="searching_other_sources">Mencari sumber alternatif...</string>
     <string name="sources_found">Menemui %d sumber alternatif</string>

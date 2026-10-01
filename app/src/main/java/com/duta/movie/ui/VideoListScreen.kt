@@ -1877,7 +1877,6 @@ fun translateCategoryName(name: String): String {
         "South Korea" -> stringResource(R.string.korea)
         "Malaysia" -> stringResource(R.string.malaysia)
         "Netflix" -> stringResource(R.string.netflix)
-        "P.Ramlee" -> stringResource(R.string.p_ramlee)
         "Thailand" -> stringResource(R.string.thailand)
         "Viet Nam" -> stringResource(R.string.vietnam)
         "Vietnam" -> stringResource(R.string.vietnam)
@@ -1943,7 +1942,7 @@ fun SearchLandingView(
     onSearchClick: (String) -> Unit
 ) {
     val curatedSuggestions = remember {
-        listOf("P. Ramlee", "Bujang Lapok", "Pendekar Bujang Lapok", "Gerak Khas", "Polis Evo", "Spider-Man", "Marvel", "Anime", "KL Gangster", "Hantu Kak Limah")
+        listOf("Polis Evo", "Gerak Khas", "Spider-Man", "Marvel", "Anime", "KL Gangster", "Hantu Kak Limah", "Munafik", "Ejen Ali")
     }
 
     Column(
