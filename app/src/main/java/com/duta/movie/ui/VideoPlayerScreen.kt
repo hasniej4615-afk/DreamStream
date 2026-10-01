@@ -1270,6 +1270,7 @@ fun VideoPlayerScreen(
                     bufferJob = scope.launch {
                         val isArchiveStream = extractedUrl?.contains("archive.org") == true
                         val baseTimeout = if (isUserSeeking) 50000L else if (isTV || isArchiveStream) 50000L else 45000L
+                        val startupTimeout = if (isTV) 15000L else 12000L
                         val maxTimeout = 75000L // Maximum allowance if progress is actively being made
                         val startTime = System.currentTimeMillis()
                         var lastBufferedPos = currentPlayer.bufferedPosition
@@ -1290,10 +1291,14 @@ fun VideoPlayerScreen(
                             val timeSinceLastProgress = now - lastProgressTime
                             val totalTimeElapsed = now - startTime
 
-                            // If we have had no progress for baseTimeout, or overall stuck beyond maxTimeout:
-                            if ((timeSinceLastProgress >= baseTimeout) || (totalTimeElapsed >= maxTimeout)) {
+                            // For initial connection where player hasn't started and has 0 bytes buffered, failover faster
+                            val isInitialStartup = currentPlayer.currentPosition <= 1000L && currentBufferedDuration == 0L && !isUserSeeking
+                            val effectiveTimeout = if (isInitialStartup) startupTimeout else baseTimeout
+
+                            // If we have had no progress for effectiveTimeout, or overall stuck beyond maxTimeout:
+                            if ((timeSinceLastProgress >= effectiveTimeout) || (totalTimeElapsed >= maxTimeout)) {
                                 if (currentPlayer.playbackState == Player.STATE_BUFFERING && !isFinishing) {
-                                    Log.w("VideoPlayerScreen", "Stuck in BUFFERING for ${totalTimeElapsed / 1000}s (no progress for ${timeSinceLastProgress / 1000}s, bufferedDuration=${currentBufferedDuration}ms). Stream appears dead. Rotating.")
+                                    Log.w("VideoPlayerScreen", "Stuck in BUFFERING for ${totalTimeElapsed / 1000}s (no progress for ${timeSinceLastProgress / 1000}s, bufferedDuration=${currentBufferedDuration}ms, isInitialStartup=$isInitialStartup). Stream appears dead. Rotating.")
                                     if (currentPlayer.currentPosition > 2000) {
                                         pendingRotationResumePosition = currentPlayer.currentPosition
                                         pendingRotationContentKey = activeContentKey
