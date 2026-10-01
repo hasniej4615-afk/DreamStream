@@ -964,7 +964,10 @@ fun VideoPlayerScreen(
         if (useWebView && isVideoReady && extractedUrl != null) {
             val embedLow = (extractedUrl ?: "").lowercase()
             val isJsProtected = embedLow.contains("vidhide") || embedLow.contains("fujihide") ||
-                                embedLow.contains("tnmr.org") || embedLow.contains("morencius")
+                                embedLow.contains("tnmr.org") || embedLow.contains("morencius") ||
+                                embedLow.contains("drakor") || embedLow.contains("playerp2p") ||
+                                embedLow.contains("embed4me") || embedLow.contains("abyss") ||
+                                embedLow.contains("bond")
             // Alternative partner embeds (Bilibili, YouTube, Dailymotion) can momentarily lose audio
             // focus or pause for buffering without it being a true stall — give them the same extended
             // threshold as JS-protected streams, and a resume grace when they pause unexpectedly.
@@ -1057,7 +1060,9 @@ fun VideoPlayerScreen(
         val url = extractedUrl ?: return@LaunchedEffect
         val sub = selectedSubtitle
         if (!useWebView || isCasting) {
-            val effectiveReferer = lastReferer ?: "${com.duta.movie.util.VideoExtractor.getBaseUrl()}/"
+            val defaultRef = com.duta.movie.util.VideoExtractor.getDefaultRefererForVideoId(videoId)
+            val ref = lastReferer
+            val effectiveReferer = if (!ref.isNullOrEmpty() && !ref.contains("157.245.199.231")) ref else defaultRef
             
             // Sync headers to OkHttp client
             lastCookies?.let { NetworkConfig.injectCookies(url, it) }
@@ -1764,6 +1769,7 @@ fun VideoPlayerScreen(
         onLogClick = { showResolutionLog = true },
         isTV = isTV,
         activeContentKey = activeContentKey,
+        videoId = videoId,
         onUserPauseChange = { userInitiatedPause = it },
         onUserSeek = { lastSeekTimeMs = System.currentTimeMillis() },
         fallbackDurationMs = fallbackDurationMs
@@ -2302,6 +2308,7 @@ fun VideoPlayerContent(
     onLogClick: () -> Unit,
     isTV: Boolean = false,
     activeContentKey: String,
+    videoId: String = "",
     onUserPauseChange: (Boolean) -> Unit = {},
     onUserSeek: () -> Unit = {},
     fallbackDurationMs: Long = 0L
@@ -2652,6 +2659,7 @@ fun VideoPlayerContent(
                     lastReferer = lastReferer,
                     activeContentKey = activeContentKey,
                     isTV = isTV,
+                    videoId = videoId,
                     // Keep WebView fully attached at alpha 1f; Compose's AnimatedVisibility overlay cleanly covers loading
                     modifier = Modifier.fillMaxSize() 
                 )
@@ -3038,6 +3046,7 @@ fun VideoPlayerWebView(
     lastReferer: String?,
     activeContentKey: String,
     isTV: Boolean = false,
+    videoId: String = "",
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
@@ -3379,6 +3388,11 @@ fun VideoPlayerWebView(
                             val host = request?.url?.host?.lowercase() ?: ""
                             val path = request?.url?.path?.lowercase() ?: ""
                             val query = request?.url?.query?.lowercase() ?: ""
+
+                            if (statusCode == 403 && (host.contains("abyss") || host.contains("bond") || host.contains("playsobat") || host.contains("mantab") || host.contains("drakor") || host.contains("cloudflare") || host.contains("challenges.cloudflare"))) {
+                                Log.d("VideoPlayerWebView", "HTTP 403 Cloudflare challenge received for $failingUrl -- allowing WebView to execute challenge")
+                                return
+                            }
                             val isTargetEmbed = request?.isForMainFrame == true || 
                                                 host.contains("dood") || host.contains("voe") ||
                                                 host.contains("indostream") || host.contains("embedo") ||
@@ -3634,7 +3648,8 @@ fun VideoPlayerWebView(
                                 val reqBuilder = okhttp3.Request.Builder().url(u)
                                 val ua = r.requestHeaders["User-Agent"] ?: view.settings.userAgentString ?: com.duta.movie.util.NetworkConfig.MOBILE_USER_AGENT
                                 reqBuilder.header("User-Agent", ua)
-                                val referer = r.requestHeaders["Referer"] ?: lastReferer ?: "${com.duta.movie.util.VideoExtractor.getBaseUrl()}/"
+                                val defaultRef = com.duta.movie.util.VideoExtractor.getDefaultRefererForVideoId(videoId)
+                                val referer = r.requestHeaders["Referer"] ?: (if (!lastReferer.isNullOrEmpty() && !lastReferer.contains("157.245.199.231")) lastReferer else defaultRef)
                                 reqBuilder.header("Referer", referer)
                                 val cookieManager = android.webkit.CookieManager.getInstance()
                                 val cookies = cookieManager.getCookie(u)
@@ -3665,7 +3680,7 @@ fun VideoPlayerWebView(
                                         Log.d("VideoPlayerTurbo", "Abyss 200 but not a player page (len=${rawHtml.length}), delegating to WebView: $u")
                                     } else {
                                         Log.d("VideoPlayerTurbo", "Abyss returned HTTP ${response.code} (Cloudflare?), delegating to WebView: $u")
-                                        if (response.code in listOf(403, 404, 410, 500, 502, 503) && 
+                                        if (response.code in listOf(404, 410) && 
                                             (low.contains("abysscdn.com") || low.contains("abyssplayer.com") || low.contains("playsobat.xyz"))) {
                                             view.post {
                                                 val activeUrl = view.getTag(R.id.active_url) as? String ?: url
@@ -3811,7 +3826,8 @@ fun VideoPlayerWebView(
                   if (view.getTag(R.id.active_url) != url || isNewEpisode) {
                       view.setTag(R.id.active_content_key, activeContentKey)
                       view.setTag(R.id.active_url, url)
-                      val referer = lastReferer ?: "${com.duta.movie.util.VideoExtractor.getBaseUrl()}/"
+                      val defaultRef = com.duta.movie.util.VideoExtractor.getDefaultRefererForVideoId(videoId)
+                      val referer = if (!lastReferer.isNullOrEmpty() && !lastReferer.contains("157.245.199.231")) lastReferer else defaultRef
                       val ua = view.settings.userAgentString ?: com.duta.movie.util.NetworkConfig.MOBILE_USER_AGENT
                       scope.launch(Dispatchers.IO) {
                           try {
@@ -4036,7 +4052,8 @@ fun VideoPlayerWebView(
               } else if (view.url != url || isNewEpisode) {
                  // OWL'S EYE: Sticky Referer Lockdown (v6.8)
                  // Hard-coding the referer to the primary site root ensures gateways don't redirect to home.
-                 val referer = lastReferer ?: "${com.duta.movie.util.VideoExtractor.getBaseUrl()}/"
+                 val defaultRef = com.duta.movie.util.VideoExtractor.getDefaultRefererForVideoId(videoId)
+                 val referer = if (!lastReferer.isNullOrEmpty() && !lastReferer.contains("157.245.199.231")) lastReferer else defaultRef
                  
                  if (isTV && isNewEpisode) {
                      Log.i("VideoPlayer", "TV HARD RESET: Clearing WebView for new episode.")

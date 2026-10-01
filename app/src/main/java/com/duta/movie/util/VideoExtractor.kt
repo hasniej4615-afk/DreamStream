@@ -123,7 +123,8 @@ object VideoExtractor {
         val low = hostOrUrl.lowercase()
         return low.contains("streamango.") || low.contains("openload.") || low.contains("oload.") ||
                low.contains("rapidvideo.") || low.contains("verystream.") || low.contains("vidcloud.") ||
-               low.contains("gounlimited.")
+               low.contains("gounlimited.") || low.contains("streamsb.") || low.contains("sbembed.") ||
+               low.contains("sbchill.")
     }
 
     fun isConfirmedDead(url: String): Boolean {
@@ -472,6 +473,18 @@ object VideoExtractor {
     }
 
     fun getBaseUrl(): String = BASE_URL
+
+    fun getDefaultRefererForVideoId(videoId: String?): String {
+        val clean = videoId?.lowercase() ?: ""
+        return when {
+            clean.startsWith("dfw_") -> "${getDutaFilmWebBaseUrl()}/"
+            clean.startsWith("pm_") -> "${getPencuriBaseUrl()}/"
+            clean.startsWith("bw_") -> "${getBullerswoodBaseUrl()}/"
+            clean.startsWith("dm_") -> "${getDutaMovieBaseUrl()}/"
+            clean.startsWith("kb_") -> "https://kepala-bergetar.com/"
+            else -> "${getBaseUrl()}/"
+        }
+    }
 
     fun normalizePath(path: String): String {
         if (path.isEmpty() || path == "/") return "/"
@@ -1548,7 +1561,7 @@ object VideoExtractor {
                 }
             }
             Log.d(TAG, "Extraction: Host is JS-Only, returning as-is: $pageUrl")
-            return@withContext ExtractionResult(pageUrl)
+            return@withContext ExtractionResult(pageUrl, referer = actualReferer)
         }
         val html = fetchHtml(pageUrl, actualReferer) ?: return@withContext null
         
@@ -6413,10 +6426,11 @@ object VideoExtractor {
             // OWL'S EYE: Demoted/Trap/Dead hosts MUST be evaluated before positive name matches
             // so single-page P2P or ad wrappers cannot masquerade behind "IndoStream-VIP" or "VIP" button labels
             lowUrl.contains("listeamed") || lowName.contains("listeamed") -> -100
-            lowUrl.contains("playerp2p") -> 35
+            lowUrl.contains("playerp2p") || lowName.contains("p2p") -> 35
+            lowUrl.contains("abyss") || lowUrl.contains("bond") || lowUrl.contains("iamcdn") || lowUrl.contains("playsobat") || lowUrl.contains("hydrax") -> 30
+            lowUrl.contains("drakor") -> 25
             lowUrl.contains("embed4me") -> 15
             lowUrl.contains("upns") && !lowUrl.contains("player=") -> 15
-            lowUrl.contains("abyss") || lowUrl.contains("bond") || lowUrl.contains("iamcdn") || lowUrl.contains("playsobat") -> 30
 
             // OWL'S EYE: Priority Tier 1 - HgLink (Ultra Stable Top Tier Priority)
             lowUrl.contains("hglink") || lowName.contains("hglink") -> 200

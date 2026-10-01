@@ -2562,7 +2562,8 @@ class VideoViewModel @Inject constructor(
                         ?: video!!.videoUrl
                 }
                 val mirrorToResolve = com.duta.movie.util.VideoExtractor.optimizeArchiveUrl(rawMirror)
-                val primaryUrl = mirrorToResolve
+                val defaultReferer = _currentEpisode.value?.url ?: com.duta.movie.util.VideoExtractor.getDefaultRefererForVideoId(videoId)
+                val primaryUrl = defaultReferer
                 
                 if (trendingContent) {
                     Log.i("OwlEyeMonitoring", "TRACKING TRENDING MOVIE: ${video!!.title} | Mirror: $mirrorToResolve")
@@ -2577,6 +2578,7 @@ class VideoViewModel @Inject constructor(
                     withContext(Dispatchers.Main) { 
                         _currentServerUrl.value = mirrorToResolve
                         _resolvedUrl.value = mirrorToResolve
+                        _lastReferer.value = defaultReferer
                         _resolutionProgress.value = null
                         _isResolving.value = false
                     }; return
@@ -2595,6 +2597,7 @@ class VideoViewModel @Inject constructor(
                         withContext(Dispatchers.Main) {
                             _currentServerUrl.value = mirrorToResolve
                             _resolvedUrl.value = mirrorToResolve
+                            _lastReferer.value = defaultReferer
                             _resolutionProgress.value = null
                             _isResolving.value = false
                         }
@@ -2670,7 +2673,7 @@ class VideoViewModel @Inject constructor(
                         consecutiveAllBlacklistedCount = 0 // Reset on success
                         _currentServerUrl.value = winner.sourceMirrorUrl ?: winner.referer ?: winner.videoUrl
                         _resolvedUrl.value = winner.videoUrl
-                        _lastReferer.value = winner.referer; _lastCookies.value = winner.cookies
+                        _lastReferer.value = winner.referer ?: defaultReferer; _lastCookies.value = winner.cookies
                         _resolutionProgress.value = null
                         _isResolving.value = false 
                     }
@@ -2699,7 +2702,7 @@ class VideoViewModel @Inject constructor(
                             consecutiveAllBlacklistedCount = 0
                             _currentServerUrl.value = targetFallback
                             _resolvedUrl.value = targetFallback
-                            _lastReferer.value = primaryUrl
+                            _lastReferer.value = defaultReferer
                             _resolutionProgress.value = null
                             _isResolving.value = false
                         }
@@ -2723,7 +2726,7 @@ class VideoViewModel @Inject constructor(
                                 consecutiveAllBlacklistedCount = 0
                                 _currentServerUrl.value = chosenFallback
                                 _resolvedUrl.value = chosenFallback
-                                _lastReferer.value = primaryUrl
+                                _lastReferer.value = defaultReferer
                                 _resolutionProgress.value = null
                                 _isResolving.value = false
                             }
@@ -2931,7 +2934,8 @@ class VideoViewModel @Inject constructor(
                         ?: video!!.videoUrl
                 }
 
-                val primaryUrl = episodePageUrl ?: mirrorToResolve
+                val defaultReferer = episodePageUrl ?: com.duta.movie.util.VideoExtractor.getDefaultRefererForVideoId(videoId)
+                val primaryUrl = defaultReferer
                 
                 if (trendingContent) {
                     Log.i("OwlEyeMonitoring", "TRACKING TRENDING SERIES: ${video!!.title} | Ep: ${_currentEpisode.value?.name} | Mirror: $mirrorToResolve")
@@ -2965,6 +2969,7 @@ class VideoViewModel @Inject constructor(
                     withContext(Dispatchers.Main) { 
                         _currentServerUrl.value = mirrorToResolve
                         _resolvedUrl.value = mirrorToResolve
+                        _lastReferer.value = defaultReferer
                         _resolutionProgress.value = null
                         _isResolving.value = false
                     }; return
@@ -2983,6 +2988,7 @@ class VideoViewModel @Inject constructor(
                         withContext(Dispatchers.Main) { 
                             _currentServerUrl.value = mirrorToResolve
                             _resolvedUrl.value = mirrorToResolve
+                            _lastReferer.value = defaultReferer
                             _resolutionProgress.value = null
                             _isResolving.value = false
                         }
@@ -3071,7 +3077,7 @@ class VideoViewModel @Inject constructor(
                         consecutiveAllBlacklistedCount = 0 // Reset on success
                         _currentServerUrl.value = winner.sourceMirrorUrl ?: winner.referer ?: winner.videoUrl
                         _resolvedUrl.value = winner.videoUrl
-                        _lastReferer.value = winner.referer; _lastCookies.value = winner.cookies
+                        _lastReferer.value = winner.referer ?: defaultReferer; _lastCookies.value = winner.cookies
                         _resolutionProgress.value = null
                         _isResolving.value = false 
                     }
@@ -3101,7 +3107,7 @@ class VideoViewModel @Inject constructor(
                             consecutiveAllBlacklistedCount = 0
                             _currentServerUrl.value = targetFallback
                             _resolvedUrl.value = targetFallback
-                            _lastReferer.value = primaryUrl
+                            _lastReferer.value = defaultReferer
                             _resolutionProgress.value = null
                             _isResolving.value = false
                         }
@@ -3126,7 +3132,7 @@ class VideoViewModel @Inject constructor(
                                 consecutiveAllBlacklistedCount = 0
                                 _currentServerUrl.value = chosenFallback
                                 _resolvedUrl.value = chosenFallback
-                                _lastReferer.value = primaryUrl
+                                _lastReferer.value = defaultReferer
                                 _resolutionProgress.value = null
                                 _isResolving.value = false
                             }
