@@ -980,10 +980,12 @@ fun VideoPlayerScreen(
             var stallSeconds = 0
             var postSeekCooldown = 0 // counts down after a seek is detected
             var lastSeekObserved = 0L
+            var unexpectedPauseSeconds = 0
 
             while (isVideoReady && !isFinishing) {
                 delay(1000)
                 if (webPlayerState.value.isPlaying && !userInitiatedPause) {
+                    unexpectedPauseSeconds = 0
                     val currentPos = webPlayerState.value.position
                     val userSeekOccurred = lastSeekTimeMs > lastSeekObserved
                     val isPositionJump = lastPos >= 0L && currentPos > 0L && (currentPos < lastPos || kotlin.math.abs(currentPos - lastPos) > 2000L)
@@ -1039,14 +1041,30 @@ fun VideoPlayerScreen(
                     }
                 } else {
                     // Player is not playing (buffering pause, audio-focus interruption, etc.)
-                    // For partner embeds: grant a 15s resume grace instead of just resetting, so a
-                    // brief audio-focus loss (e.g., Bilibili abandoning focus then re-acquiring) does
-                    // not confuse the stall counter on the next isPlaying=true tick.
-                    if (!userInitiatedPause && isAltPartnerEmbed && postSeekCooldown == 0) {
-                        postSeekCooldown = 15
-                        Log.d("VideoPlayerScreen", "Owl's Eye: Partner embed paused unexpectedly (audio-focus loss?). Granting 15s resume grace.")
+                    stallSeconds = 0
+                    if (!userInitiatedPause) {
+                        unexpectedPauseSeconds++
+                        val pauseTimeout = if (isAltPartnerEmbed) 15 else 25
+                        if (unexpectedPauseSeconds == 1 && isAltPartnerEmbed) {
+                            Log.d("VideoPlayerScreen", "Owl's Eye: Partner embed paused unexpectedly (audio-focus loss?). Granting ${pauseTimeout}s resume grace.")
+                        }
+                        if (unexpectedPauseSeconds >= pauseTimeout) {
+                            val hostType = if (isAltPartnerEmbed) "partner-embed" else "standard"
+                            Log.w("VideoPlayerScreen", "Owl's Eye: WebView $hostType paused unexpectedly and failed to resume after ${unexpectedPauseSeconds}s. Failing over...")
+                            val failingUrl = extractedUrl ?: currentServerUrlFromVm ?: ""
+                            if (failingUrl.isNotEmpty()) {
+                                if (isJsProtected) {
+                                    viewModel.notifyPlaybackFailure(failingUrl)
+                                } else {
+                                    viewModel.notifyMirrorDead(failingUrl)
+                                    viewModel.notifyPlaybackFailure(failingUrl)
+                                }
+                            }
+                            viewModel.resolveNextServer(videoId, failingUrl, force = true)
+                            break
+                        }
                     } else {
-                        stallSeconds = 0
+                        unexpectedPauseSeconds = 0
                         if (!isAltPartnerEmbed) postSeekCooldown = 0
                     }
                 }
@@ -3848,6 +3866,29 @@ fun VideoPlayerWebView(
         }, modifier = Modifier.fillMaxSize(), update = { view ->
              if (view.getTag(R.id.is_destroyed) == true) return@AndroidView
              val isNewEpisode = view.getTag(R.id.active_content_key) != activeContentKey
+             if (view.getTag(R.id.active_url) != url || isNewEpisode) {
+                 val low = url.lowercase()
+                 val isYouTube = low.contains("youtube") || low.contains("youtu.be")
+                 val isBilibili = low.contains("bilibili.com") || low.contains("bilibili.tv")
+                 val isDailymotion = low.contains("dailymotion.com") || low.contains("dai.ly")
+                 val isStrict = !isYouTube && !isBilibili && !isDailymotion && (
+                     low.contains("zeus") || low.contains("klik") || low.contains("/amt/") || low.contains(".amt") || low.contains("amt1.pro") || low.contains("amt2.pro") || 
+                     low.contains("playerp2p") || low.contains("abyss") || low.contains("voe") ||
+                     low.contains("indostream") || low.contains("iplayer") || low.contains("masuk") ||
+                     low.contains("eddie") || low.contains("bokin") || low.contains("pencuri") ||
+                     low.contains("garylarge") || low.contains("huntrex") || low.contains("vibuxer") ||
+                     low.contains("hanerix") || low.contains("embed4me") || low.contains("pm21") || 
+                     low.contains("dm21") || low.contains("dhcplay") || low.contains("morencius") ||
+                     low.contains("bestcdn") || low.contains("distributedcomputing") ||
+                     low.contains("ryderjet") || low.contains("faststream") || low.contains("veev") ||
+                     low.contains("dood") || low.contains("ohio") || low.contains("vplay") ||
+                     low.contains("swhoi") || low.contains("bestcdn") ||
+                     low.contains("vidhide") || low.contains("fujihide") || low.contains("tnmr.org") ||
+                     forceWebViewHosts.any { low.contains(it) }
+                 )
+                 val isTVDevice = isTV || com.duta.movie.util.DeviceUtils.isTvDevice(view.context)
+                 view.settings.userAgentString = if (isStrict || (isDailymotion && isTVDevice)) NetworkConfig.MOBILE_USER_AGENT else NetworkConfig.SHARED_USER_AGENT
+             }
               val ytId = com.duta.movie.util.VideoExtractor.extractYouTubeId(url)
               val bvid = com.duta.movie.util.VideoExtractor.extractBilibiliBvid(url)
               val dmId = com.duta.movie.util.VideoExtractor.extractDailymotionId(url)

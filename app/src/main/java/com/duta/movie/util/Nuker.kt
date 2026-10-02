@@ -2572,7 +2572,13 @@ object Nuker {
                                                   bodyText.indexOf('侵犯他人著作权') !== -1 ||
                                                   bodyText.indexOf('bilibilidouga') !== -1 ||
                                                   bodyText.indexOf('视频不见了') !== -1 ||
-                                                  bodyText.indexOf('404 not found') !== -1;
+                                                  bodyText.indexOf('404 not found') !== -1 ||
+                                                  bodyText.indexOf('下载哔哩哔哩') !== -1 ||
+                                                  bodyText.indexOf('进入哔哩哔哩') !== -1 ||
+                                                  bodyText.indexOf('客户端观看') !== -1 ||
+                                                  bodyText.indexOf('下载客户端') !== -1 ||
+                                                  bodyText.indexOf('打开app') !== -1 ||
+                                                  bodyText.indexOf('打开bilibili') !== -1;
                             if (isDeadOrBlocked && !window.biliDeadNotified) {
                                 window.biliDeadNotified = true;
                                 if (window.AndroidPlayer) {
