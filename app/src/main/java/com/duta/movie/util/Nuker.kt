@@ -401,12 +401,47 @@ object Nuker {
                                                     var jwState = jw.getState();
                                                     if (jwState !== 'playing' && jwState !== 'buffering') {
                                                         try {
-                                                            if (typeof jw.setMute === 'function') jw.setMute(false);
-                                                            jw.play();
-                                                        } catch(e){}
+                                                            var playPromise = jw.play();
+                                                            if (playPromise && typeof playPromise.catch === 'function') {
+                                                                playPromise.catch(function(err) {
+                                                                    try {
+                                                                        if (typeof jw.setMute === 'function') jw.setMute(true);
+                                                                        var p2 = jw.play();
+                                                                        if (p2 && typeof p2.catch === 'function') p2.catch(function(){});
+                                                                    } catch(e){}
+                                                                });
+                                                            }
+                                                        } catch(e){
+                                                            try {
+                                                                if (typeof jw.setMute === 'function') jw.setMute(true);
+                                                                var p2 = jw.play();
+                                                                if (p2 && typeof p2.catch === 'function') p2.catch(function(){});
+                                                            } catch(err){}
+                                                        }
                                                     }
                                                     if (!win._jwHooked && typeof jw.on === 'function') {
                                                         win._jwHooked = true;
+                                                        // Autoplay policy and HTML5 error auto-recovery
+                                                        jw.on('warning', function(warn) {
+                                                            var code = (warn && warn.code) ? warn.code : 0;
+                                                            if (code === 324003 || code === 305000) {
+                                                                try {
+                                                                    if (typeof jw.setMute === 'function') jw.setMute(true);
+                                                                    var p = jw.play();
+                                                                    if (p && typeof p.catch === 'function') p.catch(function(){});
+                                                                } catch(e){}
+                                                            }
+                                                        });
+                                                        jw.on('error', function(err) {
+                                                            var code = (err && err.code) ? err.code : 0;
+                                                            if (code === 102630 || code === 324003) {
+                                                                try {
+                                                                    if (typeof jw.setMute === 'function') jw.setMute(true);
+                                                                    var p = jw.play();
+                                                                    if (p && typeof p.catch === 'function') p.catch(function(){});
+                                                                } catch(e){}
+                                                            }
+                                                        });
                                                         var onJwPlay = function() {
                                                             window.videoFound = true;
                                                             if (document.body) document.body.classList.add('video-active', 'video-playing');
@@ -443,6 +478,16 @@ object Nuker {
                                                             }
                                                         });
                                                     }
+                                                    if (!win._unmuteHooked && win.document) {
+                                                        win._unmuteHooked = true;
+                                                        var unmuteJw = function() {
+                                                            try {
+                                                                if (typeof jw.setMute === 'function') jw.setMute(false);
+                                                            } catch(e){}
+                                                        };
+                                                        win.document.addEventListener('click', unmuteJw, { once: true, passive: true });
+                                                        win.document.addEventListener('touchstart', unmuteJw, { once: true, passive: true });
+                                                    }
                                                     if (jwState === 'playing') {
                                                         window.videoFound = true;
                                                         purgeJwOverlays(win.document);
@@ -476,6 +521,10 @@ object Nuker {
 
                                         if (!v.isProxy && v.paused && !v.ended) { 
                                             v.play().catch(function() { 
+                                                try {
+                                                    v.muted = true;
+                                                    v.play().catch(function(){});
+                                                } catch(e){}
                                                 if (window.nukerAttempts % 2 === 0) {
                                                     v.click(); 
                                                     try {
@@ -1564,10 +1613,47 @@ object Nuker {
                                                 if (jw && typeof jw.getState === 'function') {
                                                     var jwState = jw.getState();
                                                     if (jwState !== 'playing' && jwState !== 'buffering') {
-                                                        try { jw.play(); } catch(e){}
+                                                        try {
+                                                            var playPromise = jw.play();
+                                                            if (playPromise && typeof playPromise.catch === 'function') {
+                                                                playPromise.catch(function(err) {
+                                                                    try {
+                                                                        if (typeof jw.setMute === 'function') jw.setMute(true);
+                                                                        var p2 = jw.play();
+                                                                        if (p2 && typeof p2.catch === 'function') p2.catch(function(){});
+                                                                    } catch(e){}
+                                                                });
+                                                            }
+                                                        } catch(e){
+                                                            try {
+                                                                if (typeof jw.setMute === 'function') jw.setMute(true);
+                                                                var p2 = jw.play();
+                                                                if (p2 && typeof p2.catch === 'function') p2.catch(function(){});
+                                                            } catch(err){}
+                                                        }
                                                     }
                                                     if (!win._jwHooked && typeof jw.on === 'function') {
                                                         win._jwHooked = true;
+                                                        jw.on('warning', function(warn) {
+                                                            var code = (warn && warn.code) ? warn.code : 0;
+                                                            if (code === 324003 || code === 305000) {
+                                                                try {
+                                                                    if (typeof jw.setMute === 'function') jw.setMute(true);
+                                                                    var p = jw.play();
+                                                                    if (p && typeof p.catch === 'function') p.catch(function(){});
+                                                                } catch(e){}
+                                                            }
+                                                        });
+                                                        jw.on('error', function(err) {
+                                                            var code = (err && err.code) ? err.code : 0;
+                                                            if (code === 102630 || code === 324003) {
+                                                                try {
+                                                                    if (typeof jw.setMute === 'function') jw.setMute(true);
+                                                                    var p = jw.play();
+                                                                    if (p && typeof p.catch === 'function') p.catch(function(){});
+                                                                } catch(e){}
+                                                            }
+                                                        });
                                                         var onPmJwPlay = function() {
                                                             window.videoFound = true;
                                                             if (document.body) document.body.classList.add('video-active', 'video-playing');
@@ -1597,6 +1683,16 @@ object Nuker {
                                                                 selfBridge.reportState(true, e.currentTime || 0.1, e.duration || (jw.getDuration ? jw.getDuration() : 0));
                                                             }
                                                         });
+                                                    }
+                                                    if (!win._unmuteHooked && win.document) {
+                                                        win._unmuteHooked = true;
+                                                        var unmuteJw = function() {
+                                                            try {
+                                                                if (typeof jw.setMute === 'function') jw.setMute(false);
+                                                            } catch(e){}
+                                                        };
+                                                        win.document.addEventListener('click', unmuteJw, { once: true, passive: true });
+                                                        win.document.addEventListener('touchstart', unmuteJw, { once: true, passive: true });
                                                     }
                                                     if (jwState === 'playing') {
                                                         window.videoFound = true;

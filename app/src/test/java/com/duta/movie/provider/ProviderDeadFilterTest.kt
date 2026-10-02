@@ -17,6 +17,8 @@ class ProviderDeadFilterTest {
         assertTrue(RepoService.isDeadOrBlacklisted("https://ww1.anoboy.app"))
         assertTrue(RepoService.isDeadOrBlacklisted("http://mantenimiento.win"))
         assertTrue(RepoService.isDeadOrBlacklisted("https://animeindo.xyz"))
+        assertTrue(RepoService.isDeadOrBlacklisted("com.duta.provider.pramlee"))
+        assertTrue(RepoService.isDeadOrBlacklisted("P-Ramlee Archive"))
 
         // Legitimate and active domains must NOT be blacklisted
         assertFalse(RepoService.isDeadOrBlacklisted("https://v5.pusatfilm21info.com"))

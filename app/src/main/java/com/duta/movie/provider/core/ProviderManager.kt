@@ -318,6 +318,11 @@ class ProviderManager @Inject constructor(
         val providers = repoDao.getEnabledProvidersSync()
         activeProviderInstances.clear()
         for (p in providers) {
+            val target = "${p.id} ${p.name} ${p.displayName} ${p.baseUrlsJson}"
+            if (RepoService.isDeadOrBlacklisted(target)) {
+                repoDao.deleteProviderById(p.id)
+                continue
+            }
             val instance: MediaProvider = when (p.engineType) {
                 "DEX" -> DexPluginProvider(context, p)
                 else -> TemplateProvider(p)
@@ -353,7 +358,10 @@ class ProviderManager @Inject constructor(
                 }
 
                 val providersResult = repoService.fetchProviders()
-                providersResult.onSuccess { remoteProviders ->
+                providersResult.onSuccess { rawRemoteProviders ->
+                    val remoteProviders = rawRemoteProviders.filter { rp ->
+                        !RepoService.isDeadOrBlacklisted("${rp.id} ${rp.name} ${rp.displayName} ${rp.baseUrls.joinToString(" ")}")
+                    }
                     cachedOnlineProviders[OFFICIAL_REPO_ID] = remoteProviders
 
                     // Auto-update remote configs for installed providers

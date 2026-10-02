@@ -5573,11 +5573,9 @@ object VideoExtractor {
                     val p2pResolved = p2pJob?.await()
                     if (p2pResolved != null) {
                         servers.add(p2pResolved)
-                    } else if (p2pId.isNotEmpty()) {
-                        servers.add(VideoServer("P2P Stream", "https://drakorkita.stream/#$p2pId"))
                     }
 
-                    if (sbId.isNotEmpty()) {
+                    if (sbId.isNotEmpty() && !isDefunctDomain("streamsb.net")) {
                         servers.add(VideoServer("StreamSB", "https://streamsb.net/e/$sbId"))
                     }
                 }

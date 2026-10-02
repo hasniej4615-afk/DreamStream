@@ -23,7 +23,7 @@ class RepoService @Inject constructor(
         val DEAD_DOMAIN_KEYWORDS = setOf(
             "idlix", "dramaid", "nodrakor", "rebahin", "anoboy", "dramaserial",
             "bongda365", "expclknb", "oceanfall", "mantenimiento", "kuronime",
-            "nimegami", "animeindo.xyz"
+            "nimegami", "animeindo.xyz", "pramlee", "p-ramlee", "ramlee"
         )
 
         fun isDeadOrBlacklisted(target: String): Boolean {
@@ -106,7 +106,10 @@ class RepoService @Inject constructor(
 
                 val body = response.body?.string() ?: "[]"
                 val providers = json.decodeFromString<List<RemoteProviderManifest>>(body)
-                Result.success(providers)
+                val activeProviders = providers.filter { rp ->
+                    !isDeadOrBlacklisted("${rp.id} ${rp.name} ${rp.displayName} ${rp.baseUrls.joinToString(" ")}")
+                }
+                Result.success(activeProviders)
             }
         } catch (e: Exception) {
             Log.e(TAG, "Error fetching providers", e)

@@ -357,6 +357,12 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="no_other_sources_found">Tiada sumber alternatif ditemui untuk tajuk ini</string>
     <string name="auto_healed_source">Swapulih %d pelayan cermin alternatif</string>
     <string name="added_multi_provider_alt_sources">Menambah carian silang berbilang penyedia &amp; swapulih automatik: pulih pelayan cermin baharu secara automatik apabila pautan mati atau tamat tempoh.</string>
+    <string name="changelog_v2_0_7">Log Perubahan v2.0.7 Cloud 7</string>
+    <string name="v2_0_7_updates">Kemaskini v2.0.7:</string>
+    <string name="v2_0_7_highlight_1">Kawalan Sentuhan Pemain Diperhalusi: Sentuhan tunggal di mana-mana skrin untuk buka/tutup kawalan main balik; dua sentuhan kiri/kanan untuk lompat 10s ke belakang atau depan.</string>
+    <string name="v2_0_7_highlight_2">Nuker v7.4 &amp; Pemulihan Auto-Bisu: Pemulihan ralat pintar untuk strim JW Player, mengatasi sekatan autoplay dan memulihkan audio serta-merta apabila disentuh.</string>
+    <string name="v2_0_7_highlight_3">Pengoptimuman Repositori Pembekal: Membuang repositori P-Ramlee yang tidak lagi aktif dari pangkalan data dan menapis senarai hitam secara automatik semasa permulaan aplikasi.</string>
+    <string name="v2_0_7_highlight_4">Kestabilan Kawalan Pemain: Pendengar paparan yang stabil mengelakkan kelipan antaramuka pada peranti telefon dan mod TV.</string>
     <string name="changelog_v2_0_6">Log Perubahan v2.0.6 Cloud 7</string>
     <string name="v2_0_6_updates">Kemaskini v2.0.6:</string>
     <string name="v2_0_6_highlight_1">Integrasi Portal Penstriman DUTAMOVIE21: Sumber portal penstriman langsung (204.3.234.75) ditambah ke repositori rasmi dengan swapulih pangkalan data automatik.</string>

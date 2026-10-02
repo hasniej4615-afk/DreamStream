@@ -2643,6 +2643,9 @@ fun VideoPlayerContent(
         
         if (extractedUrl != null && error == null && playerErrorMessage == null && isTransitionComplete) {
             val showWebView = useWebView && !isCasting
+            val currentOnVisibilityToggle by rememberUpdatedState(onVisibilityToggle)
+            val currentHandleSeek by rememberUpdatedState(handleSeek)
+            val currentIsVideoReady by rememberUpdatedState(isVideoReady)
             if (showWebView) {
                 VideoPlayerWebView(
                     nukerScript = nukerScript,
@@ -2660,6 +2663,8 @@ fun VideoPlayerContent(
                     activeContentKey = activeContentKey,
                     isTV = isTV,
                     videoId = videoId,
+                    onVisibilityToggle = onVisibilityToggle,
+                    onSeek = handleSeek,
                     // Keep WebView fully attached at alpha 1f; Compose's AnimatedVisibility overlay cleanly covers loading
                     modifier = Modifier.fillMaxSize() 
                 )
@@ -2682,6 +2687,28 @@ fun VideoPlayerContent(
                         try { findViewById<android.view.View>(androidx.media3.ui.R.id.exo_shutter)?.visibility = android.view.View.GONE } catch(_: Exception) {}
                         subtitleView?.visibility = android.view.View.GONE
                         keepScreenOn = true
+
+                        val gestureDetector = android.view.GestureDetector(ctx, object : android.view.GestureDetector.SimpleOnGestureListener() {
+                            override fun onSingleTapConfirmed(e: android.view.MotionEvent): Boolean {
+                                if (currentIsVideoReady) {
+                                    currentOnVisibilityToggle()
+                                    return true
+                                }
+                                return false
+                            }
+                            override fun onDoubleTap(e: android.view.MotionEvent): Boolean {
+                                if (currentIsVideoReady) {
+                                    val isRight = e.x > width / 2
+                                    currentHandleSeek(if (isRight) 10000L else -10000L)
+                                    return true
+                                }
+                                return false
+                            }
+                        })
+                        setOnTouchListener { _, event ->
+                            gestureDetector.onTouchEvent(event)
+                            true
+                        }
                     } 
                 }, modifier = Modifier.fillMaxSize().alpha(if (isVideoReady) 1f else 0f), update = { 
                     it.player = exoPlayer
@@ -3047,9 +3074,14 @@ fun VideoPlayerWebView(
     activeContentKey: String,
     isTV: Boolean = false,
     videoId: String = "",
+    onVisibilityToggle: (() -> Unit)? = null,
+    onSeek: ((Long) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val scope = rememberCoroutineScope()
+    val currentOnVisibilityToggle by rememberUpdatedState(onVisibilityToggle)
+    val currentOnSeek by rememberUpdatedState(onSeek)
+    val currentIsVideoReady by rememberUpdatedState(isVideoReady)
     // OWL'S EYE: Total Blackout Handshake
     Box(modifier = modifier.fillMaxSize().background(androidx.compose.ui.graphics.Color.Black)) {
         AndroidView(
@@ -3061,6 +3093,29 @@ fun VideoPlayerWebView(
                     )
                     webViewRef.value = this
                     setBackgroundColor(android.graphics.Color.BLACK)
+
+                    val gestureDetector = android.view.GestureDetector(ctx, object : android.view.GestureDetector.SimpleOnGestureListener() {
+                        override fun onSingleTapConfirmed(e: android.view.MotionEvent): Boolean {
+                            if (currentIsVideoReady) {
+                                currentOnVisibilityToggle?.invoke()
+                                return true
+                            }
+                            return false
+                        }
+                        override fun onDoubleTap(e: android.view.MotionEvent): Boolean {
+                            if (currentIsVideoReady && currentOnSeek != null) {
+                                val w = this@apply.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
+                                val isRight = e.x > w / 2
+                                currentOnSeek?.invoke(if (isRight) 10000L else -10000L)
+                                return true
+                            }
+                            return false
+                        }
+                    })
+                    setOnTouchListener { _, event ->
+                        gestureDetector.onTouchEvent(event)
+                        false
+                    }
                 
                 // TV FOCUS FIX: Block DPAD focus traversal into WebView children,
                 // but keep the WebView itself focusable so JS click() events and
@@ -3879,7 +3934,7 @@ fun VideoPlayerWebView(
                                           </style>
                                       </head>
                                       <body style="background:#000!important;background-color:#000!important;">
-                                          <iframe id="playerFrame" src="$url" allow="autoplay; fullscreen; encrypted-media; picture-in-picture" allowfullscreen style="background:#000!important;background-color:#000!important;"></iframe>
+                                          <iframe id="playerFrame" src="$url" allow="autoplay *; fullscreen *; encrypted-media *; picture-in-picture *" allowfullscreen style="background:#000!important;background-color:#000!important;"></iframe>
                                           <script>
                                           (function() {
                                               var cleanIframe = function() {
@@ -3938,6 +3993,26 @@ fun VideoPlayerWebView(
                                                               if (jw) {
                                                                   if (typeof jw.getState === 'function') {
                                                                       var st = jw.getState();
+                                                                      if (st !== 'playing' && st !== 'buffering') {
+                                                                          try {
+                                                                              var playPromise = jw.play();
+                                                                              if (playPromise && typeof playPromise.catch === 'function') {
+                                                                                  playPromise.catch(function(err) {
+                                                                                      try {
+                                                                                          if (typeof jw.setMute === 'function') jw.setMute(true);
+                                                                                          var p2 = jw.play();
+                                                                                          if (p2 && typeof p2.catch === 'function') p2.catch(function(){});
+                                                                                      } catch(e){}
+                                                                                  });
+                                                                              }
+                                                                          } catch(e) {
+                                                                              try {
+                                                                                  if (typeof jw.setMute === 'function') jw.setMute(true);
+                                                                                  var p2 = jw.play();
+                                                                                  if (p2 && typeof p2.catch === 'function') p2.catch(function(){});
+                                                                              } catch(err){}
+                                                                          }
+                                                                      }
                                                                       if (st === 'playing' || (jw.getPosition && jw.getPosition() > 0.3)) {
                                                                           if (window.AndroidPlayer && window.AndroidPlayer.notifyVideoPlaying) {
                                                                               window.AndroidPlayer.notifyVideoPlaying();
@@ -3955,6 +4030,27 @@ fun VideoPlayerWebView(
                                                                               window.AndroidPlayer.notifyVideoPlaying();
                                                                           }
                                                                       };
+                                                                      // Autoplay policy and HTML5 error auto-recovery
+                                                                      jw.on('warning', function(warn) {
+                                                                          var code = (warn && warn.code) ? warn.code : 0;
+                                                                          if (code === 324003 || code === 305000) {
+                                                                              try {
+                                                                                  if (typeof jw.setMute === 'function') jw.setMute(true);
+                                                                                  var p = jw.play();
+                                                                                  if (p && typeof p.catch === 'function') p.catch(function(){});
+                                                                              } catch(e){}
+                                                                          }
+                                                                      });
+                                                                      jw.on('error', function(err) {
+                                                                          var code = (err && err.code) ? err.code : 0;
+                                                                          if (code === 102630 || code === 324003) {
+                                                                              try {
+                                                                                  if (typeof jw.setMute === 'function') jw.setMute(true);
+                                                                                  var p = jw.play();
+                                                                                  if (p && typeof p.catch === 'function') p.catch(function(){});
+                                                                              } catch(e){}
+                                                                          }
+                                                                      });
                                                                       jw.on('play', function() {
                                                                           notifySuccess();
                                                                           if (window.AndroidPlayer && window.AndroidPlayer.onPlayerState) {
@@ -3979,6 +4075,20 @@ fun VideoPlayerWebView(
                                                                               window.AndroidPlayer.onPlayerState(2, jw.getPosition ? jw.getPosition() : 0.1, jw.getDuration ? jw.getDuration() : 0);
                                                                           }
                                                                       });
+                                                                  }
+                                                                  if (!f.contentWindow._unmuteHooked && doc) {
+                                                                      f.contentWindow._unmuteHooked = true;
+                                                                      var unmuteAll = function() {
+                                                                          try {
+                                                                              if (typeof jw.setMute === 'function') jw.setMute(false);
+                                                                              var allVids = doc.querySelectorAll('video, audio');
+                                                                              for (var vi = 0; vi < allVids.length; vi++) {
+                                                                                  allVids[vi].muted = false;
+                                                                              }
+                                                                          } catch(e){}
+                                                                      };
+                                                                      doc.addEventListener('click', unmuteAll, { once: true, passive: true });
+                                                                      doc.addEventListener('touchstart', unmuteAll, { once: true, passive: true });
                                                                   }
                                                               }
                                                           }
@@ -4020,6 +4130,26 @@ fun VideoPlayerWebView(
                                                                               window.AndroidPlayer.onPlayerState(2, this.currentTime || 0.1, this.duration || 0);
                                                                           }
                                                                       });
+                                                                  }
+                                                                  if (vid.paused) {
+                                                                      try {
+                                                                          var p = vid.play();
+                                                                          if (p && typeof p.catch === 'function') {
+                                                                              p.catch(function(err) {
+                                                                                  try {
+                                                                                      vid.muted = true;
+                                                                                      var p2 = vid.play();
+                                                                                      if (p2 && typeof p2.catch === 'function') p2.catch(function(){});
+                                                                                  } catch(e){}
+                                                                              });
+                                                                          }
+                                                                      } catch(e) {
+                                                                          try {
+                                                                              vid.muted = true;
+                                                                              var p2 = vid.play();
+                                                                              if (p2 && typeof p2.catch === 'function') p2.catch(function(){});
+                                                                          } catch(err){}
+                                                                      }
                                                                   }
                                                                   if (!window.successNotified && !vid.paused && (vid.currentTime > 0.3 || vid.readyState >= 2)) {
                                                                       if (window.AndroidPlayer && window.AndroidPlayer.notifyVideoPlaying) {

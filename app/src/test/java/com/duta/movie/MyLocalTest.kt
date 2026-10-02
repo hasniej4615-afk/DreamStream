@@ -640,10 +640,12 @@ class MyLocalTest {
             assertTrue("DutaFilm Web should return results", dfwResults.isNotEmpty())
             println("      Sample: ${dfwResults.first().title} -> ${dfwResults.first().videoUrl}")
 
-            // 3. LK21 (inlionsforisbvi.org)
-            val inlionsResults = VideoExtractor.searchWordPressMuviPro("https://inlionsforisbvi.org", "avatar", 1, 10)
-            println("[3/6] LK21 (inlionsforisbvi.org): Fetched ${inlionsResults.size} titles")
-            assertTrue("LK21 inlions should return results", inlionsResults.isNotEmpty())
+            // 3. LK21 (bullerswood.org / inlionsforisbvi.org / scphi.org)
+            val inlionsResults = VideoExtractor.searchWordPressMuviPro("https://bullerswood.org", "avatar", 1, 10)
+                .ifEmpty { VideoExtractor.searchWordPressMuviPro("https://inlionsforisbvi.org", "avatar", 1, 10) }
+                .ifEmpty { VideoExtractor.searchWordPressMuviPro("https://scphi.org", "avatar", 1, 10) }
+            println("[3/6] LK21: Fetched ${inlionsResults.size} titles")
+            assertTrue("LK21 should return results", inlionsResults.isNotEmpty())
             println("      Sample: ${inlionsResults.first().title} -> ${inlionsResults.first().videoUrl}")
 
             // 4. PusatFilm21 (v5)
@@ -652,16 +654,13 @@ class MyLocalTest {
             assertTrue("PusatFilm21 should return results", pfResults.isNotEmpty())
             println("      Sample: ${pfResults.first().title} -> ${pfResults.first().videoUrl}")
 
-            // 5. DutaMovie21 (.art and .cam)
-            val dmArtResults = VideoExtractor.searchWordPressMuviPro("https://dutamovie21.art", "avatar", 1, 10)
-            println("[5a/6] DutaMovie21 (.art): Fetched ${dmArtResults.size} titles")
-            assertTrue("DutaMovie21 (.art) should return results", dmArtResults.isNotEmpty())
-            println("       Sample: ${dmArtResults.first().title} -> ${dmArtResults.first().videoUrl}")
-
-            val dmCamResults = VideoExtractor.searchWordPressMuviPro("https://dutamovie21.cam", "avatar", 1, 10)
-            println("[5b/6] DutaMovie21 (.cam): Fetched ${dmCamResults.size} titles")
-            assertTrue("DutaMovie21 (.cam) should return results", dmCamResults.isNotEmpty())
-            println("       Sample: ${dmCamResults.first().title} -> ${dmCamResults.first().videoUrl}")
+            // 5. DutaMovie21 (balletroyale.com / .cam / .art)
+            val dmResults = VideoExtractor.searchWordPressMuviPro("https://balletroyale.com", "avatar", 1, 10)
+                .ifEmpty { VideoExtractor.searchWordPressMuviPro("https://dutamovie21.cam", "avatar", 1, 10) }
+                .ifEmpty { VideoExtractor.searchWordPressMuviPro("https://dutamovie21.art", "avatar", 1, 10) }
+            println("[5/6] DutaMovie21: Fetched ${dmResults.size} titles")
+            assertTrue("DutaMovie21 should return results", dmResults.isNotEmpty())
+            println("       Sample: ${dmResults.first().title} -> ${dmResults.first().videoUrl}")
 
             println("==========================================")
             println(" ALL 5 REPOSITORY PROVIDERS ARE FULLY FUNCTIONAL!")

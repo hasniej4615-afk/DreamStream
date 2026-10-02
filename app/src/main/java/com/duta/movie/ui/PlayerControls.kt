@@ -91,11 +91,13 @@ fun PlayerControls(
     var showQualityMenu by remember { mutableStateOf(false) }
     var showSpeedMenu by remember { mutableStateOf(false) }
 
+    val currentOnVisibilityToggle by rememberUpdatedState(onVisibilityToggle)
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .pointerInput(Unit) {
-                detectTapGestures(onTap = { onVisibilityToggle() })
+                detectTapGestures(onTap = { currentOnVisibilityToggle() })
             }
     ) {
         AnimatedVisibility(
