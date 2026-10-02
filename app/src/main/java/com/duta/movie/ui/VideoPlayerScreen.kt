@@ -3171,7 +3171,7 @@ fun VideoPlayerWebView(
                         low.contains("vidhide") || low.contains("fujihide") || low.contains("tnmr.org") ||
                         forceWebViewHosts.any { low.contains(it) }
                     )
-                    userAgentString = if (isStrict || isBilibili || (isDailymotion && isTVDevice)) NetworkConfig.MOBILE_USER_AGENT else NetworkConfig.SHARED_USER_AGENT
+                    userAgentString = if (isStrict || (isDailymotion && isTVDevice)) NetworkConfig.MOBILE_USER_AGENT else NetworkConfig.SHARED_USER_AGENT
                 }
                 
                 // Native hardware compositor direct to window surface

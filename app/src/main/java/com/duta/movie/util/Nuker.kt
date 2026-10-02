@@ -94,6 +94,8 @@ object Nuker {
                             var bodyText = ((document.body && (document.body.innerText || document.body.textContent)) || "").toLowerCase();
                             if (bodyText.indexOf('path not found') !== -1 || 
                                 bodyText.indexOf('404 not found') !== -1 ||
+                                bodyText.indexOf('404 error') !== -1 ||
+                                bodyText.indexOf('error 404') !== -1 ||
                                 bodyText.indexOf('502 bad gateway') !== -1 ||
                                 bodyText.indexOf('welcome back') !== -1 ||
                                 bodyText.indexOf('please login') !== -1 ||
@@ -103,8 +105,11 @@ object Nuker {
                                 bodyText.indexOf('no longer available') !== -1 ||
                                 bodyText.indexOf('expired or has been deleted') !== -1 ||
                                 bodyText.indexOf('file was deleted') !== -1 ||
+                                bodyText.indexOf('file is deleted') !== -1 ||
+                                bodyText.indexOf('file has been deleted') !== -1 ||
                                 bodyText.indexOf('the file you are looking for does not exist') !== -1 ||
                                 bodyText.indexOf('file not found') !== -1 ||
+                                bodyText.indexOf('file is not found') !== -1 ||
                                 bodyText.indexOf("can't find the file") !== -1 ||
                                 bodyText.indexOf("cant find the file") !== -1 ||
                                 bodyText.indexOf("deleted by the owner") !== -1 ||
@@ -116,7 +121,15 @@ object Nuker {
                                 bodyText.indexOf("video is not ready yet") !== -1 ||
                                 bodyText.indexOf("cookieindex is not defined") !== -1 ||
                                 bodyText.indexOf('video not found') !== -1 ||
+                                bodyText.indexOf('video is not found') !== -1 ||
                                 bodyText.indexOf('video was deleted') !== -1 ||
+                                bodyText.indexOf('video is deleted') !== -1 ||
+                                bodyText.indexOf('video has been deleted') !== -1 ||
+                                bodyText.indexOf('下载哔哩哔哩') !== -1 ||
+                                bodyText.indexOf('进入哔哩哔哩') !== -1 ||
+                                bodyText.indexOf('客户端观看') !== -1 ||
+                                bodyText.indexOf('下载客户端') !== -1 ||
+                                bodyText.indexOf('打开app') !== -1 ||
                                 bodyText.indexOf('media could not be loaded') !== -1 ||
                                 bodyText.indexOf('format is not supported') !== -1 ||
                                 bodyText.indexOf('server or network failed') !== -1 ||
@@ -919,20 +932,33 @@ object Nuker {
                         if (elapsedMs > 1000) {
                              var isCritical = bodyText.indexOf('path not found') !== -1 || 
                                               bodyText.indexOf('404 not found') !== -1 ||
+                                              bodyText.indexOf('404 error') !== -1 ||
+                                              bodyText.indexOf('error 404') !== -1 ||
                                               bodyText.indexOf('502 bad gateway') !== -1 ||
                                               bodyText.indexOf('no longer available') !== -1 ||
                                               bodyText.indexOf('file is no longer available') !== -1 ||
                                               bodyText.indexOf('video is no longer available') !== -1 ||
                                               bodyText.indexOf('expired or has been deleted') !== -1 ||
                                               bodyText.indexOf('file was deleted') !== -1 ||
+                                              bodyText.indexOf('file is deleted') !== -1 ||
+                                              bodyText.indexOf('file has been deleted') !== -1 ||
                                               bodyText.indexOf('has been deleted') !== -1 ||
                                               bodyText.indexOf('file deleted') !== -1 ||
                                               bodyText.indexOf('video deleted') !== -1 ||
                                               bodyText.indexOf('video not found') !== -1 ||
+                                              bodyText.indexOf('video is not found') !== -1 ||
+                                              bodyText.indexOf('video is deleted') !== -1 ||
+                                              bodyText.indexOf('video has been deleted') !== -1 ||
+                                              bodyText.indexOf('下载哔哩哔哩') !== -1 ||
+                                              bodyText.indexOf('进入哔哩哔哩') !== -1 ||
+                                              bodyText.indexOf('客户端观看') !== -1 ||
+                                              bodyText.indexOf('下载客户端') !== -1 ||
+                                              bodyText.indexOf('打开app') !== -1 ||
                                               bodyText.indexOf('media not found') !== -1 ||
                                               bodyText.indexOf('file expired') !== -1 ||
                                               bodyText.indexOf('the file you are looking for does not exist') !== -1 ||
                                               bodyText.indexOf('file not found') !== -1 ||
+                                              bodyText.indexOf('file is not found') !== -1 ||
                                               bodyText.indexOf("can't find the file") !== -1 ||
                                               bodyText.indexOf("cant find the file") !== -1 ||
                                               bodyText.indexOf("deleted by the owner") !== -1 ||
@@ -1281,6 +1307,8 @@ object Nuker {
                             var bodyText = ((document.body && (document.body.innerText || document.body.textContent)) || "").toLowerCase();
                             if (bodyText.indexOf('path not found') !== -1 || 
                                 bodyText.indexOf('404 not found') !== -1 ||
+                                bodyText.indexOf('404 error') !== -1 ||
+                                bodyText.indexOf('error 404') !== -1 ||
                                 bodyText.indexOf('502 bad gateway') !== -1 ||
                                 bodyText.indexOf('welcome back') !== -1 ||
                                 bodyText.indexOf('please login') !== -1 ||
@@ -1290,10 +1318,21 @@ object Nuker {
                                 bodyText.indexOf('no longer available') !== -1 ||
                                 bodyText.indexOf('expired or has been deleted') !== -1 ||
                                 bodyText.indexOf('file was deleted') !== -1 ||
+                                bodyText.indexOf('file is deleted') !== -1 ||
+                                bodyText.indexOf('file has been deleted') !== -1 ||
                                 bodyText.indexOf('the file you are looking for does not exist') !== -1 ||
                                 bodyText.indexOf('file not found') !== -1 ||
+                                bodyText.indexOf('file is not found') !== -1 ||
                                 bodyText.indexOf('video not found') !== -1 ||
+                                bodyText.indexOf('video is not found') !== -1 ||
                                 bodyText.indexOf('video was deleted') !== -1 ||
+                                bodyText.indexOf('video is deleted') !== -1 ||
+                                bodyText.indexOf('video has been deleted') !== -1 ||
+                                bodyText.indexOf('下载哔哩哔哩') !== -1 ||
+                                bodyText.indexOf('进入哔哩哔哩') !== -1 ||
+                                bodyText.indexOf('客户端观看') !== -1 ||
+                                bodyText.indexOf('下载客户端') !== -1 ||
+                                bodyText.indexOf('打开app') !== -1 ||
                                 bodyText.indexOf('media could not be loaded') !== -1 ||
                                 bodyText.indexOf('format is not supported') !== -1 ||
                                 bodyText.indexOf('server or network failed') !== -1 ||
@@ -2033,12 +2072,25 @@ object Nuker {
                             var isDeadInside = checkDeadInside(document);
                             var isDeadText = bodyText.indexOf('path not found') !== -1 ||
                                              bodyText.indexOf('404 not found') !== -1 ||
+                                             bodyText.indexOf('404 error') !== -1 ||
+                                             bodyText.indexOf('error 404') !== -1 ||
                                              bodyText.indexOf('502 bad gateway') !== -1 ||
                                              bodyText.indexOf('file was deleted') !== -1 ||
+                                             bodyText.indexOf('file is deleted') !== -1 ||
+                                             bodyText.indexOf('file has been deleted') !== -1 ||
                                              bodyText.indexOf('the file you are looking for does not exist') !== -1 ||
                                              bodyText.indexOf('file not found') !== -1 ||
+                                             bodyText.indexOf('file is not found') !== -1 ||
                                              bodyText.indexOf('video not found') !== -1 ||
+                                             bodyText.indexOf('video is not found') !== -1 ||
                                              bodyText.indexOf('video was deleted') !== -1 ||
+                                             bodyText.indexOf('video is deleted') !== -1 ||
+                                             bodyText.indexOf('video has been deleted') !== -1 ||
+                                             bodyText.indexOf('下载哔哩哔哩') !== -1 ||
+                                             bodyText.indexOf('进入哔哩哔哩') !== -1 ||
+                                             bodyText.indexOf('客户端观看') !== -1 ||
+                                             bodyText.indexOf('下载客户端') !== -1 ||
+                                             bodyText.indexOf('打开app') !== -1 ||
                                              bodyText.indexOf('expired or has been deleted') !== -1 ||
                                              bodyText.indexOf('media could not be loaded') !== -1 ||
                                              bodyText.indexOf('format is not supported') !== -1 ||

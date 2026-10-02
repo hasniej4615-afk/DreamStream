@@ -1527,7 +1527,7 @@ object VideoExtractor {
                        lowHost.contains("upstream") || lowHost.contains("hexload") || lowHost.contains("vstream") ||
                        lowHost.contains("faststream") || lowHost.contains("dstream") || lowHost.contains("streamwish") ||
                        lowHost.contains("wishonly") || lowHost.contains("dood") || lowHost.contains("voe") ||
-                       lowHost.contains("mixdrop") || lowHost.contains("filemoon")) {
+                       lowHost.contains("mixdrop") || lowHost.contains("filemoon") || lowHost.contains("asiastream")) {
                 // Fast-probe for 404/410/dead video URLs on dedicated file hosts
                 val probeHtml = fetchHtml(pageUrl, actualReferer)
                 if (probeHtml == null || probeHtml.contains("file not found", ignoreCase = true) ||
@@ -1535,6 +1535,8 @@ object VideoExtractor {
                     probeHtml.contains("video was removed", ignoreCase = true) ||
                     probeHtml.contains("deleted by the owner", ignoreCase = true) ||
                     probeHtml.contains("404 not found", ignoreCase = true) ||
+                    probeHtml.contains("404 error", ignoreCase = true) ||
+                    probeHtml.contains("video is not found", ignoreCase = true) ||
                     probeHtml.contains("cant find the file", ignoreCase = true) ||
                     probeHtml.contains("can't find the file", ignoreCase = true) ||
                     probeHtml.contains("no_video", ignoreCase = true)) {
