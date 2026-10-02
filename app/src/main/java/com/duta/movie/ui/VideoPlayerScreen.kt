@@ -3281,16 +3281,18 @@ fun VideoPlayerWebView(
                         val isLegit = low.startsWith("http") && (low.contains(".m3u8") || low.contains(".mp4") || low.contains(".mkv") || low.contains(".webm") || low.contains(".txt") || low.contains("/amt/") || low.contains(".amt") || low.contains("amt1.pro") || low.contains("amt2.pro") || low.contains("haneri"))
                         val isVidhideStream = low.contains("vidhide") || low.contains("fujihide") || low.contains("tnmr.org") ||
                                               url.lowercase().contains("vidhide") || url.lowercase().contains("fujihide")
+                        val isAsiastream = low.contains("asiastream") || url.lowercase().contains("asiastream")
                         val isProtected = (low.contains("playmogo") || 
                                           low.contains("digitalidentity") || low.contains("sunrisevalleycreative") ||
                                           low.contains("johnfullwonder") || low.contains("voe") ||
                                           low.contains("platformdocumentation") || low.contains("hgcloud") || low.contains("hglink") ||
-                                          isVidhideStream ||
+                                          isVidhideStream || isAsiastream ||
                                           com.duta.movie.util.VideoExtractor.isJsOnlyHost(u) ||
                                           com.duta.movie.util.VideoExtractor.isJsOnlyHost(url)) &&
                                           !low.contains("cloudwindow") &&
-                                          (!low.contains(".m3u8") || isVidhideStream) &&
-                                          !low.contains(".mp4") && !low.contains(".mkv") && !low.contains(".webm") && !low.contains(".txt")
+                                          (!low.contains(".m3u8") || isVidhideStream || isAsiastream) &&
+                                          (!low.contains(".txt") || isAsiastream) &&
+                                          !low.contains(".mp4") && !low.contains(".mkv") && !low.contains(".webm")
                         if (!isLegit || isProtected) return
                         scope.launch(Dispatchers.Main) { 
                              Log.i("VideoPlayerSniffer", "Sniffed Legit Stream: $u | Ref: $ref")
@@ -3449,14 +3451,9 @@ fun VideoPlayerWebView(
                                 return
                             }
                             val isTargetEmbed = request?.isForMainFrame == true || 
-                                                host.contains("dood") || host.contains("voe") ||
-                                                host.contains("indostream") || host.contains("embedo") ||
-                                                host.contains("embed4me") || host.contains("playerp2p") || host.contains("upns") ||
-                                                host.contains("dutamovie21.xyz") ||
-                                                host.contains("abyss") || host.contains("bond") || host.contains("playsobat") ||
-                                                path.contains("/api/v1/video") || path.contains("/api/") ||
-                                                path.contains("/e/") || path.contains("/embed/") ||
-                                                (host.contains("abysscdn.com") && query.contains("v="))
+                                                (lowFail.endsWith(".m3u8") || lowFail.endsWith(".mpd")) ||
+                                                (path.contains("/api/v1/video") && statusCode in listOf(404, 410)) ||
+                                                (host.contains("abysscdn.com") && query.contains("v=") && statusCode in listOf(404, 410))
                             if (isTargetEmbed) {
                                 val activeUrl = view?.getTag(R.id.active_url) as? String ?: url
                                 Log.e("VideoPlayerWebView", "HTTP error $statusCode on $failingUrl (mainFrame=${request?.isForMainFrame}) -> declaring mirror dead: $activeUrl")
@@ -3812,17 +3809,19 @@ fun VideoPlayerWebView(
                         
                         val isVidhideStream = low.contains("vidhide") || low.contains("fujihide") || low.contains("tnmr.org") ||
                                               url.lowercase().contains("vidhide") || url.lowercase().contains("fujihide")
+                        val isAsiastream = low.contains("asiastream") || url.lowercase().contains("asiastream")
                         val isProtectedStream = (low.contains("playmogo") || 
                                                 low.contains("digitalidentity") || low.contains("sunrisevalleycreative") ||
                                                 low.contains("johnfullwonder") || low.contains("voe") ||
                                                 low.contains("platformdocumentation") || low.contains("hgcloud") || low.contains("hglink") ||
                                                 low.contains("hanerix") || low.contains("vibuxer") || low.contains("audinifer") ||
-                                                isVidhideStream ||
+                                                isVidhideStream || isAsiastream ||
                                                 com.duta.movie.util.VideoExtractor.isJsOnlyHost(u) ||
                                                 com.duta.movie.util.VideoExtractor.isJsOnlyHost(url)) &&
                                                 !low.contains("cloudwindow") &&
-                                                (!low.contains(".m3u8") || isVidhideStream) &&
-                                                !low.contains(".mp4") && !low.contains(".mkv") && !low.contains(".webm") && !low.contains(".txt")
+                                                (!low.contains(".m3u8") || isVidhideStream || isAsiastream) &&
+                                                (!low.contains(".txt") || isAsiastream) &&
+                                                !low.contains(".mp4") && !low.contains(".mkv") && !low.contains(".webm")
 
                         if (isStream && !r.isForMainFrame && !isProtectedStream) {
                             val streamRef = when {

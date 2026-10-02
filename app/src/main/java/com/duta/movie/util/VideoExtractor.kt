@@ -5781,6 +5781,10 @@ object VideoExtractor {
                 if (isSelf && !hasPlayerParams) {
                     return@async null
                 }
+                // Filter out broken self-referencing DooPlay ?player= buttons on IP/portal hosts like 204.3.234.75 that crash with 502 Bad Gateway
+                if (link.contains("204.3.234.75") && (link.contains("?player=") || link.contains("&player="))) {
+                    return@async null
+                }
 
                 if (link.isNotEmpty() && !link.startsWith("javascript") && (!isSelf || hasPlayerParams)) {
                     if ((isProbablyVideoHost(link) || hasPlayerParams) && isGenuineMirror(rawName, link)) {
