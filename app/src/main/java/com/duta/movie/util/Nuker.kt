@@ -2558,19 +2558,42 @@ object Nuker {
 
                     function checkBilibiliPlayer() {
                         try {
-                            // Geo-restriction detection fail-safe:
-                            // If video is region-locked, notify Android player to rotate mirrors immediately
+                            // Geo-restriction and dead/deleted video detection fail-safe:
+                            // If video is region-locked, deleted, or link expired, notify Android player to rotate mirrors immediately
                             var bodyText = ((document.body && (document.body.innerText || document.body.textContent)) || "").toLowerCase();
-                            var isGeoBlocked = bodyText.indexOf('地区无法观看') !== -1 ||
-                                               bodyText.indexOf('not available in your location') !== -1 ||
-                                               bodyText.indexOf('not available in your region') !== -1 ||
-                                               bodyText.indexOf('根据版权方要求') !== -1;
-                            if (isGeoBlocked && !window.biliDeadNotified) {
+                            var isDeadOrBlocked = bodyText.indexOf('地区无法观看') !== -1 ||
+                                                  bodyText.indexOf('not available in your location') !== -1 ||
+                                                  bodyText.indexOf('not available in your region') !== -1 ||
+                                                  bodyText.indexOf('根据版权方要求') !== -1 ||
+                                                  bodyText.indexOf('非常抱歉') !== -1 ||
+                                                  bodyText.indexOf('无法正常播放') !== -1 ||
+                                                  bodyText.indexOf('视频链接失效') !== -1 ||
+                                                  bodyText.indexOf('up主自主删除') !== -1 ||
+                                                  bodyText.indexOf('侵犯他人著作权') !== -1 ||
+                                                  bodyText.indexOf('bilibilidouga') !== -1 ||
+                                                  bodyText.indexOf('视频不见了') !== -1 ||
+                                                  bodyText.indexOf('404 not found') !== -1;
+                            if (isDeadOrBlocked && !window.biliDeadNotified) {
                                 window.biliDeadNotified = true;
-                                if (window.AndroidPlayer && window.AndroidPlayer.notifyMirrorDead) {
-                                    window.AndroidPlayer.notifyMirrorDead();
+                                if (window.AndroidPlayer) {
+                                    if (window.AndroidPlayer.notifyMirrorDead) window.AndroidPlayer.notifyMirrorDead();
+                                    else if (window.AndroidPlayer.notifyGateStuck) window.AndroidPlayer.notifyGateStuck(window.location.href);
                                 }
                                 return;
+                            }
+
+                            window.biliElapsed = (window.biliElapsed || 0) + 300;
+                            var v = document.querySelector('video');
+                            if (window.biliElapsed > 6000 && !window.successNotified && !window.biliDeadNotified) {
+                                var isPlaying = v && !v.paused && v.currentTime > 0;
+                                if (!isPlaying) {
+                                    window.biliDeadNotified = true;
+                                    if (window.AndroidPlayer) {
+                                        if (window.AndroidPlayer.notifyMirrorDead) window.AndroidPlayer.notifyMirrorDead();
+                                        else if (window.AndroidPlayer.notifyGateStuck) window.AndroidPlayer.notifyGateStuck(window.location.href);
+                                    }
+                                    return;
+                                }
                             }
 
                             var v = document.querySelector('video');
