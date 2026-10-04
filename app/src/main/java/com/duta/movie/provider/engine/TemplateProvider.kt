@@ -102,6 +102,8 @@ class TemplateProvider(
 
     override suspend fun fetchSection(path: String, page: Int, count: Int): List<Video> = withContext(Dispatchers.IO) {
         if (!isEnabled) return@withContext emptyList()
+        val norm = path.trim('/')
+        if (norm.startsWith("source/")) return@withContext emptyList()
         try {
             val list = when (entity.templateType) {
                 "DUTAFILM" -> {

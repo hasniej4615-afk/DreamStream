@@ -34,7 +34,9 @@ enum class TemplateType {
     @SerialName("DUTAFILM")
     DUTAFILM,
     @SerialName("GENERIC_HTML")
-    GENERIC_HTML
+    GENERIC_HTML,
+    @SerialName("MOVIEBOX")
+    MOVIEBOX
 }
 
 @Serializable

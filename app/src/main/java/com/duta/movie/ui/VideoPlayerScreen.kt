@@ -1639,6 +1639,7 @@ fun VideoPlayerScreen(
             if (!isCasting) {
                 val g = exoPlayer.currentTracks.groups[t.groupIndex].mediaTrackGroup
                 exoPlayer.trackSelectionParameters = exoPlayer.trackSelectionParameters.buildUpon()
+                    .clearVideoSizeConstraints()
                     .setOverrideForType(TrackSelectionOverride(g, t.trackIndex))
                     .build()
                 selectedQualityGroupIndex = t.groupIndex
@@ -2048,6 +2049,16 @@ fun VideoPlayerScreen(
                                     .fillMaxWidth()
                                     .focusRequester(subFirstItemFocusRequester)
                                     .onFocusChanged { isFocused = it.isFocused }
+                                    .onKeyEvent { keyEvent ->
+                                        if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                            (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                            viewModel.selectSubtitle(null)
+                                            showSubtitleDialog = false
+                                            true
+                                        } else false
+                                    }
                                     .clickable { viewModel.selectSubtitle(null); showSubtitleDialog = false }
                                     .focusable()
                                     .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
@@ -2065,6 +2076,16 @@ fun VideoPlayerScreen(
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .onFocusChanged { isFocused = it.isFocused }
+                                    .onKeyEvent { keyEvent ->
+                                        if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                            (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                            viewModel.selectSubtitle(sub)
+                                            showSubtitleDialog = false
+                                            true
+                                        } else false
+                                    }
                                     .clickable { viewModel.selectSubtitle(sub); showSubtitleDialog = false }
                                     .focusable()
                                     .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
@@ -2115,6 +2136,15 @@ fun VideoPlayerScreen(
                     onClick = { showSubtitleDialog = false },
                     modifier = Modifier
                         .onFocusChanged { isCloseFocused = it.isFocused }
+                        .onKeyEvent { keyEvent ->
+                            if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                 keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                 keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                showSubtitleDialog = false
+                                true
+                            } else false
+                        }
                         .focusable()
                         .background(if (isCloseFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
                         .border(if (isCloseFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
@@ -2153,6 +2183,15 @@ fun VideoPlayerScreen(
                             modifier = Modifier
                                 .focusRequester(syncFirstButtonFocusRequester)
                                 .onFocusChanged { isMinusFocused = it.isFocused }
+                                .onKeyEvent { keyEvent ->
+                                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                        viewModel.adjustSubtitleOffset(-500)
+                                        true
+                                    } else false
+                                }
                                 .focusable()
                                 .scale(if (isMinusFocused) 1.1f else 1f)
                         ) { 
@@ -2165,10 +2204,19 @@ fun VideoPlayerScreen(
                             colors = ButtonDefaults.buttonColors(containerColor = if (isPlusFocused) Color.White else Color(0xFF333333)),
                             modifier = Modifier
                                 .onFocusChanged { isPlusFocused = it.isFocused }
+                                .onKeyEvent { keyEvent ->
+                                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                        viewModel.adjustSubtitleOffset(500)
+                                        true
+                                    } else false
+                                }
                                 .focusable()
                                 .scale(if (isPlusFocused) 1.1f else 1f)
                         ) { 
-                            Text(stringResource(R.string.minus_0_5s), color = if (isPlusFocused) Color.Black else Color.White) 
+                            Text(stringResource(R.string.plus_0_5s), color = if (isPlusFocused) Color.Black else Color.White) 
                         }
                     }
                 }
@@ -2179,6 +2227,15 @@ fun VideoPlayerScreen(
                     onClick = { showSyncDialog = false },
                     modifier = Modifier
                         .onFocusChanged { isDoneFocused = it.isFocused }
+                        .onKeyEvent { keyEvent ->
+                            if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                 keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                 keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                showSyncDialog = false
+                                true
+                            } else false
+                        }
                         .focusable()
                         .background(if (isDoneFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
                         .border(if (isDoneFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
@@ -2238,6 +2295,16 @@ fun VideoPlayerScreen(
                                 .fillMaxWidth()
                                 .then(if (index == 0) Modifier.focusRequester(firstEpFocusRequester) else Modifier)
                                 .onFocusChanged { isFocused = it.isFocused }
+                                .onKeyEvent { keyEvent ->
+                                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                        viewModel.playTVSeries(videoId, ep.url, targetEpisode = ep)
+                                        showEpisodeDialog = false
+                                        true
+                                    } else false
+                                }
                                 .clickable { 
                                     viewModel.playTVSeries(videoId, ep.url, targetEpisode = ep)
                                     showEpisodeDialog = false 
@@ -2257,6 +2324,15 @@ fun VideoPlayerScreen(
                     onClick = { showEpisodeDialog = false },
                     modifier = Modifier
                         .onFocusChanged { isCloseFocused = it.isFocused }
+                        .onKeyEvent { keyEvent ->
+                            if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                 keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                 keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                showEpisodeDialog = false
+                                true
+                            } else false
+                        }
                         .focusable()
                         .background(if (isCloseFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
                         .border(if (isCloseFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
@@ -3701,6 +3777,53 @@ fun VideoPlayerWebView(
                             if (low.contains("popads") || low.contains("onclickads") || low.contains("adsterra") || low.contains("exoclick") || low.contains("propellerads")) {
                                 return android.webkit.WebResourceResponse("text/plain", "UTF-8", null)
                             }
+                            // CORS-BYPASS: VidHide's JS player makes XHR from vidhide.org to s1.vidhide.org/api/ and /api-config/
+                            // The server doesn't send Access-Control-Allow-Origin, so WebView blocks the response.
+                            // Proxy these API calls through OkHttp and return with permissive CORS headers.
+                            val isCorsSensitiveApi = (low.contains("/api/") || low.contains("/api-config/")) &&
+                                                     (low.contains("s1.vidhide") || low.contains("s2.vidhide") || low.contains("s3.vidhide") ||
+                                                      low.contains("s1.fujihide") || low.contains("s2.fujihide") || low.contains("s3.fujihide"))
+                            if (isCorsSensitiveApi) {
+                                try {
+                                    val reqBuilder = okhttp3.Request.Builder().url(u)
+                                    val ua = r.requestHeaders["User-Agent"] ?: view.settings.userAgentString ?: com.duta.movie.util.NetworkConfig.MOBILE_USER_AGENT
+                                    reqBuilder.header("User-Agent", ua)
+                                    // Forward all original request headers (Referer, Origin, etc.)
+                                    for ((k, v) in r.requestHeaders) {
+                                        if (!k.equals("User-Agent", ignoreCase = true) &&
+                                            !k.equals("Accept-Encoding", ignoreCase = true) &&
+                                            !k.equals("Host", ignoreCase = true)) {
+                                            reqBuilder.header(k, v)
+                                        }
+                                    }
+                                    // Forward cookies
+                                    val cookieManager = android.webkit.CookieManager.getInstance()
+                                    val cookies = cookieManager.getCookie(u)
+                                    if (!cookies.isNullOrEmpty()) {
+                                        reqBuilder.header("Cookie", cookies)
+                                    }
+                                    val call = com.duta.movie.util.NetworkConfig.permissiveOkHttpClient.newCall(reqBuilder.build())
+                                    val resp = call.execute()
+                                    val body = resp.body
+                                    if (body != null) {
+                                        val contentType = body.contentType()
+                                        val mimeType = contentType?.let { "${it.type}/${it.subtype}" } ?: "application/json"
+                                        val charset = contentType?.charset()?.name() ?: "UTF-8"
+                                        // Store any Set-Cookie from the response
+                                        resp.headers("Set-Cookie").forEach { cookie ->
+                                            cookieManager.setCookie(u, cookie)
+                                        }
+                                        val responseHeaders = mutableMapOf<String, String>()
+                                        responseHeaders["Access-Control-Allow-Origin"] = "*"
+                                        responseHeaders["Access-Control-Allow-Headers"] = "*"
+                                        responseHeaders["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+                                        Log.d("VideoPlayerTurbo", "CORS-proxied VidHide API (${resp.code}): $u")
+                                        return android.webkit.WebResourceResponse(mimeType, charset, resp.code, resp.message.ifEmpty { "OK" }, responseHeaders, body.byteStream())
+                                    }
+                                } catch (e: Exception) {
+                                    Log.w("VideoPlayerTurbo", "CORS-proxy failed for VidHide API: ${e.message}")
+                                }
+                            }
                             return null // Never block legitimate Vidhide player assets, video chunks, or steganographic key poster images
                         }
 
@@ -3802,7 +3925,15 @@ fun VideoPlayerWebView(
                             low.contains("a.bestcontent") || low.contains("cpmstar") || 
                             low.contains(".ico") || low.contains(".png") || low.contains(".jpg") || 
                             low.contains(".jpeg") || low.contains(".gif") || low.contains(".svg")) {
-                            if (!low.contains("master.m3u8") && !low.contains("index.m3u8") && !low.contains("/amt/") && !low.contains(".amt") && !low.contains("amt1.pro") && !low.contains("amt2.pro")) {
+                            // Never block images from the embed host itself — they are legitimate player assets
+                            // (poster images, steganographic key images, player UI elements)
+                            val isEmbedHostImage = (low.contains(".png") || low.contains(".jpg") || low.contains(".jpeg") || low.contains(".gif") || low.contains(".svg") || low.contains(".ico")) &&
+                                (low.contains("playerp2p") || low.contains("abysscdn") || low.contains("abyssplayer") ||
+                                 low.contains("bondcdn") || low.contains("bondplayer") || low.contains("playsobat") ||
+                                 low.contains("embed4me") || low.contains("indostream") || low.contains("vidhide") ||
+                                 low.contains("fujihide") || low.contains("zeus") || low.contains("klik") ||
+                                 low.contains("pyrox") || low.contains("embedpyrox"))
+                            if (!isEmbedHostImage && !low.contains("master.m3u8") && !low.contains("index.m3u8") && !low.contains("/amt/") && !low.contains(".amt") && !low.contains("amt1.pro") && !low.contains("amt2.pro")) {
                                 Log.d("VideoPlayerTurbo", "Blocked Network Tracker/Ad/Junk: $u")
                                 return android.webkit.WebResourceResponse("text/plain", "UTF-8", null)
                             }
@@ -4317,22 +4448,28 @@ fun ServerSelectionDialog(
                     val lowN = s.name.lowercase()
                     !lowU.contains("google.com") && !lowU.contains("pagead") && !lowU.contains("/aclk") &&
                     !lowN.contains("google.com") && !lowN.contains("pagead")
-                }.sortedWith(
+                }
+                .distinctBy { 
+                    if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() 
+                    else "${it.name.trim()}_${it.url.substringBefore('?')}"
+                }
+                .sortedWith(
                     compareBy<com.duta.movie.model.VideoServer> { s ->
                         if (com.duta.movie.util.VideoExtractor.isAlternativePartnerServer(s.name, s.url)) 1 else 0
                     }.thenByDescending { s ->
                         com.duta.movie.util.VideoExtractor.getProviderPriority(s.name, s.url)
-                    }
+                    }.thenBy { s -> s.name }
                 )
             }
             LazyColumn(verticalArrangement = Arrangement.spacedBy(if (isTV) 6.dp else 2.dp)) {
-                itemsIndexed(cleanServers, key = { _, server -> server.url }) { index, server ->
+                itemsIndexed(cleanServers, key = { index, server -> "${server.name}_${server.url}_$index" }) { index, server ->
                     val isSelected = server.url == currentServerUrl
                     var isFocused by remember { mutableStateOf(false) }
                     val lowU = server.url.lowercase()
                     val lowN = server.name.lowercase()
                     val platformBadge = remember(server.url, server.name) {
                         when {
+                            lowU.contains("hakunaymatata") || lowU.contains("aoneroom") || lowN.contains("moviebox") -> "MovieBox (Direct)" to Color(0xFFFFD700)
                             lowU.contains("hglink") || lowN.contains("hglink") -> "HGLink (Top)" to Color(0xFF00E676)
                             lowU.contains("hgcloud") || lowN.contains("hgcloud") -> "HgCloud" to Color(0xFF00B0FF)
                             lowU.contains("indostream") || lowN.contains("indostream") || com.duta.movie.util.VideoExtractor.isIndoStreamAmt(server.url) -> "IndoStream" to Color(0xFFFF9100)
@@ -4403,7 +4540,7 @@ fun ServerSelectionDialog(
                             .border(if (isFocused) BorderStroke(if (isTV) 3.dp else 2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
                         colors = ListItemDefaults.colors(
                             containerColor = if (isSelected) Color.Red.copy(alpha = 0.25f) 
-                                            else if (isFocused) Color.White.copy(alpha = 0.2f)
+                                            else if (isFocused) Color.White.copy(alpha = 0.2f) 
                                             else Color.Transparent
                         )
                     )
@@ -4416,6 +4553,15 @@ fun ServerSelectionDialog(
                 onClick = onDismiss,
                 modifier = Modifier
                     .onFocusChanged { isCloseFocused = it.isFocused }
+                    .onKeyEvent { keyEvent ->
+                        if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                            (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                            onDismiss()
+                            true
+                        } else false
+                    }
                     .focusable()
                     .background(if (isCloseFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
                     .border(if (isCloseFocused) BorderStroke(if (isTV) 2.5.dp else 2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))

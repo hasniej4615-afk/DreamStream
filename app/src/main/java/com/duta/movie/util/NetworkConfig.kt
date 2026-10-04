@@ -559,6 +559,9 @@ object NetworkConfig {
                 } else if (host.contains("asiastream") || host.contains("asiatik")) {
                     requestBuilder.header("Referer", currentReferer ?: "https://watch.asiastream.cc/")
                     requestBuilder.header("Origin", "https://watch.asiastream.cc")
+                } else if (host.contains("hakunaymatata") || host.contains("aoneroom")) {
+                    requestBuilder.header("Referer", "https://movieboxonline.net/")
+                    requestBuilder.header("Origin", "https://movieboxonline.net")
                 } else {
                     requestBuilder.header("Origin", finalOrigin)
                     if (currentReferer != null) {

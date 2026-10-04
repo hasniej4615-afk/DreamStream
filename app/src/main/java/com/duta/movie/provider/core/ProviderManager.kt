@@ -41,7 +41,8 @@ class ProviderManager @Inject constructor(
             "com.duta.provider.dutafilm",
             "com.duta.provider.pusatfilm",
             "com.duta.provider.lk21",
-            "com.duta.provider.dutamovie"
+            "com.duta.provider.dutamovie",
+            "com.duta.provider.moviebox"
         )
     }
 
@@ -220,10 +221,49 @@ class ProviderManager @Inject constructor(
                     configJson = "{\"searchPath\": \"/?s=\", \"isSeriesSupported\": true}",
                     isEnabled = true,
                     priorityOrder = 5
+                ),
+                InstalledProviderEntity(
+                    id = "com.duta.provider.moviebox",
+                    repoId = OFFICIAL_REPO_ID,
+                    name = "MovieBox",
+                    displayName = "MovieBox (Global HD Cinema & Series)",
+                    description = "Massive global library with direct high-speed CDN MP4 streams, multi-quality 1080p/720p/480p, and subtitles.",
+                    author = "DreamStream Team",
+                    version = 1,
+                    versionName = "1.0.0",
+                    mediaType = "MULTI",
+                    engineType = "TEMPLATE",
+                    templateType = "MOVIEBOX",
+                    baseUrlsJson = "[\"https://h5-api.aoneroom.com\"]",
+                    configJson = "{\"searchPath\": \"/wefeed-h5api-bff/subject/search\", \"isSeriesSupported\": true}",
+                    isEnabled = true,
+                    priorityOrder = 6
                 )
             )
             repoDao.insertOrUpdateProviders(defaultProviders)
         } else {
+            // Self-heal: ensure MovieBox exists for existing installations
+            val moviebox = existingProviders.find { it.id == "com.duta.provider.moviebox" }
+            if (moviebox == null) {
+                val mbEntity = InstalledProviderEntity(
+                    id = "com.duta.provider.moviebox",
+                    repoId = OFFICIAL_REPO_ID,
+                    name = "MovieBox",
+                    displayName = "MovieBox (Global HD Cinema & Series)",
+                    description = "Massive global library with direct high-speed CDN MP4 streams, multi-quality 1080p/720p/480p, and subtitles.",
+                    author = "DreamStream Team",
+                    version = 1,
+                    versionName = "1.0.0",
+                    mediaType = "MULTI",
+                    engineType = "TEMPLATE",
+                    templateType = "MOVIEBOX",
+                    baseUrlsJson = "[\"https://h5-api.aoneroom.com\"]",
+                    configJson = "{\"searchPath\": \"/wefeed-h5api-bff/subject/search\", \"isSeriesSupported\": true}",
+                    isEnabled = true,
+                    priorityOrder = 6
+                )
+                repoDao.insertOrUpdateProvider(mbEntity)
+            }
             // Self-heal: ensure PusatFilm21 exists for existing installations
             val pusatfilm = existingProviders.find { it.id == "com.duta.provider.pusatfilm" }
             if (pusatfilm == null) {
@@ -308,6 +348,10 @@ class ProviderManager @Inject constructor(
 
             // Self-heal: purge removed P. Ramlee provider from database
             repoDao.deleteProviderById("com.duta.provider.pramlee")
+
+            // Self-heal: purge removed CloudX repository and any obsolete CloudX providers
+            repoDao.deleteRepoById("cloudx")
+            repoDao.deleteProvidersByRepo("cloudx")
         }
     }
 
@@ -323,12 +367,15 @@ class ProviderManager @Inject constructor(
                 repoDao.deleteProviderById(p.id)
                 continue
             }
-            val instance: MediaProvider = when (p.engineType) {
-                "DEX" -> DexPluginProvider(context, p)
+            val instance: MediaProvider = when {
+                p.id.contains("moviebox") || p.templateType == "MOVIEBOX" -> com.duta.movie.provider.engine.MovieboxProvider(p)
+                p.engineType == "DEX" -> DexPluginProvider(context, p)
                 else -> TemplateProvider(p)
             }
             activeProviderInstances[p.id] = instance
+            Log.i(TAG, "Initialized active provider: ${p.id} (${instance::class.java.simpleName})")
         }
+        Log.i(TAG, "initializeActiveProviders: Total active providers = ${activeProviderInstances.size} -> ${activeProviderInstances.keys}")
     }
 
     /**
@@ -483,15 +530,15 @@ class ProviderManager @Inject constructor(
 
         val allResults = deferredList.awaitAll().flatten()
 
-        // Deduplicate by clean title and id
+        // Deduplicate by video id so distinct provider sources are preserved
         val seen = mutableSetOf<String>()
         val distinctResults = mutableListOf<Video>()
         for (v in allResults) {
-            val key = v.title.trim().lowercase()
-            if (seen.add(key) && seen.add(v.id)) {
+            if (seen.add(v.id)) {
                 distinctResults.add(v)
             }
         }
+        Log.d(TAG, "searchAllEnabled: query='$query' returned ${distinctResults.size} total results from ${providers.size} providers")
         distinctResults
     }
 
@@ -546,7 +593,8 @@ class ProviderManager @Inject constructor(
      */
     suspend fun fetchVideoDetail(video: Video): Video? = withContext(Dispatchers.IO) {
         val preferredProvider = activeProviderInstances.values.firstOrNull { p ->
-            video.id.startsWith("${p.id}_") || video.videoUrl.contains(p.id, ignoreCase = true)
+            video.id.startsWith("${p.id}_") || video.videoUrl.contains(p.id, ignoreCase = true) ||
+            (p.id.contains("moviebox") && (video.id.startsWith("mb_") || video.videoUrl.startsWith("moviebox://")))
         }
         if (preferredProvider != null) {
             try {
@@ -571,6 +619,7 @@ class ProviderManager @Inject constructor(
     suspend fun fetchServers(video: Video): List<VideoServer> = withContext(Dispatchers.IO) {
         val matchingProvider = activeProviderInstances.values.firstOrNull { p ->
             video.id.startsWith("${p.id}_") ||
+            (p.id.contains("moviebox") && (video.id.startsWith("mb_") || video.videoUrl.startsWith("moviebox://"))) ||
             (p.id.contains("dutafilm") && VideoExtractor.isDutaFilmWeb(video.id, video.videoUrl)) ||
             (p.id.contains("dutamovie") && VideoExtractor.isDutaMovie(video.id, video.videoUrl)) ||
             (p.id.contains("pencuri") && VideoExtractor.isPencuriMovie(video.id, video.videoUrl)) ||

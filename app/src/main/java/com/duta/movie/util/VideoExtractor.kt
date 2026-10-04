@@ -482,6 +482,7 @@ object VideoExtractor {
             clean.startsWith("bw_") -> "${getBullerswoodBaseUrl()}/"
             clean.startsWith("dm_") -> "${getDutaMovieBaseUrl()}/"
             clean.startsWith("kb_") -> "https://kepala-bergetar.com/"
+            clean.startsWith("mb_") -> "https://movieboxonline.net/"
             else -> "${getBaseUrl()}/"
         }
     }
@@ -607,6 +608,9 @@ object VideoExtractor {
 
     fun resolveVideoUrl(videoId: String, rawUrl: String? = null): String {
         val cleanId = videoId.trim().trim('/')
+        if (cleanId.startsWith("mb_") || rawUrl?.startsWith("moviebox://") == true) {
+            return rawUrl ?: ""
+        }
         if (!rawUrl.isNullOrBlank() && rawUrl.startsWith("http")) {
             // If this is a main title ID (not an episode ID), strip any episode query parameters
             if (cleanId.startsWith("dfw_") && !cleanId.contains("_ep") && rawUrl.contains("epid=")) {
@@ -629,7 +633,7 @@ object VideoExtractor {
                 if (sub.startsWith("film_")) "${getDutaMovieBaseUrl()}/film/${sub.removePrefix("film_")}/"
                 else "${getDutaMovieBaseUrl()}/$sub/"
             }
-            cleanId.startsWith("kb_") ||
+            cleanId.startsWith("kb_") || cleanId.startsWith("mb_") ||
             cleanId.startsWith("yt_") || cleanId.startsWith("bili_") -> ""
             else -> "${getBaseUrl()}/$cleanId/"
         }
@@ -1821,7 +1825,10 @@ object VideoExtractor {
         if (isStaticResource(url)) return false
         val low = url.lowercase()
 
-        // ARCHIVE.ORG AUTHORITY: Direct media files hosted on Archive.org are authoritative direct streams
+        // ARCHIVE.ORG & MOVIEBOX DIRECT CDN AUTHORITY:
+        if (low.contains("hakunaymatata.com") || low.contains("aoneroom.com")) {
+            return true
+        }
         if (low.contains("archive.org") && 
             (low.contains(".mp4") || low.contains(".mkv") || low.contains(".webm") || low.contains(".avi") || low.contains(".m4v") ||
              ((low.contains("/items/") || low.contains("/download/")) && !low.contains(".xml") && !low.contains(".sqlite") && !low.contains(".torrent") && !low.contains(".json") && !low.contains(".txt") && !low.contains(".ia.")))) {
@@ -2816,7 +2823,19 @@ object VideoExtractor {
                             "DutaFilmWeb" -> searchDutaFilmWeb(q, page = 1, count = 20)
                             "DutaFilm" -> searchClusterMirrors(q, page = 1, count = 20)
                             "LK21" -> searchBullerswood(q, page = 1, count = 20)
-                            "DutaMovie21" -> searchWordPressMuviPro(getDutaMovieBaseUrl(), q, page = 1, count = 20)
+                            "DutaMovie21" -> {
+                                // Try all DutaMovie21 domains — they can serve different embeds
+                                // (e.g. balletroyale.com has embedpyrox while 204.3.234.75 has AsiaStream)
+                                var dmRes = searchWordPressMuviPro(getDutaMovieBaseUrl(), q, page = 1, count = 20)
+                                if (dmRes.isEmpty()) {
+                                    for (fb in DUTAMOVIE_FALLBACKS) {
+                                        if (fb.trimEnd('/') == getDutaMovieBaseUrl().trimEnd('/')) continue
+                                        dmRes = searchWordPressMuviPro(fb, q, page = 1, count = 20)
+                                        if (dmRes.isNotEmpty()) break
+                                    }
+                                }
+                                dmRes
+                            }
                             else -> {
                                 var res = searchDomain(partnerDomain, q, startPage = 1, maxCount = 20)
                                 if (res.isEmpty() && partnerTag == "Pencuri") {
@@ -2865,6 +2884,38 @@ object VideoExtractor {
                                         Log.i(TAG, "Discovered ${newServers.size} alternative mirrors from $partnerTag for '${video.title}'")
                                         partnerServers.addAll(newServers)
                                         break
+                                    }
+                                }
+
+                                // DutaMovie21 Cross-Domain Mirror Sweep: different domains can serve different embeds
+                                // (e.g. balletroyale.com has embedpyrox while 204.3.234.75 has AsiaStream)
+                                if (partnerTag == "DutaMovie21" && partnerServers.isEmpty()) {
+                                    val matchedPath = try { java.net.URI(matched.videoUrl).path } catch (_: Exception) { null }
+                                    if (!matchedPath.isNullOrEmpty()) {
+                                        val allExisting = existingUrls + partnerServers.map { it.url.trimEnd('/') }.toSet()
+                                        for (fb in DUTAMOVIE_FALLBACKS) {
+                                            val matchedHost = try { java.net.URI(matched.videoUrl).host } catch (_: Exception) { null }
+                                            val fbHost = try { java.net.URI(fb).host } catch (_: Exception) { null }
+                                            if (fbHost == matchedHost) continue
+                                            val altUrl = "$fb$matchedPath"
+                                            try {
+                                                val altDetails = fetchVideoDetails(altUrl)
+                                                if (altDetails != null && altDetails.servers.isNotEmpty()) {
+                                                    val altNew = altDetails.servers.filter { s ->
+                                                        val c = s.url.trimEnd('/')
+                                                        !allExisting.contains(c) && !isConfirmedDead(c)
+                                                    }.map { s ->
+                                                        val n = if (s.name.contains("DutaMovie21", ignoreCase = true)) s.name else "${s.name} (DutaMovie21)"
+                                                        VideoServer(name = n, url = s.url)
+                                                    }
+                                                    if (altNew.isNotEmpty()) {
+                                                        Log.i(TAG, "Cross-domain sweep: Found ${altNew.size} extra mirrors from $fb for '${video.title}'")
+                                                        partnerServers.addAll(altNew)
+                                                        break
+                                                    }
+                                                }
+                                            } catch (_: Exception) {}
+                                        }
                                     }
                                 }
                             }
@@ -3387,6 +3438,10 @@ object VideoExtractor {
      * and mismatched partner slugs.
      */
     fun isServerMatchingMovie(videoTitle: String, server: VideoServer): Boolean {
+        if (server.name.startsWith("MovieBox", ignoreCase = true) ||
+            server.url.contains("hakunaymatata.com") || server.url.contains("aoneroom.com")) {
+            return true
+        }
         val isAlt = isAlternativePartnerHost(server.url) || isAlternativePartnerServer(server.name, server.url) || server.url.contains("archive.org")
         
         // Every server must be a genuine video mirror
@@ -6436,7 +6491,17 @@ object VideoExtractor {
             lowUrl.contains("embed4me") -> 15
             lowUrl.contains("upns") && !lowUrl.contains("player=") -> 15
 
-            // OWL'S EYE: Priority Tier 1 - HgLink (Ultra Stable Top Tier Priority)
+            // OWL'S EYE: Priority Tier 1 - MovieBox Direct High-Speed CDN MP4 (1080p, 720p, 480p, 360p)
+            lowUrl.contains("hakunaymatata.com") || lowUrl.contains("aoneroom.com") || lowName.contains("moviebox") -> {
+                when {
+                    lowName.contains("1080") || lowUrl.contains("1080") -> 210
+                    lowName.contains("720") || lowUrl.contains("720") -> 205
+                    lowName.contains("480") || lowUrl.contains("480") -> 192
+                    else -> 190
+                }
+            }
+
+            // OWL'S EYE: Priority Tier 1a - HgLink (Ultra Stable Top Tier Priority)
             lowUrl.contains("hglink") || lowName.contains("hglink") -> 200
 
             // OWL'S EYE: Priority Tier 1b - HgCloud & Cluster Hosts (hanerix, vibuxer, dhcplay, bestcdn, player=1, etc.)

@@ -7,6 +7,7 @@ import com.duta.movie.data.local.toDomain
 import com.duta.movie.data.local.toEntity
 import com.duta.movie.model.Subtitle
 import com.duta.movie.model.Video
+import com.duta.movie.model.VideoServer
 import com.duta.movie.util.VideoExtractor
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
@@ -204,15 +205,13 @@ class VideoRepository @Inject constructor(
 
         val seen = mutableSetOf<String>()
         val combined = mutableListOf<Video>()
-        for (v in extractorResults) {
-            val key = v.title.trim().lowercase()
-            seen.add(key)
-            seen.add(v.id)
-            combined.add(v)
-        }
         for (v in providerResults) {
-            val key = v.title.trim().lowercase()
-            if (seen.add(key) && seen.add(v.id)) {
+            if (seen.add(v.id)) {
+                combined.add(v)
+            }
+        }
+        for (v in extractorResults) {
+            if (seen.add(v.id)) {
                 combined.add(v)
             }
         }
@@ -268,6 +267,33 @@ class VideoRepository @Inject constructor(
                     return@withContext null
                 }
 
+                if (videoId.startsWith("mb_")) {
+                    val dummy = Video(id = videoId, title = "", thumbnailUrl = "", duration = "", videoUrl = "moviebox://subject?id=${videoId.removePrefix("mb_")}")
+                    val mbDetail = providerManager.fetchVideoDetail(dummy)
+                    if (mbDetail != null) {
+                        var toSave = mbDetail.copy(id = videoId)
+                        if (toSave.thumbnailUrl.isEmpty()) {
+                            val fallbackPoster = VideoExtractor.findPosterForTitle(toSave.title, toSave.date)
+                            if (fallbackPoster.isNotEmpty()) {
+                                toSave = toSave.copy(
+                                    thumbnailUrl = fallbackPoster,
+                                    backdropUrl = toSave.backdropUrl.ifEmpty { fallbackPoster }
+                                )
+                            }
+                        }
+                        val providerServers = findProviderMirrorsForVideo(toSave)
+                        if (providerServers.isNotEmpty()) {
+                            val combined = (toSave.servers + providerServers)
+                                .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
+                                .sortedByDescending { VideoExtractor.getProviderPriority(it.name, it.url) }
+                            toSave = toSave.copy(servers = combined)
+                        }
+                        videoDao.insertOrUpdateVideos(listOf(toSave.toEntity()))
+                        videoCache[videoId] = toSave
+                        return@withContext toSave
+                    }
+                }
+
                 val fallbackUrl = VideoExtractor.resolveVideoUrl(videoId)
                 if (fallbackUrl.isNotBlank()) {
                     val fetched = VideoExtractor.fetchVideoDetails(fallbackUrl)
@@ -282,6 +308,13 @@ class VideoRepository @Inject constructor(
                                 )
                             }
                         }
+                        val providerServers = findProviderMirrorsForVideo(toSave)
+                        if (providerServers.isNotEmpty()) {
+                            val combined = (toSave.servers + providerServers)
+                                .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
+                                .sortedByDescending { VideoExtractor.getProviderPriority(it.name, it.url) }
+                            toSave = toSave.copy(servers = combined)
+                        }
                         videoDao.insertOrUpdateVideos(listOf(toSave.toEntity()))
                         videoCache[videoId] = toSave
                         return@withContext toSave
@@ -294,69 +327,55 @@ class VideoRepository @Inject constructor(
                 videoCache[videoId] = video
                 return@withContext video
             }
-            
-            val targetUrl = VideoExtractor.resolveVideoUrl(videoId, video.videoUrl)
-            val updated = if (targetUrl.isNotBlank()) VideoExtractor.fetchVideoDetails(targetUrl) else null
-            if (updated != null) {
-                var merged = mergeVideos(updated, video)
-                if (merged.thumbnailUrl.isEmpty()) {
-                    val fallbackPoster = VideoExtractor.findPosterForTitle(merged.title, merged.date)
-                    if (fallbackPoster.isNotEmpty()) {
-                        merged = merged.copy(
-                            thumbnailUrl = fallbackPoster,
-                            backdropUrl = merged.backdropUrl.ifEmpty { fallbackPoster }
-                        )
-                    }
-                }
-                videoDao.insertOrUpdateVideos(listOf(merged.toEntity()))
-                videoCache[videoId] = merged
-                return@withContext merged
-            } else {
-                val providerDetail = providerManager.fetchVideoDetail(video)
-                if (providerDetail != null) {
-                    var merged = mergeVideos(providerDetail, video)
-                    if (merged.thumbnailUrl.isEmpty()) {
-                        val fallbackPoster = VideoExtractor.findPosterForTitle(merged.title, merged.date)
-                        if (fallbackPoster.isNotEmpty()) {
-                            merged = merged.copy(
-                                thumbnailUrl = fallbackPoster,
-                                backdropUrl = merged.backdropUrl.ifEmpty { fallbackPoster }
-                            )
-                        }
-                    }
-                    videoDao.insertOrUpdateVideos(listOf(merged.toEntity()))
-                    videoCache[videoId] = merged
-                    return@withContext merged
-                }
 
-                val healed = VideoExtractor.healVideoFromAlternativeSources(video)
-                if (healed != null) {
-                    var merged = mergeVideos(healed, video)
-                    if (merged.thumbnailUrl.isEmpty()) {
-                        val fallbackPoster = VideoExtractor.findPosterForTitle(merged.title, merged.date)
-                        if (fallbackPoster.isNotEmpty()) {
-                            merged = merged.copy(
-                                thumbnailUrl = fallbackPoster,
-                                backdropUrl = merged.backdropUrl.ifEmpty { fallbackPoster }
-                            )
+            var merged: Video? = null
+            if (videoId.startsWith("mb_") || video.videoUrl.startsWith("moviebox://")) {
+                val mbDetail = providerManager.fetchVideoDetail(video)
+                if (mbDetail != null) {
+                    merged = mergeVideos(mbDetail, video)
+                }
+            } else {
+                val targetUrl = VideoExtractor.resolveVideoUrl(videoId, video.videoUrl)
+                val updated = if (targetUrl.isNotBlank()) VideoExtractor.fetchVideoDetails(targetUrl) else null
+                if (updated != null) {
+                    merged = mergeVideos(updated, video)
+                } else {
+                    val providerDetail = providerManager.fetchVideoDetail(video)
+                    if (providerDetail != null) {
+                        merged = mergeVideos(providerDetail, video)
+                    } else {
+                        val healed = VideoExtractor.healVideoFromAlternativeSources(video)
+                        if (healed != null) {
+                            merged = mergeVideos(healed, video)
                         }
-                    }
-                    videoDao.insertOrUpdateVideos(listOf(merged.toEntity()))
-                    videoCache[videoId] = merged
-                    return@withContext merged
-                } else if (video.thumbnailUrl.isEmpty()) {
-                    val fallbackPoster = VideoExtractor.findPosterForTitle(video.title, video.date)
-                    if (fallbackPoster.isNotEmpty()) {
-                        val updatedVideo = video.copy(
-                            thumbnailUrl = fallbackPoster,
-                            backdropUrl = video.backdropUrl.ifEmpty { fallbackPoster }
-                        )
-                        videoDao.insertOrUpdateVideos(listOf(updatedVideo.toEntity()))
-                        videoCache[videoId] = updatedVideo
-                        return@withContext updatedVideo
                     }
                 }
             }
+
+            if (merged == null) {
+                merged = video
+            }
+
+            if (merged.thumbnailUrl.isEmpty()) {
+                val fallbackPoster = VideoExtractor.findPosterForTitle(merged.title, merged.date)
+                if (fallbackPoster.isNotEmpty()) {
+                    merged = merged.copy(
+                        thumbnailUrl = fallbackPoster,
+                        backdropUrl = merged.backdropUrl.ifEmpty { fallbackPoster }
+                    )
+                }
+            }
+
+            val providerServers = findProviderMirrorsForVideo(merged)
+            if (providerServers.isNotEmpty()) {
+                val combined = (merged.servers + providerServers)
+                    .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
+                    .sortedByDescending { VideoExtractor.getProviderPriority(it.name, it.url) }
+                merged = merged.copy(servers = combined)
+            }
+            videoDao.insertOrUpdateVideos(listOf(merged.toEntity()))
+            videoCache[videoId] = merged
+            return@withContext merged
         } catch (_: Exception) {}
         null
     }
@@ -507,7 +526,10 @@ class VideoRepository @Inject constructor(
                 !(lowU.endsWith(".html") || lowU.contains("/watch/"))
             }
         } else {
-            (new.servers + old.servers).distinctBy { it.url.trimEnd('/') }.filter {
+            (new.servers + old.servers).distinctBy { 
+                if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() 
+                else "${it.name.trim()}_${it.url.substringBefore('?')}"
+            }.filter {
                 val lowU = it.url.lowercase()
                 val lowN = it.name.lowercase()
                 !lowU.contains("google.com") && !lowU.contains("pagead") && !lowU.contains("/aclk") &&
@@ -536,4 +558,58 @@ class VideoRepository @Inject constructor(
             imdbId = if (new.imdbId?.isNotEmpty() == true) new.imdbId else old.imdbId
         )
     }
+
+    suspend fun findProviderMirrorsForVideo(video: Video): List<VideoServer> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<VideoServer>()
+        try {
+            val queries = VideoExtractor.buildAlternativeSearchQueries(video.title)
+            val candidateVideos = mutableListOf<Video>()
+
+            for (q in queries.take(3)) {
+                val found = providerManager.searchAllEnabled(q)
+                for (item in found) {
+                    if (item.id == video.id || item.videoUrl == video.videoUrl) continue
+                    if (candidateVideos.any { it.id == item.id }) continue
+
+                    val isMatch = VideoExtractor.isCrossProviderMovieMatch(video, item) ||
+                                  item.title.equals(video.title, ignoreCase = true) ||
+                                  item.title.equals(q, ignoreCase = true)
+
+                    if (isMatch) {
+                        candidateVideos.add(item)
+                    }
+                }
+                if (candidateVideos.any { it.id.startsWith("mb_") || it.videoUrl.startsWith("moviebox://") }) break
+            }
+
+            candidateVideos.sortWith(
+                compareByDescending<Video> { 
+                    if (it.id.startsWith("mb_") || it.videoUrl.startsWith("moviebox://")) 10 else 0 
+                }.thenBy { 
+                    val low = it.title.lowercase()
+                    if (low.contains("cam") || low.contains("hindi") || low.contains("dub")) 1 else 0 
+                }
+            )
+
+            var foundMovieboxServers = false
+            for (cand in candidateVideos.take(5)) {
+                val servers = providerManager.fetchServers(cand)
+                for (s in servers) {
+                    if (VideoExtractor.isServerMatchingMovie(video.title, s) && 
+                        results.none { it.url == s.url || it.name.trim().equals(s.name.trim(), ignoreCase = true) }) {
+                        results.add(s)
+                        if (s.name.startsWith("MovieBox", ignoreCase = true) || 
+                            s.url.contains("hakunaymatata") || s.url.contains("aoneroom")) {
+                            foundMovieboxServers = true
+                        }
+                    }
+                }
+                if (foundMovieboxServers && results.size >= 4) break
+            }
+        } catch (e: Exception) {
+            Log.w("VideoRepository", "Error finding provider mirrors for '${video.title}': ${e.message}")
+        }
+        results
+    }
 }
+

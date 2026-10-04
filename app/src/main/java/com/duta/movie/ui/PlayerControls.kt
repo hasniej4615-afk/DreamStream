@@ -43,11 +43,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.util.*
 import java.util.concurrent.TimeUnit
-import androidx.compose.ui.input.key.type
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.*
 
 data class VideoQualityTrack(val label: String, val groupIndex: Int, val trackIndex: Int)
 
@@ -577,6 +573,19 @@ fun PlayerControls(
                                 modifier = Modifier
                                     .focusRequester(firstItemFocusRequester)
                                     .onFocusChanged { isFocused = it.isFocused }
+                                    .onKeyEvent { keyEvent ->
+                                        if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                            (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                            player?.trackSelectionParameters = player?.trackSelectionParameters
+                                                ?.buildUpon()
+                                                ?.clearOverridesOfType(androidx.media3.common.C.TRACK_TYPE_VIDEO)
+                                                ?.build() ?: return@onKeyEvent true
+                                            showQualityMenu = false
+                                            true
+                                        } else false
+                                    }
                                     .focusable()
                                     .clickable {
                                         player?.trackSelectionParameters = player?.trackSelectionParameters
@@ -597,6 +606,16 @@ fun PlayerControls(
                                 trailingContent = { if (isSelected) Icon(Icons.Default.Check, null, tint = Color.Red) },
                                 modifier = Modifier
                                     .onFocusChanged { isFocused = it.isFocused }
+                                    .onKeyEvent { keyEvent ->
+                                        if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                            (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                            onQualitySelect(track)
+                                            showQualityMenu = false
+                                            true
+                                        } else false
+                                    }
                                     .focusable()
                                     .clickable {
                                         onQualitySelect(track)
@@ -614,6 +633,15 @@ fun PlayerControls(
                         onClick = { showQualityMenu = false },
                         modifier = Modifier
                             .onFocusChanged { isCloseFocused = it.isFocused }
+                            .onKeyEvent { keyEvent ->
+                                if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                    (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                    showQualityMenu = false
+                                    true
+                                } else false
+                            }
                             .focusable()
                             .background(if (isCloseFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
                             .border(if (isCloseFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
@@ -644,6 +672,16 @@ fun PlayerControls(
                                 modifier = Modifier
                                     .then(if (index == 0) Modifier.focusRequester(firstSpeedFocusRequester) else Modifier)
                                     .onFocusChanged { isFocused = it.isFocused }
+                                    .onKeyEvent { keyEvent ->
+                                        if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                            (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                            onSpeedSelect(speed)
+                                            showSpeedMenu = false
+                                            true
+                                        } else false
+                                    }
                                     .focusable()
                                     .clickable {
                                         onSpeedSelect(speed)
@@ -661,6 +699,15 @@ fun PlayerControls(
                         onClick = { showSpeedMenu = false },
                         modifier = Modifier
                             .onFocusChanged { isCloseSpeedFocused = it.isFocused }
+                            .onKeyEvent { keyEvent ->
+                                if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                    (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                    showSpeedMenu = false
+                                    true
+                                } else false
+                            }
                             .focusable()
                             .background(if (isCloseSpeedFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
                             .border(if (isCloseSpeedFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))

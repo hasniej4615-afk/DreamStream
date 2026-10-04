@@ -90,6 +90,7 @@
     <string name="adjust_subtitle_timing">Adjust subtitle timing</string>
 
     <string name="minus_0_5s">-0.5s</string>
+    <string name="plus_0_5s">+0.5s</string>
 
     <string name="done">Done</string>
 
@@ -358,6 +359,12 @@ Tap to re-scout and refresh content</string>
     <string name="no_other_sources_found">No alternative sources found for this title</string>
     <string name="auto_healed_source">Auto-recovered %d alternative mirror(s)</string>
     <string name="added_multi_provider_alt_sources">Added multi-provider cross-search &amp; auto-healing: discover fresh mirrors from partner providers when mirrors expire or fail.</string>
+    <string name="changelog_v2_0_8">Changelog v2.0.8 Cloud 7</string>
+    <string name="v2_0_8_updates">v2.0.8 Updates:</string>
+    <string name="v2_0_8_highlight_1">MovieBox Multi-Stream Integration: Full cross-provider mirror resolution fetching direct high-speed CDN MP4 streams (1080P, 720P, 480P, 360P) with golden HD badges across all titles.</string>
+    <string name="v2_0_8_highlight_2">TV Mode &amp; D-Pad Navigation: Complete Leanback remote control optimization featuring high-visibility 3.5dp focus rings, scale animations, and center/enter key binding across mirrors, synopsis, and navigation.</string>
+    <string name="v2_0_8_highlight_3">TV Device Safety &amp; ExoPlayer Acceleration: Conditioned Google Cast routing on TV hardware to eliminate uninitialized context crashes; direct hardware decoding for instant CDN playback.</string>
+    <string name="v2_0_8_highlight_4">Intelligent Movie Match &amp; Mirror Discovery: Strict year and token matching preventing premature loop breaks, ensuring high-speed mirrors populate reliably on detail screens.</string>
     <string name="changelog_v2_0_7">Changelog v2.0.7 Cloud 7</string>
     <string name="v2_0_7_updates">v2.0.7 Updates:</string>
     <string name="v2_0_7_highlight_1">Refined Player Touch Gestures: Single-tap anywhere on screen to smoothly toggle playback HUD and overlay controls; double-tap left or right to seek 10s backward or forward.</string>

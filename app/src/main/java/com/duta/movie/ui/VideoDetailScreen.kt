@@ -581,6 +581,8 @@ fun DetailGradients() {
 
 @Composable
 fun DetailNavigation(onBackClick: () -> Unit, onSettingsClick: () -> Unit, isAddedToMyList: Boolean, onToggleMyList: () -> Unit) {
+    val navContext = LocalContext.current
+    val isRealTV = remember { com.duta.movie.util.DeviceUtils.isTvDevice(navContext) }
     Row(
         modifier = Modifier.fillMaxWidth().statusBarsPadding().padding(8.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -597,6 +599,16 @@ fun DetailNavigation(onBackClick: () -> Unit, onSettingsClick: () -> Unit, isAdd
                 .onFocusChanged { isBackFocused = it.isFocused }
                 .border(if (isBackFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                 .clickable { onBackClick() }
+                .focusable()
+                .onKeyEvent { keyEvent ->
+                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                        onBackClick()
+                        true
+                    } else false
+                }
         ) {
             Box(contentAlignment = Alignment.Center) { Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back), tint = Color.White) }
         }
@@ -612,6 +624,16 @@ fun DetailNavigation(onBackClick: () -> Unit, onSettingsClick: () -> Unit, isAdd
                     .onFocusChanged { isMyListFocused = it.isFocused }
                     .border(if (isMyListFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                     .clickable { onToggleMyList() }
+                    .focusable()
+                    .onKeyEvent { keyEvent ->
+                        if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                            (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                            onToggleMyList()
+                            true
+                        } else false
+                    }
             ) {
                 Box(contentAlignment = Alignment.Center) { Icon(if (isAddedToMyList) Icons.Default.Check else Icons.Default.Add, contentDescription = stringResource(R.string.my_list), tint = if (isAddedToMyList) Color.Red else Color.White) }
             }
@@ -626,36 +648,48 @@ fun DetailNavigation(onBackClick: () -> Unit, onSettingsClick: () -> Unit, isAdd
                     .onFocusChanged { isSettingsFocused = it.isFocused }
                     .border(if (isSettingsFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                     .clickable { onSettingsClick() }
+                    .focusable()
+                    .onKeyEvent { keyEvent ->
+                        if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                            (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                            onSettingsClick()
+                            true
+                        } else false
+                    }
             ) {
                 Box(contentAlignment = Alignment.Center) { Icon(Icons.Default.Settings, contentDescription = stringResource(R.string.settings), tint = Color.White) }
             }
 
-            // Cast Button in Detail Screen
-            var isCastFocused by remember { mutableStateOf(false) }
-            val castScale by animateFloatAsState(if (isCastFocused) 1.2f else 1f)
-            var mediaRouteButton by remember { mutableStateOf<MediaRouteButton?>(null) }
-            
-            Surface(
-                onClick = { mediaRouteButton?.performClick() },
-                shape = CircleShape,
-                color = if (isCastFocused) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.5f),
-                modifier = Modifier
-                    .size(40.dp)
-                    .graphicsLayer(scaleX = castScale, scaleY = castScale)
-                    .onFocusChanged { isCastFocused = it.isFocused }
-                    .border(if (isCastFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
-                    .focusable()
-            ) {
-                Box(contentAlignment = Alignment.Center) {
-                    AndroidView(
-                        factory = { context ->
-                            MediaRouteButton(context).apply {
-                                CastButtonFactory.setUpMediaRouteButton(context, this)
-                                mediaRouteButton = this
-                            }
-                        },
-                        modifier = Modifier.size(24.dp)
-                    )
+            // Cast Button in Detail Screen (Mobile only, not needed on TV devices)
+            if (!isRealTV) {
+                var isCastFocused by remember { mutableStateOf(false) }
+                val castScale by animateFloatAsState(if (isCastFocused) 1.2f else 1f)
+                var mediaRouteButton by remember { mutableStateOf<MediaRouteButton?>(null) }
+                
+                Surface(
+                    onClick = { mediaRouteButton?.performClick() },
+                    shape = CircleShape,
+                    color = if (isCastFocused) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.5f),
+                    modifier = Modifier
+                        .size(40.dp)
+                        .graphicsLayer(scaleX = castScale, scaleY = castScale)
+                        .onFocusChanged { isCastFocused = it.isFocused }
+                        .border(if (isCastFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                        .focusable()
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        AndroidView(
+                            factory = { context ->
+                                MediaRouteButton(context).apply {
+                                    CastButtonFactory.setUpMediaRouteButton(context, this)
+                                    mediaRouteButton = this
+                                }
+                            },
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
             }
         }
@@ -890,6 +924,16 @@ fun VideoDetailInfo(
                 .onFocusChanged { isSynopsisFocused = it.isFocused }
                 .border(if (isSynopsisFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                 .clickable { isExpanded = !isExpanded }
+                .focusable()
+                .onKeyEvent { keyEvent ->
+                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                        isExpanded = !isExpanded
+                        true
+                    } else false
+                }
                 .padding(if (isSynopsisFocused) 8.dp else 4.dp)
         ) {
             Text(
@@ -927,7 +971,10 @@ fun VideoDetailInfo(
                 .filter { server ->
                     if (isLikelySeries) true else com.duta.movie.util.VideoExtractor.isServerMatchingMovie(video.title, server)
                 }
-                .distinctBy { it.url.trimEnd('/') }
+                .distinctBy { 
+                    if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() 
+                    else "${it.name.trim()}_${it.url.substringBefore('?')}"
+                }
                 .sortedWith(compareByDescending<com.duta.movie.model.VideoServer> {
                     com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url)
                 }.thenBy { it.name })
@@ -1125,11 +1172,22 @@ fun VideoDetailInfo(
                             .ifEmpty { "Server" }
                     }
 
+                    val isMovieBox = remember(server.name, server.url) {
+                        server.name.startsWith("MovieBox", ignoreCase = true) ||
+                        server.url.contains("hakunaymatata") || server.url.contains("aoneroom")
+                    }
+
                     Button(
                         onClick = { onPlayClick(video.id, server.url) },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isServerFocused) Color.White else if (isDead) Color(0xFF141414) else Color(0xFF1E1E1E),
-                            contentColor = if (isServerFocused) Color.Black else if (isDead) Color.Gray else Color.White
+                            containerColor = if (isServerFocused) Color.White 
+                                            else if (isDead) Color(0xFF141414) 
+                                            else if (isMovieBox) Color(0xFF222018)
+                                            else Color(0xFF1E1E1E),
+                            contentColor = if (isServerFocused) Color.Black 
+                                           else if (isDead) Color.Gray 
+                                           else if (isMovieBox) Color(0xFFFFF0A0)
+                                           else Color.White
                         ),
                         modifier = Modifier
                             .graphicsLayer(scaleX = serverScale, scaleY = serverScale)
@@ -1146,26 +1204,38 @@ fun VideoDetailInfo(
                             .shadow(
                                 elevation = if (isServerFocused && effectiveTV) 8.dp else 0.dp,
                                 shape = RoundedCornerShape(8.dp),
-                                spotColor = Color.White,
+                                spotColor = if (isMovieBox) Color(0xFFFFD700) else Color.White,
                                 ambientColor = Color.White
                             )
                             .border(
                                 if (isServerFocused && effectiveTV) BorderStroke(3.5.dp, Color.White)
                                 else if (isServerFocused) BorderStroke(2.dp, Color.Red)
                                 else if (isDead) BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
+                                else if (isMovieBox) BorderStroke(1.5.dp, Color(0xFFFFD700).copy(alpha = 0.6f))
                                 else if (effectiveTV) BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
                                 else BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)), 
                                 RoundedCornerShape(8.dp)
                             ),
                         shape = RoundedCornerShape(8.dp),
-                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 9.dp)
+                        contentPadding = PaddingValues(horizontal = 14.dp, vertical = 9.dp)
                     ) {
-                        Text(
-                            text = cleanServerName, 
-                            fontWeight = FontWeight.SemiBold,
-                            fontSize = 13.sp,
-                            style = if (isDead) androidx.compose.ui.text.TextStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough) else androidx.compose.ui.text.TextStyle.Default
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (isMovieBox) {
+                                Icon(
+                                    imageVector = Icons.Default.Hd,
+                                    contentDescription = null,
+                                    tint = if (isServerFocused) Color.Black else Color(0xFFFFD700),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                            }
+                            Text(
+                                text = cleanServerName, 
+                                fontWeight = FontWeight.SemiBold,
+                                fontSize = 13.sp,
+                                style = if (isDead) androidx.compose.ui.text.TextStyle(textDecoration = androidx.compose.ui.text.style.TextDecoration.LineThrough) else androidx.compose.ui.text.TextStyle.Default
+                            )
+                        }
                     }
                 }
             }

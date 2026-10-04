@@ -1669,29 +1669,40 @@ class VideoViewModel @Inject constructor(
                                 }
                             } else emptyList()
 
-                            val providerServers = if (needsAlternativeSearch) videoRepository.providerManager.fetchServers(detailed) else emptyList()
+                            val hasProviderServers = current?.servers?.any { it.name.startsWith("MovieBox", ignoreCase = true) } == true ||
+                                                     detailed.servers.any { it.name.startsWith("MovieBox", ignoreCase = true) }
+                            val providerServers = if (hasProviderServers) emptyList() else videoRepository.findProviderMirrorsForVideo(detailed)
                             val allDiscoveredServers = (altServers + providerServers)
                                 .filter { com.duta.movie.util.VideoExtractor.isServerMatchingMovie(detailed.title, it) }
-                                .distinctBy { it.url.trimEnd('/') }
+                                .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
 
                             if (current != null && (current.id == detailed.id || current.title.equals(detailed.title, ignoreCase = true) || com.duta.movie.util.VideoExtractor.stripSourcePrefix(current.id) == com.duta.movie.util.VideoExtractor.stripSourcePrefix(detailed.id))) {
                                 val baseActiveServers = if (current.servers.isNotEmpty()) current.servers else workingServers
                                 // Filter existing servers as well to remove any previously persisted mismatched servers or junk buttons from Room DB
-                                val cleanCurrentServers = if (detailed.isSeries == true) baseActiveServers else {
+                                val cleanCurrentServers = (if (detailed.isSeries == true) baseActiveServers else {
                                     val filtered = baseActiveServers.filter { server ->
                                         com.duta.movie.util.VideoExtractor.isServerMatchingMovie(current.title, server) 
                                     }
                                     if (filtered.isEmpty() && baseActiveServers.isNotEmpty()) {
                                         baseActiveServers.filter { com.duta.movie.util.VideoExtractor.isGenuineMirror(it.name, it.url) }
                                     } else filtered
+                                }).distinctBy { 
+                                    if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() 
+                                    else "${it.name.trim()}_${it.url.substringBefore('?')}" 
                                 }
-                                val existingServerUrls = cleanCurrentServers.map { it.url.trimEnd('/') }.toSet()
-                                val newUnique = allDiscoveredServers.filter { !existingServerUrls.contains(it.url.trimEnd('/')) }
+                                val existingServerUrls = cleanCurrentServers.map { it.url.substringBefore('?').trimEnd('/') }.toSet()
+                                val existingServerNames = cleanCurrentServers.map { it.name.trim().lowercase() }.toSet()
+                                val newUnique = allDiscoveredServers.filter { 
+                                    !existingServerUrls.contains(it.url.substringBefore('?').trimEnd('/')) &&
+                                    !existingServerNames.contains(it.name.trim().lowercase())
+                                }
 
                                 if (newUnique.isNotEmpty() || cleanCurrentServers.size != current.servers.size) {
-                                    val combined = (cleanCurrentServers + newUnique).sortedByDescending { 
-                                        com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) 
-                                    }
+                                    val combined = (cleanCurrentServers + newUnique)
+                                        .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
+                                        .sortedByDescending { 
+                                            com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) 
+                                        }
                                     val updated = current.copy(servers = combined)
                                     withContext(Dispatchers.Main) {
                                         _videoMetadata.value = applyMetadata(updated)
@@ -2546,7 +2557,7 @@ class VideoViewModel @Inject constructor(
                     !com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url) 
                 }
 
-                val isExplicitServer = !serverUrl.isNullOrEmpty() && (!forceReset || isRotation) &&
+                val isExplicitServer = !serverUrl.isNullOrEmpty() &&
                     !deadMirrors.contains(serverUrl) && !hardDeadMirrors.contains(serverUrl) &&
                     !exhaustedServerUrls.contains(serverUrl) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(serverUrl)
 
@@ -2916,7 +2927,7 @@ class VideoViewModel @Inject constructor(
                     !com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url) 
                 }
 
-                val isExplicitServer = !serverUrl.isNullOrEmpty() && !isEpisodeUrl && (!forceReset || isRotation) &&
+                val isExplicitServer = !serverUrl.isNullOrEmpty() && !isEpisodeUrl &&
                     !deadMirrors.contains(serverUrl) && !hardDeadMirrors.contains(serverUrl) &&
                     !exhaustedServerUrls.contains(serverUrl) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(serverUrl)
 
@@ -4112,13 +4123,14 @@ class VideoViewModel @Inject constructor(
                 addResolutionLog("Searching all primary and alternative mirrors across providers...")
                 val primaryClusterMirrors = com.duta.movie.util.VideoExtractor.findAlternativeSources(video)
                 val extFallback = com.duta.movie.util.VideoExtractor.searchExternalPartnerMirrors(video)
-                val combinedAlts = (primaryClusterMirrors + extFallback)
+                val providerMirrors = videoRepository.findProviderMirrorsForVideo(video)
+                val combinedAlts = (primaryClusterMirrors + extFallback + providerMirrors)
                     .filter { com.duta.movie.util.VideoExtractor.isServerMatchingMovie(video.title, it) }
-                    .distinctBy { it.url }
+                    .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
 
                 if (combinedAlts.isNotEmpty()) {
-                    discoveredAltServers[effectiveVideoId] = (discoveredAltServers[effectiveVideoId].orEmpty() + combinedAlts).distinctBy { it.url }
-                    val combinedServers = (video.servers + combinedAlts).distinctBy { it.url }
+                    discoveredAltServers[effectiveVideoId] = (discoveredAltServers[effectiveVideoId].orEmpty() + combinedAlts).distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
+                    val combinedServers = (video.servers + combinedAlts).distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
                     val updatedVideo = video.copy(servers = combinedServers)
                     val appliedVideo = applyMetadata(updatedVideo)
                     metadataCache[effectiveVideoId] = appliedVideo
@@ -4160,14 +4172,15 @@ class VideoViewModel @Inject constructor(
                 val healed = VideoExtractor.healVideoFromAlternativeSources(video)
                 val primaryCluster = VideoExtractor.findAlternativeSources(video)
                 val extFallback = VideoExtractor.searchExternalPartnerMirrors(video)
-                val altServers = (healed?.servers.orEmpty() + primaryCluster + extFallback)
+                val providerMirrors = videoRepository.findProviderMirrorsForVideo(video)
+                val altServers = (healed?.servers.orEmpty() + primaryCluster + extFallback + providerMirrors)
                     .filter { VideoExtractor.isServerMatchingMovie(video.title, it) }
-                    .distinctBy { it.url }
+                    .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
                 if (altServers.isNotEmpty() || healed?.episodes?.isNotEmpty() == true) {
                     if (altServers.isNotEmpty()) {
-                        discoveredAltServers[effectiveVideoId] = (discoveredAltServers[effectiveVideoId].orEmpty() + altServers).distinctBy { it.url }
+                        discoveredAltServers[effectiveVideoId] = (discoveredAltServers[effectiveVideoId].orEmpty() + altServers).distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
                     }
-                    val combinedServers = (video.servers + altServers).distinctBy { it.url }
+                    val combinedServers = (video.servers + altServers).distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
                     val resolvedEpisodes = if (video.episodes.isEmpty() && healed?.episodes?.isNotEmpty() == true) healed.episodes else video.episodes
                     val updatedVideo = video.copy(
                         servers = combinedServers,

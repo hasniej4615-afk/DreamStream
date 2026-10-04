@@ -89,6 +89,7 @@
     <string name="adjust_subtitle_timing">Laras pemasaan sarikata</string>
 
     <string name="minus_0_5s">-0.5s</string>
+    <string name="plus_0_5s">+0.5s</string>
 
     <string name="done">Selesai</string>
 
@@ -357,6 +358,12 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="no_other_sources_found">Tiada sumber alternatif ditemui untuk tajuk ini</string>
     <string name="auto_healed_source">Swapulih %d pelayan cermin alternatif</string>
     <string name="added_multi_provider_alt_sources">Menambah carian silang berbilang penyedia &amp; swapulih automatik: pulih pelayan cermin baharu secara automatik apabila pautan mati atau tamat tempoh.</string>
+    <string name="changelog_v2_0_8">Log Perubahan v2.0.8 Cloud 7</string>
+    <string name="v2_0_8_updates">Kemaskini v2.0.8:</string>
+    <string name="v2_0_8_highlight_1">Integrasi Pelbagai Strim MovieBox: Resolusi pelayan cermin merentas pembekal membawakan strim MP4 CDN berkelajuan tinggi (1080P, 720P, 480P, 360P) dengan lencana emas HD.</string>
+    <string name="v2_0_8_highlight_2">Pengoptimuman Mod TV &amp; D-Pad: Navigasi alat kawalan jauh Leanback lengkap dengan gelang fokus putih 3.5dp, animasi skala, dan sokongan butang tengah/enter merentasi cermin dan sinopsis.</string>
+    <string name="v2_0_8_highlight_3">Kestabilan Peranti TV &amp; Pecutan ExoPlayer: Menyesuaikan laluan Google Cast pada TV bagi mengelak ralat konteks, serta penyahkodan perkakasan langsung untuk main balik segera.</string>
+    <string name="v2_0_8_highlight_4">Pemadanan Tajuk &amp; Penemuan Cermin Pintar: Pengesahan ketat tahun dan jujukan token menghalang ralat padanan dan memastikan pelayan cermin terpantas dipaparkan dengan andal.</string>
     <string name="changelog_v2_0_7">Log Perubahan v2.0.7 Cloud 7</string>
     <string name="v2_0_7_updates">Kemaskini v2.0.7:</string>
     <string name="v2_0_7_highlight_1">Kawalan Sentuhan Pemain Diperhalusi: Sentuhan tunggal di mana-mana skrin untuk buka/tutup kawalan main balik; dua sentuhan kiri/kanan untuk lompat 10s ke belakang atau depan.</string>
