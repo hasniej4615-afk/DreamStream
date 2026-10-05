@@ -112,4 +112,38 @@ class MovieboxSearchTest {
             }
         }
     }
+
+    @Test
+    fun testArrowTvSeriesMatching() {
+        runBlocking {
+            val entity = InstalledProviderEntity(
+                id = "com.duta.provider.moviebox",
+                repoId = "official",
+                name = "MovieBox",
+                displayName = "MovieBox (Global HD Cinema & Series)",
+                isEnabled = true
+            )
+            val provider = MovieboxProvider(entity)
+            val searchResults = provider.search("Arrow", 1)
+            println("Arrow search results (${searchResults.size}):")
+            searchResults.forEach {
+                println("  ID=${it.id} | Title='${it.title}' | URL=${it.videoUrl} | Date=${it.date} | isSeries=${it.isSeries}")
+            }
+
+            val targetSeason = 1
+            val targetEp = 1
+            val s1Candidate = searchResults.find { it.title.equals("Arrow S1", ignoreCase = true) || it.title.equals("Arrow", ignoreCase = true) }
+            println("Found S1 Candidate: $s1Candidate")
+            if (s1Candidate != null) {
+                val fetchCand = s1Candidate.copy(videoUrl = "${s1Candidate.videoUrl}&se=$targetSeason&ep=$targetEp", isSeries = true)
+                val servers = provider.fetchServers(fetchCand)
+                println("Fetched servers for Arrow S1 E1 (${servers.size}):")
+                servers.forEach {
+                    println("  Server: '${it.name}' -> ${it.url}")
+                }
+                assert(servers.isNotEmpty()) { "Should have fetched servers for Arrow S1" }
+            }
+        }
+    }
 }
+

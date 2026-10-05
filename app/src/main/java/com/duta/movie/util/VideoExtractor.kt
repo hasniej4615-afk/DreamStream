@@ -3249,6 +3249,7 @@ object VideoExtractor {
     data class MovieTitleMeta(
         val year: Int?,
         val sequel: Int,
+        val season: Int? = null,
         val baseTokens: List<String>
     )
 
@@ -3286,12 +3287,18 @@ object VideoExtractor {
             .replace(Regex("""\s+"""), " ")
             .trim()
 
+        val seasonMatch = Regex("""\b(?:season|s)\s*(\d+)\b""").find(clean)
+        val season = seasonMatch?.groupValues?.get(1)?.toIntOrNull()
+        if (seasonMatch != null) {
+            clean = clean.replace(Regex("""\b(?:season|s)\s*\d+\b"""), " ").replace(Regex("""\s+"""), " ").trim()
+        }
+
         var sequel = 1
         val romanMap = mapOf(
             "ii" to 2, "iii" to 3, "iv" to 4, "v" to 5,
             "vi" to 6, "vii" to 7, "viii" to 8, "ix" to 9, "x" to 10
         )
-        val sequelMatch = Regex("""\b(?:part|chapter|season|vol|volume)?\s*(2|3|4|5|6|7|8|9|ii|iii|iv|v|vi|vii|viii|ix|x)\b""").find(clean)
+        val sequelMatch = Regex("""\b(?:part|chapter|vol|volume)?\s*(2|3|4|5|6|7|8|9|ii|iii|iv|v|vi|vii|viii|ix|x)\b""").find(clean)
         if (sequelMatch != null) {
             val token = sequelMatch.groupValues[1]
             sequel = romanMap[token] ?: token.toIntOrNull() ?: 1
@@ -3303,7 +3310,8 @@ object VideoExtractor {
             "hd", "dubbed", "eng", "sub", "source", "director", "sutradara", "pemeran",
             "full", "short", "drama", "video", "clip", "complete",
             "dailymotion", "youtube", "bilibili", "archive", "server", "phim", "tonton", "watch",
-            "rebahin", "bioskopkeren", "indoxxi", "idlix", "episode", "episod", "eps", "ep"
+            "rebahin", "bioskopkeren", "indoxxi", "idlix", "episode", "episod", "eps", "ep",
+            "s1", "s2", "s3", "s4", "s5", "s6", "s7", "s8", "s9", "s10", "s01", "s02", "s03"
         )
         val tokens = clean.split(Regex("""\s+"""))
         val baseTokens = mutableListOf<String>()
@@ -3314,27 +3322,34 @@ object VideoExtractor {
             if (t.length >= 2) baseTokens.add(t)
         }
 
-        return MovieTitleMeta(year = year, sequel = sequel, baseTokens = baseTokens)
+        return MovieTitleMeta(year = year, sequel = sequel, season = season, baseTokens = baseTokens)
     }
 
     fun isCrossProviderMovieMatch(target: Video, candidate: Video): Boolean {
         val targetMeta = parseMovieTitleMeta(target.title, target.date)
         val candMeta = parseMovieTitleMeta(candidate.title, candidate.date)
 
-        // 1. Sequel matching: MUST strictly match (e.g. Part 1 vs Part 2)
-        if (targetMeta.sequel != candMeta.sequel) return false
+        val isSeriesMatch = target.isSeries == true || candidate.isSeries == true || targetMeta.season != null || candMeta.season != null
+
+        // 1. Sequel matching: MUST strictly match for movies
+        if (!isSeriesMatch && targetMeta.sequel != candMeta.sequel) return false
+
+        // Season matching: if both specify seasons, they must match
+        if (targetMeta.season != null && candMeta.season != null && targetMeta.season != candMeta.season) return false
 
         // Extract year from title, date, OR url slug (e.g. /the-guardian-2021/)
         val targetYear = targetMeta.year ?: Regex("""\b(19\d{2}|20\d{2})\b""").find(target.videoUrl)?.groupValues?.get(1)?.toIntOrNull()
         val candYear = candMeta.year ?: Regex("""\b(19\d{2}|20\d{2})\b""").find(candidate.videoUrl)?.groupValues?.get(1)?.toIntOrNull()
 
-        // 2. Strict Year matching:
-        if (targetYear != null && candYear != null) {
-            if (Math.abs(targetYear - candYear) > 1) return false
-        } else if (targetYear != null && candYear == null) {
-            // Target specifies a release year, but candidate has no year anywhere.
-            // For short/generic titles (<= 2 base tokens), reject candidate without year
-            if (targetMeta.baseTokens.size <= 2) return false
+        // 2. Strict Year matching: movies only
+        if (!isSeriesMatch) {
+            if (targetYear != null && candYear != null) {
+                if (Math.abs(targetYear - candYear) > 1) return false
+            } else if (targetYear != null && candYear == null) {
+                // Target specifies a release year, but candidate has no year anywhere.
+                // For short/generic titles (<= 2 base tokens), reject candidate without year
+                if (targetMeta.baseTokens.size <= 2) return false
+            }
         }
 
         // 3. Base tokens matching
@@ -4858,7 +4873,8 @@ object VideoExtractor {
     }
 
     fun stripSourcePrefix(id: String): String {
-        return id.removePrefix("kb_")
+        return id.removePrefix("mb_")
+            .removePrefix("kb_")
             .removePrefix("pm_")
             .removePrefix("pf_")
             .removePrefix("bw_")

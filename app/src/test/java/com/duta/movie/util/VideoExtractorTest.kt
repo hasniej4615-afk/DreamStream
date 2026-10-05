@@ -1233,6 +1233,60 @@ class VideoExtractorTest {
             org.junit.Assert.assertTrue("Host ${it.url} MUST be identified as alternative partner host", VideoExtractor.isAlternativePartnerHost(it.url))
         }
     }
+
+    @Test
+    fun testTvSeriesMatchingCrossProvider() {
+        val arrowTarget = Video(
+            id = "pf_arrow",
+            title = "Arrow",
+            videoUrl = "https://v5.pusatfilm21info.com/tv/arrow-indoxxi/",
+            thumbnailUrl = "",
+            duration = "",
+            date = "2012",
+            isSeries = true
+        )
+        val arrowS1 = Video(
+            id = "mb_5682786252857168664",
+            title = "Arrow S1",
+            videoUrl = "moviebox://arrow-q5agGMIdNL6?id=5682786252857168664&type=2",
+            thumbnailUrl = "",
+            duration = "",
+            date = "2012-10-10",
+            isSeries = true
+        )
+        val arrowS2 = Video(
+            id = "mb_5682786252857168664",
+            title = "Arrow S2",
+            videoUrl = "moviebox://arrow-q5agGMIdNL6?id=5682786252857168664&type=2",
+            thumbnailUrl = "",
+            duration = "",
+            date = "2013-10-09",
+            isSeries = true
+        )
+        val arrowS8 = Video(
+            id = "mb_5682786252857168664",
+            title = "Arrow S8",
+            videoUrl = "moviebox://arrow-q5agGMIdNL6?id=5682786252857168664&type=2",
+            thumbnailUrl = "",
+            duration = "",
+            date = "2019-10-15",
+            isSeries = true
+        )
+        val flashS1 = Video(
+            id = "mb_4024898640031404824",
+            title = "The Flash S1-S9",
+            videoUrl = "moviebox://the-flash-qPN2bER4kN4?id=4024898640031404824&type=2",
+            thumbnailUrl = "",
+            duration = "",
+            date = "2014-10-07",
+            isSeries = true
+        )
+
+        org.junit.Assert.assertTrue("Arrow S1 must match Arrow series target", VideoExtractor.isCrossProviderMovieMatch(arrowTarget, arrowS1))
+        org.junit.Assert.assertTrue("Arrow S2 must match Arrow series target", VideoExtractor.isCrossProviderMovieMatch(arrowTarget, arrowS2))
+        org.junit.Assert.assertTrue("Arrow S8 must match Arrow series target even with multi-year release gap", VideoExtractor.isCrossProviderMovieMatch(arrowTarget, arrowS8))
+        org.junit.Assert.assertFalse("Flash must not match Arrow", VideoExtractor.isCrossProviderMovieMatch(arrowTarget, flashS1))
+    }
 }
 
 

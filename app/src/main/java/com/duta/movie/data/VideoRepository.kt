@@ -565,7 +565,21 @@ class VideoRepository @Inject constructor(
     suspend fun findProviderMirrorsForVideo(video: Video, targetEpisode: Episode? = null): List<VideoServer> = withContext(Dispatchers.IO) {
         val results = mutableListOf<VideoServer>()
         try {
-            val queries = VideoExtractor.buildAlternativeSearchQueries(video.title)
+            val isSeriesPlayback = video.isSeries == true || targetEpisode != null
+            val epSeasonStr = if (!targetEpisode?.season.isNullOrEmpty()) targetEpisode?.season else targetEpisode?.url ?: video.title
+            val epNameStr = if (!targetEpisode?.name.isNullOrEmpty()) targetEpisode?.name else targetEpisode?.url ?: video.title
+            val targetSeason = Regex("""(?i)\b(?:season|s)[-_ ]?(\d+)\b""").find(epSeasonStr ?: "")?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            val targetEp = Regex("""(?i)\b(?:episode|eps|ep)[-_ ]?(\d+)\b""").find(epNameStr ?: "")?.groupValues?.get(1)?.toIntOrNull() ?: 1
+
+            val baseQueries = VideoExtractor.buildAlternativeSearchQueries(video.title)
+            val queries = if (isSeriesPlayback && targetSeason > 0) {
+                listOf(video.title, "${video.title} S$targetSeason", "${video.title} Season $targetSeason") + baseQueries
+            } else {
+                baseQueries
+            }.distinct()
+
+            val cleanTargetTitle = VideoExtractor.cleanTitle(video.title)
+            val cleanTargetBase = cleanTargetTitle.replace(Regex("""(?i)\b(?:season|s)[-_ ]?\d+\b"""), "").replace(Regex("""[\(\)\[\]\{\}\-_,:\.'\"\|\\\/–—]"""), " ").trim()
             val candidateVideos = mutableListOf<Video>()
 
             for (q in queries.take(3)) {
@@ -574,7 +588,23 @@ class VideoRepository @Inject constructor(
                     if (item.id == video.id || item.videoUrl == video.videoUrl) continue
                     if (candidateVideos.any { it.id == item.id }) continue
 
-                    val isMatch = VideoExtractor.isCrossProviderMovieMatch(video, item) ||
+                    val cleanCandTitle = VideoExtractor.cleanTitle(item.title)
+                    val candSeason = Regex("""(?i)\b(?:season|s)[-_ ]?(\d+)\b""").find(item.title)?.groupValues?.get(1)?.toIntOrNull()
+                    val isSeasonMatch = if (isSeriesPlayback) {
+                        (candSeason == null || candSeason == targetSeason)
+                    } else true
+
+                    val cleanCandBase = cleanCandTitle.replace(Regex("""(?i)\b(?:season|s)[-_ ]?\d+\b"""), "").replace(Regex("""[\(\)\[\]\{\}\-_,:\.'\"\|\\\/–—]"""), " ").trim()
+                    val isSeriesTitleMatch = isSeriesPlayback && isSeasonMatch && (
+                        cleanCandBase.equals(cleanTargetBase, ignoreCase = true) ||
+                        item.title.startsWith(video.title, ignoreCase = true) ||
+                        video.title.startsWith(cleanCandBase, ignoreCase = true) ||
+                        item.title.contains("$cleanTargetBase S$targetSeason", ignoreCase = true) ||
+                        item.title.contains("$cleanTargetBase Season $targetSeason", ignoreCase = true)
+                    )
+
+                    val isMatch = isSeriesTitleMatch ||
+                                  VideoExtractor.isCrossProviderMovieMatch(video, item) ||
                                   item.title.equals(video.title, ignoreCase = true) ||
                                   item.title.equals(q, ignoreCase = true)
 
@@ -593,12 +623,6 @@ class VideoRepository @Inject constructor(
                     if (low.contains("cam") || low.contains("hindi") || low.contains("dub")) 1 else 0 
                 }
             )
-
-            val isSeriesPlayback = video.isSeries == true || targetEpisode != null
-            val epSeasonStr = if (!targetEpisode?.season.isNullOrEmpty()) targetEpisode?.season else targetEpisode?.url ?: video.title
-            val epNameStr = if (!targetEpisode?.name.isNullOrEmpty()) targetEpisode?.name else targetEpisode?.url ?: video.title
-            val targetSeason = Regex("""(?i)\b(?:season|s)[-_ ]?(\d+)\b""").find(epSeasonStr ?: "")?.groupValues?.get(1)?.toIntOrNull() ?: 1
-            val targetEp = Regex("""(?i)\b(?:episode|eps|ep)[-_ ]?(\d+)\b""").find(epNameStr ?: "")?.groupValues?.get(1)?.toIntOrNull() ?: 1
 
             var foundMovieboxServers = false
             for (cand in candidateVideos.take(5)) {

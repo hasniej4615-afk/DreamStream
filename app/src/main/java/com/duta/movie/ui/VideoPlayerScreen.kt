@@ -259,10 +259,10 @@ fun VideoPlayerScreen(
     val rawVideo: Video? by viewModel.videoMetadata.collectAsStateWithLifecycle()
     val cleanVideoId = remember(videoId) { com.duta.movie.util.VideoExtractor.stripSourcePrefix(videoId) }
     val video = remember(rawVideo, videoId) {
-        val matching = rawVideo?.takeIf {
-            it.id == videoId || com.duta.movie.util.VideoExtractor.stripSourcePrefix(it.id) == cleanVideoId
+        val isMatch: (Video?) -> Boolean = { v ->
+            v != null && (v.id == videoId || (cleanVideoId.length >= 3 && com.duta.movie.util.VideoExtractor.stripSourcePrefix(v.id) == cleanVideoId))
         }
-        matching ?: viewModel.getVideo(videoId)
+        rawVideo?.takeIf(isMatch) ?: viewModel.getVideo(videoId)?.takeIf(isMatch)
     }
     val fallbackDurationMs = remember(video?.duration) { parseDurationToMillis(video?.duration) }
     val extractedUrl: String? by viewModel.extractedUrl.collectAsStateWithLifecycle()

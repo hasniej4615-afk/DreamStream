@@ -320,10 +320,10 @@ fun VideoDetailScreen(
     val rawVideo by viewModel.videoMetadata.collectAsStateWithLifecycle()
     val cleanCurrentId = remember(videoId) { com.duta.movie.util.VideoExtractor.stripSourcePrefix(videoId) }
     val currentVideo = remember(rawVideo, videoId) {
-        val matching = rawVideo?.takeIf {
-            it.id == videoId || com.duta.movie.util.VideoExtractor.stripSourcePrefix(it.id) == cleanCurrentId
+        val isMatch: (com.duta.movie.model.Video?) -> Boolean = { v ->
+            v != null && (v.id == videoId || (cleanCurrentId.length >= 3 && com.duta.movie.util.VideoExtractor.stripSourcePrefix(v.id) == cleanCurrentId))
         }
-        matching ?: viewModel.getVideo(videoId)
+        rawVideo?.takeIf(isMatch) ?: viewModel.getVideo(videoId)?.takeIf(isMatch)
     }
     SideEffect {
         Log.d("VideoDetailScreen", "Recomposed | Target VideoId: $videoId | Video: ${currentVideo?.title} | Trailer URL: ${currentVideo?.previewUrl}")

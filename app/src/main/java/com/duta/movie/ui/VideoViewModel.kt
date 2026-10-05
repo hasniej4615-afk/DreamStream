@@ -1485,19 +1485,25 @@ class VideoViewModel @Inject constructor(
         }
 
         val cleanId = com.duta.movie.util.VideoExtractor.stripSourcePrefix(videoId)
+        val isIdMatch: (String) -> Boolean = { candId ->
+            candId == videoId || (cleanId.length >= 3 && com.duta.movie.util.VideoExtractor.stripSourcePrefix(candId) == cleanId)
+        }
+
         val currentMeta = _videoMetadata.value
-        val isDifferentVideo = currentMeta != null && currentMeta.id != videoId && com.duta.movie.util.VideoExtractor.stripSourcePrefix(currentMeta.id) != cleanId
+        val isDifferentVideo = currentMeta != null && !isIdMatch(currentMeta.id)
 
         if (isDifferentVideo) {
+            _videoMetadata.value = null
             _currentEpisode.value = null
             _currentServerUrl.value = null
             _resolvedUrl.value = null
+            activeVideoId = null
         }
 
         val immediateCached = metadataCache[videoId] 
-            ?: metadataCache.entries.find { it.key == videoId || com.duta.movie.util.VideoExtractor.stripSourcePrefix(it.key) == cleanId }?.value
-            ?: videoRepository.getCachedVideo(videoId) 
-            ?: getVideo(videoId)
+            ?: (if (cleanId.length >= 3) metadataCache.entries.find { isIdMatch(it.key) }?.value else null)
+            ?: videoRepository.getCachedVideo(videoId)?.takeIf { isIdMatch(it.id) }
+            ?: getVideo(videoId)?.takeIf { isIdMatch(it.id) }
 
         if (isCompleteCached(immediateCached)) {
             _videoMetadata.value = applyMetadata(immediateCached!!)
@@ -1506,10 +1512,8 @@ class VideoViewModel @Inject constructor(
         } else if (immediateCached != null) {
             _videoMetadata.value = applyMetadata(immediateCached)
             _isDetailLoading.value = true
-        } else if (isDifferentVideo) {
-            _videoMetadata.value = null
-            _isDetailLoading.value = true
         } else {
+            _videoMetadata.value = null
             _isDetailLoading.value = true
         }
 
@@ -2396,12 +2400,14 @@ class VideoViewModel @Inject constructor(
                             finalServers = unboxed.distinctBy { it.url }
                         }
 
-                        // Provider fallback if episode page and parent have no servers
-                        if (finalServers.isEmpty()) {
-                            addResolutionLog("Episode servers missing. Searching partner providers...")
+                        // Direct CDN Provider Pre-population: Check for high-speed direct CDN streams (MovieBox) if missing
+                        if (finalServers.none { it.name.startsWith("MovieBox", ignoreCase = true) || it.url.contains("hakunaymatata") || VideoExtractor.getProviderPriority(it.name, it.url) >= 150 }) {
+                            addResolutionLog("Checking direct CDN streams for episode...")
                             val provServers = videoRepository.findProviderMirrorsForVideo(video, _currentEpisode.value)
                             if (provServers.isNotEmpty()) {
-                                finalServers = provServers
+                                finalServers = (provServers + finalServers)
+                                    .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
+                                    .sortedByDescending { VideoExtractor.getProviderPriority(it.name, it.url) }
                             }
                         }
                         
@@ -4554,9 +4560,9 @@ class VideoViewModel @Inject constructor(
 
     fun getVideo(id: String): Video? {
         val cleanId = com.duta.movie.util.VideoExtractor.stripSourcePrefix(id)
-        val match: (Video) -> Boolean = { it.id == id || com.duta.movie.util.VideoExtractor.stripSourcePrefix(it.id) == cleanId }
+        val match: (Video) -> Boolean = { it.id == id || (cleanId.length >= 3 && com.duta.movie.util.VideoExtractor.stripSourcePrefix(it.id) == cleanId) }
         val base = metadataCache[id] 
-            ?: metadataCache.entries.find { it.key == id || com.duta.movie.util.VideoExtractor.stripSourcePrefix(it.key) == cleanId }?.value
+            ?: (if (cleanId.length >= 3) metadataCache.entries.find { it.key == id || com.duta.movie.util.VideoExtractor.stripSourcePrefix(it.key) == cleanId }?.value else null)
             ?: videoRepository.getCachedVideo(id)
             ?: run {
                 val fromLatestMovies = _latestMovies.value.find(match)
