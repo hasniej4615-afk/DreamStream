@@ -1484,13 +1484,30 @@ class VideoViewModel @Inject constructor(
             )
         }
 
-        val immediateCached = metadataCache[videoId] ?: videoRepository.getCachedVideo(videoId)
+        val cleanId = com.duta.movie.util.VideoExtractor.stripSourcePrefix(videoId)
+        val currentMeta = _videoMetadata.value
+        val isDifferentVideo = currentMeta != null && currentMeta.id != videoId && com.duta.movie.util.VideoExtractor.stripSourcePrefix(currentMeta.id) != cleanId
+
+        if (isDifferentVideo) {
+            _currentEpisode.value = null
+            _currentServerUrl.value = null
+            _resolvedUrl.value = null
+        }
+
+        val immediateCached = metadataCache[videoId] 
+            ?: metadataCache.entries.find { it.key == videoId || com.duta.movie.util.VideoExtractor.stripSourcePrefix(it.key) == cleanId }?.value
+            ?: videoRepository.getCachedVideo(videoId) 
+            ?: getVideo(videoId)
+
         if (isCompleteCached(immediateCached)) {
             _videoMetadata.value = applyMetadata(immediateCached!!)
             _isDetailLoading.value = false
             _isLoading.value = false
-        } else if (_videoMetadata.value?.id != videoId) {
-            _videoMetadata.value = immediateCached ?: getVideo(videoId) 
+        } else if (immediateCached != null) {
+            _videoMetadata.value = applyMetadata(immediateCached)
+            _isDetailLoading.value = true
+        } else if (isDifferentVideo) {
+            _videoMetadata.value = null
             _isDetailLoading.value = true
         } else {
             _isDetailLoading.value = true
@@ -2186,13 +2203,20 @@ class VideoViewModel @Inject constructor(
     fun playMovie(videoId: String, serverUrl: String? = null, forceReset: Boolean = false, isRotation: Boolean = false, clearBlacklist: Boolean = forceReset) {
         Log.i("VideoViewModel", "playMovie called for $videoId | force: $forceReset | rotation: $isRotation")
         isPlaybackActive = false
+        val cleanId = com.duta.movie.util.VideoExtractor.stripSourcePrefix(videoId)
+        val isDifferentVideo = activeVideoId != null && activeVideoId != videoId && com.duta.movie.util.VideoExtractor.stripSourcePrefix(activeVideoId!!) != cleanId
+        if (isDifferentVideo) {
+            _currentEpisode.value = null
+            _currentServerUrl.value = null
+            _resolvedUrl.value = null
+        }
         activeVideoId = videoId
         cleanDeadMirrors()
-        if (forceReset || isRotation) {
+        if (forceReset || isRotation || isDifferentVideo) {
             if (isRotation) {
                 _shouldSuppressResume.value = true
             }
-            if (forceReset) { 
+            if (forceReset || isDifferentVideo) { 
                 rotationCount = 0
                 exhaustedServerUrls.clear()
                 consecutiveAllBlacklistedCount = 0
@@ -2217,13 +2241,20 @@ class VideoViewModel @Inject constructor(
     fun playTVSeries(videoId: String, episodeUrl: String? = null, forceReset: Boolean = false, targetEpisode: Episode? = null, isRotation: Boolean = false, clearBlacklist: Boolean = forceReset) {
         Log.i("VideoViewModel", "playTVSeries called for $videoId | force: $forceReset | ep: ${targetEpisode?.name} | rotation: $isRotation")
         isPlaybackActive = false
+        val cleanId = com.duta.movie.util.VideoExtractor.stripSourcePrefix(videoId)
+        val isDifferentVideo = activeVideoId != null && activeVideoId != videoId && com.duta.movie.util.VideoExtractor.stripSourcePrefix(activeVideoId!!) != cleanId
+        if (isDifferentVideo) {
+            _currentEpisode.value = targetEpisode
+            _currentServerUrl.value = null
+            _resolvedUrl.value = null
+        }
         activeVideoId = videoId
         cleanDeadMirrors()
-        if (forceReset || isRotation) {
+        if (forceReset || isRotation || isDifferentVideo) {
             if (isRotation) {
                 _shouldSuppressResume.value = true
             }
-            if (forceReset) { 
+            if (forceReset || isDifferentVideo) { 
                 rotationCount = 0
                 exhaustedServerUrls.clear()
                 consecutiveAllBlacklistedCount = 0
@@ -4499,56 +4530,61 @@ class VideoViewModel @Inject constructor(
     fun setSuppressResume(suppress: Boolean) { _shouldSuppressResume.value = suppress }
 
     fun getVideo(id: String): Video? {
-        val base = metadataCache[id] ?: run {
-            val fromLatestMovies = _latestMovies.value.find { it.id == id }
-            if (fromLatestMovies != null) {
-                metadataCache[id] = fromLatestMovies
-                fromLatestMovies
-            } else {
-                val fromLatestTVSeries = _latestTVSeries.value.find { it.id == id }
-                if (fromLatestTVSeries != null) {
-                    metadataCache[id] = fromLatestTVSeries
-                    fromLatestTVSeries
+        val cleanId = com.duta.movie.util.VideoExtractor.stripSourcePrefix(id)
+        val match: (Video) -> Boolean = { it.id == id || com.duta.movie.util.VideoExtractor.stripSourcePrefix(it.id) == cleanId }
+        val base = metadataCache[id] 
+            ?: metadataCache.entries.find { it.key == id || com.duta.movie.util.VideoExtractor.stripSourcePrefix(it.key) == cleanId }?.value
+            ?: videoRepository.getCachedVideo(id)
+            ?: run {
+                val fromLatestMovies = _latestMovies.value.find(match)
+                if (fromLatestMovies != null) {
+                    metadataCache[id] = fromLatestMovies
+                    fromLatestMovies
                 } else {
-                    val fromResults = _resultVideos.value.find { it.id == id } ?: _searchResultsVideos.value.find { it.id == id }
-                    if (fromResults != null) {
-                        metadataCache[id] = fromResults
-                        fromResults
+                    val fromLatestTVSeries = _latestTVSeries.value.find(match)
+                    if (fromLatestTVSeries != null) {
+                        metadataCache[id] = fromLatestTVSeries
+                        fromLatestTVSeries
                     } else {
-                        var found: Video? = null
-                        for ((_, videos) in _categoryVideos.value) {
-                            val fromCategory = videos.find { it.id == id }
-                            if (fromCategory != null) {
-                                metadataCache[id] = fromCategory
-                                found = fromCategory
-                                break
-                            }
-                        }
-                        if (found != null) {
-                            found
+                        val fromResults = _resultVideos.value.find(match) ?: _searchResultsVideos.value.find(match)
+                        if (fromResults != null) {
+                            metadataCache[id] = fromResults
+                            fromResults
                         } else {
-                            val fromPakcik = _pakcikRekomenVideos.value.find { it.id == id }
-                            if (fromPakcik != null) {
-                                metadataCache[id] = fromPakcik
-                                fromPakcik
+                            var found: Video? = null
+                            for ((_, videos) in _categoryVideos.value) {
+                                val fromCategory = videos.find(match)
+                                if (fromCategory != null) {
+                                    metadataCache[id] = fromCategory
+                                    found = fromCategory
+                                    break
+                                }
+                            }
+                            if (found != null) {
+                                found
                             } else {
-                                val fromMyList = myListVideos.value.find { it.id == id }
-                                if (fromMyList != null) {
-                                    metadataCache[id] = fromMyList
-                                    fromMyList
+                                val fromPakcik = _pakcikRekomenVideos.value.find(match)
+                                if (fromPakcik != null) {
+                                    metadataCache[id] = fromPakcik
+                                    fromPakcik
                                 } else {
-                                    val fromHistory = recentlyWatchedVideos.value.find { it.id == id }
-                                    if (fromHistory != null) {
-                                        metadataCache[id] = fromHistory
-                                        fromHistory
-                                    } else null
+                                    val fromMyList = myListVideos.value.find(match)
+                                    if (fromMyList != null) {
+                                        metadataCache[id] = fromMyList
+                                        fromMyList
+                                    } else {
+                                        val fromHistory = recentlyWatchedVideos.value.find(match)
+                                        if (fromHistory != null) {
+                                            metadataCache[id] = fromHistory
+                                            fromHistory
+                                        } else null
+                                    }
                                 }
                             }
                         }
                     }
                 }
-            }
-        } ?: return null
+            } ?: return null
 
         val extra = discoveredAltServers[id] ?: emptyList()
         val combinedServers = if (extra.isNotEmpty()) {

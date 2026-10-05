@@ -254,7 +254,14 @@ fun VideoPlayerScreen(
     }
 
     val scope = rememberCoroutineScope()
-    val video: Video? by viewModel.videoMetadata.collectAsStateWithLifecycle()
+    val rawVideo: Video? by viewModel.videoMetadata.collectAsStateWithLifecycle()
+    val cleanVideoId = remember(videoId) { com.duta.movie.util.VideoExtractor.stripSourcePrefix(videoId) }
+    val video = remember(rawVideo, videoId) {
+        val matching = rawVideo?.takeIf {
+            it.id == videoId || com.duta.movie.util.VideoExtractor.stripSourcePrefix(it.id) == cleanVideoId
+        }
+        matching ?: viewModel.getVideo(videoId)
+    }
     val fallbackDurationMs = remember(video?.duration) { parseDurationToMillis(video?.duration) }
     val extractedUrl: String? by viewModel.extractedUrl.collectAsStateWithLifecycle()
     val isLoading: Boolean by viewModel.isLoading.collectAsStateWithLifecycle()
@@ -266,7 +273,12 @@ fun VideoPlayerScreen(
     val resolutionProgress by viewModel.resolutionProgress.collectAsStateWithLifecycle()
     val resolutionLog by viewModel.resolutionLog.collectAsStateWithLifecycle()
     val currentEpUrl by viewModel.currentServerUrl.collectAsStateWithLifecycle()
-    val currentEpisode by viewModel.currentEpisode.collectAsStateWithLifecycle()
+    val rawCurrentEpisode by viewModel.currentEpisode.collectAsStateWithLifecycle()
+    val currentEpisode = remember(rawCurrentEpisode, video, videoId) {
+        rawCurrentEpisode?.takeIf { ep ->
+            video == null || video.episodes.isEmpty() || video.episodes.any { it.url == ep.url || it.id == ep.id }
+        }
+    }
     val effectiveProgressId = remember(videoId, currentEpisode) {
         if (currentEpisode != null) {
             val slug = com.duta.movie.util.VideoExtractor.extractStableId(currentEpisode!!.url)

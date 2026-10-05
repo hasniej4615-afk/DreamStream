@@ -317,9 +317,16 @@ fun VideoDetailScreen(
     viewModel: VideoViewModel = viewModel(),
     windowSizeClass: WindowSizeClass
 ) {
-    val video by viewModel.videoMetadata.collectAsStateWithLifecycle()
+    val rawVideo by viewModel.videoMetadata.collectAsStateWithLifecycle()
+    val cleanCurrentId = remember(videoId) { com.duta.movie.util.VideoExtractor.stripSourcePrefix(videoId) }
+    val currentVideo = remember(rawVideo, videoId) {
+        val matching = rawVideo?.takeIf {
+            it.id == videoId || com.duta.movie.util.VideoExtractor.stripSourcePrefix(it.id) == cleanCurrentId
+        }
+        matching ?: viewModel.getVideo(videoId)
+    }
     SideEffect {
-        Log.d("VideoDetailScreen", "Recomposed | Video: ${video?.title} | Trailer URL: ${video?.previewUrl}")
+        Log.d("VideoDetailScreen", "Recomposed | Target VideoId: $videoId | Video: ${currentVideo?.title} | Trailer URL: ${currentVideo?.previewUrl}")
     }
 
     val context = LocalContext.current
@@ -352,7 +359,6 @@ fun VideoDetailScreen(
         viewModel.loadFullDetails(videoId)
     }
 
-    val currentVideo = video
     androidx.compose.runtime.LaunchedEffect(currentVideo?.id, currentVideo?.thumbnailUrl, currentVideo?.backdropUrl) {
         if (currentVideo != null && (
             (currentVideo.thumbnailUrl.isEmpty() && currentVideo.backdropUrl.isEmpty()) ||
@@ -364,8 +370,8 @@ fun VideoDetailScreen(
     }
 
     // Auto-focus play button for TV and remote navigation with smooth debounce
-    LaunchedEffect(video?.id, isTVLayout) {
-        if (video != null && isTVLayout) {
+    LaunchedEffect(currentVideo?.id, isTVLayout) {
+        if (currentVideo != null && isTVLayout) {
             delay(350)
             try { playButtonFocusRequester.requestFocus() } catch(_: Exception) {}
         }
@@ -379,7 +385,6 @@ fun VideoDetailScreen(
         modifier = Modifier.fillMaxSize(),
         color = Color.Black
     ) {
-        val currentVideo = video
         if (currentVideo == null) {
             Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator(color = Color.Red)

@@ -367,12 +367,14 @@ class VideoRepository @Inject constructor(
                 }
             }
 
-            val providerServers = findProviderMirrorsForVideo(merged)
-            if (providerServers.isNotEmpty()) {
-                val combined = (merged.servers + providerServers)
-                    .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
-                    .sortedByDescending { VideoExtractor.getProviderPriority(it.name, it.url) }
-                merged = merged.copy(servers = combined)
+            if (merged.servers.isEmpty() && merged.episodes.isEmpty()) {
+                val providerServers = findProviderMirrorsForVideo(merged)
+                if (providerServers.isNotEmpty()) {
+                    val combined = (merged.servers + providerServers)
+                        .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
+                        .sortedByDescending { VideoExtractor.getProviderPriority(it.name, it.url) }
+                    merged = merged.copy(servers = combined)
+                }
             }
             videoDao.insertOrUpdateVideos(listOf(merged.toEntity()))
             videoCache[videoId] = merged
