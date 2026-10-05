@@ -1108,12 +1108,18 @@ object VideoExtractor {
             val divRegex = Regex("""<div[^>]+id=['"]ideooo*link['"][^>]*>([^<]+)</div>""")
             val divMatch = divRegex.find(html)
             if (divMatch != null) {
-                var basePath = divMatch.groupValues[1].trim()
-                if (!basePath.startsWith("http")) {
-                    basePath = if (basePath.startsWith("//")) "https:$basePath"
-                               else if (basePath.startsWith("/")) "https://$host$basePath"
-                               else "https://$host/$basePath"
+                var rawPath = divMatch.groupValues[1].trim()
+                var basePath = when {
+                    rawPath.startsWith("http://") || rawPath.startsWith("https://") -> rawPath
+                    rawPath.startsWith("//") -> "https:$rawPath"
+                    rawPath.contains("/get_video?") -> "https://$host/get_video?" + rawPath.substringAfter("/get_video?")
+                    rawPath.contains("get_video?") -> "https://$host/get_video?" + rawPath.substringAfter("get_video?")
+                    else -> {
+                        val cleanPath = rawPath.removePrefix("/").removePrefix("streamtape.com/").removePrefix("$host/")
+                        "https://$host/$cleanPath"
+                    }
                 }
+                basePath = basePath.replace("streamtape.com/streamtape.com/", "streamtape.com/")
 
                 // Look for script assigning to norobotlink, cphldlink, or ideoooolink
                 val scriptAssignRegex = Regex("""document\.getElementById\(['"](?:norobotlink|cphldlink|ideooo*link)['"]\)\.innerHTML\s*=\s*(.+?);""")
@@ -1125,7 +1131,7 @@ object VideoExtractor {
                         if (!token.endsWith("cde") && !token.endsWith("xyza")) {
                             val finalUrl = if (basePath.contains("token=")) basePath else "$basePath&token=$token"
                             val streamParam = if (!finalUrl.contains("stream=")) "&stream=1" else ""
-                            val directUrl = "$finalUrl$streamParam"
+                            val directUrl = "$finalUrl$streamParam".replace("streamtape.com/streamtape.com/", "streamtape.com/")
                             Log.i(TAG, "Streamtape direct extracted (norobotlink + ideoooolink): $directUrl")
                             return@withContext directUrl
                         }

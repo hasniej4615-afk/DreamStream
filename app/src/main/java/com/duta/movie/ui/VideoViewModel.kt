@@ -806,6 +806,7 @@ class VideoViewModel @Inject constructor(
     val categoryPages = ConcurrentHashMap<String, Int>()
     val categoryEndReached = ConcurrentHashMap<String, Boolean>()
     val discoveredAltServers = ConcurrentHashMap<String, List<com.duta.movie.model.VideoServer>>()
+    val checkedProviderVideos = ConcurrentHashMap.newKeySet<String>()
 
     fun cleanDeadMirrors(forceAll: Boolean = false) {
         if (forceAll) {
@@ -2403,7 +2404,8 @@ class VideoViewModel @Inject constructor(
                     }
 
                     // Direct CDN Provider Pre-population: Check for high-speed direct CDN streams (MovieBox) if missing
-                    if (finalServers.none { it.name.startsWith("MovieBox", ignoreCase = true) || it.url.contains("hakunaymatata") || it.url.contains("aoneroom") }) {
+                    if (!isRotation && !checkedProviderVideos.contains(epSlug) && finalServers.none { it.name.startsWith("MovieBox", ignoreCase = true) || it.url.contains("hakunaymatata") || it.url.contains("aoneroom") }) {
+                        checkedProviderVideos.add(epSlug)
                         addResolutionLog("Checking direct CDN streams for episode...")
                         val targetEpObj = targetEpisode ?: _currentEpisode.value ?: Episode(id = episodePageUrl, name = episodePageUrl, url = episodePageUrl, season = "")
                         val provServers = videoRepository.findProviderMirrorsForVideo(video, targetEpObj)
@@ -2584,7 +2586,8 @@ class VideoViewModel @Inject constructor(
                 }
 
                 // Direct CDN Provider Pre-population for movies: Check for high-speed direct CDN streams (MovieBox) if missing
-                if (video!!.isSeries != true && baseVideoServers.none { it.name.startsWith("MovieBox", ignoreCase = true) || it.url.contains("hakunaymatata") || it.url.contains("aoneroom") }) {
+                if (!isRotation && !checkedProviderVideos.contains(videoId) && video!!.isSeries != true && baseVideoServers.none { it.name.startsWith("MovieBox", ignoreCase = true) || it.url.contains("hakunaymatata") || it.url.contains("aoneroom") }) {
+                    checkedProviderVideos.add(videoId)
                     val provServers = videoRepository.findProviderMirrorsForVideo(video, null)
                     if (provServers.isNotEmpty()) {
                         baseVideoServers = (provServers + baseVideoServers)

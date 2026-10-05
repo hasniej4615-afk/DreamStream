@@ -1214,6 +1214,7 @@ fun VideoPlayerScreen(
                     }
                     
                     isVideoReady = false
+                    isFinishing = false
                     currentUrl.value = url
                     currentSub.value = sub?.url
                     currentPlayer.prepare()
@@ -1305,15 +1306,18 @@ fun VideoPlayerScreen(
                     idleJob = null
                 }
 
-                if (state == Player.STATE_IDLE && !useWebView && !isCasting && extractedUrl != null && !isVideoReady && !isFinishing) {
+                val isResolvingActive = isResolvingState || viewModel.isResolving.value
+                if (state == Player.STATE_IDLE && !useWebView && !isCasting && extractedUrl != null && !isVideoReady && !isFinishing && !isResolvingActive) {
                     idleJob?.cancel()
                     idleJob = scope.launch {
                         delay(4000)
-                        if (currentPlayer.playbackState == Player.STATE_IDLE && !useWebView && !isCasting && !isVideoReady && !isFinishing) {
+                        val stillResolving = isResolvingState || viewModel.isResolving.value
+                        if (currentPlayer.playbackState == Player.STATE_IDLE && !useWebView && !isCasting && !isVideoReady && !isFinishing && !stillResolving) {
                             Log.w("VideoPlayerScreen", "ExoPlayer stranded in STATE_IDLE for 4s. Media failed to load. Rotating to next server...")
                             isFinishing = true
                             extractedUrl?.let { viewModel.notifyPlaybackFailure(it) }
-                            viewModel.resolveNextServer(videoId, viewModel.currentServerUrl.value, force = true)
+                            val effectiveServer = viewModel.currentServerUrl.value ?: currentServerUrlFromVm ?: currentServerUrl.value
+                            viewModel.resolveNextServer(videoId, effectiveServer, force = true)
                         }
                     }
                 }
@@ -1475,18 +1479,22 @@ fun VideoPlayerScreen(
                 val is403 = (message.contains("403") || cause.contains("403")) && autoRetryCount == 0
                 val isSourceError = message.contains("Source error") || message.contains("Response code: 4")
 
+                idleJob?.cancel()
+                idleJob = null
+                val effectiveCurrentServer = viewModel.currentServerUrl.value ?: currentServerUrlFromVm ?: currentServerUrl.value
+
                 if (is404) {
                     Log.w("VideoPlayerScreen", "Owl's Eye: 404 Not Found on ExoPlayer. Marking mirror dead & fast-rotating...")
-                    val failingUrl = extractedUrl ?: currentServerUrl.value ?: ""
+                    val failingUrl = extractedUrl ?: effectiveCurrentServer ?: ""
                     if (failingUrl.isNotEmpty()) {
                         viewModel.notifyMirrorDead(failingUrl)
                     }
                     scope.launch {
-                        viewModel.resolveNextServer(currentVideoId.value, currentServerUrl.value, force = true)
+                        viewModel.resolveNextServer(currentVideoId.value, effectiveCurrentServer, force = true)
                     }
                 } else if (is403) {
-                    val failingUrl = extractedUrl ?: currentServerUrl.value ?: ""
-                    val currentServ = currentServerUrl.value ?: ""
+                    val failingUrl = extractedUrl ?: effectiveCurrentServer ?: ""
+                    val currentServ = effectiveCurrentServer ?: ""
                     val isJsHoster = com.duta.movie.util.VideoExtractor.isJsOnlyHost(currentServ) || 
                                      currentServ.contains("vidhide", ignoreCase = true) || 
                                      currentServ.contains("fujihide", ignoreCase = true) ||
@@ -1504,13 +1512,13 @@ fun VideoPlayerScreen(
                         }
                         scope.launch {
                             delay(600)
-                            viewModel.resolveNextServer(currentVideoId.value, currentServerUrl.value, force = true)
+                            viewModel.resolveNextServer(currentVideoId.value, effectiveCurrentServer, force = true)
                         }
                     }
                 } else if (isSourceError && autoRetryCount == 0) {
                     autoRetryCount++
                     Log.i("VideoPlayerScreen", "Owl's Eye: ExoPlayer failed with Source Error. Flagging host for learning...")
-                    val failingUrl = extractedUrl ?: currentServerUrl.value ?: ""
+                    val failingUrl = extractedUrl ?: effectiveCurrentServer ?: ""
                     if (failingUrl.isNotEmpty()) {
                         viewModel.notifyMirrorDead(failingUrl)
                         viewModel.purgeServerFromVideo(currentVideoId.value, failingUrl)
@@ -1521,17 +1529,17 @@ fun VideoPlayerScreen(
                     }
                     scope.launch {
                         delay(600)
-                        viewModel.resolveNextServer(currentVideoId.value, currentServerUrl.value, force = true)
+                        viewModel.resolveNextServer(currentVideoId.value, effectiveCurrentServer, force = true)
                     }
                 } else if (autoRetryCount < 3 && isNetworkError) {
                     autoRetryCount++
                     Log.i("VideoPlayerScreen", "Retrying same server (Attempt $autoRetryCount) due to network error: ${error.errorCode}")
                     scope.launch { 
                         delay(2000)
-                        if (isSeriesPlayback(video, currentServerUrl.value)) {
-                            viewModel.playTVSeries(currentVideoId.value, currentServerUrl.value, forceReset = false)
+                        if (isSeriesPlayback(video, effectiveCurrentServer)) {
+                            viewModel.playTVSeries(currentVideoId.value, effectiveCurrentServer, forceReset = false)
                         } else {
-                            viewModel.playMovie(currentVideoId.value, currentServerUrl.value, forceReset = false)
+                            viewModel.playMovie(currentVideoId.value, effectiveCurrentServer, forceReset = false)
                         }
                     } 
                 } else {
