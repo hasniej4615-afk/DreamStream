@@ -355,6 +355,13 @@ fun VideoDetailScreen(
         }
     }
 
+    androidx.compose.runtime.DisposableEffect(Unit) {
+        viewModel.setDetailScreenActive(true)
+        onDispose {
+            viewModel.setDetailScreenActive(false)
+        }
+    }
+
     androidx.compose.runtime.LaunchedEffect(videoId) {
         viewModel.loadFullDetails(videoId)
     }
@@ -481,16 +488,24 @@ fun VideoDetailMedia(
     if (video.previewUrl.isNotEmpty() && isPreviewVideo && !isPlayerActive && showTrailer) {
         var isPlayerReady by remember(video.id, video.previewUrl) { mutableStateOf(false) }
         var hasPlayerError by remember(video.id, video.previewUrl) { mutableStateOf(false) }
-        
+        var isTrailerAllowed by remember(video.id, video.previewUrl) { mutableStateOf(false) }
+
+        LaunchedEffect(video.id, video.previewUrl) {
+            kotlinx.coroutines.delay(600)
+            isTrailerAllowed = true
+        }
+
         Box(modifier = Modifier.fillMaxSize()) {
-            TrailerPlayer(
-                videoUrl = video.previewUrl,
-                pageUrl = video.videoUrl,
-                modifier = Modifier.fillMaxSize(),
-                muted = false,
-                onReady = { isPlayerReady = true },
-                onError = { hasPlayerError = true }
-            )
+            if (isTrailerAllowed) {
+                TrailerPlayer(
+                    videoUrl = video.previewUrl,
+                    pageUrl = video.videoUrl,
+                    modifier = Modifier.fillMaxSize(),
+                    muted = false,
+                    onReady = { isPlayerReady = true },
+                    onError = { hasPlayerError = true }
+                )
+            }
             if (!isPlayerReady) {
                 DetailStaticImage(
                     url = video.backdropUrl.ifEmpty { video.thumbnailUrl },
@@ -499,7 +514,7 @@ fun VideoDetailMedia(
                     isTV = isTV,
                     onPosterMissing = onPosterMissing
                 )
-                if (!hasPlayerError) {
+                if (!hasPlayerError && isTrailerAllowed) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         CircularProgressIndicator(color = Color.Red, modifier = Modifier.size(48.dp))
                     }
@@ -717,18 +732,7 @@ fun VideoDetailInfo(
     val effectiveTV = isTV || isRealTV
     Column(modifier = Modifier.padding(horizontal = 24.dp)) {
         val isLikelySeries = remember(video.videoUrl, video.isSeries, video.episodes) {
-            val validEpisodes = video.episodes.filter { !it.name.contains("unnamed", ignoreCase = true) }
-            if (validEpisodes.isNotEmpty()) {
-                if (video.isSeries == false && validEpisodes.size <= 1) false else true
-            }
-            else if (video.isSeries == true) true
-            else if (video.isSeries == false) false
-            else {
-                val lowUrl = video.videoUrl.lowercase()
-                lowUrl.contains("/series/") || lowUrl.contains("/serial-tv/") || lowUrl.contains("/tv/") || lowUrl.contains("/serial-tv-terbaru/") ||
-                lowUrl.contains("/eps/") || lowUrl.contains("/episode/") || lowUrl.contains("-episode-") ||
-                lowUrl.contains("/episod/") || lowUrl.contains("-episod-")
-            }
+            com.duta.movie.util.VideoExtractor.isLikelySeries(video)
         }
 
         val currentOrFirstEpisode = remember(video.videoUrl, video.id, video.episodes) {
@@ -1027,9 +1031,9 @@ fun VideoDetailInfo(
             "Primary Mirrors"
         }
 
-        // When all primary mirrors are dead or missing, automatically trigger the mirror link from YouTube, Bilibili, and Dailymotion
-        LaunchedEffect(video.id, primaryServers.isEmpty(), isDetailLoading) {
-            if (!isDetailLoading && primaryServers.isEmpty() && (!isLikelySeries || video.episodes.isEmpty())) {
+        // When all primary mirrors are dead or missing, automatically trigger the mirror link from YouTube, Bilibili, and Dailymotion (standalone movies only)
+        LaunchedEffect(video.id, primaryServers.isEmpty(), isDetailLoading, isLikelySeries) {
+            if (!isDetailLoading && primaryServers.isEmpty() && !isLikelySeries && video.episodes.isEmpty()) {
                 val hasAltPartners = allValidServers.any { 
                     com.duta.movie.util.VideoExtractor.isAlternativePartnerServer(it.name, it.url) 
                 }

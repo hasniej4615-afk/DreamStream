@@ -2882,13 +2882,36 @@ object VideoExtractor {
     fun normalizeForDedup(video: Video, includeYear: Boolean = true): String =
         normalizeForDedup(video.title, video.date, video.videoUrl, includeYear)
 
+    fun isLikelySeries(video: Video?): Boolean {
+        if (video == null) return false
+        val validEpisodes = video.episodes.filter { !it.name.contains("unnamed", ignoreCase = true) }
+        if (validEpisodes.size > 1) return true
+        if (isLikelySeriesUrl(video.videoUrl)) return true
+        if (validEpisodes.size == 1) {
+            // A single episode without series URL indicators is treated as movie resilience
+            return false
+        }
+        if (video.isSeries == true) return true
+        if (video.isSeries == false) return false
+        return isLikelySeriesUrl(video.videoUrl)
+    }
+
+    fun isLikelySeriesUrl(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        val lowUrl = url.lowercase()
+        return lowUrl.contains("/series/") || lowUrl.contains("/serial-tv/") || lowUrl.contains("/tv/") ||
+               lowUrl.contains("/serial-tv-terbaru/") || lowUrl.contains("/eps/") || lowUrl.contains("/episode/") ||
+               lowUrl.contains("-episode-") || lowUrl.contains("/episod/") || lowUrl.contains("-episod-") ||
+               lowUrl.contains("media_type=tv")
+    }
+
     /**
      * Cross-searches alternative streaming aggregators (DutaMovie <-> PencuriMovie <-> Archive.org)
      * to find fresh live mirrors when the primary movie's mirrors are expired, 404'd, or deleted.
      */
     suspend fun findAlternativeSources(video: Video): List<VideoServer> = withContext(Dispatchers.IO) {
         val targetNorm = normalizeForDedup(video)
-        if (targetNorm.isEmpty()) return@withContext emptyList()
+        if (targetNorm.isEmpty() || isLikelySeries(video)) return@withContext emptyList()
 
         val isPm = isPencuriMovie(videoId = video.id, videoUrl = video.videoUrl)
         val isKb = isKepalaBergetar(videoId = video.id, videoUrl = video.videoUrl)
@@ -3046,8 +3069,7 @@ object VideoExtractor {
         val targetNorm = normalizeForDedup(video)
         if (targetNorm.isEmpty()) return@withContext emptyList()
 
-        val isExplicitSeries = video.videoUrl.contains("/series/") || video.videoUrl.contains("/tv/") || video.videoUrl.contains("/serial-tv/")
-        if (isExplicitSeries || video.isSeries == true || video.episodes.isNotEmpty()) {
+        if (isLikelySeries(video)) {
             return@withContext emptyList()
         }
 
@@ -4983,7 +5005,13 @@ object VideoExtractor {
                 val rating = Regex("""\d+(?:\.\d+)?""").find(rawRating)?.value ?: ""
                 val rawDate = el.select("time, .date, .posted-on, .post-date, .entry-date, .gmr-year-item, .year, .kartu-kaki").text().trim()
                 
-                Video(id = extractStableId(link), title = title, thumbnailUrl = img, videoUrl = link, duration = "", quality = quality, views = rating, date = rawDate)
+                val isSeriesItem = isLikelySeriesUrl(link) ||
+                    el.select(".gmr-episode-item, .gmr-post-series, .mv-epi, .mvepi, .eps-badge").isNotEmpty() ||
+                    title.contains(Regex("""\b(?:Season|Episode|Ep|S\d+E\d+)\b""", RegexOption.IGNORE_CASE))
+                val isExplicitMovie = link.contains("/movie/") || link.contains("/film/") || link.contains("/movies/")
+                val seriesFlag: Boolean? = if (isSeriesItem) true else if (isExplicitMovie) false else null
+
+                Video(id = extractStableId(link), title = title, thumbnailUrl = img, videoUrl = link, duration = "", quality = quality, views = rating, date = rawDate, isSeries = seriesFlag)
             } else null
         }.distinctBy { it.id }.toList()
     }

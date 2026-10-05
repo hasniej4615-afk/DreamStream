@@ -1480,6 +1480,8 @@ class VideoViewModel @Inject constructor(
     }
 
     fun loadFullDetails(videoId: String) { 
+        setDetailScreenActive(true)
+        cancelAllCategoryLoading()
         prewarmJob?.cancel()
         backgroundDetailsJob?.cancel()
         fullDetailsJob?.cancel()
@@ -3771,23 +3773,49 @@ class VideoViewModel @Inject constructor(
         }
     }
 
+    private val _isDetailScreenActive = MutableStateFlow(false)
+    val isDetailScreenActive: StateFlow<Boolean> = _isDetailScreenActive.asStateFlow()
+
     private val inFlightCategories = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val inFlightLoadMoreCategories = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    private val categoryRowJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
+    private val categoryLoadMoreJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
     val networkFetchedCategories = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     fun isCategoryNetworkFetched(category: String): Boolean = networkFetchedCategories.contains(category)
 
+    fun setDetailScreenActive(active: Boolean) {
+        _isDetailScreenActive.value = active
+        if (active) {
+            cancelAllCategoryLoading()
+        }
+    }
+
+    fun cancelAllCategoryLoading() {
+        categoryRowJobs.values.forEach { it.cancel() }
+        categoryRowJobs.clear()
+        categoryLoadMoreJobs.values.forEach { it.cancel() }
+        categoryLoadMoreJobs.clear()
+        inFlightCategories.clear()
+        inFlightLoadMoreCategories.clear()
+        prewarmJob?.cancel()
+        backgroundDetailsJob?.cancel()
+        fetchJob?.cancel()
+        loadMoreJob?.cancel()
+        _categoryLoading.value = emptyMap()
+    }
+
     fun fetchVideosForCategoryRow(category: String, count: Int = 50) {
-        if (_categoryLoading.value[category] == true || _isPlayerActive.value) return
+        if (_categoryLoading.value[category] == true || _isPlayerActive.value || _isDetailScreenActive.value) return
         if (!inFlightCategories.add(category)) return
-        viewModelScope.launch {
+        val job = viewModelScope.launch {
             _categoryLoading.update { it + (category to true) }
             var shouldAutoFetchMore = false
             
             // OWL'S EYE: Load from cache first for instant UI!
             try {
                 val cached = withContext(Dispatchers.IO) { videoRepository.getCachedVideosByCategory(category) }
-                if (cached.isNotEmpty() && !_isPlayerActive.value) {
+                if (cached.isNotEmpty() && !_isPlayerActive.value && !_isDetailScreenActive.value) {
                     val displayCached = withContext(Dispatchers.Default) {
                         VideoExtractor.sortVideosByNewestRelease(cached).map { applyMetadata(it) }
                     }
@@ -3806,7 +3834,7 @@ class VideoViewModel @Inject constructor(
                 val results = withContext(Dispatchers.IO) { videoRepository.fetchVideosBySection(category, page = 1, count = count) }
                 if (results.isNotEmpty()) { 
                     networkFetchedCategories.add(category)
-                    if (!_isPlayerActive.value) {
+                    if (!_isPlayerActive.value && !_isDetailScreenActive.value) {
                         val withMeta = withContext(Dispatchers.Default) {
                             val sortedResults = VideoExtractor.sortVideosByNewestRelease(results.distinctBy { it.id })
                             sortedResults.forEach { v ->
@@ -3834,27 +3862,29 @@ class VideoViewModel @Inject constructor(
                         }
                     }
                 }
-                else if (results.isEmpty() && category == moviePath) {
+                else if (results.isEmpty() && category == moviePath && !_isDetailScreenActive.value) {
                     VideoExtractor.probeForNewDomain()?.let { fetchVideosForCategoryRow(category, count) }
                 }
             } catch (e: Exception) {
-                Log.e("VideoViewModel", "fetchVideosForCategoryRow failed for $category", e)
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    Log.e("VideoViewModel", "fetchVideosForCategoryRow failed for $category", e)
+                }
             } finally { 
+                categoryRowJobs.remove(category)
                 inFlightCategories.remove(category)
                 _categoryLoading.update { it + (category to false) } 
-                if (shouldAutoFetchMore && categoryEndReached[category] != true && !_isPlayerActive.value) {
-                    viewModelScope.launch {
-                        loadMoreForCategoryRow(category)
-                    }
+                if (shouldAutoFetchMore && categoryEndReached[category] != true && !_isPlayerActive.value && !_isDetailScreenActive.value) {
+                    loadMoreForCategoryRow(category)
                 }
             }
         }
+        categoryRowJobs[category] = job
     }
 
     fun loadMoreForCategoryRow(category: String) {
-        if (_categoryLoading.value[category] == true || categoryEndReached[category] == true || _isPlayerActive.value) return
+        if (_categoryLoading.value[category] == true || categoryEndReached[category] == true || _isPlayerActive.value || _isDetailScreenActive.value) return
         if (!inFlightLoadMoreCategories.add(category)) return
-        viewModelScope.launch {
+        val job = viewModelScope.launch {
             val nextPage = categoryPages[category] ?: 2
             _categoryLoading.update { it + (category to true) }
             try { 
@@ -3897,12 +3927,16 @@ class VideoViewModel @Inject constructor(
                     categoryEndReached[category] = true
                 }
             } catch (e: Exception) {
-                Log.e("VideoViewModel", "loadMoreForCategoryRow failed for $category", e)
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    Log.e("VideoViewModel", "loadMoreForCategoryRow failed for $category", e)
+                }
             } finally { 
+                categoryLoadMoreJobs.remove(category)
                 inFlightLoadMoreCategories.remove(category)
                 _categoryLoading.update { it + (category to false) } 
             }
         }
+        categoryLoadMoreJobs[category] = job
     }
 
     fun resolveNextServer(videoId: String, currentServerUrl: String?, force: Boolean = false) {
@@ -4275,6 +4309,11 @@ class VideoViewModel @Inject constructor(
                     withContext(Dispatchers.Main) { onResult?.invoke(0) }
                     return@launch
                 }
+                if (com.duta.movie.util.VideoExtractor.isLikelySeries(video)) {
+                    Log.i("VideoViewModel", "searchExternalPartnerMirrors: skipping series '${video.title}'")
+                    withContext(Dispatchers.Main) { onResult?.invoke(0) }
+                    return@launch
+                }
 
                 addResolutionLog("Searching all primary and alternative mirrors across providers...")
                 val primaryClusterMirrors = com.duta.movie.util.VideoExtractor.findAlternativeSources(video)
@@ -4322,6 +4361,11 @@ class VideoViewModel @Inject constructor(
                     }
                 }
                 if (video == null) {
+                    withContext(Dispatchers.Main) { onResult?.invoke(0) }
+                    return@launch
+                }
+                if (com.duta.movie.util.VideoExtractor.isLikelySeries(video)) {
+                    Log.i("VideoViewModel", "searchAlternativeSources: skipping series '${video.title}'")
                     withContext(Dispatchers.Main) { onResult?.invoke(0) }
                     return@launch
                 }
