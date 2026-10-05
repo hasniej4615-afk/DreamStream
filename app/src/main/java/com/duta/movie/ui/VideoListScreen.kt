@@ -825,15 +825,6 @@ fun VideoListScreen(
                                         if (rowVideos.isEmpty() || !viewModel.isCategoryNetworkFetched(path) || rowVideos.size < 25) {
                                             viewModel.fetchVideosForCategoryRow(path) 
                                         }
-                                        val nextIdx = index + 1
-                                        if (nextIdx < distinctCategories.size) {
-                                            distinctCategories[nextIdx]["path"]?.let { nextCatPath ->
-                                                val nextVideos = categoryVideos[nextCatPath]
-                                                if (nextVideos.isNullOrEmpty() || !viewModel.isCategoryNetworkFetched(nextCatPath) || nextVideos.size < 25) {
-                                                    viewModel.fetchVideosForCategoryRow(nextCatPath)
-                                                }
-                                            }
-                                        }
                                     }
 
                                     val hasLoadedAndEmpty = !isRowLoading && rowVideos.isEmpty() && categoryVideos.containsKey(path)

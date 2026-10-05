@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import dagger.Lazy
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
 import kotlinx.coroutines.DelicateCoroutinesApi
@@ -15,13 +16,11 @@ import kotlinx.coroutines.launch
 class MovieApplication : Application(), ImageLoaderFactory {
     
     @Inject
-    lateinit var imageLoader: ImageLoader
+    lateinit var imageLoader: Lazy<ImageLoader>
 
     @OptIn(DelicateCoroutinesApi::class)
     override fun onCreate() {
         super.onCreate()
-        coil.Coil.setImageLoader(imageLoader)
-        com.duta.movie.util.SubtitleExtractor.init(this)
         Log.i("!!!APP_START!!!", "DMStreaM Version ${com.duta.movie.BuildConfig.VERSION_NAME}")
         try {
             val cm = getSystemService(android.content.Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager
@@ -33,10 +32,11 @@ class MovieApplication : Application(), ImageLoaderFactory {
         } catch (_: Exception) {}
         GlobalScope.launch(Dispatchers.IO) {
             try {
+                com.duta.movie.util.SubtitleExtractor.init(this@MovieApplication)
                 com.duta.movie.data.remote.RepoSyncWorker.schedulePeriodicSync(this@MovieApplication)
             } catch (_: Exception) {}
         }
     }
 
-    override fun newImageLoader(): ImageLoader = imageLoader
+    override fun newImageLoader(): ImageLoader = imageLoader.get()
 }

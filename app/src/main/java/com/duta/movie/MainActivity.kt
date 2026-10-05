@@ -155,7 +155,7 @@ class MainActivity : AppCompatActivity() {
         // Initialize CastContext in background after UI settles smoothly (delayed to avoid initial frame contention)
         if (!isTVMode) {
             lifecycleScope.launch(Dispatchers.Main) {
-                kotlinx.coroutines.delay(4000)
+                kotlinx.coroutines.delay(12000)
                 try {
                     if (GoogleApiAvailability.getInstance().isGooglePlayServicesAvailable(this@MainActivity) == ConnectionResult.SUCCESS) {
                         CastContext.getSharedInstance(applicationContext, java.util.concurrent.Executors.newSingleThreadExecutor())

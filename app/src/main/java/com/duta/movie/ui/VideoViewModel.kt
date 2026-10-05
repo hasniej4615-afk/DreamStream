@@ -245,7 +245,6 @@ class VideoViewModel @Inject constructor(
                     viewModelScope.launch(Dispatchers.IO) {
                         videoRepository.insertOrUpdateVideos(newVideos)
                     }
-                    prewarmTopVideos(newVideos, limit = 5)
                 }.onFailure { e ->
                     Log.e("VideoViewModel", "Failed to fetch Pakcik Rekomen videos", e)
                 }
@@ -1245,13 +1244,13 @@ class VideoViewModel @Inject constructor(
                     }
                 }
 
-                // EAGER FETCH ONLY TOP ROWS: Network scrape core and regional priority visible rows (e.g. 8)
+                // EAGER FETCH ONLY TOP ROWS: Network scrape core visible rows (e.g. 3)
                 // Other rows load lazily as user scrolls into them via LaunchedEffect in UI
-                val eagerQueue = fetchQueue.take(8)
+                val eagerQueue = fetchQueue.take(3)
                 eagerQueue.forEachIndexed { index, path ->
                     if (index > 0) {
                         viewModelScope.launch {
-                            delay(150L * index)
+                            delay(400L * index)
                             fetchVideosForCategoryRow(path, count = 50)
                         }
                     } else {
@@ -2241,7 +2240,7 @@ class VideoViewModel @Inject constructor(
     }
 
     fun prewarmTopVideos(videos: List<Video>, limit: Int = 8) {
-        if (_isPlayerActive.value || videos.isEmpty()) return
+        if (_isPlayerActive.value || _isDetailScreenActive.value || videos.isEmpty()) return
         val candidates = videos.take(limit).filter { v ->
             val c = metadataCache[v.id] ?: videoRepository.getCachedVideo(v.id)
             c == null || (c.servers.isEmpty() && c.episodes.isEmpty())
@@ -2250,9 +2249,9 @@ class VideoViewModel @Inject constructor(
 
         prewarmJob?.cancel()
         prewarmJob = viewModelScope.launch(Dispatchers.IO) {
-            delay(800) // Allow initial screen transition & UI render to complete first
+            delay(2500) // Allow initial screen transition & UI render to complete first
             for (v in candidates) {
-                if (!isActive || _isPlayerActive.value) break
+                if (!isActive || _isPlayerActive.value || _isDetailScreenActive.value) break
                 try {
                     val detailed = videoRepository.fetchVideoDetails(v.id)
                     if (detailed != null) {
@@ -2260,7 +2259,7 @@ class VideoViewModel @Inject constructor(
                         updateListsWithMetadata(listOf(detailed))
                     }
                 } catch (_: Exception) {}
-                delay(150) // Gentle non-blocking pacing
+                delay(300) // Gentle non-blocking pacing
             }
         }
     }
@@ -3810,7 +3809,6 @@ class VideoViewModel @Inject constructor(
         if (!inFlightCategories.add(category)) return
         val job = viewModelScope.launch {
             _categoryLoading.update { it + (category to true) }
-            var shouldAutoFetchMore = false
             
             // OWL'S EYE: Load from cache first for instant UI!
             try {
@@ -3821,7 +3819,6 @@ class VideoViewModel @Inject constructor(
                     }
                     _categoryVideos.update { it + (category to displayCached) }
                     prefetchThumbnails(displayCached, limit = 30)
-                    prewarmTopVideos(displayCached, limit = 4)
                     if (category == moviePath) {
                         _latestMovies.value = displayCached
                         _headlinerVideo.value = displayCached.firstOrNull()
@@ -3852,14 +3849,8 @@ class VideoViewModel @Inject constructor(
                         if (category == moviePath) {
                             _latestMovies.value = withMeta
                             _headlinerVideo.value = withMeta.firstOrNull()
-                            prewarmTopVideos(withMeta, limit = 5)
                         }
                         if (category == seriesPath) _latestTVSeries.value = withMeta
-
-                        // PROACTIVE MULTI-PAGE: Auto-fetch page 2 when initial fetch is small
-                        if (withMeta.size < 80 && categoryEndReached[category] != true) {
-                            shouldAutoFetchMore = true
-                        }
                     }
                 }
                 else if (results.isEmpty() && category == moviePath && !_isDetailScreenActive.value) {
@@ -3873,9 +3864,6 @@ class VideoViewModel @Inject constructor(
                 categoryRowJobs.remove(category)
                 inFlightCategories.remove(category)
                 _categoryLoading.update { it + (category to false) } 
-                if (shouldAutoFetchMore && categoryEndReached[category] != true && !_isPlayerActive.value && !_isDetailScreenActive.value) {
-                    loadMoreForCategoryRow(category)
-                }
             }
         }
         categoryRowJobs[category] = job
