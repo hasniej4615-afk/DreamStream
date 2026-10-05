@@ -834,6 +834,7 @@ class VideoViewModel @Inject constructor(
     private var loadMoreJob: Job? = null
     private var searchJob: Job? = null
     private var backgroundDetailsJob: Job? = null
+    private var fullDetailsJob: Job? = null
     private var currentPage = 1
     private var rotationCount = 0
     private var isRotationLocked = false
@@ -1479,10 +1480,14 @@ class VideoViewModel @Inject constructor(
     }
 
     fun loadFullDetails(videoId: String) { 
+        prewarmJob?.cancel()
+        backgroundDetailsJob?.cancel()
+        fullDetailsJob?.cancel()
+
         val isCompleteCached: (Video?) -> Boolean = { v ->
             v != null && (
                 v.episodes.isNotEmpty() ||
-                (v.servers.isNotEmpty() && !v.servers.all { it.url.contains(".html") || it.url.contains("/watch/") } && !v.servers.any { it.url.contains("epid=") })
+                (v.servers.isNotEmpty() && !v.servers.all { (it.url.endsWith(".html") || it.url.contains("/watch/")) && !it.url.contains("?") })
             )
         }
 
@@ -1531,7 +1536,7 @@ class VideoViewModel @Inject constructor(
         loadComments(videoId)
         loadRecommendation(videoId)
 
-        viewModelScope.launch { 
+        fullDetailsJob = viewModelScope.launch { 
             try { 
                 if (videoId.startsWith("yt_") || videoId.startsWith("bili_") || videoId.startsWith("dm_")) {
                     val extVideo = getVideo(videoId)
@@ -1740,7 +1745,7 @@ class VideoViewModel @Inject constructor(
                                 !com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url) &&
                                 !deadMirrors.contains(it.url)
                             }
-                            val needsAlternativeSearch = (alivePrimaryCount < 4 || currentServers.isEmpty()) && detailed.isSeries != true
+                            val needsAlternativeSearch = (alivePrimaryCount == 0 || currentServers.isEmpty()) && detailed.isSeries != true
 
                             val altServers = if (needsAlternativeSearch) {
                                 val cachedAlts = discoveredAltServers[detailed.id]
@@ -1756,7 +1761,7 @@ class VideoViewModel @Inject constructor(
                             val hasProviderServers = current?.servers?.any { it.name.startsWith("MovieBox", ignoreCase = true) } == true ||
                                                      detailed.servers.any { it.name.startsWith("MovieBox", ignoreCase = true) }
                             val firstEp = detailed.episodes.firstOrNull() ?: _currentEpisode.value
-                            val providerServers = if (hasProviderServers) emptyList() else videoRepository.findProviderMirrorsForVideo(detailed, firstEp)
+                            val providerServers = if (hasProviderServers || !needsAlternativeSearch) emptyList() else videoRepository.findProviderMirrorsForVideo(detailed, firstEp)
                             val allDiscoveredServers = (altServers + providerServers)
                                 .filter { com.duta.movie.util.VideoExtractor.isServerMatchingMovie(detailed.title, it) }
                                 .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }

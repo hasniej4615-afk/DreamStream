@@ -6150,7 +6150,7 @@ object VideoExtractor {
 
             // INSTANT FAST PATH: If direct language/server buttons exist on the HTML page (e.g. HARDSUB INDO, SOFTSUB INDO for movies)
             // ONLY execute when there is NO episode container, NOT an explicit series, and title does NOT contain "Season"
-            val directSvxButtons = doc.select("a.episode.btn-svx[onclick*='loadEpisode'], a.btn-svx[onclick*='loadEpisode'], a[id*='svx-'][onclick*='loadEpisode']")
+            val directSvxButtons = doc.select("a.episode.btn-svx[onclick*='loadEpisode'], a.btn-svx[onclick*='loadEpisode'], a[id*='svx-'][onclick*='loadEpisode'], a[onclick*='loadEpisode'], button[onclick*='loadEpisode']")
             if (directSvxButtons.isNotEmpty() && !isExplicitSeries && !hasDfwEpisodeContainer && !title.contains("Season", ignoreCase = true)) {
                 val cleanBase = effectiveUrl.substringBefore('?')
                 directSvxButtons.forEach { a ->
