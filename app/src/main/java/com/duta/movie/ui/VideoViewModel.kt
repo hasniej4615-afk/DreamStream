@@ -3841,8 +3841,13 @@ class VideoViewModel @Inject constructor(
                             sortedResults.map { applyMetadata(it) }
                         }
                         prefetchThumbnails(withMeta, limit = 30)
-                        _categoryVideos.update { it + (category to withMeta) }
-                        categoryPages[category] = 2 
+                        _categoryVideos.update { current ->
+                            val existing = current[category] ?: emptyList()
+                            val newIds = withMeta.map { it.id }.toSet()
+                            val remainingExisting = existing.filter { it.id !in newIds }
+                            current + (category to (withMeta + remainingExisting))
+                        }
+                        categoryPages[category] = 3 
                         categoryEndReached[category] = false
                         
                         // SYNC: Update specific state flows for headliner/UI stability
@@ -3873,7 +3878,7 @@ class VideoViewModel @Inject constructor(
         if (_categoryLoading.value[category] == true || categoryEndReached[category] == true || _isPlayerActive.value || _isDetailScreenActive.value) return
         if (!inFlightLoadMoreCategories.add(category)) return
         val job = viewModelScope.launch {
-            val nextPage = categoryPages[category] ?: 2
+            val nextPage = categoryPages[category] ?: 3
             _categoryLoading.update { it + (category to true) }
             try { 
                 val more = withContext(Dispatchers.IO) {

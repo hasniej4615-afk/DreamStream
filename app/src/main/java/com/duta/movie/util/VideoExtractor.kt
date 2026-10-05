@@ -2730,7 +2730,7 @@ object VideoExtractor {
             val ipVideos = dutaIpDeferred.await()
             Log.i(TAG, "DutaFilm Dual Fetch for $path (Page $page): IP=${ipVideos.size}, Web=${webVideos.size}")
 
-            val effCount = maxOf(count, 50)
+            val effCount = if (page == 1) maxOf(count, 100) else maxOf(count, 50)
             val combined = when {
                 webVideos.isNotEmpty() && ipVideos.isNotEmpty() -> mergeAndInterleave(ipVideos, webVideos, effCount)
                 webVideos.isNotEmpty() -> webVideos
@@ -2860,7 +2860,8 @@ object VideoExtractor {
             sorted
         }
 
-        filtered.take(maxOf(count, 50))
+        val targetCount = if (page == 1) maxOf(count, minOf(120, filtered.size)) else maxOf(count, 50)
+        filtered.take(targetCount)
     }
 
     fun normalizeForDedup(

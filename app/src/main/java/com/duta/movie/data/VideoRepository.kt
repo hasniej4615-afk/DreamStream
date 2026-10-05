@@ -179,7 +179,7 @@ class VideoRepository @Inject constructor(
             combined.map { mergeVideos(it, dbItems[it.id]?.toDomain()).also { v -> videoCache[v.id] = v } }
         )
         if (page == 1) videoDao.updateCategoryCache(cat, videos.map { it.toEntity() })
-        else videoDao.insertOrUpdateVideos(videos.map { it.toEntity() })
+        else videoDao.appendCategoryCache(cat, videos.map { it.toEntity() })
         videos
     }
 

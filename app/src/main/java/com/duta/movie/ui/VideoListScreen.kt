@@ -938,6 +938,14 @@ fun HorizontalVideoRow(
         }
     }
 
+    // GAPLESS INFINITE SCROLL: Proactively trigger next page as soon as user begins scrolling this row
+    val isRowInteracted = listState.isScrollInProgress || listState.firstVisibleItemIndex >= 4
+    if (categoryPath != null && isRowInteracted && uniqueVideos.size >= 15) {
+        LaunchedEffect(categoryPath, isRowInteracted) {
+            viewModel?.loadMoreForCategoryRow(categoryPath)
+        }
+    }
+
     LazyRow(
         state = listState,
         contentPadding = PaddingValues(horizontal = if (isRealTV) 48.dp else 16.dp, vertical = 8.dp),
@@ -990,8 +998,8 @@ fun HorizontalVideoRow(
                         }
                     }
                 }
-                // ON-DEMAND PAGINATION: Load next page when within 12 items of row end
-                if (categoryPath != null && uniqueVideos.isNotEmpty() && index >= maxOf(0, uniqueVideos.size - 12)) {
+                // SEAMLESS LOOKAHEAD PAGINATION: Pre-fetch next page well in advance (within 28 items of row end)
+                if (categoryPath != null && uniqueVideos.isNotEmpty() && index >= maxOf(0, uniqueVideos.size - 28)) {
                     LaunchedEffect(categoryPath, uniqueVideos.size) {
                         viewModel?.loadMoreForCategoryRow(categoryPath)
                     }
@@ -1040,8 +1048,8 @@ fun HorizontalVideoRow(
                         viewModel?.lastFocusedCategoryRowIndex = rowIndex
                         onVideoFocus(video)
                         if (isRealTV || isTV) {
-                            // PROACTIVE TV PAGINATION: Trigger next page immediately via D-Pad if close to the end
-                            if (categoryPath != null && index >= maxOf(0, uniqueVideos.size - 25)) {
+                            // PROACTIVE TV PAGINATION: Trigger next page immediately via D-Pad if user moves past card 3 or near row end
+                            if (categoryPath != null && (index >= 4 || index >= maxOf(0, uniqueVideos.size - 28))) {
                                 viewModel?.loadMoreForCategoryRow(categoryPath)
                             }
                             // TV D-PAD LOOKAHEAD PREFETCH: Proactively decode next 30 upcoming items in this row

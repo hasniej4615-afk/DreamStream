@@ -134,4 +134,23 @@ interface VideoDao {
         }
         insertCategoryCache(cacheItems)
     }
+
+    @Query("SELECT videoId FROM category_cache WHERE categoryPath = :categoryPath")
+    suspend fun getCachedVideoIds(categoryPath: String): List<String>
+
+    @Query("SELECT MAX(position) FROM category_cache WHERE categoryPath = :categoryPath")
+    suspend fun getMaxCategoryPosition(categoryPath: String): Int?
+
+    @Transaction
+    suspend fun appendCategoryCache(categoryPath: String, videos: List<VideoEntity>) {
+        insertOrUpdateVideos(videos)
+        val existingCachedIds = getCachedVideoIds(categoryPath).toSet()
+        val newVideos = videos.filter { it.id !in existingCachedIds }
+        if (newVideos.isEmpty()) return
+        val currentMax = getMaxCategoryPosition(categoryPath) ?: -1
+        val cacheItems = newVideos.mapIndexed { index, video ->
+            CategoryCacheEntity(categoryPath, video.id, currentMax + 1 + index)
+        }
+        insertCategoryCache(cacheItems)
+    }
 }
