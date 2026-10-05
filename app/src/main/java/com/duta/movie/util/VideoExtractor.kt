@@ -2105,7 +2105,7 @@ object VideoExtractor {
             low.contains("ketik.live") || low.contains("zeus88") || low.contains("klik.top") || low.contains("vingaming") || low.contains("pingaming") ||
             low.contains("googleapis.com") || low.contains("imasdk")) return false
         
-        return isJsOnlyHost(low) || low.contains(".m3u8") || low.contains(".mp4") || low.contains(".mkv") || low.contains(".webm") || low.contains(".ts") || 
+        return isJsOnlyHost(low) || isDirectVideoUrl(url) || low.contains("hakunaymatata") || low.contains("aoneroom") || low.contains(".m3u8") || low.contains(".mp4") || low.contains(".mkv") || low.contains(".webm") || low.contains(".ts") || 
                low.contains("/e/") || low.contains("/v/") || low.contains("/embed/") || 
                low.contains("/stream/") || low.contains("/hls/") || low.contains("mirror") ||
                low.contains("player") || low.contains("swhoi") || low.contains("playstream") ||

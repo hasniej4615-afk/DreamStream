@@ -2366,11 +2366,12 @@ class VideoViewModel @Inject constructor(
                                      else null
                 
                 // OWL'S EYE: State Engine decoupled from TV Show metadata
+                var finalServers: List<VideoServer> = emptyList()
                 if (video != null && video!!.isSeries == true && episodePageUrl != null) {
                     val epSlug = VideoExtractor.extractStableId(episodePageUrl)
                     val cachedServers = episodeServersCache[epSlug]
                     
-                    var finalServers = cachedServers ?: emptyList()
+                    finalServers = cachedServers ?: emptyList()
                     if (cachedServers.isNullOrEmpty() || (forceReset && isEpisodeUrl)) {
                         addResolutionLog("Scoping servers for episode...")
                         val fetched = VideoExtractor.fetchVideoDetails(episodePageUrl)
@@ -2399,23 +2400,24 @@ class VideoViewModel @Inject constructor(
                             }
                             finalServers = unboxed.distinctBy { it.url }
                         }
+                    }
 
-                        // Direct CDN Provider Pre-population: Check for high-speed direct CDN streams (MovieBox) if missing
-                        if (finalServers.none { it.name.startsWith("MovieBox", ignoreCase = true) || it.url.contains("hakunaymatata") || VideoExtractor.getProviderPriority(it.name, it.url) >= 150 }) {
-                            addResolutionLog("Checking direct CDN streams for episode...")
-                            val provServers = videoRepository.findProviderMirrorsForVideo(video, _currentEpisode.value)
-                            if (provServers.isNotEmpty()) {
-                                finalServers = (provServers + finalServers)
-                                    .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
-                                    .sortedByDescending { VideoExtractor.getProviderPriority(it.name, it.url) }
-                            }
+                    // Direct CDN Provider Pre-population: Check for high-speed direct CDN streams (MovieBox) if missing
+                    if (finalServers.none { it.name.startsWith("MovieBox", ignoreCase = true) || it.url.contains("hakunaymatata") || it.url.contains("aoneroom") }) {
+                        addResolutionLog("Checking direct CDN streams for episode...")
+                        val targetEpObj = targetEpisode ?: _currentEpisode.value ?: Episode(id = episodePageUrl, name = episodePageUrl, url = episodePageUrl, season = "")
+                        val provServers = videoRepository.findProviderMirrorsForVideo(video, targetEpObj)
+                        if (provServers.isNotEmpty()) {
+                            finalServers = (provServers + finalServers)
+                                .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
+                                .sortedByDescending { VideoExtractor.getProviderPriority(it.name, it.url) }
                         }
-                        
-                        if (finalServers.isNotEmpty()) {
-                            episodeServersCache[epSlug] = finalServers
-                        } else {
-                            addResolutionLog("Warning: No servers found for this episode.")
-                        }
+                    }
+                    
+                    if (finalServers.isNotEmpty()) {
+                        episodeServersCache[epSlug] = finalServers
+                    } else {
+                        addResolutionLog("Warning: No servers found for this episode.")
                     }
 
                     if (finalServers.isNotEmpty()) {
@@ -2429,8 +2431,15 @@ class VideoViewModel @Inject constructor(
                     }
                 }
 
+                // Prioritize high-speed direct CDN streams (e.g. MovieBox) on initial launch over raw webpage URLs
+                val targetServer = if (!isRotation && finalServers.any { VideoExtractor.isDirectVideoUrl(it.url) || VideoExtractor.getProviderPriority(it.name, it.url) >= 190 }) {
+                    finalServers.first().url
+                } else {
+                    episodeUrl
+                }
+
                 // Now call core resolution
-                startTVSeriesPlaybackResolution(videoId, episodeUrl, forceReset = forceReset, targetEpisode = _currentEpisode.value, isRotation = isRotation, clearBlacklist = clearBlacklist)
+                startTVSeriesPlaybackResolution(videoId, targetServer, forceReset = forceReset, targetEpisode = _currentEpisode.value, isRotation = isRotation, clearBlacklist = clearBlacklist)
                 
             } catch (e: Exception) {
                 Log.e("VideoViewModel", "TV Series Resolution Failed", e)
@@ -2567,11 +2576,25 @@ class VideoViewModel @Inject constructor(
 
                 val isPencuri = com.duta.movie.util.VideoExtractor.isPencuriMovie(videoId = videoId, videoUrl = video!!.videoUrl, streamUrl = serverUrl)
                 val extraAlt = discoveredAltServers[videoId] ?: emptyList()
-                val baseVideoServers = if (extraAlt.isNotEmpty()) {
+                var baseVideoServers = if (extraAlt.isNotEmpty()) {
                     val existingUrls = video!!.servers.map { it.url }.toSet()
                     video!!.servers + extraAlt.filter { it.url !in existingUrls }
                 } else {
                     video!!.servers
+                }
+
+                // Direct CDN Provider Pre-population for movies: Check for high-speed direct CDN streams (MovieBox) if missing
+                if (video!!.isSeries != true && baseVideoServers.none { it.name.startsWith("MovieBox", ignoreCase = true) || it.url.contains("hakunaymatata") || it.url.contains("aoneroom") }) {
+                    val provServers = videoRepository.findProviderMirrorsForVideo(video, null)
+                    if (provServers.isNotEmpty()) {
+                        baseVideoServers = (provServers + baseVideoServers)
+                            .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
+                            .sortedByDescending { com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) }
+                        val updatedVideo = video!!.copy(servers = baseVideoServers)
+                        metadataCache[videoId] = updatedVideo
+                        _videoMetadata.value = updatedVideo
+                        viewModelScope.launch(Dispatchers.IO) { videoRepository.updateVideoInDb(updatedVideo) }
+                    }
                 }
 
                 // Cleanse expired/ephemeral direct streams and defunct dead domains from persistent video servers list
@@ -2955,7 +2978,6 @@ class VideoViewModel @Inject constructor(
                 } else baseServers
 
                 val sortedServers = combinedBase
-                    .filter { !com.duta.movie.util.VideoExtractor.isDirectVideoUrl(it.url) }
                     .filter { !com.duta.movie.util.VideoExtractor.isDefunctDomain(it.url) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url) }
                     .filter {
                         val lowUrl = it.url.lowercase()
@@ -3307,7 +3329,9 @@ class VideoViewModel @Inject constructor(
             low.contains("vibuxer") || low.contains("hanerix") || low.contains("hglink") ||
             low.contains("playstream") || low.contains("embedpyrox") || low.contains("faststream") ||
             low.contains("morencius") || low.contains("vidhide") || low.contains("fujihide") ||
-            low.contains("lulustream") || low.contains("luluvdo") || low.contains("dood")
+            low.contains("lulustream") || low.contains("luluvdo") || low.contains("dood") ||
+            low.contains("hakunaymatata") || low.contains("aoneroom") ||
+            com.duta.movie.util.VideoExtractor.isDirectVideoUrl(it)
         }
         val isTvDevice = com.duta.movie.util.DeviceUtils.isTvDevice(context)
         val directTimeout = if (isTvDevice) 10000L else if (hasDirectCandidate) 6000L else if (trendingContent) 3000L else 4000L
