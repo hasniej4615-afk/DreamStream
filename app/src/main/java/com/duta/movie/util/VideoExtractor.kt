@@ -726,8 +726,9 @@ object VideoExtractor {
      */
     fun isBullerswood(videoId: String? = null, videoUrl: String? = null, streamUrl: String? = null): Boolean {
         if (videoId?.startsWith("bw_") == true) return true
-        if (videoUrl?.contains("bullerswood.org", ignoreCase = true) == true || videoUrl?.contains("scphi.org", ignoreCase = true) == true || videoUrl?.contains("grishamfarms.org", ignoreCase = true) == true || videoUrl?.contains("inlionsforisbvi.org", ignoreCase = true) == true || videoUrl?.contains("lk21official", ignoreCase = true) == true || videoUrl?.contains("pusatfilm", ignoreCase = true) == true) return true
-        if (streamUrl?.contains("bullerswood.org", ignoreCase = true) == true || streamUrl?.contains("scphi.org", ignoreCase = true) == true || streamUrl?.contains("grishamfarms.org", ignoreCase = true) == true || streamUrl?.contains("inlionsforisbvi.org", ignoreCase = true) == true || streamUrl?.contains("lk21official", ignoreCase = true) == true || streamUrl?.contains("pusatfilm", ignoreCase = true) == true) return true
+        if (videoId?.startsWith("pf_") == true) return false
+        if (videoUrl?.contains("bullerswood.org", ignoreCase = true) == true || videoUrl?.contains("scphi.org", ignoreCase = true) == true || videoUrl?.contains("grishamfarms.org", ignoreCase = true) == true || videoUrl?.contains("inlionsforisbvi.org", ignoreCase = true) == true || videoUrl?.contains("lk21official", ignoreCase = true) == true) return true
+        if (streamUrl?.contains("bullerswood.org", ignoreCase = true) == true || streamUrl?.contains("scphi.org", ignoreCase = true) == true || streamUrl?.contains("grishamfarms.org", ignoreCase = true) == true || streamUrl?.contains("inlionsforisbvi.org", ignoreCase = true) == true || streamUrl?.contains("lk21official", ignoreCase = true) == true) return true
         return false
     }
 
@@ -2050,7 +2051,8 @@ object VideoExtractor {
             "huntrex", "bestcdn", "faststream", "morencius", "abyss", "bond", "iamcdn",
             "hgcloud", "hglink", "indostream", "amt", "iplayer", "haneri", "audinifer", "vibuxer", "masuk",
             "veev", "dood", "upns", "d-s.io", "swishsrv", "swish", "swishembed",
-            "waaw", "netu", "hqq", "vkspeed", "luluvdo", "lulustream", "plyr", "freeon"
+            "waaw", "netu", "hqq", "vkspeed", "luluvdo", "lulustream", "plyr", "freeon",
+            "hydrax", "playhydrax", "gdriveplayer", "gdplayer", "kotakajaib"
         )
         val cleanUrl = low.substringBefore("?").substringBefore("#")
         return jsOnlyHosts.any { cleanUrl.contains(it) }
@@ -2087,7 +2089,8 @@ object VideoExtractor {
             low.contains("dhcplay") || low.contains("morencius") || low.contains("vidhide") || low.contains("fujihide") ||
             low.contains("streamwish") || low.contains("wishonly") || low.contains("strwish") || low.contains("wishembed") ||
             low.contains("luluvdo") || low.contains("lulustream") || low.contains("bestcdn") ||
-            low.contains("waaw") || low.contains("netu") || low.contains("hqq") || low.contains("vkspeed")
+            low.contains("waaw") || low.contains("netu") || low.contains("hqq") || low.contains("vkspeed") ||
+            low.contains("hydrax") || low.contains("playhydrax") || low.contains("gdriveplayer") || low.contains("gdplayer")
     }
 
     fun isProbablyVideoHost(url: String): Boolean {
@@ -2115,7 +2118,8 @@ object VideoExtractor {
                low.contains("vide0") || low.contains("dsvplay") || low.contains("playmogo") ||
                low.contains("luluvdo") || low.contains("lulustream") || low.contains("tnmr.org") || low.contains("lulucdn") ||
                low.contains("waaw") || low.contains("netu") || low.contains("hqq") || low.contains("vkspeed") ||
-               low.contains("plyr") || low.contains("freeon")
+               low.contains("plyr") || low.contains("freeon") ||
+               low.contains("hydrax") || low.contains("gdriveplayer") || low.contains("gdplayer")
     }
 
     fun buildDutaCategoryUrl(dutaBase: String, path: String, currPage: Int): String {
@@ -5438,6 +5442,7 @@ object VideoExtractor {
             lowUrl.contains("upstream") -> "Upstream"
             lowUrl.contains("vidoza") -> "Vidoza"
             lowUrl.contains("hydrax") -> "Hydrax"
+            lowUrl.contains("gdriveplayer") || lowUrl.contains("gdplayer") -> "GDPlayer"
             lowUrl.contains("drakorkita") || lowUrl.contains("p2p") -> "P2P Stream"
             lowUrl.contains("archive.org") -> "Archive.org"
             lowUrl.contains("youtube") || lowUrl.contains("youtu.be") -> "YouTube HD"
@@ -6032,6 +6037,78 @@ object VideoExtractor {
         return servers
     }
 
+    fun isKotakWrapper(url: String?): Boolean {
+        if (url.isNullOrBlank()) return false
+        val low = url.lowercase()
+        return low.contains("kotakajaib.me") || low.contains("kotakfiles") || (low.contains("kotak") && low.contains("/embed/"))
+    }
+
+    fun decodeBase64Safe(str: String): String {
+        return try {
+            val padded = when (str.length % 4) {
+                2 -> "$str=="
+                3 -> "$str="
+                else -> str
+            }
+            val bytes = try {
+                val b = android.util.Base64.decode(padded, android.util.Base64.DEFAULT)
+                if (b != null && b.isNotEmpty()) b else java.util.Base64.getDecoder().decode(padded)
+            } catch (_: Throwable) {
+                try { java.util.Base64.getDecoder().decode(padded) } catch (_: Throwable) { null }
+            }
+            if (bytes != null) String(bytes, Charsets.UTF_8).trim() else str
+        } catch (_: Exception) {
+            str
+        }
+    }
+
+    suspend fun unwrapKotakServers(kotakUrl: String, referer: String? = null): List<VideoServer> = withContext(Dispatchers.IO) {
+        val servers = mutableListOf<VideoServer>()
+        try {
+            val ref = referer?.takeIf { it.isNotBlank() } ?: getPusatfilmBaseUrl()
+            val html = fetchHtml(kotakUrl, referer = ref)
+            if (!html.isNullOrBlank()) {
+                val doc = Jsoup.parse(html, kotakUrl)
+                // 1. Check for data-frame attributes on buttons or server items
+                doc.select("[data-frame]").forEach { el ->
+                    val rawFrame = el.attr("data-frame").trim()
+                    if (rawFrame.isNotEmpty()) {
+                        val decoded = decodeBase64Safe(rawFrame)
+                        var finalUrl = decoded.trim()
+                        if (finalUrl.startsWith("//")) {
+                            finalUrl = "https:$finalUrl"
+                        }
+                        if (finalUrl.startsWith("http://") || finalUrl.startsWith("https://")) {
+                            val label = el.select(".server-name").text().trim()
+                                .ifEmpty { el.text().trim() }
+                                .ifEmpty { el.attr("id").trim() }
+                                .ifEmpty { "Server" }
+                            val beautifulName = identifyMirrorName(label, finalUrl)
+                            Log.d(TAG, "Unwrapped KotakAjaib server: $label ($beautifulName) -> $finalUrl")
+                            servers.add(VideoServer(beautifulName, finalUrl))
+                        }
+                    }
+                }
+                // 2. Check for child iframes
+                doc.select("iframe[src], iframe[data-src]").forEach { iframe ->
+                    var src = iframe.attr("abs:src").ifEmpty { iframe.attr("src") }
+                    if (src.isEmpty() || src.startsWith("about:") || src.startsWith("data:")) {
+                        src = iframe.attr("abs:data-src").ifEmpty { iframe.attr("data-src") }
+                    }
+                    if (src.startsWith("//")) src = "https:$src"
+                    if (src.isNotEmpty() && !src.contains("ads") && isProbablyVideoHost(src)) {
+                        val label = iframe.attr("title").ifEmpty { iframe.attr("name") }.ifEmpty { "Server" }
+                        val beautifulName = identifyMirrorName(label, src)
+                        servers.add(VideoServer(beautifulName, src))
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed to unwrap KotakAjaib $kotakUrl: ${e.message}")
+        }
+        servers.distinctBy { it.url }
+    }
+
     suspend fun resolveDfwEpisodesAndServers(
         doc: Document,
         html: String,
@@ -6402,6 +6479,25 @@ object VideoExtractor {
                     }
                 }
             }
+        }
+
+        // OWL'S EYE: Expand multi-server wrappers (e.g. KotakAjaib / PusatFilm multi-server embeds)
+        if (rawServers.any { isKotakWrapper(it.url) }) {
+            val expandedServers = mutableListOf<VideoServer>()
+            for (server in rawServers) {
+                if (isKotakWrapper(server.url)) {
+                    val childServers = unwrapKotakServers(server.url, effectiveUrl)
+                    if (childServers.isNotEmpty()) {
+                        expandedServers.addAll(childServers)
+                    } else {
+                        expandedServers.add(server)
+                    }
+                } else {
+                    expandedServers.add(server)
+                }
+            }
+            rawServers.clear()
+            rawServers.addAll(expandedServers)
         }
 
         val isExplicitSeries = videoUrl.contains("/series/") || videoUrl.contains("/tv/") || videoUrl.contains("/serial-tv/")

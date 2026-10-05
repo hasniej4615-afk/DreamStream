@@ -745,6 +745,30 @@ class VideoExtractorTest {
     }
 
     @Test
+    fun testKotakAjaibWrapperRecognitionAndBase64() {
+        val kotakUrl = "https://kotakajaib.me/embed/fEpdBtSnsLn0GXn"
+        assert(VideoExtractor.isKotakWrapper(kotakUrl)) { "kotakajaib.me must be recognized as Kotak wrapper" }
+        assert(VideoExtractor.isKotakWrapper("https://kotakfiles.top/embed/abc")) { "kotakfiles must be recognized as Kotak wrapper" }
+        assert(!VideoExtractor.isKotakWrapper("https://playhydrax.com/?v=qaYA19rhU"))
+
+        // Test Base64 decoding of PusatFilm servers
+        val hydraxEncoded = "aHR0cHM6Ly9wbGF5aHlkcmF4LmNvbS8/dj1xYVlBMTlyaFU="
+        val decodedHydrax = VideoExtractor.decodeBase64Safe(hydraxEncoded)
+        assert(decodedHydrax == "https://playhydrax.com/?v=qaYA19rhU") { "Failed to decode Hydrax: $decodedHydrax" }
+
+        assert(VideoExtractor.isJsOnlyHost("https://playhydrax.com/?v=qaYA19rhU"))
+        assert(VideoExtractor.isJsOnlyHost("https://gdriveplayer.to/embed2.php?link=abc"))
+        assert(VideoExtractor.isWhitelistedHost("playhydrax.com"))
+        assert(VideoExtractor.isWhitelistedHost("gdriveplayer.to"))
+        assert(VideoExtractor.identifyMirrorName("HYDRAX", "https://playhydrax.com/?v=123") == "Hydrax")
+        assert(VideoExtractor.identifyMirrorName("GDPLAYER", "https://gdriveplayer.to/embed2.php?link=abc") == "GDPlayer")
+
+        // Test Pusatfilm vs Bullerswood separation
+        assert(!VideoExtractor.isBullerswood("pf_arrow", "https://v5.pusatfilm21info.com/tv/arrow/"))
+        assert(VideoExtractor.isPusatfilm("pf_arrow", "https://v5.pusatfilm21info.com/tv/arrow/"))
+    }
+
+    @Test
     fun testDailymotionFullMovieMatching() {
         val targetMeta = VideoExtractor.parseMovieTitleMeta("Ma Da: The Drowning Spirit", "2024")
         assert(targetMeta.year == 2024)

@@ -135,6 +135,8 @@ fun sanitizeAbyssHtml(rawHtml: String, nukerScript: String): String {
     html = html.replace(Regex("""(?:window\.)?(?:top\.)?location\.replace\s*\(\s*['"]https?://[^'"]*abyss\.to/?['"]\s*\)"""), "/* blocked redirect */;")
     html = html.replace(Regex("""(?:window\.)?(?:top\.)?location(?:\.href)?\s*=\s*['"]https?://[^'"]*bond\.to/?['"]"""), "/* blocked redirect */;")
     html = html.replace(Regex("""(?:window\.)?(?:top\.)?location\.replace\s*\(\s*['"]https?://[^'"]*bond\.to/?['"]\s*\)"""), "/* blocked redirect */;")
+    html = html.replace(Regex("""(?:window\.)?(?:top\.)?location(?:\.href)?\s*=\s*['"]https?://[^'"]*pusatfilm[^'"]*['"]"""), "/* blocked redirect */;")
+    html = html.replace(Regex("""(?:window\.)?(?:top\.)?location\.replace\s*\(\s*['"]https?://[^'"]*pusatfilm[^'"]*['"]\s*\)"""), "/* blocked redirect */;")
     
     // 2. Eradicate overlay and playback elements from HTML
     html = Pattern.compile("<div[^>]*id=[\"']overlay[\"'].*?</div>\\s*</div>", Pattern.DOTALL).matcher(html).replaceAll("")
@@ -3839,11 +3841,42 @@ fun VideoPlayerWebView(
                             return null // Never block legitimate Vidhide player assets, video chunks, or steganographic key poster images
                         }
 
+                        // Intercept KotakAjaib / PusatFilm wrapper pages to eradicate anti-hotlink redirect
+                        val isKotakPage = (low.contains("kotakajaib.me") || low.contains("kotakfiles") || low.contains("kotak")) &&
+                                          !low.contains(".js") && !low.contains(".css") && !low.contains(".jpg") && 
+                                          !low.contains(".png") && !low.contains(".mp4") && !low.contains(".m3u8")
+                        if (isKotakPage) {
+                            try {
+                                val reqBuilder = okhttp3.Request.Builder().url(u)
+                                val ua = r.requestHeaders["User-Agent"] ?: view.settings.userAgentString ?: com.duta.movie.util.NetworkConfig.MOBILE_USER_AGENT
+                                reqBuilder.header("User-Agent", ua)
+                                val defaultRef = com.duta.movie.util.VideoExtractor.getDefaultRefererForVideoId(videoId)
+                                reqBuilder.header("Referer", defaultRef)
+                                val call = com.duta.movie.util.NetworkConfig.permissiveOkHttpClient.newCall(reqBuilder.build())
+                                val resp = call.execute()
+                                resp.use { response ->
+                                    if (response.isSuccessful) {
+                                        var rawHtml = response.body?.string() ?: ""
+                                        if (rawHtml.isNotEmpty()) {
+                                            // Neutralize anti-hotlink redirect
+                                            rawHtml = rawHtml.replace(Regex("""(?:window\.)?(?:top\.)?location(?:\.href)?\s*=\s*['"]https?://[^'"]*pusatfilm[^'"]*['"]"""), "/* blocked redirect */;")
+                                            rawHtml = rawHtml.replace("window.location.href = \"https://pusatfilm21.pw\"", "/* blocked redirect */;")
+                                            rawHtml = rawHtml.replace("window.location != window.parent.location", "false")
+                                            Log.d("VideoPlayerTurbo", "Neutralized KotakAjaib anti-hotlink redirect for: $u")
+                                            return android.webkit.WebResourceResponse("text/html", "UTF-8", java.io.ByteArrayInputStream(rawHtml.toByteArray(Charsets.UTF_8)))
+                                        }
+                                    }
+                                }
+                            } catch (e: Exception) {
+                                Log.w("VideoPlayerTurbo", "Failed to intercept KotakAjaib wrapper page: ${e.message}")
+                            }
+                        }
+
                         // Intercept Abyss/Bond/Playsobat Player HTML pages to eradicate the big SVG play button overlay, videoInfo popup & anti-framing redirect
                         val isAbyssPlayerPage = (low.contains("abyssplayer.com") || low.contains("bondplayer.com") || 
                                                  low.contains("abyss.to") || low.contains("bond.to") ||
                                                  low.contains("playsobat.xyz") || low.contains("abysscdn.com") ||
-                                                 low.contains("bondcdn.com") || low.contains("hydrax.net")) &&
+                                                 low.contains("bondcdn.com") || low.contains("hydrax")) &&
                                                 !low.contains(".js") && !low.contains(".css") && !low.contains(".jpg") && 
                                                 !low.contains(".png") && !low.contains(".m3u8") && !low.contains(".mp4") && 
                                                 !low.contains(".mkv") && !low.contains(".webm") && 
@@ -4060,7 +4093,7 @@ fun VideoPlayerWebView(
                                      else url
                       view.loadUrl(embedUrl, mutableMapOf("Referer" to "https://www.dailymotion.com/"))
                   }
-              } else if (url.contains("abyssplayer.com") || url.contains("bondplayer.com") || url.contains("abyss.to") || url.contains("bond.to") || url.contains("abysscdn.com") || url.contains("bondcdn.com") || url.contains("playsobat.xyz") || url.contains("hydrax.net")) {
+              } else if (url.contains("abyssplayer.com") || url.contains("bondplayer.com") || url.contains("abyss.to") || url.contains("bond.to") || url.contains("abysscdn.com") || url.contains("bondcdn.com") || url.contains("playsobat.xyz") || url.contains("hydrax")) {
                   if (view.getTag(R.id.active_url) != url || isNewEpisode) {
                       view.setTag(R.id.active_content_key, activeContentKey)
                       view.setTag(R.id.active_url, url)

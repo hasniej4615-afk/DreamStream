@@ -2381,6 +2381,29 @@ class VideoViewModel @Inject constructor(
                             val parentFetched = VideoExtractor.fetchVideoDetails(parentUrl)
                             finalServers = parentFetched?.servers ?: emptyList()
                         }
+
+                        // Unwrap any multi-server wrappers (KotakAjaib / PusatFilm)
+                        if (finalServers.any { VideoExtractor.isKotakWrapper(it.url) }) {
+                            val unboxed = mutableListOf<VideoServer>()
+                            for (s in finalServers) {
+                                if (VideoExtractor.isKotakWrapper(s.url)) {
+                                    val children = VideoExtractor.unwrapKotakServers(s.url, episodePageUrl)
+                                    if (children.isNotEmpty()) unboxed.addAll(children) else unboxed.add(s)
+                                } else {
+                                    unboxed.add(s)
+                                }
+                            }
+                            finalServers = unboxed.distinctBy { it.url }
+                        }
+
+                        // Provider fallback if episode page and parent have no servers
+                        if (finalServers.isEmpty()) {
+                            addResolutionLog("Episode servers missing. Searching partner providers...")
+                            val provServers = videoRepository.findProviderMirrorsForVideo(video, _currentEpisode.value)
+                            if (provServers.isNotEmpty()) {
+                                finalServers = provServers
+                            }
+                        }
                         
                         if (finalServers.isNotEmpty()) {
                             episodeServersCache[epSlug] = finalServers
@@ -3992,7 +4015,7 @@ class VideoViewModel @Inject constructor(
                         try {
                             addResolutionLog("All mirrors failed. Searching other sources and partner aggregators...")
                             val altServers = VideoExtractor.findAlternativeSources(video)
-                            val providerServers = if (video.isSeries != true) videoRepository.providerManager.fetchServers(video) else emptyList()
+                            val providerServers = videoRepository.findProviderMirrorsForVideo(video, _currentEpisode.value)
                             val combinedAlts = (altServers + providerServers)
                                 .filter { VideoExtractor.isServerMatchingMovie(video.title, it) }
                                 .distinctBy { it.url.trimEnd('/') }
