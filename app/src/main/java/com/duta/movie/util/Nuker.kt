@@ -394,7 +394,7 @@ object Nuker {
                                         var selfBridge = this;
                                         var purgeJwOverlays = function(targetDoc) {
                                             try {
-                                                var pOverlays = (targetDoc || document).querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
+                                                var pOverlays = (targetDoc || document).querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, #playButton, #clickableimg, .play-button-animated, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                                 for (var pi = 0; pi < pOverlays.length; pi++) {
                                                     try { pOverlays[pi].click(); } catch(e){}
                                                     pOverlays[pi].style.setProperty('display', 'none', 'important');
@@ -574,7 +574,7 @@ object Nuker {
                                                 if (!window._overlaysPurged) {
                                                     window._overlaysPurged = true;
                                                     try {
-                                                        var badPOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
+                                                        var badPOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, #playButton, #clickableimg, .play-button-animated, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                                         for (var bi = 0; bi < badPOverlays.length; bi++) {
                                                             badPOverlays[bi].style.setProperty('display', 'none', 'important');
                                                             badPOverlays[bi].style.setProperty('opacity', '0', 'important');
@@ -1106,7 +1106,7 @@ object Nuker {
                               }
 
                                // 2. Class-based Hunter (STRICTLY for video play buttons and close overlays - NEVER server tabs)
-                               var sel = '.vjs-big-play-button, .play-button, #play-button, .jw-display-icon-display, .ytp-large-play-button, .close-button, .close, .btn-close, .modal-close, .idks-close, .play-overlay';
+                               var sel = '.vjs-big-play-button, .play-button, #play-button, #playButton, #clickableimg, .play-button-animated, .jw-display-icon-display, .ytp-large-play-button, .close-button, .close, .btn-close, .modal-close, .idks-close, .play-overlay';
                                var elements = document.querySelectorAll(sel);
                                for(var j=0; j<elements.length; j++) {
                                    var target = elements[j];
@@ -1164,7 +1164,7 @@ object Nuker {
                                           if (typeof d.defaultView !== 'undefined' && typeof d.defaultView.closeVideoInfo === 'function') {
                                               try { d.defaultView.closeVideoInfo(); } catch(e){}
                                           }
-                                          var badOverlays = d.querySelectorAll('#overlay, #playback, div#overlay, div#playback, .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
+                                          var badOverlays = d.querySelectorAll('#overlay, #playback, div#overlay, div#playback, .jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, #playButton, #clickableimg, .play-button-animated, .play-btn, .big-play-button, #videoInfo, .video-info, [id*="videoInfo"], [class*="video-info"], svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                           for (var bo = 0; bo < badOverlays.length; bo++) {
                                               badOverlays[bo].style.setProperty('display', 'none', 'important');
                                               badOverlays[bo].style.setProperty('opacity', '0', 'important');
@@ -1634,7 +1634,7 @@ object Nuker {
                                         var selfBridge = this;
                                         var purgePmOverlays = function(targetDoc) {
                                             try {
-                                                var pOverlays = (targetDoc || document).querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
+                                                var pOverlays = (targetDoc || document).querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, #playButton, #clickableimg, .play-button-animated, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                                 for (var pi = 0; pi < pOverlays.length; pi++) {
                                                     pOverlays[pi].style.setProperty('display', 'none', 'important');
                                                     pOverlays[pi].style.setProperty('opacity', '0', 'important');
@@ -1799,7 +1799,7 @@ object Nuker {
 
                                             if (!isDead && !hasDeadImage && !isShortClip && v.paused && !v.ended) {
                                                 v.play().catch(function() {
-                                                    var playBtn = document.querySelector('.jw-display-icon-display, .vjs-big-play-button, .play-button');
+                                                    var playBtn = document.querySelector('.jw-display-icon-display, .vjs-big-play-button, .play-button, #playButton, #clickableimg, .play-button-animated');
                                                     if (playBtn) playBtn.click();
                                                 });
                                             }
@@ -1814,7 +1814,7 @@ object Nuker {
                                                     document.body.classList.add('video-active', 'video-playing');
                                                 }
                                                 try {
-                                                    var badPOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
+                                                    var badPOverlays = document.querySelectorAll('.jw-display-icon-display, .jw-display-icon-container, .jw-display-icon-idle, .jw-icon-display, .jw-display, .jw-svg-icon-play, .vjs-big-play-button, .play-button, #play-button, #playButton, #clickableimg, .play-button-animated, .play-btn, .big-play-button, #playback, #overlay, div#playback, div#overlay, svg[viewBox="0 0 24 24"], svg[viewBox="0 0 240 240"]');
                                                     for (var bi = 0; bi < badPOverlays.length; bi++) {
                                                         badPOverlays[bi].style.setProperty('display', 'none', 'important');
                                                         badPOverlays[bi].style.setProperty('opacity', '0', 'important');
@@ -2130,7 +2130,7 @@ object Nuker {
 
                         // Click play button if not playing yet (ONLY main display play icon, NEVER next/rewind)
                         if (window.nukerAttempts < 40 && !window.successNotified) {
-                            var playBtns = document.querySelectorAll('.jw-display-icon-display, .vjs-big-play-button, .play-button');
+                            var playBtns = document.querySelectorAll('.jw-display-icon-display, .vjs-big-play-button, .play-button, #playButton, #clickableimg, .play-button-animated');
                             for (var i = 0; i < playBtns.length; i++) {
                                 var btn = playBtns[i];
                                 if (btn && window.clickedRegistry.indexOf(btn) === -1) {

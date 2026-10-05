@@ -1671,7 +1671,8 @@ class VideoViewModel @Inject constructor(
 
                             val hasProviderServers = current?.servers?.any { it.name.startsWith("MovieBox", ignoreCase = true) } == true ||
                                                      detailed.servers.any { it.name.startsWith("MovieBox", ignoreCase = true) }
-                            val providerServers = if (hasProviderServers) emptyList() else videoRepository.findProviderMirrorsForVideo(detailed)
+                            val firstEp = detailed.episodes.firstOrNull() ?: _currentEpisode.value
+                            val providerServers = if (hasProviderServers) emptyList() else videoRepository.findProviderMirrorsForVideo(detailed, firstEp)
                             val allDiscoveredServers = (altServers + providerServers)
                                 .filter { com.duta.movie.util.VideoExtractor.isServerMatchingMovie(detailed.title, it) }
                                 .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
@@ -4123,7 +4124,8 @@ class VideoViewModel @Inject constructor(
                 addResolutionLog("Searching all primary and alternative mirrors across providers...")
                 val primaryClusterMirrors = com.duta.movie.util.VideoExtractor.findAlternativeSources(video)
                 val extFallback = com.duta.movie.util.VideoExtractor.searchExternalPartnerMirrors(video)
-                val providerMirrors = videoRepository.findProviderMirrorsForVideo(video)
+                val curEp = _currentEpisode.value
+                val providerMirrors = videoRepository.findProviderMirrorsForVideo(video, curEp)
                 val combinedAlts = (primaryClusterMirrors + extFallback + providerMirrors)
                     .filter { com.duta.movie.util.VideoExtractor.isServerMatchingMovie(video.title, it) }
                     .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
@@ -4172,7 +4174,8 @@ class VideoViewModel @Inject constructor(
                 val healed = VideoExtractor.healVideoFromAlternativeSources(video)
                 val primaryCluster = VideoExtractor.findAlternativeSources(video)
                 val extFallback = VideoExtractor.searchExternalPartnerMirrors(video)
-                val providerMirrors = videoRepository.findProviderMirrorsForVideo(video)
+                val curEp = _currentEpisode.value
+                val providerMirrors = videoRepository.findProviderMirrorsForVideo(video, curEp)
                 val altServers = (healed?.servers.orEmpty() + primaryCluster + extFallback + providerMirrors)
                     .filter { VideoExtractor.isServerMatchingMovie(video.title, it) }
                     .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }

@@ -321,8 +321,12 @@ class MovieboxProvider(
         if (video.servers.isNotEmpty()) return@withContext video.servers
         val sid = extractParam(video.videoUrl, "id").ifBlank { video.id.removePrefix("mb_") }
         val dp = extractDetailPath(video.videoUrl)
-        val se = extractParam(video.videoUrl, "se").toIntOrNull() ?: 0
-        val ep = extractParam(video.videoUrl, "ep").toIntOrNull() ?: 0
+        var se = extractParam(video.videoUrl, "se").toIntOrNull() ?: 0
+        var ep = extractParam(video.videoUrl, "ep").toIntOrNull() ?: 0
+        if (video.isSeries == true && se == 0 && ep == 0) {
+            se = 1
+            ep = 1
+        }
         fetchPlayStreams(sid, dp, se, ep)
     }
 

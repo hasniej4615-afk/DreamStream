@@ -593,6 +593,7 @@ class MyLocalTest {
     @Test
     fun testDutaMovie21CamPortalScraping() {
         kotlinx.coroutines.runBlocking {
+            VideoExtractor.setDutaMovieBaseUrl("https://balletroyale.com", force = true)
             val dutaMovieBase = VideoExtractor.getDutaMovieBaseUrl()
             println("=== TESTING DUTAMOVIE21 INTEGRATION ===")
             println("DutaMovie Base URL: $dutaMovieBase")

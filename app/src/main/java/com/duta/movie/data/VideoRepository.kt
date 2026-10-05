@@ -7,6 +7,7 @@ import com.duta.movie.data.local.toDomain
 import com.duta.movie.data.local.toEntity
 import com.duta.movie.model.Subtitle
 import com.duta.movie.model.Video
+import com.duta.movie.model.Episode
 import com.duta.movie.model.VideoServer
 import com.duta.movie.util.VideoExtractor
 import kotlinx.coroutines.*
@@ -559,7 +560,7 @@ class VideoRepository @Inject constructor(
         )
     }
 
-    suspend fun findProviderMirrorsForVideo(video: Video): List<VideoServer> = withContext(Dispatchers.IO) {
+    suspend fun findProviderMirrorsForVideo(video: Video, targetEpisode: Episode? = null): List<VideoServer> = withContext(Dispatchers.IO) {
         val results = mutableListOf<VideoServer>()
         try {
             val queries = VideoExtractor.buildAlternativeSearchQueries(video.title)
@@ -591,9 +592,20 @@ class VideoRepository @Inject constructor(
                 }
             )
 
+            val isSeriesPlayback = video.isSeries == true || targetEpisode != null
+            val epSeasonStr = if (!targetEpisode?.season.isNullOrEmpty()) targetEpisode?.season else targetEpisode?.url ?: video.title
+            val epNameStr = if (!targetEpisode?.name.isNullOrEmpty()) targetEpisode?.name else targetEpisode?.url ?: video.title
+            val targetSeason = Regex("""(?i)\b(?:season|s)[-_ ]?(\d+)\b""").find(epSeasonStr ?: "")?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            val targetEp = Regex("""(?i)\b(?:episode|eps|ep)[-_ ]?(\d+)\b""").find(epNameStr ?: "")?.groupValues?.get(1)?.toIntOrNull() ?: 1
+
             var foundMovieboxServers = false
             for (cand in candidateVideos.take(5)) {
-                val servers = providerManager.fetchServers(cand)
+                val fetchCand = if (isSeriesPlayback && (cand.isSeries == true || cand.id.startsWith("mb_") || cand.videoUrl.startsWith("moviebox://"))) {
+                    if (!cand.videoUrl.contains("se=") && !cand.videoUrl.contains("ep=")) {
+                        cand.copy(videoUrl = "${cand.videoUrl}&se=$targetSeason&ep=$targetEp", isSeries = true)
+                    } else cand
+                } else cand
+                val servers = providerManager.fetchServers(fetchCand)
                 for (s in servers) {
                     if (VideoExtractor.isServerMatchingMovie(video.title, s) && 
                         results.none { it.url == s.url || it.name.trim().equals(s.name.trim(), ignoreCase = true) }) {

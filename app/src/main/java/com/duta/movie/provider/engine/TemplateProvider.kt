@@ -67,6 +67,8 @@ class TemplateProvider(
                     VideoExtractor.setBullerswoodBaseUrl(primary)
                 } else if (id.contains("dutamovie") && primary.startsWith("http")) {
                     VideoExtractor.setDutaMovieBaseUrl(primary)
+                } else if (id.contains("pusatfilm") && primary.startsWith("http")) {
+                    VideoExtractor.setPusatfilmBaseUrl(primary)
                 }
             }
         }
@@ -83,7 +85,11 @@ class TemplateProvider(
                     VideoExtractor.searchDutaFilmWeb(query, page, 25)
                 }
                 "WORDPRESS_MUVIPRO" -> {
-                    val base = baseUrls.firstOrNull() ?: if (id.contains("dutamovie")) VideoExtractor.getDutaMovieBaseUrl() else VideoExtractor.getBullerswoodBaseUrl()
+                    val base = baseUrls.firstOrNull() ?: when {
+                        id.contains("dutamovie") -> VideoExtractor.getDutaMovieBaseUrl()
+                        id.contains("pusatfilm") -> VideoExtractor.getPusatfilmBaseUrl()
+                        else -> VideoExtractor.getBullerswoodBaseUrl()
+                    }
                     VideoExtractor.searchWordPressMuviPro(base, query, page, 25)
                 }
                 "GENERIC_HTML" -> {
@@ -110,7 +116,11 @@ class TemplateProvider(
                     VideoExtractor.fetchDutaFilmWebVideos(path, page, count)
                 }
                 "WORDPRESS_MUVIPRO" -> {
-                    val base = baseUrls.firstOrNull() ?: if (id.contains("dutamovie")) VideoExtractor.getDutaMovieBaseUrl() else VideoExtractor.getBullerswoodBaseUrl()
+                    val base = baseUrls.firstOrNull() ?: when {
+                        id.contains("dutamovie") -> VideoExtractor.getDutaMovieBaseUrl()
+                        id.contains("pusatfilm") -> VideoExtractor.getPusatfilmBaseUrl()
+                        else -> VideoExtractor.getBullerswoodBaseUrl()
+                    }
                     VideoExtractor.fetchWordPressMuviProVideos(base, path, page, count)
                 }
                 "GENERIC_HTML" -> {

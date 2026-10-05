@@ -264,9 +264,17 @@ object VideoExtractor {
 
     fun getDutaMovieBaseUrl(): String = activeDutaMovieBaseUrl
 
-    fun setDutaMovieBaseUrl(url: String) {
+    fun setDutaMovieBaseUrl(url: String, force: Boolean = false) {
         val trimmed = url.trimEnd('/')
-        if (trimmed.isNotBlank()) activeDutaMovieBaseUrl = trimmed
+        if (trimmed.isBlank()) return
+        if (trimmed.contains("balletroyale.com")) {
+            activeDutaMovieBaseUrl = trimmed
+            return
+        }
+        if (!force && activeDutaMovieBaseUrl.contains("balletroyale.com")) {
+            return
+        }
+        activeDutaMovieBaseUrl = trimmed
     }
 
     suspend fun probeDutaMovieDomain(): String? = withContext(Dispatchers.IO) {
@@ -280,8 +288,49 @@ object VideoExtractor {
                         val body = response.body?.string() ?: ""
                         if (body.contains("gmr-") || body.contains("muvipro") || body.contains("movie") || body.contains("film") || body.contains("dutamovie")) {
                             val root = "${response.request.url.scheme}://${response.request.url.host}"
-                            setDutaMovieBaseUrl(root)
+                            setDutaMovieBaseUrl(root, force = true)
                             Log.i(TAG, "SCOUTING: Live DutaMovie21 domain confirmed: $root")
+                            return@withContext root
+                        }
+                    }
+                }
+            } catch (_: Exception) {}
+        }
+        null
+    }
+
+    const val PUSATFILM_BASE_URL = "https://v5.pusatfilm21info.com"
+    private var activePusatfilmBaseUrl: String = PUSATFILM_BASE_URL
+
+    val PUSATFILM_FALLBACKS = listOf(
+        "https://v5.pusatfilm21info.com",
+        "https://site2.pusatfilm21info.com",
+        "https://pusatfilm21info.com",
+        "https://pusatfilm21info.net"
+    )
+
+    fun getPusatfilmBaseUrl(): String = activePusatfilmBaseUrl
+
+    fun setPusatfilmBaseUrl(url: String) {
+        val trimmed = url.trimEnd('/')
+        if (trimmed.isNotBlank() && trimmed.startsWith("http")) {
+            activePusatfilmBaseUrl = trimmed
+        }
+    }
+
+    suspend fun probePusatfilmDomain(): String? = withContext(Dispatchers.IO) {
+        val candidates = listOf(activePusatfilmBaseUrl) + PUSATFILM_FALLBACKS
+        for (candidate in candidates.distinct()) {
+            try {
+                val testUrl = "$candidate/"
+                val request = Request.Builder().url(testUrl).header("User-Agent", USER_AGENT).build()
+                NetworkConfig.fastOkHttpClient.newCall(request).execute().use { response ->
+                    if (response.isSuccessful) {
+                        val body = response.body?.string() ?: ""
+                        if (body.contains("pusatfilm") || body.contains("gmr-server-wrap") || body.contains("muvipro")) {
+                            val root = "${response.request.url.scheme}://${response.request.url.host}"
+                            setPusatfilmBaseUrl(root)
+                            Log.i(TAG, "SCOUTING: Live PusatFilm domain confirmed: $root")
                             return@withContext root
                         }
                     }
@@ -481,6 +530,7 @@ object VideoExtractor {
             clean.startsWith("pm_") -> "${getPencuriBaseUrl()}/"
             clean.startsWith("bw_") -> "${getBullerswoodBaseUrl()}/"
             clean.startsWith("dm_") -> "${getDutaMovieBaseUrl()}/"
+            clean.startsWith("pf_") -> "${getPusatfilmBaseUrl()}/"
             clean.startsWith("kb_") -> "https://kepala-bergetar.com/"
             clean.startsWith("mb_") -> "https://movieboxonline.net/"
             else -> "${getBaseUrl()}/"
@@ -552,7 +602,23 @@ object VideoExtractor {
         if (host.contains("archive.org")) return url
         if (host.contains("kepalabergetar") || host.contains("kepala-bergetar")) return url
         if (host.contains("159.89.249.45") || host.contains("dutafilm") || isClusterSite(host)) return url
-        if (host.contains("mantab.men") || host.contains("bullerswood.org") || host.contains("scphi.org") || host.contains("grishamfarms.org") || host.contains("inlionsforisbvi.org") || host.contains("lk21official")) return url
+        if (host.contains("mantab.men") || host.contains("bullerswood.org") || host.contains("scphi.org") || host.contains("grishamfarms.org") || host.contains("inlionsforisbvi.org") || host.contains("lk21official") || host.contains("kalbeabidschool.org") || host.contains("godsvisionfoundation.org")) return url
+        if (host.contains("moviebox") || host.contains("hakunaymatata") || host.contains("aoneroom") || host.contains("kotakajaib") || isProbablyVideoHost(url) || isAlternativePartnerHost(url)) return url
+
+        // Auto-heal for Pusatfilm standalone catalog
+        if (host.contains("pusatfilm")) {
+            val currentPf = getPusatfilmBaseUrl()
+            val pfHost = try { android.net.Uri.parse(currentPf).host?.lowercase() } catch(_: Throwable) { null }
+                ?: try { java.net.URI(currentPf).host?.lowercase() } catch(_: Throwable) { null }
+            if (pfHost != null && !host.equals(pfHost, ignoreCase = true)) {
+                val pathWithQuery = url.substringAfter(host)
+                val migrated = "$currentPf$pathWithQuery"
+                Log.d(TAG, "PUSATFILM AUTO-HEAL MIGRATION: $url -> $migrated")
+                return migrated
+            }
+            return url
+        }
+
         // Auto-heal for DutaMovie21 standalone catalog
         if (host.contains("204.3.234.75") || host.contains("dutamovie21.cam") || host.contains("dutamovie21.art") || host.contains("balletroyale.com")) {
             val currentDutaMovie = getDutaMovieBaseUrl()
@@ -597,7 +663,13 @@ object VideoExtractor {
         }
         val currentBaseHost = try { android.net.Uri.parse(currentBase).host?.lowercase() } catch(_: Throwable) { null }
             ?: try { java.net.URI(currentBase).host?.lowercase() } catch(_: Throwable) { null }
-        if (currentBaseHost != null && currentBaseHost != host) {
+        val isExternalHost = host.contains("pusatfilm") || host.contains("lk21") || host.contains("bullerswood") ||
+            host.contains("kalbeabidschool") || host.contains("godsvisionfoundation") || host.contains("scphi") || host.contains("grisham") ||
+            host.contains("moviebox") || host.contains("hakunaymatata") || host.contains("aoneroom") ||
+            host.contains("kotakajaib") || host.contains("kepalabergetar") || host.contains("dutafilm") ||
+            host.contains("mantab.men") || host.contains("archive.org") || isProbablyVideoHost(url) || isAlternativePartnerHost(url)
+
+        if (!isExternalHost && currentBaseHost != null && currentBaseHost != host) {
             val pathWithQuery = url.substringAfter(host)
             val migrated = "$currentBase$pathWithQuery"
             Log.d(TAG, "AUTO-HEAL MIGRATION: $url -> $migrated")
@@ -626,8 +698,8 @@ object VideoExtractor {
             cleanId.startsWith("pm_") -> "${getPencuriBaseUrl()}/${cleanId.removePrefix("pm_").trim('/')}/"
             cleanId.startsWith("dfw_") -> "${getDutaFilmWebBaseUrl()}/watch/${cleanId.removePrefix("dfw_").removeSuffix(".html")}.html"
             cleanId.startsWith("df_") -> "$DUTAFILM_BASE_URL/${cleanId.removePrefix("df_").trim('/')}/"
-            cleanId.startsWith("bw_") -> "${getBullerswoodBaseUrl()}/${cleanId.removePrefix("pf_")
-            .removePrefix("bw_").trim('/')}/"
+            cleanId.startsWith("pf_") -> "${getPusatfilmBaseUrl()}/${cleanId.removePrefix("pf_").trim('/')}/"
+            cleanId.startsWith("bw_") -> "${getBullerswoodBaseUrl()}/${cleanId.removePrefix("bw_").trim('/')}/"
             cleanId.startsWith("dm_") -> {
                 val sub = cleanId.removePrefix("dm_").trim('/')
                 if (sub.startsWith("film_")) "${getDutaMovieBaseUrl()}/film/${sub.removePrefix("film_")}/"
@@ -653,7 +725,7 @@ object VideoExtractor {
      * Identifies if a video or server belongs to LK21 / Bullerswood / Scphi source.
      */
     fun isBullerswood(videoId: String? = null, videoUrl: String? = null, streamUrl: String? = null): Boolean {
-        if (videoId?.startsWith("bw_") == true || videoId?.startsWith("pf_") == true) return true
+        if (videoId?.startsWith("bw_") == true) return true
         if (videoUrl?.contains("bullerswood.org", ignoreCase = true) == true || videoUrl?.contains("scphi.org", ignoreCase = true) == true || videoUrl?.contains("grishamfarms.org", ignoreCase = true) == true || videoUrl?.contains("inlionsforisbvi.org", ignoreCase = true) == true || videoUrl?.contains("lk21official", ignoreCase = true) == true || videoUrl?.contains("pusatfilm", ignoreCase = true) == true) return true
         if (streamUrl?.contains("bullerswood.org", ignoreCase = true) == true || streamUrl?.contains("scphi.org", ignoreCase = true) == true || streamUrl?.contains("grishamfarms.org", ignoreCase = true) == true || streamUrl?.contains("inlionsforisbvi.org", ignoreCase = true) == true || streamUrl?.contains("lk21official", ignoreCase = true) == true || streamUrl?.contains("pusatfilm", ignoreCase = true) == true) return true
         return false
@@ -863,34 +935,49 @@ object VideoExtractor {
                         val finalUrl = resp.request.url.toString()
                         val body = if (resp.isSuccessful) resp.body?.string() else null
                         
+                        val reqHost = try { android.net.Uri.parse(url).host?.lowercase() ?: "" } catch(_: Exception) { "" }
                         val finalHost = try { resp.request.url.host.lowercase() } catch(_: Exception) { "" }
-                        if (finalHost.contains("pencurimovie") || finalHost.contains("pencurifilm") || finalHost.contains("pencurivideo")) {
+                        val scheme = try { resp.request.url.scheme } catch(_: Exception) { "https" }
+                        val rootUrl = "$scheme://$finalHost"
+
+                        val isPencuriReq = reqHost.contains("pencuri") || isPencuriMovie(videoUrl = url)
+                        val isPusatfilmReq = reqHost.contains("pusatfilm") || isPusatfilm(videoUrl = url)
+                        val isBullerswoodReq = reqHost.contains("bullerswood") || reqHost.contains("scphi") || reqHost.contains("grisham") || reqHost.contains("lk21") || reqHost.contains("inlionsforisbvi") || reqHost.contains("kalbeabidschool") || reqHost.contains("godsvisionfoundation")
+                        val isDutaMovieReq = reqHost.contains("dutamovie") || reqHost.contains("balletroyale") || reqHost.contains("204.3.234.75")
+                        val isDutaFilmWebReq = reqHost.contains("mantab.men") || reqHost.contains("df31")
+
+                        if (isPencuriReq || finalHost.contains("pencuri")) {
                             if (!body.isNullOrEmpty() && (body.contains("pencurimovie") || body.contains("pencurifilm") || body.contains("player_nav") || body.contains("class=\"gmr-") || body.contains("content=\"video.movie\""))) {
-                                val scheme = try { resp.request.url.scheme } catch(_: Exception) { "https" }
-                                val rootUrl = "$scheme://$finalHost"
                                 Log.d(TAG, "Dynamic Learning: PencuriMovie site verified. Updating base to: $rootUrl")
                                 updatePencuriBaseUrl(rootUrl)
                             }
+                        } else if (isPusatfilmReq || finalHost.contains("pusatfilm")) {
+                            if (!body.isNullOrEmpty() && (body.contains("pusatfilm") || body.contains("gmr-server-wrap") || body.contains("muvipro"))) {
+                                Log.d(TAG, "Dynamic Learning: PusatFilm site verified. Updating base to: $rootUrl")
+                                setPusatfilmBaseUrl(rootUrl)
+                            }
+                        } else if (isBullerswoodReq || finalHost.contains("bullerswood") || finalHost.contains("scphi") || finalHost.contains("grisham") || finalHost.contains("lk21") || finalHost.contains("kalbeabidschool") || finalHost.contains("godsvisionfoundation")) {
+                            if (!body.isNullOrEmpty() && (body.contains("layarkaca21") || body.contains("lk21") || body.contains("gmr-movie-data") || body.contains("muvipro"))) {
+                                Log.d(TAG, "Dynamic Learning: LK21 site verified. Updating base to: $rootUrl")
+                                setBullerswoodBaseUrl(rootUrl)
+                            }
+                        } else if (isDutaMovieReq || finalHost.contains("dutamovie") || finalHost.contains("balletroyale")) {
+                            if (!body.isNullOrEmpty() && (body.contains("dutamovie") || body.contains("balletroyale") || body.contains("gmr-"))) {
+                                Log.d(TAG, "Dynamic Learning: DutaMovie site verified. Updating base to: $rootUrl")
+                                setDutaMovieBaseUrl(rootUrl)
+                            }
+                        } else if (isDutaFilmWebReq || finalHost.contains("mantab.men")) {
+                            Log.d(TAG, "Dynamic Learning: DutaFilm Web site verified. Updating base to: $rootUrl")
+                            setDutaFilmWebBaseUrl(rootUrl)
                         } else if (finalHost.contains("kepalabergetar") || finalHost.contains("kepala-bergetar") || finalHost.contains("archive.org") || 
                                    finalHost.contains("youtube") || finalHost.contains("youtu.be") || 
                                    finalHost.contains("bilibili") || finalHost.contains("dailymotion") ||
-                                   finalHost.contains("159.89.249.45") || finalHost.contains("dutafilm") ||
-                                   finalHost.contains("mantab.men") || finalHost.contains("bullerswood") ||
-                                   finalHost.contains("scphi") || finalHost.contains("grisham") ||
-                                   finalHost.contains("lk21official")) {
-                            // Dedicated external providers - dynamically learn subdomains if applicable
-                            if (finalHost.contains("mantab.men")) {
-                                val scheme = try { resp.request.url.scheme } catch(_: Exception) { "https" }
-                                setDutaFilmWebBaseUrl("$scheme://$finalHost")
-                            } else if (finalHost.contains("bullerswood") || finalHost.contains("scphi") || finalHost.contains("grisham") || finalHost.contains("lk21official")) {
-                                val scheme = try { resp.request.url.scheme } catch(_: Exception) { "https" }
-                                setBullerswoodBaseUrl("$scheme://$finalHost")
-                            }
+                                   finalHost.contains("moviebox") || finalHost.contains("hakunaymatata") || finalHost.contains("aoneroom") ||
+                                   finalHost.contains("159.89.249.45") || finalHost.contains("dutafilm")) {
+                            // Dedicated external providers - no base updates needed
                         } else {
                             // OWL'S EYE: Active learning from the current response (never force-hijack from random fetches)
                             if (!body.isNullOrEmpty() && isLegitSite(body)) {
-                                val scheme = try { resp.request.url.scheme } catch(_: Exception) { "https" }
-                                val rootUrl = "$scheme://$finalHost"
                                 Log.d(TAG, "Dynamic Learning: Site verified. Proposing base: $rootUrl")
                                 updateBaseUrl(rootUrl, force = true)
                             }
@@ -6154,9 +6241,17 @@ object VideoExtractor {
             } else if (effectiveUrl.contains("kepalabergetar") || effectiveUrl.contains("kepala-bergetar") || effectiveUrl.contains("archive.org") || 
                        effectiveUrl.contains("youtube") || effectiveUrl.contains("bilibili") || 
                        effectiveUrl.contains("dailymotion") || effectiveUrl.contains("204.3.234.75") ||
-                       effectiveUrl.contains("dutamovie")) {
+                       effectiveUrl.contains("dutamovie") || effectiveUrl.contains("pusatfilm") ||
+                       effectiveUrl.contains("moviebox") || effectiveUrl.contains("hakunaymatata") || effectiveUrl.contains("aoneroom")) {
                 // External provider failed or 404 - do not trigger DutaMovie domain probe
-                return@withContext null
+                if (effectiveUrl.contains("pusatfilm")) {
+                    val liveDomain = probePusatfilmDomain()
+                    if (liveDomain != null && !effectiveUrl.startsWith(liveDomain)) {
+                        effectiveUrl = migrateUrlToBase(videoUrl)
+                        html = fetchHtml(effectiveUrl, referer)
+                    }
+                }
+                if (html == null) return@withContext null
             } else {
                 Log.w(TAG, "fetchVideoDetails failed on $effectiveUrl. Probing for live DutaMovie domain...")
                 val liveDomain = probeForNewDomain()
