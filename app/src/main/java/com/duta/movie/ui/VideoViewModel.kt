@@ -1384,6 +1384,7 @@ class VideoViewModel @Inject constructor(
                     // Do NOT trigger heavy background HTML prefetching for 100 search items
                     updateMetadataCache(results, triggerBackground = false)
                     _searchResultsVideos.value = results
+                    prewarmTopVideos(results, limit = 3)
                 } else {
                     _searchResultsVideos.value = emptyList()
                     _error.value = "No results found for '$trimmed'"
@@ -1481,7 +1482,7 @@ class VideoViewModel @Inject constructor(
         val isCompleteCached: (Video?) -> Boolean = { v ->
             v != null && (
                 v.episodes.isNotEmpty() ||
-                (v.isSeries == false && v.servers.isNotEmpty() && !v.servers.all { it.url.contains(".html") || it.url.contains("/watch/") } && !v.servers.any { it.url.contains("epid=") })
+                (v.servers.isNotEmpty() && !v.servers.all { it.url.contains(".html") || it.url.contains("/watch/") } && !v.servers.any { it.url.contains("epid=") })
             )
         }
 
@@ -1507,7 +1508,16 @@ class VideoViewModel @Inject constructor(
             ?: getVideo(videoId)?.takeIf { isIdMatch(it.id) }
 
         if (isCompleteCached(immediateCached)) {
-            _videoMetadata.value = applyMetadata(immediateCached!!)
+            var toDisplay = immediateCached!!
+            if (toDisplay.servers.isEmpty() && toDisplay.episodes.isNotEmpty()) {
+                val firstEp = toDisplay.episodes.firstOrNull()
+                val epSlug = firstEp?.let { com.duta.movie.util.VideoExtractor.extractStableId(it.url) }
+                val cachedEpServers = epSlug?.let { episodeServersCache[it] }
+                if (!cachedEpServers.isNullOrEmpty()) {
+                    toDisplay = toDisplay.copy(servers = cachedEpServers)
+                }
+            }
+            _videoMetadata.value = applyMetadata(toDisplay)
             _isDetailLoading.value = false
             _isLoading.value = false
         } else if (immediateCached != null) {
@@ -1536,14 +1546,32 @@ class VideoViewModel @Inject constructor(
                 // Instant cache/DB check: if memory or local DB already has verified servers/episodes, display them immediately
                 val cached = metadataCache[videoId] ?: videoRepository.getCachedVideo(videoId)
                 if (isCompleteCached(cached)) {
-                    _videoMetadata.value = applyMetadata(cached!!)
+                    var toDisplay = cached!!
+                    if (toDisplay.servers.isEmpty() && toDisplay.episodes.isNotEmpty()) {
+                        val firstEp = toDisplay.episodes.firstOrNull()
+                        val epSlug = firstEp?.let { com.duta.movie.util.VideoExtractor.extractStableId(it.url) }
+                        val cachedEpServers = epSlug?.let { episodeServersCache[it] }
+                        if (!cachedEpServers.isNullOrEmpty()) {
+                            toDisplay = toDisplay.copy(servers = cachedEpServers)
+                        }
+                    }
+                    _videoMetadata.value = applyMetadata(toDisplay)
                     _isDetailLoading.value = false
                     _isLoading.value = false
                 } else {
                     val dbVideo = videoRepository.getCachedOrDbVideo(videoId)
                     if (isCompleteCached(dbVideo)) {
-                        _videoMetadata.value = applyMetadata(dbVideo!!)
-                        updateMetadataCache(listOf(dbVideo), triggerBackground = false)
+                        var toDisplay = dbVideo!!
+                        if (toDisplay.servers.isEmpty() && toDisplay.episodes.isNotEmpty()) {
+                            val firstEp = toDisplay.episodes.firstOrNull()
+                            val epSlug = firstEp?.let { com.duta.movie.util.VideoExtractor.extractStableId(it.url) }
+                            val cachedEpServers = epSlug?.let { episodeServersCache[it] }
+                            if (!cachedEpServers.isNullOrEmpty()) {
+                                toDisplay = toDisplay.copy(servers = cachedEpServers)
+                            }
+                        }
+                        _videoMetadata.value = applyMetadata(toDisplay)
+                        updateMetadataCache(listOf(toDisplay), triggerBackground = false)
                         _isDetailLoading.value = false
                         _isLoading.value = false
                     } else {
@@ -1553,8 +1581,16 @@ class VideoViewModel @Inject constructor(
                 }
 
                 val video = getVideo(videoId)
-                val detailed = videoRepository.fetchVideoDetails(videoId)
+                var detailed = videoRepository.fetchVideoDetails(videoId)
                 if (detailed != null) { 
+                    if (detailed.servers.isEmpty() && detailed.episodes.isNotEmpty()) {
+                        val firstEp = detailed.episodes.firstOrNull()
+                        val epSlug = firstEp?.let { com.duta.movie.util.VideoExtractor.extractStableId(it.url) }
+                        val cachedEpServers = epSlug?.let { episodeServersCache[it] }
+                        if (!cachedEpServers.isNullOrEmpty()) {
+                            detailed = detailed.copy(servers = cachedEpServers)
+                        }
+                    }
                     _videoMetadata.value = applyMetadata(detailed)
                     updateMetadataCache(listOf(detailed), triggerBackground = false) 
                     _isDetailLoading.value = false
@@ -1611,6 +1647,32 @@ class VideoViewModel @Inject constructor(
                                         videoRepository.updateVideoInDb(updated)
                                         updateMetadataCache(listOf(updated), triggerBackground = false)
                                         Log.i("VideoViewModel", "Proactively resolved ${ajaxServers.size} AJAX primary servers for '${cur.title}'")
+                                    }
+                                }
+                            }
+
+                            // 0b. Proactively unwrap any remaining Kotak wrappers in background
+                            if (workingServers.any { com.duta.movie.util.VideoExtractor.isKotakWrapper(it.url) }) {
+                                val unwrapped = workingServers.flatMap { s ->
+                                    if (com.duta.movie.util.VideoExtractor.isKotakWrapper(s.url)) {
+                                        val children = try {
+                                            com.duta.movie.util.VideoExtractor.unwrapKotakServers(s.url, detailed.videoUrl)
+                                        } catch (_: Exception) { emptyList() }
+                                        if (children.isNotEmpty()) children else listOf(s)
+                                    } else {
+                                        listOf(s)
+                                    }
+                                }.distinctBy { it.url.substringBefore('?') }
+                                if (unwrapped != workingServers) {
+                                    workingServers = unwrapped
+                                    val cur = _videoMetadata.value
+                                    if (cur != null && (cur.id == detailed.id || com.duta.movie.util.VideoExtractor.stripSourcePrefix(cur.id) == com.duta.movie.util.VideoExtractor.stripSourcePrefix(detailed.id))) {
+                                        val updated = cur.copy(servers = workingServers)
+                                        withContext(Dispatchers.Main) {
+                                            _videoMetadata.value = applyMetadata(updated)
+                                        }
+                                        videoRepository.updateVideoInDb(updated)
+                                        updateMetadataCache(listOf(updated), triggerBackground = false)
                                     }
                                 }
                             }
@@ -3726,6 +3788,7 @@ class VideoViewModel @Inject constructor(
                     }
                     _categoryVideos.update { it + (category to displayCached) }
                     prefetchThumbnails(displayCached, limit = 30)
+                    prewarmTopVideos(displayCached, limit = 4)
                     if (category == moviePath) {
                         _latestMovies.value = displayCached
                         _headlinerVideo.value = displayCached.firstOrNull()

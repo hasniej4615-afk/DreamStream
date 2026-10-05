@@ -354,11 +354,9 @@ fun VideoListScreen(
     
     LaunchedEffect(focusedVideo) {
         val target = focusedVideo ?: return@LaunchedEffect
-        kotlinx.coroutines.delay(if (isImmersiveMode) 350L else 1000L)
+        kotlinx.coroutines.delay(if (isImmersiveMode) 350L else 600L)
         debouncedHeroVideo = target
-        if (isImmersiveMode || isRealTV) {
-            viewModel.prefetchVideoDetails(target)
-        }
+        viewModel.prefetchVideoDetails(target)
     }
 
     val featuredHeroVideo = remember(debouncedHeroVideo, featuredVideos, latestMovies, latestTVSeries, randomMobileHero, metadataTrigger) {

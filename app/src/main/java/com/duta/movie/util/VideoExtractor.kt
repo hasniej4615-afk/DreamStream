@@ -52,6 +52,7 @@ object VideoExtractor {
     private val workingAjaxCache = ConcurrentHashMap<String, AjaxEndpoint>()
 
     private val confirmedDeadMirrors = ConcurrentHashMap.newKeySet<String>()
+    val episodeServersCache = ConcurrentHashMap<String, List<VideoServer>>()
 
     fun clearConfirmedDead(url: String) {
         val clean = url.trimEnd('/')
@@ -6505,18 +6506,19 @@ object VideoExtractor {
 
         // OWL'S EYE: Expand multi-server wrappers (e.g. KotakAjaib / PusatFilm multi-server embeds)
         if (rawServers.any { isKotakWrapper(it.url) }) {
-            val expandedServers = mutableListOf<VideoServer>()
-            for (server in rawServers) {
-                if (isKotakWrapper(server.url)) {
-                    val childServers = unwrapKotakServers(server.url, effectiveUrl)
-                    if (childServers.isNotEmpty()) {
-                        expandedServers.addAll(childServers)
-                    } else {
-                        expandedServers.add(server)
+            val expandedServers = coroutineScope {
+                rawServers.map { server ->
+                    async {
+                        if (isKotakWrapper(server.url)) {
+                            val childServers = try {
+                                withTimeoutOrNull(1500) { unwrapKotakServers(server.url, effectiveUrl) }
+                            } catch (_: Exception) { null }
+                            if (!childServers.isNullOrEmpty()) childServers else listOf(server)
+                        } else {
+                            listOf(server)
+                        }
                     }
-                } else {
-                    expandedServers.add(server)
-                }
+                }.awaitAll().flatten()
             }
             rawServers.clear()
             rawServers.addAll(expandedServers)
@@ -6579,7 +6581,7 @@ object VideoExtractor {
             finalServers.add(s.copy(name = finalName))
         }
 
-        // OWL'S EYE: Speculative Probing (v5.9)
+        // OWL'S EYE: Fast Speculative Probing with episode cache
         var discoveredServers = finalServers.toMutableList()
         if (finalIsSeries && discoveredServers.isEmpty() && episodes.isNotEmpty() && !isRecursive && !isEpisodePage) {
             val firstEp = episodes.first()
@@ -6591,18 +6593,22 @@ object VideoExtractor {
                               firstEpSlug.contains(cleanSeriesSlug) ||
                               (cleanSlugNoYear.length >= 3 && firstEp.url.contains(cleanSlugNoYear, ignoreCase = true))
             if (isSafeProbe) {
-                Log.d(TAG, "Series mirrors missing. Speculative Probe engaged for: ${firstEp.name}")
-                val probeResult = try {
-                    withTimeoutOrNull(5000) {
-                        fetchVideoDetails(firstEp.url, videoUrl, isRecursive = true)
-                    }
-                } catch (e: Exception) { null }
+                val epSlug = extractStableId(firstEp.url)
+                val cachedEp = episodeServersCache[epSlug]
+                if (!cachedEp.isNullOrEmpty()) {
+                    discoveredServers = cachedEp.toMutableList()
+                } else {
+                    val probeResult = try {
+                        withTimeoutOrNull(2500) {
+                            fetchVideoDetails(firstEp.url, videoUrl, isRecursive = true)
+                        }
+                    } catch (e: Exception) { null }
 
-                if (probeResult != null && probeResult.servers.isNotEmpty()) {
-                    discoveredServers = probeResult.servers.toMutableList()
+                    if (probeResult != null && probeResult.servers.isNotEmpty()) {
+                        discoveredServers = probeResult.servers.toMutableList()
+                        episodeServersCache[epSlug] = probeResult.servers
+                    }
                 }
-            } else {
-                Log.w(TAG, "Speculative Probe skipped: target ${firstEp.url} does not match series slug $cleanSeriesSlug")
             }
         }
         
