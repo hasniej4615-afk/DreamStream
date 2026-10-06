@@ -1226,138 +1226,261 @@ fun NetflixThumbnail(
                         .networkCachePolicy(coil.request.CachePolicy.ENABLED)
                         .build()
                 }
-                AsyncImage(
-                    model = imageRequest,
-                    contentDescription = video.title,
-                    modifier = Modifier.fillMaxSize(),
-                    contentScale = ContentScale.Crop,
-                    placeholder = CARD_PLACEHOLDER_PAINTER,
-                    error = errorPlaceholder ?: CARD_PLACEHOLDER_PAINTER,
-                    onError = {
-                        onPosterMissing?.invoke()
-                    }
-                )
-
-                if (isRealTV) {
-                    // PREMIUM GLASS REFLECTION (OnStream Detail - TV ONLY)
-                    Box(modifier = Modifier
-                        .fillMaxWidth()
-                        .fillMaxHeight(0.35f)
-                        .background(
-                            Brush.verticalGradient(
-                                0.0f to Color.White.copy(alpha = 0.15f),
-                                1.0f to Color.Transparent
-                            )
-                        )
-                    )
+                val isLive = remember(video.id, video.duration) {
+                    com.duta.movie.model.LiveTvCatalog.isLiveVideo(video.id) || video.duration == "LIVE"
                 }
-                
-                // Fallback title if image is missing or bad
-                if (effectiveThumb.isEmpty()) {
-                    Box(modifier = Modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.Center) {
+
+                if (isLive) {
+                    val liveGradient = remember(video.id) {
+                        val id = video.id.lowercase()
+                        when {
+                            id.contains("tv1") -> listOf(Color(0xFF0F2642), Color(0xFF081525), Color(0xFF030910))
+                            id.contains("tv2") -> listOf(Color(0xFF28113B), Color(0xFF140820), Color(0xFF09030E))
+                            id.contains("okey") -> listOf(Color(0xFF0C2E25), Color(0xFF061813), Color(0xFF020B09))
+                            id.contains("sukan") -> listOf(Color(0xFF3B0D12), Color(0xFF1E0609), Color(0xFF0E0204))
+                            id.contains("berita") -> listOf(Color(0xFF102542), Color(0xFF081322), Color(0xFF030810))
+                            id.contains("tv6") -> listOf(Color(0xFF331D08), Color(0xFF1A0E04), Color(0xFF0C0602))
+                            id.contains("parlimen") -> listOf(Color(0xFF2E0F14), Color(0xFF17070A), Color(0xFF0B0305))
+                            id.contains("asean") -> listOf(Color(0xFF0C2636), Color(0xFF06131B), Color(0xFF02090E))
+                            else -> listOf(Color(0xFF1B2330), Color(0xFF0F141D), Color(0xFF080A0F))
+                        }
+                    }
+
+                    // 1. Themed broadcast canvas background
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Brush.verticalGradient(liveGradient))
+                    )
+
+                    // 2. Radial aura glow behind the logo
+                    Box(
+                        modifier = Modifier
+                            .size(130.dp)
+                            .align(Alignment.Center)
+                            .background(
+                                Brush.radialGradient(
+                                    colors = listOf(
+                                        liveGradient.first().copy(alpha = 0.85f),
+                                        Color.Transparent
+                                    )
+                                )
+                            )
+                    )
+
+                    // 3. Crisp, uncropped channel logo with Fit scaling
+                    if (effectiveThumb.isNotEmpty()) {
+                        AsyncImage(
+                            model = imageRequest,
+                            contentDescription = video.title,
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 26.dp)
+                                .align(Alignment.Center),
+                            contentScale = ContentScale.Fit,
+                            placeholder = null,
+                            error = null
+                        )
+                    } else {
                         Text(
                             text = video.title,
                             color = Color.White,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Black,
                             textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                            maxLines = 4,
-                            overflow = TextOverflow.Ellipsis
+                            modifier = Modifier.align(Alignment.Center).padding(8.dp)
                         )
                     }
-                }
-                
-                if (duration > 0 && progress > 0) {
-                    val percent = (progress.toFloat() / duration).coerceIn(0f, 1f)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 8.dp, vertical = 6.dp)
-                            .height(4.dp)
-                            .align(Alignment.BottomStart)
-                            .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(2.dp))
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(percent)
-                                .fillMaxHeight()
-                                .background(Color.Red, RoundedCornerShape(2.dp))
-                        )
-                    }
-                }
 
-                if (isPakcikRekomen) {
-                    val isNarrowCard = (width != null && width < 120.dp) || (isRealTV && (width ?: 165.dp) < 120.dp)
+                    // 4. Live Badge at Top-Start: Vibrant Red with dot + "LIVE"
                     Surface(
-                        color = Color.Red,
+                        color = Color(0xFFE50914),
                         shape = RoundedCornerShape(bottomEnd = 6.dp),
                         modifier = Modifier.align(Alignment.TopStart)
                     ) {
-                        Text(
-                            text = if (isNarrowCard) "Rekomen" else stringResource(R.string.pakcik_rekomen),
-                            color = Color.White,
-                            fontSize = if (isNarrowCard) 9.sp else 11.sp,
-                            fontWeight = FontWeight.Black,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                            modifier = Modifier.padding(
-                                horizontal = if (isNarrowCard) 4.dp else 7.dp, 
-                                vertical = if (isNarrowCard) 2.dp else 3.dp
-                            )
-                        )
-                    }
-                } else if (video.quality.isNotEmpty()) {
-                    Surface(
-                        color = Color.Black.copy(alpha = 0.94f),
-                        shape = RoundedCornerShape(bottomEnd = 4.dp),
-                        modifier = Modifier.align(Alignment.TopStart)
-                    ) {
-                        Text(
-                            text = video.quality.uppercase(),
-                            color = Color.White,
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Black,
-                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
-                        )
-                    }
-                }
-
-                if (isPakcikRekomen) {
-                    val recCount = (video.views.toIntOrNull() ?: 1).coerceAtLeast(1)
-                    val isNarrowCard = (width != null && width < 120.dp) || (isRealTV && (width ?: 165.dp) < 120.dp)
-                    Surface(
-                        color = Color.Black.copy(alpha = 0.85f),
-                        shape = RoundedCornerShape(bottomStart = 4.dp),
-                        modifier = Modifier.align(Alignment.TopEnd)
-                    ) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(
-                                horizontal = if (isNarrowCard) 4.dp else 6.dp, 
-                                vertical = if (isNarrowCard) 2.dp else 3.dp
-                            )
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
                         ) {
-                            Icon(
-                                imageVector = Icons.Default.ThumbUp,
-                                contentDescription = null,
-                                tint = Color.Red,
-                                modifier = Modifier.size(if (isNarrowCard) 9.dp else 11.dp)
+                            Box(
+                                modifier = Modifier
+                                    .size(6.dp)
+                                    .background(Color.White, CircleShape)
                             )
-                            Spacer(modifier = Modifier.width(if (isNarrowCard) 2.dp else 4.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
                             Text(
-                                text = "$recCount",
+                                text = "LIVE",
                                 color = Color.White,
-                                fontSize = if (isNarrowCard) 9.sp else 11.sp,
-                                fontWeight = FontWeight.Black
+                                fontSize = 10.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 0.5.sp
                             )
                         }
                     }
-                } else {
-                    val cleanRating = remember(video.views) {
-                        val num = RATING_REGEX.find(video.views)?.value
-                        if (num != null && (num.toDoubleOrNull() ?: 0.0) > 0.0) num else ""
+
+                    // 5. Broadcast Quality Badge at Top-End: 1080P
+                    Surface(
+                        color = Color.Black.copy(alpha = 0.85f),
+                        shape = RoundedCornerShape(bottomStart = 6.dp),
+                        modifier = Modifier.align(Alignment.TopEnd)
+                    ) {
+                        Text(
+                            text = "1080P",
+                            color = Color(0xFF00E676),
+                            fontSize = 9.sp,
+                            fontWeight = FontWeight.Black,
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 3.dp)
+                        )
                     }
-                    if (cleanRating.isNotEmpty()) {
+
+                    // 6. Bottom broadcast footer panel
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .align(Alignment.BottomCenter)
+                            .background(
+                                Brush.verticalGradient(
+                                    0.0f to Color.Transparent,
+                                    0.35f to Color.Black.copy(alpha = 0.65f),
+                                    1.0f to Color.Black.copy(alpha = 0.95f)
+                                )
+                            )
+                            .padding(horizontal = 6.dp, vertical = 6.dp),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Text(
+                                text = video.title,
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.ExtraBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = "RTM LIVE",
+                                color = Color(0xFFB0B0B0),
+                                fontSize = 8.5.sp,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 0.5.sp,
+                                maxLines = 1
+                            )
+                        }
+                    }
+
+                    if (isRealTV) {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .fillMaxHeight(0.35f)
+                                .background(
+                                    Brush.verticalGradient(
+                                        0.0f to Color.White.copy(alpha = 0.12f),
+                                        1.0f to Color.Transparent
+                                    )
+                                )
+                        )
+                    }
+                } else {
+                    AsyncImage(
+                        model = imageRequest,
+                        contentDescription = video.title,
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                        placeholder = CARD_PLACEHOLDER_PAINTER,
+                        error = errorPlaceholder ?: CARD_PLACEHOLDER_PAINTER,
+                        onError = {
+                            onPosterMissing?.invoke()
+                        }
+                    )
+
+                    if (isRealTV) {
+                        // PREMIUM GLASS REFLECTION (OnStream Detail - TV ONLY)
+                        Box(modifier = Modifier
+                            .fillMaxWidth()
+                            .fillMaxHeight(0.35f)
+                            .background(
+                                Brush.verticalGradient(
+                                    0.0f to Color.White.copy(alpha = 0.15f),
+                                    1.0f to Color.Transparent
+                                )
+                            )
+                        )
+                    }
+                    
+                    // Fallback title if image is missing or bad
+                    if (effectiveThumb.isEmpty()) {
+                        Box(modifier = Modifier.fillMaxSize().padding(12.dp), contentAlignment = Alignment.Center) {
+                            Text(
+                                text = video.title,
+                                color = Color.White,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold,
+                                textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                                maxLines = 4,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
+                    }
+                    
+                    if (duration > 0 && progress > 0) {
+                        val percent = (progress.toFloat() / duration).coerceIn(0f, 1f)
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 8.dp, vertical = 6.dp)
+                                .height(4.dp)
+                                .align(Alignment.BottomStart)
+                                .background(Color.Black.copy(alpha = 0.6f), RoundedCornerShape(2.dp))
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(percent)
+                                    .fillMaxHeight()
+                                    .background(Color.Red, RoundedCornerShape(2.dp))
+                            )
+                        }
+                    }
+
+                    if (isPakcikRekomen) {
+                        val isNarrowCard = (width != null && width < 120.dp) || (isRealTV && (width ?: 165.dp) < 120.dp)
+                        Surface(
+                            color = Color.Red,
+                            shape = RoundedCornerShape(bottomEnd = 6.dp),
+                            modifier = Modifier.align(Alignment.TopStart)
+                        ) {
+                            Text(
+                                text = if (isNarrowCard) "Rekomen" else stringResource(R.string.pakcik_rekomen),
+                                color = Color.White,
+                                fontSize = if (isNarrowCard) 9.sp else 11.sp,
+                                fontWeight = FontWeight.Black,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.padding(
+                                    horizontal = if (isNarrowCard) 4.dp else 7.dp, 
+                                    vertical = if (isNarrowCard) 2.dp else 3.dp
+                                )
+                            )
+                        }
+                    } else if (video.quality.isNotEmpty()) {
+                        Surface(
+                            color = Color.Black.copy(alpha = 0.94f),
+                            shape = RoundedCornerShape(bottomEnd = 4.dp),
+                            modifier = Modifier.align(Alignment.TopStart)
+                        ) {
+                            Text(
+                                text = video.quality.uppercase(),
+                                color = Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(horizontal = 7.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+
+                    if (isPakcikRekomen) {
+                        val recCount = (video.views.toIntOrNull() ?: 1).coerceAtLeast(1)
+                        val isNarrowCard = (width != null && width < 120.dp) || (isRealTV && (width ?: 165.dp) < 120.dp)
                         Surface(
                             color = Color.Black.copy(alpha = 0.85f),
                             shape = RoundedCornerShape(bottomStart = 4.dp),
@@ -1365,21 +1488,55 @@ fun NetflixThumbnail(
                         ) {
                             Row(
                                 verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                modifier = Modifier.padding(
+                                    horizontal = if (isNarrowCard) 4.dp else 6.dp, 
+                                    vertical = if (isNarrowCard) 2.dp else 3.dp
+                                )
                             ) {
                                 Icon(
-                                    imageVector = Icons.Default.Star,
+                                    imageVector = Icons.Default.ThumbUp,
                                     contentDescription = null,
-                                    tint = Color(0xFFFFC107),
-                                    modifier = Modifier.size(11.dp)
+                                    tint = Color.Red,
+                                    modifier = Modifier.size(if (isNarrowCard) 9.dp else 11.dp)
                                 )
-                                Spacer(modifier = Modifier.width(3.dp))
+                                Spacer(modifier = Modifier.width(if (isNarrowCard) 2.dp else 4.dp))
                                 Text(
-                                    text = cleanRating,
+                                    text = "$recCount",
                                     color = Color.White,
-                                    fontSize = 11.sp,
+                                    fontSize = if (isNarrowCard) 9.sp else 11.sp,
                                     fontWeight = FontWeight.Black
                                 )
+                            }
+                        }
+                    } else {
+                        val cleanRating = remember(video.views) {
+                            val num = RATING_REGEX.find(video.views)?.value
+                            if (num != null && (num.toDoubleOrNull() ?: 0.0) > 0.0) num else ""
+                        }
+                        if (cleanRating.isNotEmpty()) {
+                            Surface(
+                                color = Color.Black.copy(alpha = 0.85f),
+                                shape = RoundedCornerShape(bottomStart = 4.dp),
+                                modifier = Modifier.align(Alignment.TopEnd)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.Star,
+                                        contentDescription = null,
+                                        tint = Color(0xFFFFC107),
+                                        modifier = Modifier.size(11.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(3.dp))
+                                    Text(
+                                        text = cleanRating,
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Black
+                                    )
+                                }
                             }
                         }
                     }

@@ -412,6 +412,8 @@ object NetworkConfig {
                     builder.header("Referer", "https://dutamovie21.cam/")
                 } else if (host.contains("cloudfront.net") || host.contains("rtm") || host.contains("glueapi")) {
                     builder.header("Referer", "https://rtmklik.rtm.gov.my/")
+                } else if (host.contains("postimg.cc")) {
+                    builder.header("Referer", "https://postimg.cc/")
                 } else {
                     builder.header("Referer", "https://$host/")
                 }

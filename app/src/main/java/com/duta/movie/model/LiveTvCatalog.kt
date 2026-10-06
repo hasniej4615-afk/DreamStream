@@ -82,8 +82,8 @@ object LiveTvCatalog {
         Video(
             id = "live_parlimen_rakyat",
             title = "Parlimen (Dewan Rakyat)",
-            thumbnailUrl = "https://i.imgur.com/1Xzxsgl.png",
-            backdropUrl = "https://i.imgur.com/1Xzxsgl.png",
+            thumbnailUrl = "https://i.postimg.cc/mgrVsTMY/header.png",
+            backdropUrl = "https://i.postimg.cc/mgrVsTMY/header.png",
             videoUrl = "https://d25tgymtnqzu8s.cloudfront.net/smil:rakyat/playlist.m3u8?id=7",
             duration = "LIVE",
             quality = "1080p FHD",
@@ -94,8 +94,8 @@ object LiveTvCatalog {
         Video(
             id = "live_parlimen_negara",
             title = "Parlimen (Dewan Negara)",
-            thumbnailUrl = "https://i.imgur.com/1Xzxsgl.png",
-            backdropUrl = "https://i.imgur.com/1Xzxsgl.png",
+            thumbnailUrl = "https://i.postimg.cc/mgrVsTMY/header.png",
+            backdropUrl = "https://i.postimg.cc/mgrVsTMY/header.png",
             videoUrl = "https://d25tgymtnqzu8s.cloudfront.net/smil:negara/playlist.m3u8?id=8",
             duration = "LIVE",
             quality = "1080p FHD",
