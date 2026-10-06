@@ -74,7 +74,7 @@ class ProfileBackupTest {
         assertEquals("", parsed.username)
         assertNull(parsed.avatarBase64)
         assertEquals("Indonesian", parsed.defaultSubtitleLanguage)
-        assertTrue(parsed.autoSubtitleEnabled)
+        org.junit.Assert.assertFalse(parsed.autoSubtitleEnabled)
         assertEquals(0, parsed.voiceEnhancerMode)
         assertEquals(emptySet<String>(), parsed.enabledCategories)
         assertEquals(emptySet<String>(), parsed.myList)

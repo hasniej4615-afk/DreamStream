@@ -93,8 +93,8 @@ object SubtitleExtractor {
     fun normalizeLanguage(lang: String): String {
         val l = lang.lowercase().trim()
         return when {
+            (l.contains("malay") || l == "ms" || l == "msa" || l.contains("melayu")) -> "Malay"
             (l.contains("indonesia") || l == "id" || l == "ind" || l.contains("indo") || l.contains("bahasa")) -> "Indonesian"
-            (l.contains("malay") || l == "ms" || l == "msa") -> "Malay"
             (l.contains("english") || l == "en" || l == "eng") -> "English"
             (l.contains("arabic") || l == "ar") -> "Arabic"
             else -> l.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }

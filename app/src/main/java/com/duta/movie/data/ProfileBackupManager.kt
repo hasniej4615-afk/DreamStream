@@ -19,7 +19,7 @@ data class ProfileBackupData(
     val username: String = "",
     val avatarBase64: String? = null,
     val defaultSubtitleLanguage: String = "Indonesian",
-    val autoSubtitleEnabled: Boolean = true,
+    val autoSubtitleEnabled: Boolean = false,
     val voiceEnhancerMode: Int = 0,
     val mobileLandscapeEnabled: Boolean = false,
     val debugModeEnabled: Boolean = false,
@@ -102,7 +102,7 @@ object ProfileBackupManager {
 
             val settings = root.optJSONObject("settings") ?: JSONObject()
             val defaultSubtitleLang = settings.optString("default_subtitle_language", "Indonesian")
-            val autoSubtitle = settings.optBoolean("auto_subtitle_enabled", true)
+            val autoSubtitle = settings.optBoolean("auto_subtitle_enabled", false)
             val voiceEnhancer = settings.optInt("voice_enhancer_mode", 0)
             val mobileLandscape = settings.optBoolean("mobile_landscape_enabled", false)
             val debugMode = settings.optBoolean("debug_mode_enabled", false)

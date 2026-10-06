@@ -863,7 +863,7 @@ class VideoViewModel @Inject constructor(
     val enabledCategoryPaths: StateFlow<Set<String>> = preferenceManager.enabledCategoryPaths.stateIn(viewModelScope, SharingStarted.Eagerly, PreferenceManager.DEFAULT_ENABLED_CATEGORIES)
     val myList: StateFlow<Set<String>> = videoRepository.myList.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
     val defaultSubtitleLanguage: StateFlow<String> = videoRepository.defaultSubtitleLanguage.stateIn(viewModelScope, SharingStarted.Eagerly, "Indonesian")
-    val isAutoSubtitleEnabled: StateFlow<Boolean> = videoRepository.isAutoSubtitleEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val isAutoSubtitleEnabled: StateFlow<Boolean> = videoRepository.isAutoSubtitleEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val isDebugModeEnabled: StateFlow<Boolean> = preferenceManager.isDebugModeEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val isMobileLandscapeEnabled: StateFlow<Boolean> = preferenceManager.isMobileLandscapeEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val voiceEnhancerMode: StateFlow<Int> = preferenceManager.voiceEnhancerMode.stateIn(viewModelScope, SharingStarted.Eagerly, 0)

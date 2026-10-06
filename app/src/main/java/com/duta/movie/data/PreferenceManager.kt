@@ -274,7 +274,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
     fun verifyPin(input: String, stored: String): Boolean = 
         if (stored.length != 64) input == stored else hashPin(input) == stored
 
-    val isAutoSubtitleEnabled: Flow<Boolean> = context.dataStore.data.map { it[AUTO_SUBTITLE_ENABLED_KEY] ?: true }
+    val isAutoSubtitleEnabled: Flow<Boolean> = context.dataStore.data.map { it[AUTO_SUBTITLE_ENABLED_KEY] ?: false }
 
     suspend fun setAutoSubtitleEnabled(enabled: Boolean) {
         context.dataStore.edit { it[AUTO_SUBTITLE_ENABLED_KEY] = enabled }
@@ -547,7 +547,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         val username = prefs[USER_NICKNAME_KEY] ?: ""
         val avatarBase64 = com.duta.movie.util.AvatarManager.getAvatarBase64(context)
         val defaultSubtitleLang = prefs[DEFAULT_SUBTITLE_LANGUAGE_KEY] ?: "Indonesian"
-        val autoSubtitle = prefs[AUTO_SUBTITLE_ENABLED_KEY] ?: true
+        val autoSubtitle = prefs[AUTO_SUBTITLE_ENABLED_KEY] ?: false
         val voiceEnhancer = prefs[VOICE_ENHANCER_MODE_KEY] ?: 0
         val mobileLandscape = prefs[MOBILE_LANDSCAPE_ENABLED_KEY] ?: false
         val debugMode = prefs[DEBUG_MODE_ENABLED_KEY] ?: false
