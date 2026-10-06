@@ -2,6 +2,7 @@ package com.duta.movie.ui
 import com.duta.movie.R
 
 import android.content.Context
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -65,6 +66,12 @@ class VideoViewModel @Inject constructor(
 
     val userNickname: StateFlow<String> = preferenceManager.userNickname
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    val userAvatarPath: StateFlow<String> = preferenceManager.userAvatarPath
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    val recentlyWatched: StateFlow<List<String>> = preferenceManager.recentlyWatched
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val myCommentIds: StateFlow<Set<String>> = preferenceManager.myCommentIds
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
@@ -1149,6 +1156,86 @@ class VideoViewModel @Inject constructor(
     fun setDebugModeEnabled(enabled: Boolean) { viewModelScope.launch { preferenceManager.setDebugModeEnabled(enabled) } }
     fun setMobileLandscapeEnabled(enabled: Boolean) { viewModelScope.launch { preferenceManager.setMobileLandscapeEnabled(enabled) } }
     fun setVoiceEnhancerMode(mode: Int) { viewModelScope.launch { preferenceManager.setVoiceEnhancerMode(mode) } }
+    fun setUserNickname(nickname: String) { viewModelScope.launch { preferenceManager.setUserNickname(nickname) } }
+    fun setUserAvatarPath(path: String) { viewModelScope.launch { preferenceManager.setUserAvatarPath(path) } }
+
+    fun saveAvatar(sourceUri: Uri): String? {
+        val path = com.duta.movie.util.AvatarManager.saveAvatarFromUri(context, sourceUri)
+        if (path != null) {
+            setUserAvatarPath(path)
+        }
+        return path
+    }
+
+    fun removeAvatar(): Boolean {
+        val success = com.duta.movie.util.AvatarManager.deleteAvatar(context)
+        setUserAvatarPath("")
+        return success
+    }
+
+    fun exportBackupToUri(uri: Uri, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val data = preferenceManager.exportBackupData()
+                val json = com.duta.movie.data.ProfileBackupManager.toJson(data)
+                val success = com.duta.movie.data.ProfileBackupManager.writeToUri(context, uri, json)
+                if (success) {
+                    onResult(true, "Backup saved successfully!")
+                } else {
+                    onResult(false, "Failed to write backup file to selected location.")
+                }
+            } catch (e: Exception) {
+                onResult(false, e.localizedMessage ?: "Export error")
+            }
+        }
+    }
+
+    fun exportBackupToDownloads(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val data = preferenceManager.exportBackupData()
+                val json = com.duta.movie.data.ProfileBackupManager.toJson(data)
+                val file = com.duta.movie.data.ProfileBackupManager.writeToDownloads(context, json)
+                if (file != null && file.exists()) {
+                    onResult(true, file.absolutePath)
+                } else {
+                    onResult(false, "Failed to write backup file to Downloads.")
+                }
+            } catch (e: Exception) {
+                onResult(false, e.localizedMessage ?: "Export error")
+            }
+        }
+    }
+
+    fun importBackupFromUri(uri: Uri, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            try {
+                val json = com.duta.movie.data.ProfileBackupManager.readFromUri(context, uri)
+                if (json.isNullOrBlank()) {
+                    onResult(false, "Selected file is empty or could not be read.")
+                    return@launch
+                }
+                val data = com.duta.movie.data.ProfileBackupManager.fromJson(json)
+                if (data == null) {
+                    onResult(false, "Invalid or corrupted backup file format.")
+                    return@launch
+                }
+                val success = preferenceManager.restoreBackupData(data)
+                if (success) {
+                    onResult(true, "Settings and profile restored successfully!")
+                } else {
+                    onResult(false, "Failed to apply restored settings.")
+                }
+            } catch (e: Exception) {
+                onResult(false, e.localizedMessage ?: "Import error")
+            }
+        }
+    }
+
+    suspend fun getBackupJson(): String {
+        val data = preferenceManager.exportBackupData()
+        return com.duta.movie.data.ProfileBackupManager.toJson(data)
+    }
 
     private val _totalInstallCount = MutableStateFlow<Int?>(null)
     val totalInstallCount: StateFlow<Int?> = _totalInstallCount.asStateFlow()

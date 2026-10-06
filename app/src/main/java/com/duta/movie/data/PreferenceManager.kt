@@ -44,6 +44,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         private val MY_COMMENT_IDS_KEY = stringSetPreferencesKey("my_comment_ids")
         private val MY_RECOMMENDED_VIDEO_IDS_KEY = stringSetPreferencesKey("my_recommended_video_ids")
         private val VOICE_ENHANCER_MODE_KEY = intPreferencesKey("voice_enhancer_mode")
+        private val USER_AVATAR_PATH_KEY = stringPreferencesKey("user_avatar_path")
 
         val DEFAULT_ENABLED_CATEGORIES = setOf(
             "/",
@@ -534,5 +535,112 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
     val voiceEnhancerMode: Flow<Int> = context.dataStore.data.map { it[VOICE_ENHANCER_MODE_KEY] ?: 0 }
     suspend fun setVoiceEnhancerMode(mode: Int) {
         context.dataStore.edit { it[VOICE_ENHANCER_MODE_KEY] = mode }
+    }
+
+    val userAvatarPath: Flow<String> = context.dataStore.data.map { it[USER_AVATAR_PATH_KEY] ?: "" }
+    suspend fun setUserAvatarPath(path: String) {
+        context.dataStore.edit { it[USER_AVATAR_PATH_KEY] = path }
+    }
+
+    suspend fun exportBackupData(): ProfileBackupData {
+        val prefs = context.dataStore.data.first()
+        val username = prefs[USER_NICKNAME_KEY] ?: ""
+        val avatarBase64 = com.duta.movie.util.AvatarManager.getAvatarBase64(context)
+        val defaultSubtitleLang = prefs[DEFAULT_SUBTITLE_LANGUAGE_KEY] ?: "Indonesian"
+        val autoSubtitle = prefs[AUTO_SUBTITLE_ENABLED_KEY] ?: true
+        val voiceEnhancer = prefs[VOICE_ENHANCER_MODE_KEY] ?: 0
+        val mobileLandscape = prefs[MOBILE_LANDSCAPE_ENABLED_KEY] ?: false
+        val debugMode = prefs[DEBUG_MODE_ENABLED_KEY] ?: false
+        val uiSafeArea = prefs[UI_SAFE_AREA_PADDING_KEY] ?: 0
+        val uiHeroOffset = prefs[UI_HERO_HEIGHT_OFFSET_KEY] ?: 0
+        val uiScale = prefs[UI_SCALE_FACTOR_KEY] ?: 1.0f
+        val uiThumbScale = prefs[UI_THUMBNAIL_SCALE_FACTOR_KEY] ?: (if (isTV()) 0.60f else 1.0f)
+        val enabledCategories = prefs[ENABLED_CATEGORIES_KEY] ?: DEFAULT_ENABLED_CATEGORIES
+        val myList = prefs[MY_LIST_KEY] ?: emptySet()
+        val rawWatched = prefs[RECENTLY_WATCHED_KEY] ?: ""
+        val recentlyWatched = if (rawWatched.isNotBlank()) rawWatched.split(",").filter { it.isNotBlank() } else emptyList()
+
+        val progressMap = mutableMapOf<String, Long>()
+        val durationMap = mutableMapOf<String, Long>()
+        for (key in prefs.asMap().keys) {
+            val name = key.name
+            if (name.startsWith("progress_")) {
+                val vid = name.removePrefix("progress_")
+                (prefs[key] as? Long)?.let { progressMap[vid] = it }
+            } else if (name.startsWith("duration_")) {
+                val vid = name.removePrefix("duration_")
+                (prefs[key] as? Long)?.let { durationMap[vid] = it }
+            }
+        }
+
+        return ProfileBackupData(
+            username = username,
+            avatarBase64 = avatarBase64,
+            defaultSubtitleLanguage = defaultSubtitleLang,
+            autoSubtitleEnabled = autoSubtitle,
+            voiceEnhancerMode = voiceEnhancer,
+            mobileLandscapeEnabled = mobileLandscape,
+            debugModeEnabled = debugMode,
+            uiSafeAreaPadding = uiSafeArea,
+            uiHeroHeightOffset = uiHeroOffset,
+            uiScaleFactor = uiScale,
+            uiThumbnailScaleFactor = uiThumbScale,
+            enabledCategories = enabledCategories,
+            myList = myList,
+            recentlyWatched = recentlyWatched,
+            videoProgress = progressMap,
+            videoDuration = durationMap
+        )
+    }
+
+    suspend fun restoreBackupData(data: ProfileBackupData): Boolean {
+        return try {
+            if (!data.avatarBase64.isNullOrBlank()) {
+                val savedPath = com.duta.movie.util.AvatarManager.saveAvatarFromBase64(context, data.avatarBase64)
+                if (savedPath != null) {
+                    context.dataStore.edit { it[USER_AVATAR_PATH_KEY] = savedPath }
+                }
+            }
+
+            context.dataStore.edit { prefs ->
+                if (data.username.isNotBlank()) {
+                    prefs[USER_NICKNAME_KEY] = data.username
+                }
+                prefs[DEFAULT_SUBTITLE_LANGUAGE_KEY] = data.defaultSubtitleLanguage
+                prefs[AUTO_SUBTITLE_ENABLED_KEY] = data.autoSubtitleEnabled
+                prefs[VOICE_ENHANCER_MODE_KEY] = data.voiceEnhancerMode
+                prefs[MOBILE_LANDSCAPE_ENABLED_KEY] = data.mobileLandscapeEnabled
+                prefs[DEBUG_MODE_ENABLED_KEY] = data.debugModeEnabled
+                prefs[UI_SAFE_AREA_PADDING_KEY] = data.uiSafeAreaPadding
+                prefs[UI_HERO_HEIGHT_OFFSET_KEY] = data.uiHeroHeightOffset
+                prefs[UI_SCALE_FACTOR_KEY] = data.uiScaleFactor
+                prefs[UI_THUMBNAIL_SCALE_FACTOR_KEY] = data.uiThumbnailScaleFactor
+
+                if (data.enabledCategories.isNotEmpty()) {
+                    prefs[ENABLED_CATEGORIES_KEY] = data.enabledCategories
+                }
+                if (data.myList.isNotEmpty()) {
+                    val currentMyList = prefs[MY_LIST_KEY] ?: emptySet()
+                    prefs[MY_LIST_KEY] = currentMyList + data.myList
+                }
+                if (data.recentlyWatched.isNotEmpty()) {
+                    val currentRaw = prefs[RECENTLY_WATCHED_KEY] ?: ""
+                    val currentWatched = if (currentRaw.isNotBlank()) currentRaw.split(",").filter { it.isNotBlank() } else emptyList()
+                    val merged = (data.recentlyWatched + currentWatched).distinct().take(100)
+                    prefs[RECENTLY_WATCHED_KEY] = merged.joinToString(",")
+                }
+
+                data.videoProgress.forEach { (vid, prog) ->
+                    prefs[longPreferencesKey("progress_$vid")] = prog
+                }
+                data.videoDuration.forEach { (vid, dur) ->
+                    prefs[longPreferencesKey("duration_$vid")] = dur
+                }
+            }
+            true
+        } catch (e: Exception) {
+            Log.e("PreferenceManager", "Failed to restore backup data", e)
+            false
+        }
     }
 }

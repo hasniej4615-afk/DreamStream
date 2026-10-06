@@ -20,6 +20,16 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.res.stringResource
 import com.duta.movie.R
 import kotlinx.coroutines.launch
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import android.net.Uri
+import java.io.File
+import android.widget.Toast
+import android.content.Intent
+import coil.compose.AsyncImage
+import androidx.compose.ui.layout.ContentScale
+import com.duta.movie.data.ProfileBackupManager
+import com.duta.movie.audio.VoiceEnhancerMode
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -52,6 +62,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.duta.movie.util.CacheManager
 
 enum class SettingsSection(val label: String, val icon: ImageVector) {
+    PROFILE("PROFILE & BACKUP", Icons.Default.AccountCircle),
     LANGUAGE("LANGUAGE / BAHASA", Icons.Default.Translate),
     DISPLAY("DISPLAY & LAYOUT", Icons.Default.Tv),
     SUBTITLES("SUBTITLES", Icons.Default.ClosedCaption),
@@ -78,18 +89,60 @@ fun SettingsScreen(
     val context = LocalContext.current
     val isTV = remember { com.duta.movie.util.DeviceUtils.isTvDevice(context) }
     var selectedSection by remember { 
-        mutableStateOf(
-            if (isTV) 
-                SettingsSection.DISPLAY 
-            else 
-                SettingsSection.SUBTITLES
-        ) 
+        mutableStateOf(SettingsSection.PROFILE) 
     }
     
     val isDebugModeEnabled by viewModel.isDebugModeEnabled.collectAsStateWithLifecycle()
     val defaultSubtitleLanguage by viewModel.defaultSubtitleLanguage.collectAsStateWithLifecycle()
     val installedProviders by viewModel.installedProviders.collectAsStateWithLifecycle()
     val languages = listOf("English", "Indonesian", "Malay", "Japanese", "Chinese", "Thai", "Arabic")
+
+    val userNickname by viewModel.userNickname.collectAsStateWithLifecycle()
+    val userAvatarPath by viewModel.userAvatarPath.collectAsStateWithLifecycle()
+    val myList by viewModel.myList.collectAsStateWithLifecycle()
+    val recentlyWatched by viewModel.recentlyWatched.collectAsStateWithLifecycle()
+    val voiceEnhancerMode by viewModel.voiceEnhancerMode.collectAsStateWithLifecycle()
+
+    var usernameInput by remember(userNickname) { mutableStateOf(userNickname) }
+
+    val photoPickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.GetContent()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            val savedPath = viewModel.saveAvatar(uri)
+            if (savedPath != null) {
+                Toast.makeText(context, context.getString(R.string.avatar_updated_toast), Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val exportBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri: Uri? ->
+        if (uri != null) {
+            viewModel.exportBackupToUri(uri) { success, msg ->
+                if (success) {
+                    Toast.makeText(context, context.getString(R.string.backup_saved_toast, uri.lastPathSegment ?: "File"), Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, context.getString(R.string.backup_failed_toast, msg), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
+
+    val importBackupLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            viewModel.importBackupFromUri(uri) { success, msg ->
+                if (success) {
+                    Toast.makeText(context, context.getString(R.string.restore_success_toast), Toast.LENGTH_LONG).show()
+                } else {
+                    Toast.makeText(context, context.getString(R.string.restore_failed_toast, msg), Toast.LENGTH_LONG).show()
+                }
+            }
+        }
+    }
 
     var showChangelogDialog by remember { mutableStateOf(false) }
     var showProviderDiagnostics by remember { mutableStateOf(false) }
@@ -453,6 +506,251 @@ fun SettingsScreen(
                         contentPadding = PaddingValues(bottom = 96.dp)
                     ) {
                         when (selectedSection) {
+
+                            SettingsSection.PROFILE -> {
+                                // 1. User Profile & Avatar Card
+                                item {
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(16.dp),
+                                        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
+                                    ) {
+                                        Column(modifier = Modifier.padding(20.dp)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(20.dp)
+                                            ) {
+                                                // Avatar Container
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(80.dp)
+                                                        .clip(CircleShape)
+                                                        .background(Color(0xFF2A2A2A))
+                                                        .border(2.dp, Color(0xFFFF5252), CircleShape)
+                                                        .clickable { photoPickerLauncher.launch("image/*") },
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    val avatarFile = remember(userAvatarPath) {
+                                                        if (userAvatarPath.isNotBlank()) File(userAvatarPath) else null
+                                                    }
+                                                    if (avatarFile != null && avatarFile.exists()) {
+                                                        AsyncImage(
+                                                            model = avatarFile,
+                                                            contentDescription = stringResource(R.string.profile_info_title),
+                                                            modifier = Modifier.fillMaxSize().clip(CircleShape),
+                                                            contentScale = ContentScale.Crop
+                                                        )
+                                                    } else {
+                                                        val initial = userNickname.trim().take(1).uppercase()
+                                                        if (initial.isNotBlank()) {
+                                                            Text(
+                                                                text = initial,
+                                                                color = Color.White,
+                                                                fontSize = 32.sp,
+                                                                fontWeight = FontWeight.Bold
+                                                            )
+                                                        } else {
+                                                            Icon(
+                                                                imageVector = Icons.Default.Person,
+                                                                contentDescription = null,
+                                                                tint = Color.LightGray,
+                                                                modifier = Modifier.size(44.dp)
+                                                            )
+                                                        }
+                                                    }
+                                                }
+
+                                                // Username edit and action buttons
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = stringResource(R.string.profile_info_title),
+                                                        color = Color.White,
+                                                        fontSize = 18.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    Text(
+                                                        text = stringResource(R.string.profile_info_desc),
+                                                        color = Color.Gray,
+                                                        fontSize = 12.sp,
+                                                        modifier = Modifier.padding(bottom = 8.dp)
+                                                    )
+
+                                                    Row(
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                    ) {
+                                                        Button(
+                                                            onClick = { photoPickerLauncher.launch("image/*") },
+                                                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333333)),
+                                                            shape = RoundedCornerShape(8.dp),
+                                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                                        ) {
+                                                            Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                            Spacer(modifier = Modifier.width(6.dp))
+                                                            Text(stringResource(R.string.change_avatar), fontSize = 12.sp)
+                                                        }
+
+                                                        if (userAvatarPath.isNotBlank()) {
+                                                            OutlinedButton(
+                                                                onClick = {
+                                                                    viewModel.removeAvatar()
+                                                                    Toast.makeText(context, context.getString(R.string.avatar_removed_toast), Toast.LENGTH_SHORT).show()
+                                                                },
+                                                                shape = RoundedCornerShape(8.dp),
+                                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                                            ) {
+                                                                Text(stringResource(R.string.remove_avatar), color = Color.LightGray, fontSize = 12.sp)
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(16.dp))
+
+                                            // Username TextField & Save Row
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                            ) {
+                                                OutlinedTextField(
+                                                    value = usernameInput,
+                                                    onValueChange = { usernameInput = it },
+                                                    label = { Text(stringResource(R.string.username_label)) },
+                                                    placeholder = { Text(stringResource(R.string.username_placeholder)) },
+                                                    singleLine = true,
+                                                    colors = OutlinedTextFieldDefaults.colors(
+                                                        focusedBorderColor = Color(0xFFFF5252),
+                                                        unfocusedBorderColor = Color.DarkGray,
+                                                        focusedLabelColor = Color(0xFFFF5252)
+                                                    ),
+                                                    modifier = Modifier.weight(1f)
+                                                )
+
+                                                Button(
+                                                    onClick = {
+                                                        viewModel.setUserNickname(usernameInput.trim())
+                                                        Toast.makeText(context, context.getString(R.string.username_saved_toast), Toast.LENGTH_SHORT).show()
+                                                    },
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    modifier = Modifier.height(56.dp)
+                                                ) {
+                                                    Icon(Icons.Default.Check, contentDescription = null)
+                                                    Spacer(modifier = Modifier.width(4.dp))
+                                                    Text(stringResource(R.string.save_username), fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // 2. Quick Overview Stats
+                                item {
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(12.dp),
+                                        colors = CardDefaults.cardColors(containerColor = Color(0xFF141414))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(16.dp),
+                                            horizontalArrangement = Arrangement.SpaceAround,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Text("${myList.size}", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                                Text(stringResource(R.string.stats_bookmarks), color = Color.Gray, fontSize = 12.sp)
+                                            }
+                                            Box(modifier = Modifier.width(1.dp).height(32.dp).background(Color(0xFF2A2A2A)))
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                Text("${recentlyWatched.size}", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                                Text(stringResource(R.string.stats_history), color = Color.Gray, fontSize = 12.sp)
+                                            }
+                                            Box(modifier = Modifier.width(1.dp).height(32.dp).background(Color(0xFF2A2A2A)))
+                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                                val enhancerShort = when (voiceEnhancerMode) {
+                                                    1 -> "+4dB"
+                                                    2 -> "+7dB"
+                                                    3 -> "+10dB"
+                                                    else -> "OFF"
+                                                }
+                                                Text(enhancerShort, color = if (voiceEnhancerMode > 0) Color(0xFFFF5252) else Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+                                                Text(stringResource(R.string.voice_enhancer), color = Color.Gray, fontSize = 12.sp)
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // 3. Backup: Save Settings Anywhere (SAF)
+                                item {
+                                    SettingsActionCard(
+                                        title = stringResource(R.string.backup_settings_title),
+                                        description = stringResource(R.string.backup_settings_desc),
+                                        icon = Icons.Default.Save,
+                                        onClick = {
+                                            exportBackupLauncher.launch(ProfileBackupManager.generateBackupFileName())
+                                        }
+                                    )
+                                }
+
+                                // 4. Quick Save to Downloads (for TV / instant save)
+                                item {
+                                    SettingsActionCard(
+                                        title = stringResource(R.string.save_to_downloads_title),
+                                        description = stringResource(R.string.save_to_downloads_desc),
+                                        icon = Icons.Default.Download,
+                                        onClick = {
+                                            viewModel.exportBackupToDownloads { success, pathOrErr ->
+                                                if (success) {
+                                                    Toast.makeText(context, context.getString(R.string.backup_saved_toast, pathOrErr), Toast.LENGTH_LONG).show()
+                                                } else {
+                                                    Toast.makeText(context, context.getString(R.string.backup_failed_toast, pathOrErr), Toast.LENGTH_LONG).show()
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+
+                                // 5. Restore Settings from Device (SAF)
+                                item {
+                                    SettingsActionCard(
+                                        title = stringResource(R.string.restore_settings_title),
+                                        description = stringResource(R.string.restore_settings_desc),
+                                        icon = Icons.Default.Restore,
+                                        onClick = {
+                                            importBackupLauncher.launch(arrayOf("application/json", "application/octet-stream", "*/*"))
+                                        }
+                                    )
+                                }
+
+                                // 6. Share Backup File
+                                item {
+                                    SettingsActionCard(
+                                        title = stringResource(R.string.share_backup_title),
+                                        description = stringResource(R.string.share_backup_desc),
+                                        icon = Icons.Default.Share,
+                                        onClick = {
+                                            scope.launch {
+                                                try {
+                                                    val json = viewModel.getBackupJson()
+                                                    val sendIntent = Intent().apply {
+                                                        action = Intent.ACTION_SEND
+                                                        putExtra(Intent.EXTRA_TEXT, json)
+                                                        type = "text/plain"
+                                                    }
+                                                    val shareIntent = Intent.createChooser(sendIntent, context.getString(R.string.share_backup_title))
+                                                    shareIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                                    context.startActivity(shareIntent)
+                                                } catch (e: Exception) {
+                                                    Toast.makeText(context, "Share error: ${e.message}", Toast.LENGTH_SHORT).show()
+                                                }
+                                            }
+                                        }
+                                    )
+                                }
+                            }
 
                             SettingsSection.LANGUAGE -> {
                                 item {

@@ -560,4 +560,31 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="voice_enhancer_night_short">Mod Malam</string>
     <string name="voice_enhancer_night_desc">Peningkat dialog maksimum dengan perataan dinamik untuk waktu malam</string>
     <string name="voice_enhancer_toast">Peningkat Suara: %s</string>
+    <!-- Profile & Backup -->
+    <string name="section_profile">PROFIL &amp; SANDARAN</string>
+    <string name="profile_info_title">Profil Pengguna</string>
+    <string name="profile_info_desc">Sesuaikan nama pengguna dan gambar avatar peribadi anda</string>
+    <string name="username_label">Nama Pengguna</string>
+    <string name="username_placeholder">Masukkan nama pengguna</string>
+    <string name="save_username">Simpan</string>
+    <string name="username_saved_toast">Nama pengguna berjaya dikemas kini!</string>
+    <string name="change_avatar">Tukar Gambar</string>
+    <string name="remove_avatar">Padam Gambar</string>
+    <string name="avatar_updated_toast">Gambar profil dikemas kini!</string>
+    <string name="avatar_removed_toast">Gambar profil dipadamkan</string>
+    <string name="stats_title">Gambaran Profil</string>
+    <string name="stats_bookmarks">Senarai Kegemaran</string>
+    <string name="stats_history">Sejarah Tontonan</string>
+    <string name="backup_settings_title">Simpan Tetapan ke Peranti</string>
+    <string name="backup_settings_desc">Eksport semua tetapan, nama pengguna, kegemaran, dan sejarah ke mana-mana lokasi peranti anda</string>
+    <string name="save_to_downloads_title">Simpan Pantas ke Muat Turun</string>
+    <string name="save_to_downloads_desc">Simpan fail sandaran terus ke folder Muat Turun peranti (Disyorkan untuk Android TV)</string>
+    <string name="restore_settings_title">Pulihkan Tetapan dari Peranti</string>
+    <string name="restore_settings_desc">Import fail sandaran (.json) untuk memulihkan profil dan pilihan tetapan anda</string>
+    <string name="share_backup_title">Kongsi Fail Sandaran</string>
+    <string name="share_backup_desc">Hantar konfigurasi sandaran anda ke peranti lain atau simpan ke awan</string>
+    <string name="backup_saved_toast">Sandaran berjaya disimpan: %s</string>
+    <string name="backup_failed_toast">Sandaran gagal: %s</string>
+    <string name="restore_success_toast">Profil dan tetapan berjaya dipulihkan!</string>
+    <string name="restore_failed_toast">Pemulihan gagal: %s</string>
 </resources>

@@ -561,4 +561,31 @@ Tap to re-scout and refresh content</string>
     <string name="voice_enhancer_night_short">Night Mode</string>
     <string name="voice_enhancer_night_desc">Maximum dialogue boost with dynamic leveling for quiet listening</string>
     <string name="voice_enhancer_toast">Voice Enhancer: %s</string>
+    <!-- Profile & Backup -->
+    <string name="section_profile">PROFILE &amp; BACKUP</string>
+    <string name="profile_info_title">User Profile</string>
+    <string name="profile_info_desc">Customize your username and personal avatar photo</string>
+    <string name="username_label">Username</string>
+    <string name="username_placeholder">Enter username</string>
+    <string name="save_username">Save</string>
+    <string name="username_saved_toast">Username updated successfully!</string>
+    <string name="change_avatar">Change Photo</string>
+    <string name="remove_avatar">Remove Photo</string>
+    <string name="avatar_updated_toast">Profile photo updated!</string>
+    <string name="avatar_removed_toast">Profile photo removed</string>
+    <string name="stats_title">Profile Overview</string>
+    <string name="stats_bookmarks">My List Bookmarks</string>
+    <string name="stats_history">Watch History</string>
+    <string name="backup_settings_title">Save Settings to Device</string>
+    <string name="backup_settings_desc">Export all your settings, username, favorites, and watch history anywhere on your device</string>
+    <string name="save_to_downloads_title">Quick Save to Downloads</string>
+    <string name="save_to_downloads_desc">Save a backup file directly to your device Downloads folder (Recommended for Android TV)</string>
+    <string name="restore_settings_title">Restore Settings from Device</string>
+    <string name="restore_settings_desc">Import a previously saved backup file (.json) to restore your profile and preferences</string>
+    <string name="share_backup_title">Share Backup File</string>
+    <string name="share_backup_desc">Send your backup configuration to another device or save to cloud</string>
+    <string name="backup_saved_toast">Backup saved successfully: %s</string>
+    <string name="backup_failed_toast">Backup failed: %s</string>
+    <string name="restore_success_toast">Profile and settings restored successfully!</string>
+    <string name="restore_failed_toast">Restore failed: %s</string>
 </resources>
