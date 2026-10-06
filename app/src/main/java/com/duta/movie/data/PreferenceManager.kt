@@ -274,13 +274,13 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
     fun verifyPin(input: String, stored: String): Boolean = 
         if (stored.length != 64) input == stored else hashPin(input) == stored
 
-    val isAutoSubtitleEnabled: Flow<Boolean> = context.dataStore.data.map { it[AUTO_SUBTITLE_ENABLED_KEY] ?: false }
+    val isAutoSubtitleEnabled: Flow<Boolean> = context.dataStore.data.map { it[AUTO_SUBTITLE_ENABLED_KEY] ?: true }
 
     suspend fun setAutoSubtitleEnabled(enabled: Boolean) {
         context.dataStore.edit { it[AUTO_SUBTITLE_ENABLED_KEY] = enabled }
     }
 
-    val defaultSubtitleLanguage: Flow<String> = context.dataStore.data.map { it[DEFAULT_SUBTITLE_LANGUAGE_KEY] ?: "English" }
+    val defaultSubtitleLanguage: Flow<String> = context.dataStore.data.map { it[DEFAULT_SUBTITLE_LANGUAGE_KEY] ?: "Indonesian" }
 
     suspend fun setDefaultSubtitleLanguage(language: String) {
         context.dataStore.edit { it[DEFAULT_SUBTITLE_LANGUAGE_KEY] = language }
