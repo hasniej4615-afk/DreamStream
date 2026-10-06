@@ -31,7 +31,8 @@ data class ProfileBackupData(
     val myList: Set<String> = emptySet(),
     val recentlyWatched: List<String> = emptyList(),
     val videoProgress: Map<String, Long> = emptyMap(),
-    val videoDuration: Map<String, Long> = emptyMap()
+    val videoDuration: Map<String, Long> = emptyMap(),
+    val subtitleOffsets: Map<String, Long> = emptyMap()
 )
 
 object ProfileBackupManager {
@@ -83,6 +84,10 @@ object ProfileBackupManager {
         val durationObj = JSONObject()
         data.videoDuration.forEach { (k, v) -> durationObj.put(k, v) }
         userData.put("video_duration", durationObj)
+
+        val offsetObj = JSONObject()
+        data.subtitleOffsets.forEach { (k, v) -> offsetObj.put(k, v) }
+        userData.put("subtitle_offsets", offsetObj)
 
         root.put("user_data", userData)
 
@@ -156,6 +161,16 @@ object ProfileBackupManager {
                 }
             }
 
+            val offsetMap = mutableMapOf<String, Long>()
+            val offsetObj = userData.optJSONObject("subtitle_offsets")
+            if (offsetObj != null) {
+                val keys = offsetObj.keys()
+                while (keys.hasNext()) {
+                    val k = keys.next()
+                    offsetMap[k] = offsetObj.optLong(k, 0L)
+                }
+            }
+
             ProfileBackupData(
                 version = version,
                 appVersion = appVersion,
@@ -175,7 +190,8 @@ object ProfileBackupManager {
                 myList = myListSet,
                 recentlyWatched = recentList,
                 videoProgress = progressMap,
-                videoDuration = durationMap
+                videoDuration = durationMap,
+                subtitleOffsets = offsetMap
             )
         } catch (e: Exception) {
             Log.e(TAG, "Failed to parse backup JSON", e)

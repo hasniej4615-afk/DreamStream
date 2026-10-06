@@ -588,4 +588,13 @@ Tap to re-scout and refresh content</string>
     <string name="backup_failed_toast">Backup failed: %s</string>
     <string name="restore_success_toast">Profile and settings restored successfully!</string>
     <string name="restore_failed_toast">Restore failed: %s</string>
+
+    <!-- Subtitle Filter Chips & Local Subtitle -->
+    <string name="filter_all">All</string>
+    <string name="filter_indonesian">Indonesian</string>
+    <string name="filter_english">English</string>
+    <string name="filter_malay">Malay</string>
+    <string name="filter_other">Other</string>
+    <string name="open_local_subtitle">Open from Device</string>
+    <string name="open_local_subtitle_desc">Select a .srt or .vtt subtitle file from device</string>
 </resources>

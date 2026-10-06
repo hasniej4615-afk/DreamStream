@@ -2585,6 +2585,15 @@ class VideoViewModel @Inject constructor(
             }
             _resolvedUrl.value = null
         }
+        if (!isRotation) {
+            viewModelScope.launch {
+                try {
+                    _subtitleOffset.value = preferenceManager.getSubtitleOffset(videoId).first()
+                } catch (_: Exception) {
+                    _subtitleOffset.value = 0L
+                }
+            }
+        }
         backgroundDetailsJob?.cancel()
         prefetchJob?.cancel()
         
@@ -2622,6 +2631,15 @@ class VideoViewModel @Inject constructor(
                 userExplicitlyDismissedSubtitles = false
             }
             _resolvedUrl.value = null // Immediate clear for TV UI to show loading
+        }
+        if (!isRotation) {
+            viewModelScope.launch {
+                try {
+                    _subtitleOffset.value = preferenceManager.getSubtitleOffset(videoId).first()
+                } catch (_: Exception) {
+                    _subtitleOffset.value = 0L
+                }
+            }
         }
         backgroundDetailsJob?.cancel()
         prefetchJob?.cancel()
@@ -3960,9 +3978,86 @@ class VideoViewModel @Inject constructor(
         }
     }
 
-    fun adjustSubtitleOffset(delta: Long) { _subtitleOffset.value += delta }
-    fun setSubtitleOffset(offset: Long) { _subtitleOffset.value = offset }
-    fun resetSubtitleOffset() { _subtitleOffset.value = 0L }
+    fun adjustSubtitleOffset(delta: Long) {
+        val newOffset = _subtitleOffset.value + delta
+        _subtitleOffset.value = newOffset
+        val vid = activeVideoId ?: _videoMetadata.value?.id
+        if (!vid.isNullOrEmpty()) {
+            viewModelScope.launch { preferenceManager.setSubtitleOffset(vid, newOffset) }
+        }
+    }
+
+    fun setSubtitleOffset(offset: Long) {
+        _subtitleOffset.value = offset
+        val vid = activeVideoId ?: _videoMetadata.value?.id
+        if (!vid.isNullOrEmpty()) {
+            viewModelScope.launch { preferenceManager.setSubtitleOffset(vid, offset) }
+        }
+    }
+
+    fun resetSubtitleOffset() {
+        _subtitleOffset.value = 0L
+        val vid = activeVideoId ?: _videoMetadata.value?.id
+        if (!vid.isNullOrEmpty()) {
+            viewModelScope.launch { preferenceManager.setSubtitleOffset(vid, 0L) }
+        }
+    }
+
+    fun loadLocalSubtitle(uri: Uri, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val inputStream = context.contentResolver.openInputStream(uri)
+                if (inputStream == null) {
+                    withContext(Dispatchers.Main) { onResult(false, "Cannot open selected file") }
+                    return@launch
+                }
+                val rawText = inputStream.bufferedReader(Charsets.UTF_8).use { it.readText() }
+                if (rawText.isBlank()) {
+                    withContext(Dispatchers.Main) { onResult(false, "Subtitle file is empty") }
+                    return@launch
+                }
+                val cues = SubtitleParser.parseContent(rawText)
+                if (cues.isEmpty()) {
+                    withContext(Dispatchers.Main) { onResult(false, "No valid subtitle cues found in file") }
+                    return@launch
+                }
+
+                var displayName = "Local Subtitle"
+                try {
+                    context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
+                        val nameIndex = cursor.getColumnIndex(android.provider.OpenableColumns.DISPLAY_NAME)
+                        if (nameIndex != -1 && cursor.moveToFirst()) {
+                            displayName = cursor.getString(nameIndex) ?: displayName
+                        }
+                    }
+                } catch (_: Exception) {}
+
+                val cacheDir = File(context.cacheDir, "subs").apply { if (!exists()) mkdirs() }
+                val ext = if (displayName.endsWith(".vtt", ignoreCase = true)) "vtt" else "srt"
+                val cachedFile = File(cacheDir, "local_${System.currentTimeMillis()}.$ext")
+                cachedFile.writeText(rawText)
+                val localUriStr = "file://${cachedFile.absolutePath}"
+
+                val localSub = Subtitle(
+                    label = "[Device] $displayName",
+                    url = localUriStr,
+                    language = "Custom",
+                    localUri = localUriStr
+                )
+
+                withContext(Dispatchers.Main) {
+                    _subtitleCues.value = cues
+                    _selectedSubtitle.value = localSub
+                    val currentList = _subtitles.value.filter { it.url != localUriStr }
+                    _subtitles.value = listOf(localSub) + currentList
+                    userExplicitlyDismissedSubtitles = false
+                    onResult(true, "Loaded ${cues.size} cues from $displayName")
+                }
+            } catch (e: Exception) {
+                withContext(Dispatchers.Main) { onResult(false, e.localizedMessage ?: "Failed to load subtitle") }
+            }
+        }
+    }
 
     fun selectSubtitle(subtitle: Subtitle?) {
         subResolveJob?.cancel()

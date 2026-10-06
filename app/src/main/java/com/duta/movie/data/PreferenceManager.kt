@@ -542,6 +542,21 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         context.dataStore.edit { it[USER_AVATAR_PATH_KEY] = path }
     }
 
+    fun getSubtitleOffset(videoId: String): Flow<Long> = context.dataStore.data.map {
+        it[longPreferencesKey("sub_offset_$videoId")] ?: 0L
+    }
+
+    suspend fun setSubtitleOffset(videoId: String, offsetMs: Long) {
+        context.dataStore.edit { prefs ->
+            val key = longPreferencesKey("sub_offset_$videoId")
+            if (offsetMs == 0L) {
+                prefs.remove(key)
+            } else {
+                prefs[key] = offsetMs
+            }
+        }
+    }
+
     suspend fun exportBackupData(): ProfileBackupData {
         val prefs = context.dataStore.data.first()
         val username = prefs[USER_NICKNAME_KEY] ?: ""
@@ -562,6 +577,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
 
         val progressMap = mutableMapOf<String, Long>()
         val durationMap = mutableMapOf<String, Long>()
+        val subOffsetMap = mutableMapOf<String, Long>()
         for (key in prefs.asMap().keys) {
             val name = key.name
             if (name.startsWith("progress_")) {
@@ -570,6 +586,9 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
             } else if (name.startsWith("duration_")) {
                 val vid = name.removePrefix("duration_")
                 (prefs[key] as? Long)?.let { durationMap[vid] = it }
+            } else if (name.startsWith("sub_offset_")) {
+                val vid = name.removePrefix("sub_offset_")
+                (prefs[key] as? Long)?.let { subOffsetMap[vid] = it }
             }
         }
 
@@ -589,7 +608,8 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
             myList = myList,
             recentlyWatched = recentlyWatched,
             videoProgress = progressMap,
-            videoDuration = durationMap
+            videoDuration = durationMap,
+            subtitleOffsets = subOffsetMap
         )
     }
 
@@ -635,6 +655,9 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
                 }
                 data.videoDuration.forEach { (vid, dur) ->
                     prefs[longPreferencesKey("duration_$vid")] = dur
+                }
+                data.subtitleOffsets.forEach { (vid, offset) ->
+                    prefs[longPreferencesKey("sub_offset_$vid")] = offset
                 }
             }
             true

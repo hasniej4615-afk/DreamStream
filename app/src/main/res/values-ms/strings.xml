@@ -587,4 +587,13 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="backup_failed_toast">Sandaran gagal: %s</string>
     <string name="restore_success_toast">Profil dan tetapan berjaya dipulihkan!</string>
     <string name="restore_failed_toast">Pemulihan gagal: %s</string>
+
+    <!-- Subtitle Filter Chips & Local Subtitle -->
+    <string name="filter_all">Semua</string>
+    <string name="filter_indonesian">Indonesia</string>
+    <string name="filter_english">Inggeris</string>
+    <string name="filter_malay">Melayu</string>
+    <string name="filter_other">Lain-lain</string>
+    <string name="open_local_subtitle">Buka dari Peranti</string>
+    <string name="open_local_subtitle_desc">Pilih fail sari kata .srt atau .vtt dari peranti</string>
 </resources>

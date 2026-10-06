@@ -23,7 +23,10 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -358,6 +361,18 @@ fun VideoPlayerScreen(
     }
     
     val subFirstItemFocusRequester = remember { FocusRequester() }
+    val localSubtitlePickerLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri: Uri? ->
+        if (uri != null) {
+            viewModel.loadLocalSubtitle(uri) { success, msg ->
+                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                if (success) {
+                    showSubtitleDialog = false
+                }
+            }
+        }
+    }
     LaunchedEffect(showSubtitleDialog) {
         if (showSubtitleDialog) {
             delay(300)
@@ -1985,13 +2000,60 @@ fun VideoPlayerScreen(
                 var subSearchText by remember { mutableStateOf("") }
                 var isSearchFocused by remember { mutableStateOf(false) }
                 var isSearchBtnFocused by remember { mutableStateOf(false) }
+                var isOpenLocalFocused by remember { mutableStateOf(false) }
+                var selectedLanguageFilter by remember { mutableStateOf("All") }
 
-                val filteredSubs = remember(subtitles, subSearchText) {
+                fun getSubtitleCategory(sub: com.duta.movie.model.Subtitle): String {
+                    val norm = com.duta.movie.util.SubtitleExtractor.normalizeLanguage(sub.language)
+                    val normLabel = com.duta.movie.util.SubtitleExtractor.normalizeLanguage(sub.label)
+                    return when {
+                        norm == "Indonesian" || normLabel == "Indonesian" ||
+                        sub.language.contains("indo", ignoreCase = true) || sub.label.contains("indo", ignoreCase = true) ||
+                        sub.language.contains("bahasa", ignoreCase = true) -> "Indonesian"
+                        norm == "English" || normLabel == "English" ||
+                        sub.language.contains("eng", ignoreCase = true) || sub.label.contains("eng", ignoreCase = true) -> "English"
+                        norm == "Malay" || normLabel == "Malay" ||
+                        sub.language.contains("malay", ignoreCase = true) || sub.language.contains("melayu", ignoreCase = true) ||
+                        sub.label.contains("malay", ignoreCase = true) || sub.label.contains("melayu", ignoreCase = true) -> "Malay"
+                        else -> "Other"
+                    }
+                }
+
+                val countAll = subtitles.size
+                val countIndo = remember(subtitles) { subtitles.count { getSubtitleCategory(it) == "Indonesian" } }
+                val countEng = remember(subtitles) { subtitles.count { getSubtitleCategory(it) == "English" } }
+                val countMalay = remember(subtitles) { subtitles.count { getSubtitleCategory(it) == "Malay" } }
+                val countOther = remember(subtitles) { subtitles.count { getSubtitleCategory(it) == "Other" } }
+
+                val chipAllLabel = stringResource(R.string.filter_all)
+                val chipIndoLabel = stringResource(R.string.filter_indonesian)
+                val chipEngLabel = stringResource(R.string.filter_english)
+                val chipMalayLabel = stringResource(R.string.filter_malay)
+                val chipOtherLabel = stringResource(R.string.filter_other)
+
+                val filterChips = remember(subtitles, chipAllLabel, chipIndoLabel, chipEngLabel, chipMalayLabel, chipOtherLabel) {
+                    listOf(
+                        Triple("All", chipAllLabel, countAll),
+                        Triple("Indonesian", chipIndoLabel, countIndo),
+                        Triple("English", chipEngLabel, countEng),
+                        Triple("Malay", chipMalayLabel, countMalay),
+                        Triple("Other", chipOtherLabel, countOther)
+                    )
+                }
+
+                val filteredSubs = remember(subtitles, subSearchText, selectedLanguageFilter) {
+                    val listByLang = when (selectedLanguageFilter) {
+                        "Indonesian" -> subtitles.filter { getSubtitleCategory(it) == "Indonesian" }
+                        "English" -> subtitles.filter { getSubtitleCategory(it) == "English" }
+                        "Malay" -> subtitles.filter { getSubtitleCategory(it) == "Malay" }
+                        "Other" -> subtitles.filter { getSubtitleCategory(it) == "Other" }
+                        else -> subtitles
+                    }
                     val q = subSearchText.trim().lowercase()
-                    if (q.isEmpty()) subtitles
+                    if (q.isEmpty()) listByLang
                     else {
                         val qNorm = q.replace(".", " ").replace("-", " ")
-                        subtitles.filter { sub ->
+                        listByLang.filter { sub ->
                             val labelNorm = sub.label.lowercase().replace(".", " ").replace("-", " ")
                             labelNorm.contains(qNorm) || sub.language.lowercase().contains(q)
                         }
@@ -2008,7 +2070,7 @@ fun VideoPlayerScreen(
                 Column(modifier = Modifier.fillMaxWidth()) {
                     // Search bar row with input and action button
                     Row(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         OutlinedTextField(
@@ -2093,6 +2155,136 @@ fun VideoPlayerScreen(
                         }
                     }
 
+                    // Open Local Subtitle Button
+                    OutlinedButton(
+                        onClick = {
+                            try {
+                                localSubtitlePickerLauncher.launch(arrayOf("*/*"))
+                            } catch (e: Exception) {
+                                Toast.makeText(context, "Cannot open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
+                            }
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(42.dp)
+                            .padding(bottom = 8.dp)
+                            .onFocusChanged { isOpenLocalFocused = it.isFocused }
+                            .onKeyEvent { keyEvent ->
+                                if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                    (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                    try {
+                                        localSubtitlePickerLauncher.launch(arrayOf("*/*"))
+                                    } catch (e: Exception) {
+                                        Toast.makeText(context, "Cannot open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
+                                    }
+                                    true
+                                } else false
+                            }
+                            .focusable()
+                            .border(if (isOpenLocalFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                        shape = RoundedCornerShape(8.dp),
+                        colors = ButtonDefaults.outlinedButtonColors(
+                            containerColor = if (isOpenLocalFocused) Color.White.copy(alpha = 0.25f) else Color(0xFF262626),
+                            contentColor = Color.White
+                        ),
+                        border = BorderStroke(1.dp, if (isOpenLocalFocused) Color.White else Color.White.copy(alpha = 0.2f)),
+                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Add,
+                            contentDescription = null,
+                            tint = if (isOpenLocalFocused) Color.White else Color(0xFFFF5252),
+                            modifier = Modifier.size(18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.open_local_subtitle),
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White
+                        )
+                    }
+
+                    // Language Filter Chips
+                    LazyRow(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        items(filterChips, key = { it.first }) { (key, label, count) ->
+                            var isChipFocused by remember { mutableStateOf(false) }
+                            val isSelected = selectedLanguageFilter == key
+                            Surface(
+                                shape = RoundedCornerShape(16.dp),
+                                color = when {
+                                    isChipFocused -> Color.White
+                                    isSelected -> Color.Red
+                                    else -> Color(0xFF262626)
+                                },
+                                contentColor = when {
+                                    isChipFocused -> Color.Black
+                                    isSelected -> Color.White
+                                    else -> Color.LightGray
+                                },
+                                border = BorderStroke(
+                                    width = if (isChipFocused) 2.dp else if (isSelected) 1.dp else 0.5.dp,
+                                    color = if (isChipFocused) Color.White else if (isSelected) Color.Red else Color.White.copy(alpha = 0.2f)
+                                ),
+                                modifier = Modifier
+                                    .onFocusChanged { isChipFocused = it.isFocused }
+                                    .onKeyEvent { keyEvent ->
+                                        if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                            (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                            selectedLanguageFilter = key
+                                            true
+                                        } else false
+                                    }
+                                    .clickable { selectedLanguageFilter = key }
+                                    .focusable()
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(
+                                        text = label,
+                                        fontSize = 12.sp,
+                                        fontWeight = if (isSelected || isChipFocused) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                    if (count > 0) {
+                                        Spacer(Modifier.width(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = when {
+                                                isChipFocused -> Color.Black.copy(alpha = 0.15f)
+                                                isSelected -> Color.White.copy(alpha = 0.25f)
+                                                else -> Color.White.copy(alpha = 0.1f)
+                                            }
+                                        ) {
+                                            Text(
+                                                text = "$count",
+                                                fontSize = 10.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp),
+                                                color = when {
+                                                    isChipFocused -> Color.Black
+                                                    isSelected -> Color.White
+                                                    else -> Color.LightGray
+                                                }
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     if (isSubtitleLoading) {
                         LinearProgressIndicator(
                             modifier = Modifier
@@ -2170,7 +2362,7 @@ fun VideoPlayerScreen(
                                     Modifier
                                         .fillMaxWidth()
                                         .padding(vertical = 16.dp), 
-                                    contentAlignment = Alignment.Center
+                                     contentAlignment = Alignment.Center
                                 ) { 
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
@@ -2193,7 +2385,7 @@ fun VideoPlayerScreen(
                         } else if (filteredSubs.isEmpty() && subtitles.isNotEmpty()) {
                             item(key = "no_filter_matches") {
                                 Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                                    Text("No matching subtitles found locally.\nPress Search to query online.", color = Color.Gray, fontSize = 12.sp, textAlign = TextAlign.Center)
+                                    Text("No matching subtitles found for this filter.\nPress Search to query online or load from device.", color = Color.Gray, fontSize = 12.sp, textAlign = TextAlign.Center)
                                 }
                             }
                         }
