@@ -358,6 +358,12 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="no_other_sources_found">Tiada sumber alternatif ditemui untuk tajuk ini</string>
     <string name="auto_healed_source">Swapulih %d pelayan cermin alternatif</string>
     <string name="added_multi_provider_alt_sources">Menambah carian silang berbilang penyedia &amp; swapulih automatik: pulih pelayan cermin baharu secara automatik apabila pautan mati atau tamat tempoh.</string>
+    <string name="changelog_v2_0_9">Log Perubahan v2.0.9 Cloud 7</string>
+    <string name="v2_0_9_updates">Kemaskini v2.0.9:</string>
+    <string name="v2_0_9_highlight_1">Penstriman CDN Terus MovieBox Segera: Resolusi latar belakang selari 0ms tanpa lengah untuk strim 1080P/720P pantas MovieBox, menghapuskan kelewatan paparan perincian.</string>
+    <string name="v2_0_9_highlight_2">Pengekalan Pelayan Cermin Selamat: Suntikan pelayan cermin progresif mengekalkan strim pantas yang ditemui tanpa dipadam apabila carian web utama selesai.</string>
+    <string name="v2_0_9_highlight_3">Pemadanan Tajuk Silang Pembekal Dipertingkat: Penyeragaman tahun pintar dan penghuraian token mengelakkan ralat padanan pada tajuk berbilang sumber.</string>
+    <string name="v2_0_9_highlight_4">Paparan Sari Kata &amp; Ketelusan Diperhalusi: Reka bentuk sari kata bersih dengan ketelusan latar belakang dikurangkan serta teks putih berbeza jelas untuk tontonan selesa.</string>
     <string name="changelog_v2_0_8">Log Perubahan v2.0.8 Cloud 7</string>
     <string name="v2_0_8_updates">Kemaskini v2.0.8:</string>
     <string name="v2_0_8_highlight_1">Integrasi Pelbagai Strim MovieBox: Resolusi pelayan cermin merentas pembekal membawakan strim MP4 CDN berkelajuan tinggi (1080P, 720P, 480P, 360P) dengan lencana emas HD.</string>
