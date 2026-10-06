@@ -400,9 +400,10 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         val host = try { android.net.Uri.parse(urlOrHost).host?.lowercase() ?: urlOrHost.lowercase() } catch(_: Exception) { urlOrHost.lowercase() }
         context.dataStore.edit { preferences ->
             val current = preferences[FORCE_WEBVIEW_HOSTS_KEY] ?: emptySet()
-            if (current.contains(host)) {
-                preferences[FORCE_WEBVIEW_HOSTS_KEY] = current - host
-                android.util.Log.i("PreferenceManager", "Startup scrub: removed $host from forceWebViewHosts")
+            val filtered = current.filterNot { it == host || it.contains("cloudfront") || it.contains("rtm") }.toSet()
+            if (filtered.size != current.size) {
+                preferences[FORCE_WEBVIEW_HOSTS_KEY] = filtered
+                android.util.Log.i("PreferenceManager", "Startup scrub: removed $host / cloudfront / rtm from forceWebViewHosts")
             }
         }
     }
@@ -415,6 +416,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
             h.contains("iplayerhls") || h.contains("indostream.lol") || h.contains("archive.org") ||
             h.contains("platformdocumentation") || h.contains("hgcloud") || h.contains("hglink") ||
             h.contains("vidhide") || h.contains("fujihide") ||
+            h.contains("cloudfront.net") || h.contains("rtm") || h.contains("glueapi") ||
             h.endsWith(".m3u8") || h.endsWith(".mp4") || h.contains(".txt") || h.contains("tapecontent")) {
             return false
         }

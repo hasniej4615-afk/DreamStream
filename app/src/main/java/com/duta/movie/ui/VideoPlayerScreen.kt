@@ -1527,6 +1527,25 @@ fun VideoPlayerScreen(
                     pendingRotationContentKey = activeContentKey
                 }
 
+                idleJob?.cancel()
+                idleJob = null
+                val effectiveCurrentServer = viewModel.currentServerUrl.value ?: currentServerUrlFromVm ?: currentServerUrl.value
+
+                if (isLive) {
+                    if (autoRetryCount < 5) {
+                        autoRetryCount++
+                        Log.i("VideoPlayerScreen", "Live TV stream retry ($autoRetryCount) after error: ${error.errorCode} | $message")
+                        playerErrorMessage = "Connecting to live stream (Attempt $autoRetryCount)..."
+                        scope.launch {
+                            delay(2000)
+                            viewModel.playMovie(currentVideoId.value, effectiveCurrentServer, forceReset = true)
+                        }
+                    } else {
+                        playerErrorMessage = "Live TV broadcast currently unavailable. Please try again later."
+                    }
+                    return
+                }
+
                 // Don't blacklist mirrors due to cast errors — cast failures are usually
                 // CORS/header issues on the Chromecast receiver, not actual mirror problems
                 if (!isCasting) {
@@ -1543,10 +1562,6 @@ fun VideoPlayerScreen(
                 val is404 = message.contains("404") || cause.contains("404") || error.errorCode == PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND
                 val is403 = (message.contains("403") || cause.contains("403")) && autoRetryCount == 0
                 val isSourceError = message.contains("Source error") || message.contains("Response code: 4")
-
-                idleJob?.cancel()
-                idleJob = null
-                val effectiveCurrentServer = viewModel.currentServerUrl.value ?: currentServerUrlFromVm ?: currentServerUrl.value
 
                 if (is404) {
                     Log.w("VideoPlayerScreen", "Owl's Eye: 404 Not Found on ExoPlayer. Marking mirror dead & fast-rotating...")

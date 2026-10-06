@@ -283,6 +283,9 @@ class MyLocalTest {
         assertTrue(VideoExtractor.isWhitelistedHost("hgcloud.to"))
         assertTrue(VideoExtractor.isWhitelistedHost("dailymotion.com"))
         assertTrue(VideoExtractor.isWhitelistedHost("204.3.234.75"))
+        assertTrue(VideoExtractor.isWhitelistedHost("d25tgymtnqzu8s.cloudfront.net"))
+        assertTrue(VideoExtractor.isWhitelistedHost("rtmklik.rtm.gov.my"))
+        assertTrue(VideoExtractor.isWhitelistedHost("rtm-images.glueapi.io"))
 
         // Known dead/gate hosts or unknown spam domains must NOT be whitelisted
         org.junit.Assert.assertFalse(VideoExtractor.isWhitelistedHost("tv5.rebahinxxi.auction"))

@@ -138,7 +138,7 @@ object VideoExtractor {
             ?: try { java.net.URI(url).path } catch(_: Throwable) { null }
             ?: ""
         val isBareHost = path.isEmpty() || path == "/"
-        if (isBareHost && isWhitelistedHost(host)) return false
+        if (isWhitelistedHost(host) && (isBareHost || host.contains("cloudfront") || host.contains("rtm") || host.contains("glueapi"))) return false
         val clean = url.trimEnd('/')
         return confirmedDeadMirrors.contains(clean) || confirmedDeadMirrors.contains(url)
     }
@@ -151,7 +151,7 @@ object VideoExtractor {
             ?: try { java.net.URI(url).path } catch(_: Throwable) { null }
             ?: ""
         val isBareHost = path.isEmpty() || path == "/"
-        if (isBareHost && isWhitelistedHost(host)) return
+        if (isWhitelistedHost(host) && (isBareHost || host.contains("cloudfront") || host.contains("rtm") || host.contains("glueapi"))) return
         val clean = url.trimEnd('/')
         confirmedDeadMirrors.add(clean)
         confirmedDeadMirrors.add(url)
@@ -2075,6 +2075,7 @@ object VideoExtractor {
         if (activeBaseHost != null && (low == activeBaseHost || low.contains(activeBaseHost))) return true
         if (pencuriHost != null && (low == pencuriHost || low.contains(pencuriHost))) return true
         if (isClusterSite(low)) return true
+        if (low.contains("cloudfront.net") || low.contains("rtm") || low.contains("glueapi")) return true
         return low.contains("archive.org") || low.contains("pusatfilm") || low.contains("kotakajaib") ||
             low.contains("bullerswood") || low.contains("pencurimovie") || low.contains("pencurifilm") ||
             low.contains("159.89.249.45") || low.contains("dutafilm") || low.contains("mantab.men") || low.contains("df31") ||

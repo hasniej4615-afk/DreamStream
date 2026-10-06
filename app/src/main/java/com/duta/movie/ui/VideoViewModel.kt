@@ -964,7 +964,10 @@ class VideoViewModel @Inject constructor(
                 "faststream.org",
                 "iplayerhls.com",
                 "indostream.lol",
-                "archive.org"
+                "archive.org",
+                "d25tgymtnqzu8s.cloudfront.net",
+                "cloudfront.net",
+                "rtmklik.rtm.gov.my"
             )
             directHostsToScrub.forEach { host ->
                 preferenceManager.removeFromForceWebViewHosts(host)
@@ -2413,6 +2416,13 @@ class VideoViewModel @Inject constructor(
     }
 
     fun notifyMirrorDead(url: String) {
+        val lowUrl = url.lowercase()
+        val currentVid = activeVideoId ?: _videoMetadata.value?.id ?: ""
+        if (lowUrl.contains("cloudfront.net") || lowUrl.contains("rtm") || lowUrl.contains("glueapi") ||
+            (currentVid.isNotEmpty() && com.duta.movie.model.LiveTvCatalog.isLiveVideo(currentVid))) {
+            Log.w("VideoViewModel", "notifyMirrorDead: Ignored for Live TV / CloudFront: $url")
+            return
+        }
         isPlaybackActive = false
         isRotationLocked = false
         val stuckHost = try { android.net.Uri.parse(url).host?.lowercase() ?: java.net.URI(url).host?.lowercase() } catch(_: Throwable) { null }
@@ -2443,7 +2453,7 @@ class VideoViewModel @Inject constructor(
     }
 
     fun purgeServerFromVideo(videoId: String, serverUrl: String) {
-        if (videoId.isEmpty() || serverUrl.isEmpty()) return
+        if (videoId.isEmpty() || serverUrl.isEmpty() || com.duta.movie.model.LiveTvCatalog.isLiveVideo(videoId)) return
         deadMirrors.add(serverUrl)
         hardDeadMirrors.add(serverUrl)
         val host = try { android.net.Uri.parse(serverUrl).host?.lowercase() ?: java.net.URI(serverUrl).host?.lowercase() } catch(_: Throwable) { null }
@@ -4991,7 +5001,15 @@ class VideoViewModel @Inject constructor(
         }
     }
 
-    fun recordExoPlayerFailure(host: String) { viewModelScope.launch(Dispatchers.IO) { preferenceManager.recordHostPlayerFailure(host) } }
+    fun recordExoPlayerFailure(host: String) {
+        val low = host.lowercase()
+        val currentVid = activeVideoId ?: _videoMetadata.value?.id ?: ""
+        if (low.contains("cloudfront.net") || low.contains("rtm") || low.contains("glueapi") ||
+            (currentVid.isNotEmpty() && com.duta.movie.model.LiveTvCatalog.isLiveVideo(currentVid))) {
+            return
+        }
+        viewModelScope.launch(Dispatchers.IO) { preferenceManager.recordHostPlayerFailure(host) }
+    }
 
     fun clearCache() {
         videoRepository.clearAllCaches()

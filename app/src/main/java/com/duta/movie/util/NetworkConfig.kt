@@ -180,6 +180,11 @@ object NetworkConfig {
                 }
                 
                 // Dynamic Mirror Referer Capture
+                if (host.contains("cloudfront") || host.contains("rtm") || host.contains("glueapi")) {
+                    sessionReferers[host] = "https://rtmklik.rtm.gov.my/"
+                    sessionReferers["d25tgymtnqzu8s.cloudfront.net"] = "https://rtmklik.rtm.gov.my/"
+                }
+
                 if (host.contains("cloudwindow")) {
                     sessionReferers["cloudwindow-route.com"] = referer
                     sessionReferers[host] = referer
@@ -405,6 +410,8 @@ object NetworkConfig {
                     builder.header("Referer", "https://dutamovie21.art/")
                 } else if (host.contains("dutamovie21.cam")) {
                     builder.header("Referer", "https://dutamovie21.cam/")
+                } else if (host.contains("cloudfront.net") || host.contains("rtm") || host.contains("glueapi")) {
+                    builder.header("Referer", "https://rtmklik.rtm.gov.my/")
                 } else {
                     builder.header("Referer", "https://$host/")
                 }
@@ -493,6 +500,7 @@ object NetworkConfig {
                 val urlString = request.url.toString()
                 val savedReferer = synchronized(sessionReferers) { 
                     sessionReferers[host] ?: if (host.contains("cloudwindow")) sessionReferers["cloudwindow-route.com"]
+                    else if (host.contains("cloudfront") || host.contains("rtm") || host.contains("glueapi")) "https://rtmklik.rtm.gov.my/"
                     else if (host.contains("dailymotion") || host.contains("cdndirector") || host.contains("dmcdn")) "https://www.dailymotion.com/"
                     else if (host.contains("vidhide") || host.contains("fujihide")) "https://vidhide.org/"
                     else if (host.contains("tnmr.org")) {
@@ -523,6 +531,7 @@ object NetworkConfig {
                 } else null
                 
                 val finalOrigin = originFromReferer ?: when {
+                    host.contains("cloudfront.net") || host.contains("rtm") || host.contains("glueapi") -> "https://rtmklik.rtm.gov.my"
                     host.contains("hgcdn") || host.contains("hgcloud") || host.contains("hanerix") || host.contains("katakatamutiara") -> "https://hgcloud.to"
                     host.contains("abyss") || host.contains("iamcdn") -> "https://abyss.to"
                     host.contains("indostream") || host.contains("morencius") -> "https://iplayerhls.com"
@@ -562,6 +571,9 @@ object NetworkConfig {
                 } else if (host.contains("hakunaymatata") || host.contains("aoneroom")) {
                     requestBuilder.header("Referer", "https://movieboxonline.net/")
                     requestBuilder.header("Origin", "https://movieboxonline.net")
+                } else if (host.contains("cloudfront.net") || host.contains("rtm") || host.contains("glueapi")) {
+                    requestBuilder.header("Referer", currentReferer ?: "https://rtmklik.rtm.gov.my/")
+                    requestBuilder.header("Origin", originFromReferer ?: "https://rtmklik.rtm.gov.my")
                 } else {
                     requestBuilder.header("Origin", finalOrigin)
                     if (currentReferer != null) {
