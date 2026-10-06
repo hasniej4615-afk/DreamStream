@@ -48,6 +48,8 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
@@ -2847,6 +2849,7 @@ fun VideoPlayerContent(
             }
             if (subtitleText.isNotBlank()) {
                 val bottomPadding = if (showControls) 110.dp else 48.dp
+                val subFontSize = if (isTV) 28.sp else if (isLandscape) 22.sp else 17.sp
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -2854,30 +2857,44 @@ fun VideoPlayerContent(
                         .padding(bottom = bottomPadding, start = 24.dp, end = 24.dp),
                     contentAlignment = Alignment.BottomCenter
                 ) {
-                    Surface(
-                        color = Color(0xCC000000), // High contrast 80% black pill backdrop
-                        shape = RoundedCornerShape(6.dp),
+                    Box(
                         modifier = Modifier
-                            .padding(horizontal = 8.dp)
                             .clickable(
                                 interactionSource = remember { MutableInteractionSource() },
                                 indication = null
-                            ) { onVisibilityToggle() }
+                            ) { onVisibilityToggle() },
+                        contentAlignment = Alignment.Center
                     ) {
+                        // Background black stroke outline for high readability against bright scenes without any black background box
+                        Text(
+                            text = subtitleText,
+                            color = Color.Black,
+                            fontSize = subFontSize,
+                            fontWeight = FontWeight.Bold,
+                            textAlign = TextAlign.Center,
+                            style = TextStyle(
+                                drawStyle = Stroke(
+                                    width = if (isTV) 5f else 3.5f,
+                                    join = StrokeJoin.Round
+                                )
+                            ),
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        )
+                        // Foreground clean pure white subtitle text
                         Text(
                             text = subtitleText,
                             color = Color.White,
-                            fontSize = if (isTV) 28.sp else if (isLandscape) 22.sp else 17.sp,
-                            fontWeight = FontWeight.SemiBold,
+                            fontSize = subFontSize,
+                            fontWeight = FontWeight.Bold,
                             textAlign = TextAlign.Center,
                             style = TextStyle(
                                 shadow = Shadow(
-                                    color = Color.Black,
-                                    offset = Offset(2f, 2f),
-                                    blurRadius = 4f
+                                    color = Color.Black.copy(alpha = 0.8f),
+                                    offset = Offset(1.5f, 1.5f),
+                                    blurRadius = 3f
                                 )
                             ),
-                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                         )
                     }
                 }
