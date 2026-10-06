@@ -47,6 +47,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         private val USER_AVATAR_PATH_KEY = stringPreferencesKey("user_avatar_path")
 
         val DEFAULT_ENABLED_CATEGORIES = setOf(
+            "/live-tv/",
             "/",
             "/movies/",
             "/series/",

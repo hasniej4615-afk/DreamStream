@@ -102,7 +102,12 @@ class VideoRepository @Inject constructor(
 
     fun getCachedVideo(id: String): Video? = videoCache[id]
     
-    suspend fun getVideo(id: String): Video? = videoCache[id] ?: videoDao.getVideoById(id)?.toDomain()?.also { videoCache[id] = it }
+    suspend fun getVideo(id: String): Video? {
+        if (com.duta.movie.model.LiveTvCatalog.isLiveVideo(id)) {
+            return com.duta.movie.model.LiveTvCatalog.getChannelById(id)
+        }
+        return videoCache[id] ?: videoDao.getVideoById(id)?.toDomain()?.also { videoCache[id] = it }
+    }
     
     suspend fun updateVideoInDb(video: Video) {
         // Smart RAM Guard: Prevent repository cache from bloating
@@ -120,6 +125,9 @@ class VideoRepository @Inject constructor(
     }
 
     suspend fun getCachedVideosByCategory(cat: String): List<Video> {
+        if (cat == "/live-tv/" || cat == "live-tv" || cat.equals("LIVE TV", ignoreCase = true) || cat.startsWith("/live-tv")) {
+            return com.duta.movie.model.LiveTvCatalog.channels
+        }
         val cached = videoDao.getCachedVideosByCategory(cat).map { it.toDomain().also { v -> videoCache[v.id] = v } }
         val needsHealing = cached.filter { !VideoExtractor.isValidImageUrl(it.thumbnailUrl) && !VideoExtractor.isValidImageUrl(it.backdropUrl) }
         if (needsHealing.isNotEmpty() && !isPlaybackActive()) {
@@ -139,6 +147,9 @@ class VideoRepository @Inject constructor(
     }
 
     suspend fun fetchVideosBySection(cat: String, page: Int, count: Int): List<Video> = coroutineScope {
+        if (cat == "/live-tv/" || cat == "live-tv" || cat.equals("LIVE TV", ignoreCase = true) || cat.startsWith("/live-tv")) {
+            return@coroutineScope com.duta.movie.model.LiveTvCatalog.channels
+        }
         val extractorDeferred = async(Dispatchers.IO) {
             try {
                 VideoExtractor.fetchVideosBySection(cat, page, count)
@@ -239,6 +250,9 @@ class VideoRepository @Inject constructor(
     }
 
     suspend fun getCachedOrDbVideo(videoId: String): Video? = withContext(Dispatchers.IO) {
+        if (com.duta.movie.model.LiveTvCatalog.isLiveVideo(videoId)) {
+            return@withContext com.duta.movie.model.LiveTvCatalog.getChannelById(videoId)
+        }
         val v = videoCache[videoId] ?: videoDao.getVideoById(videoId)?.toDomain()
         if (v != null) {
             val verified = VideoExtractor.getVerifiedPoster(v.title, v.id)
@@ -254,6 +268,13 @@ class VideoRepository @Inject constructor(
 
     suspend fun fetchVideoDetails(videoId: String): Video? = withContext(Dispatchers.IO) {
         try {
+            if (com.duta.movie.model.LiveTvCatalog.isLiveVideo(videoId)) {
+                val liveChan = com.duta.movie.model.LiveTvCatalog.getChannelById(videoId)
+                if (liveChan != null) {
+                    videoCache[videoId] = liveChan
+                    return@withContext liveChan
+                }
+            }
             var video = videoCache[videoId] ?: videoDao.getVideoById(videoId)?.toDomain()
             if (video != null) {
                 val verified = VideoExtractor.getVerifiedPoster(video.title, video.id)

@@ -544,6 +544,7 @@ class VideoViewModel @Inject constructor(
 
     companion object {
         val CURATED_CORE_ORDER = listOf(
+            "/live-tv/",
             "/",
             "/movies/",
             "/series/",
@@ -605,8 +606,8 @@ class VideoViewModel @Inject constructor(
             val lowName = name.trim().lowercase()
 
             return when {
-                normPath == "/" || lowPath.contains("/movie") || lowPath.contains("/series") || lowPath.contains("/serial-tv") || lowPath.contains("/tv") || lowPath.contains("box-office") || lowPath.contains("top-imdb") || lowPath.contains("most-viewed") ||
-                lowName in listOf("newly updated", "movies", "movie", "tv series", "serial tv", "series", "box-office", "top imdb", "most viewed") -> CategoryGroup.CORE
+                normPath == "/live-tv/" || lowPath.contains("live-tv") || lowName == "live tv" || normPath == "/" || lowPath.contains("/movie") || lowPath.contains("/series") || lowPath.contains("/serial-tv") || lowPath.contains("/tv") || lowPath.contains("box-office") || lowPath.contains("top-imdb") || lowPath.contains("most-viewed") ||
+                lowName in listOf("live tv", "newly updated", "movies", "movie", "tv series", "serial tv", "series", "box-office", "top imdb", "most viewed") -> CategoryGroup.CORE
 
                 lowPath.startsWith("/country/") || lowPath.contains("bullerswood") || lowPath.contains("lk21") || lowPath.contains("dutafilm") ||
                 lowName in listOf("malaysia", "viet nam", "vietnam", "indonesia", "indonesian", "lk21", "layarkaca21", "bullerswood", "dutafilm", "korea", "south korea", "thailand", "japan", "china", "hong kong", "india", "usa", "united states", "united kingdom", "uk", "australia", "canada", "france", "germany", "italy", "philippines", "spain", "taiwan", "russia", "netherlands") -> CategoryGroup.REGIONAL
@@ -632,11 +633,12 @@ class VideoViewModel @Inject constructor(
                     val idx = CURATED_CORE_ORDER.indexOf(normPath)
                     if (idx != -1) idx else {
                         when {
-                            lowName.contains("newly") || normPath == "/" -> 0
-                            lowName.contains("movie") || normPath.contains("/movie") -> 1
-                            lowName.contains("series") || lowName.contains("serial") || normPath.contains("/series") -> 2
-                            lowName.contains("imdb") || normPath.contains("imdb") -> 3
-                            lowName.contains("viewed") || normPath.contains("viewed") -> 4
+                            lowName.contains("live") || normPath.contains("live") -> 0
+                            lowName.contains("newly") || normPath == "/" -> 1
+                            lowName.contains("movie") || normPath.contains("/movie") -> 2
+                            lowName.contains("series") || lowName.contains("serial") || normPath.contains("/series") -> 3
+                            lowName.contains("imdb") || normPath.contains("imdb") -> 4
+                            lowName.contains("viewed") || normPath.contains("viewed") -> 5
                             else -> 100
                         }
                     }
@@ -886,6 +888,7 @@ class VideoViewModel @Inject constructor(
         cleanDeadMirrors()
         com.duta.movie.util.SubtitleExtractor.init(context)
         val defaultCategories = listOf(
+            mapOf("name" to "LIVE TV", "path" to "/live-tv/"),
             mapOf("name" to "Newly Updated", "path" to "/"),
             mapOf("name" to "Movies", "path" to moviePath),
             mapOf("name" to "TV Series", "path" to seriesPath),
@@ -2846,7 +2849,22 @@ class VideoViewModel @Inject constructor(
         }
         
         try {
-                var video = _videoMetadata.value?.takeIf { it.id == videoId } ?: getVideo(videoId)
+            if (com.duta.movie.model.LiveTvCatalog.isLiveVideo(videoId)) {
+                val liveCh = com.duta.movie.model.LiveTvCatalog.getChannelById(videoId)
+                val streamUrl = serverUrl?.takeIf { it.isNotBlank() } ?: liveCh?.videoUrl ?: ""
+                if (streamUrl.isNotBlank() && liveCh != null) {
+                    withContext(Dispatchers.Main) {
+                        _videoMetadata.value = liveCh
+                        _currentServerUrl.value = streamUrl
+                        _resolvedUrl.value = streamUrl
+                        _isResolving.value = false
+                        _error.value = null
+                    }
+                    return
+                }
+            }
+
+            var video = _videoMetadata.value?.takeIf { it.id == videoId } ?: getVideo(videoId)
                 if (video == null || (video.servers.isEmpty() && !videoId.startsWith("yt_") && !videoId.startsWith("bili_") && !videoId.startsWith("dm_"))) {
                     val fresh = videoRepository.fetchVideoDetails(videoId)
                     if (fresh != null && fresh.servers.isNotEmpty()) {
@@ -3892,6 +3910,8 @@ class VideoViewModel @Inject constructor(
     }
 
     fun fetchSubtitles(title: String, isTV: Boolean = false) {
+        val currentId = _videoMetadata.value?.id ?: ""
+        if (com.duta.movie.model.LiveTvCatalog.isLiveVideo(currentId)) return
         val curEp = _currentEpisode.value
         val effectiveTitle = if (curEp != null && (isTV || _videoMetadata.value?.isSeries == true)) {
             val epName = curEp.name.trim()
@@ -3944,6 +3964,8 @@ class VideoViewModel @Inject constructor(
         get() = lastSubtitleSearchTitle ?: ""
 
     fun searchSubtitles(customQuery: String) {
+        val currentId = _videoMetadata.value?.id ?: ""
+        if (com.duta.movie.model.LiveTvCatalog.isLiveVideo(currentId)) return
         val rawQ = customQuery.trim()
         if (rawQ.isBlank()) return
         val curEp = _currentEpisode.value
@@ -4196,6 +4218,10 @@ class VideoViewModel @Inject constructor(
     }
 
     fun fetchVideosForCategoryRow(category: String, count: Int = 50) {
+        if (category == "/live-tv/" || category == "live-tv" || category.equals("LIVE TV", ignoreCase = true) || category.startsWith("/live-tv")) {
+            _categoryVideos.update { it + (category to com.duta.movie.model.LiveTvCatalog.channels) }
+            return
+        }
         if (_categoryLoading.value[category] == true || _isPlayerActive.value || _isDetailScreenActive.value) return
         if (!inFlightCategories.add(category)) return
         val job = viewModelScope.launch {

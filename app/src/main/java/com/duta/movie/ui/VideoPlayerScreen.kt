@@ -448,6 +448,10 @@ fun VideoPlayerScreen(
         com.duta.movie.util.VideoExtractor.isPencuriMovie(videoId = videoId, videoUrl = video?.videoUrl, streamUrl = extractedUrl)
     }
 
+    val isLive = remember(videoId, video?.duration) {
+        com.duta.movie.model.LiveTvCatalog.isLiveVideo(videoId) || video?.duration == "LIVE"
+    }
+
     val isYouTube = remember(extractedUrl) {
         extractedUrl?.let { it.contains("youtube") || it.contains("youtu.be") } ?: false
     }
@@ -858,7 +862,7 @@ fun VideoPlayerScreen(
                     }
                 } else {
                     stallCount = 0
-                    if ((isPlayingOrBuffering || isProgressing) && (duration > 0 || duration == androidx.media3.common.C.TIME_UNSET)) {
+                    if (!isLive && (isPlayingOrBuffering || isProgressing) && (duration > 0 || duration == androidx.media3.common.C.TIME_UNSET)) {
                         viewModel.saveVideoProgress(videoId, currentPos, duration, currentEpUrl)
                     }
                 }
@@ -2957,6 +2961,9 @@ fun VideoPlayerContent(
     onVoiceEnhancerSelect: ((Int) -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val isLive = remember(videoId, video?.duration) {
+        com.duta.movie.model.LiveTvCatalog.isLiveVideo(videoId) || video?.duration == "LIVE"
+    }
     val isYouTube = remember(extractedUrl) {
         extractedUrl?.let { it.contains("youtube") || it.contains("youtu.be") } ?: false
     }
@@ -3427,6 +3434,7 @@ fun VideoPlayerContent(
                 onFullscreenToggle = onFullscreenToggle, 
                 isFullscreen = isFullscreen, 
                 title = video?.title ?: "",
+                isLive = isLive,
                 modifier = Modifier.onFocusChanged { focusState -> onControlFocusChange(focusState.hasFocus) },
                 onServerListClick = onServerListClick, 
                 onSubtitleClick = onSubtitleClick, 

@@ -74,6 +74,7 @@ fun PlayerControls(
     onPlayPauseFocusChange: (Boolean) -> Unit = {},
     fallbackDurationMs: Long = 0L,
     isTV: Boolean = false,
+    isLive: Boolean = false,
     resizeMode: Int = 0,
     onResizeModeToggle: (() -> Unit)? = null,
     audioBoostLevel: Int = 0,
@@ -146,17 +147,47 @@ fun PlayerControls(
                             )
                         }
                     }
-                    Text(
-                        text = title,
-                        color = Color.White,
-                        fontSize = if (isTV) 24.sp else 20.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.weight(1f).padding(horizontal = 24.dp)
-                    )
+                    ) {
+                        Text(
+                            text = title,
+                            color = Color.White,
+                            fontSize = if (isTV) 24.sp else 20.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            modifier = Modifier.weight(1f, fill = false)
+                        )
+                        if (isLive) {
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Surface(
+                                color = Color(0xFFE50914),
+                                shape = RoundedCornerShape(4.dp)
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(7.dp)
+                                            .background(Color.White, CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(5.dp))
+                                    Text(
+                                        text = "LIVE",
+                                        color = Color.White,
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.ExtraBold
+                                    )
+                                }
+                            }
+                        }
+                    }
 
                     // Playback Speed button
-                    if (onSpeedSelect != null) {
+                    if (onSpeedSelect != null && !isLive) {
                         var isSpeedFocused by remember { mutableStateOf(false) }
                         val speedScale by animateFloatAsState(if (isSpeedFocused) 1.2f else 1f)
                         IconButton(
@@ -292,7 +323,7 @@ fun PlayerControls(
                         }
                     }
 
-                    if (onSubtitleClick != null) {
+                    if (onSubtitleClick != null && !isLive) {
                         var isSubFocused by remember { mutableStateOf(false) }
                         val subScale by animateFloatAsState(if (isSubFocused) 1.2f else 1f)
                         IconButton(
@@ -308,7 +339,7 @@ fun PlayerControls(
                         }
                     }
                     
-                    if (onSyncClick != null) {
+                    if (onSyncClick != null && !isLive) {
                         var isSyncFocused by remember { mutableStateOf(false) }
                         val syncScale by animateFloatAsState(if (isSyncFocused) 1.2f else 1f)
                         IconButton(
@@ -411,12 +442,14 @@ fun PlayerControls(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(48.dp)
                 ) {
-                    ControlIcon(
-                        icon = Icons.Default.Replay10, 
-                        contentDescription = "Skip Back 10s",
-                        modifier = Modifier.size(if (isTV) 64.dp else 56.dp)
-                    ) {
-                        player?.seekTo((player.currentPosition - 10000).coerceAtLeast(0))
+                    if (!isLive) {
+                        ControlIcon(
+                            icon = Icons.Default.Replay10, 
+                            contentDescription = "Skip Back 10s",
+                            modifier = Modifier.size(if (isTV) 64.dp else 56.dp)
+                        ) {
+                            player?.seekTo((player.currentPosition - 10000).coerceAtLeast(0))
+                        }
                     }
 
                     IconButton(
@@ -440,15 +473,17 @@ fun PlayerControls(
                         )
                     }
 
-                    ControlIcon(
-                        icon = Icons.Default.Forward10, 
-                        contentDescription = "Skip Forward 10s",
-                        modifier = Modifier.size(if (isTV) 64.dp else 56.dp)
-                    ) {
-                        player?.seekTo((player.currentPosition + 10000).coerceAtMost(duration))
+                    if (!isLive) {
+                        ControlIcon(
+                            icon = Icons.Default.Forward10, 
+                            contentDescription = "Skip Forward 10s",
+                            modifier = Modifier.size(if (isTV) 64.dp else 56.dp)
+                        ) {
+                            player?.seekTo((player.currentPosition + 10000).coerceAtMost(duration))
+                        }
                     }
 
-                    if (onNextEpisodeClick != null) {
+                    if (onNextEpisodeClick != null && !isLive) {
                         var isNextFocused by remember { mutableStateOf(false) }
                         val nextScale by animateFloatAsState(if (isNextFocused) 1.2f else 1f)
                         Button(
@@ -485,117 +520,151 @@ fun PlayerControls(
                         .navigationBarsPadding()
                         .padding(horizontal = if (isTV) 28.dp else 16.dp, vertical = if (isTV) 16.dp else 8.dp)
                 ) {
-                    var isSliderFocused by remember { mutableStateOf(false) }
-                    var scrubbingFraction by remember { mutableStateOf<Float?>(null) }
-                    var isScrubbingActive by remember { mutableStateOf(false) }
-                    var pendingSeekJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
-                    val scope = rememberCoroutineScope()
+                    if (isLive) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(vertical = 12.dp),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Surface(
+                                color = Color(0xFFE50914).copy(alpha = 0.9f),
+                                shape = RoundedCornerShape(16.dp),
+                                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.4f))
+                            ) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                                ) {
+                                    Box(
+                                        modifier = Modifier
+                                            .size(8.dp)
+                                            .background(Color.White, CircleShape)
+                                    )
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text(
+                                        text = "SIARAN LANGSUNG ● LIVE",
+                                        color = Color.White,
+                                        fontSize = if (isTV) 15.sp else 12.sp,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+                            }
+                        }
+                    } else {
+                        var isSliderFocused by remember { mutableStateOf(false) }
+                        var scrubbingFraction by remember { mutableStateOf<Float?>(null) }
+                        var isScrubbingActive by remember { mutableStateOf(false) }
+                        var pendingSeekJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+                        val scope = rememberCoroutineScope()
 
-                    // Automatically clear scrubbingFraction once player catches up to target position
-                    LaunchedEffect(currentPosition) {
-                        if (!isScrubbingActive && scrubbingFraction != null) {
-                            val targetPos = (scrubbingFraction!! * duration).toLong()
-                            if (Math.abs(currentPosition - targetPos) < 2500L) {
+                        // Automatically clear scrubbingFraction once player catches up to target position
+                        LaunchedEffect(currentPosition) {
+                            if (!isScrubbingActive && scrubbingFraction != null) {
+                                val targetPos = (scrubbingFraction!! * duration).toLong()
+                                if (Math.abs(currentPosition - targetPos) < 2500L) {
+                                    scrubbingFraction = null
+                                }
+                            }
+                        }
+
+                        val executeSeek = { targetFraction: Float ->
+                            val clampedFraction = targetFraction.coerceIn(0f, 1f)
+                            scrubbingFraction = clampedFraction
+                            isScrubbingActive = true
+                            pendingSeekJob?.cancel()
+                            pendingSeekJob = scope.launch {
+                                delay(350)
+                                val targetMs = (clampedFraction * duration).toLong().coerceIn(0L, duration)
+                                player?.seekTo(targetMs)
+                                delay(600)
+                                isScrubbingActive = false
                                 scrubbingFraction = null
                             }
                         }
-                    }
 
-                    val executeSeek = { targetFraction: Float ->
-                        val clampedFraction = targetFraction.coerceIn(0f, 1f)
-                        scrubbingFraction = clampedFraction
-                        isScrubbingActive = true
-                        pendingSeekJob?.cancel()
-                        pendingSeekJob = scope.launch {
-                            delay(350)
-                            val targetMs = (clampedFraction * duration).toLong().coerceIn(0L, duration)
-                            player?.seekTo(targetMs)
-                            delay(600)
-                            isScrubbingActive = false
-                            scrubbingFraction = null
-                        }
-                    }
+                        val currentFraction = if (duration > 0L) (currentPosition.toFloat() / duration).coerceIn(0f, 1f) else 0f
+                        val displayFraction = scrubbingFraction ?: currentFraction
+                        val displayTimeMs = if (scrubbingFraction != null) (scrubbingFraction!! * duration).toLong() else currentPosition
 
-                    val currentFraction = if (duration > 0L) (currentPosition.toFloat() / duration).coerceIn(0f, 1f) else 0f
-                    val displayFraction = scrubbingFraction ?: currentFraction
-                    val displayTimeMs = if (scrubbingFraction != null) (scrubbingFraction!! * duration).toLong() else currentPosition
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = formatTime(displayTimeMs), 
-                            color = if (scrubbingFraction != null) Color(0xFFFFCC00) else Color.White, 
-                            fontSize = if (isTV) 18.sp else 14.sp,
-                            fontWeight = if (scrubbingFraction != null) FontWeight.Bold else FontWeight.Normal
-                        )
-
-                        Slider(
-                            value = displayFraction,
-                            onValueChange = { frac ->
-                                isScrubbingActive = true
-                                scrubbingFraction = frac
-                            },
-                            onValueChangeFinished = {
-                                scrubbingFraction?.let { executeSeek(it) }
-                            },
-                            modifier = Modifier
-                                .weight(1f)
-                                .padding(horizontal = 16.dp)
-                                .onFocusChanged { isSliderFocused = it.isFocused }
-                                .scale(if (isSliderFocused) 1.04f else 1f)
-                                .onPreviewKeyEvent { event ->
-                                    if (event.key == Key.DirectionRight || event.key == Key.DirectionLeft) {
-                                        if (event.type == KeyEventType.KeyDown) {
-                                            isScrubbingActive = true
-                                            val stepMs = if (isTV) {
-                                                when {
-                                                    duration > 45 * 60 * 1000L -> 60_000L // 1 min for full movies
-                                                    duration > 15 * 60 * 1000L -> 30_000L // 30s for medium videos
-                                                    else -> 10_000L // 10s for short videos
-                                                }
-                                            } else {
-                                                10_000L
-                                            }
-                                            val stepFraction = if (duration > 0L) (stepMs.toFloat() / duration).coerceAtLeast(0.002f) else 0.05f
-                                            val current = scrubbingFraction ?: currentFraction
-                                            val nextFraction = if (event.key == Key.DirectionRight) {
-                                                (current + stepFraction).coerceIn(0f, 1f)
-                                            } else {
-                                                (current - stepFraction).coerceIn(0f, 1f)
-                                            }
-                                            executeSeek(nextFraction)
-                                        }
-                                        true
-                                    } else if ((event.key == Key.DirectionCenter || event.key == Key.Enter) && event.type == KeyEventType.KeyDown) {
-                                        scrubbingFraction?.let { frac: Float ->
-                                            pendingSeekJob?.cancel()
-                                            val targetMs = (frac * duration).toLong().coerceIn(0L, duration)
-                                            player?.seekTo(targetMs)
-                                            scope.launch {
-                                                delay(500)
-                                                isScrubbingActive = false
-                                                scrubbingFraction = null
-                                            }
-                                        }
-                                        true
-                                    } else {
-                                        false
-                                    }
-                                },
-                            colors = SliderDefaults.colors(
-                                thumbColor = if (isSliderFocused || isScrubbingActive) Color.White else Color.Red,
-                                activeTrackColor = Color.Red,
-                                inactiveTrackColor = Color.Gray.copy(alpha = 0.5f)
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = formatTime(displayTimeMs), 
+                                color = if (scrubbingFraction != null) Color(0xFFFFCC00) else Color.White, 
+                                fontSize = if (isTV) 18.sp else 14.sp,
+                                fontWeight = if (scrubbingFraction != null) FontWeight.Bold else FontWeight.Normal
                             )
-                        )
-                        Text(
-                            text = formatTime(duration), 
-                            color = Color.White, 
-                            fontSize = if (isTV) 18.sp else 14.sp
-                        )
+
+                            Slider(
+                                value = displayFraction,
+                                onValueChange = { frac ->
+                                    isScrubbingActive = true
+                                    scrubbingFraction = frac
+                                },
+                                onValueChangeFinished = {
+                                    scrubbingFraction?.let { executeSeek(it) }
+                                },
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .padding(horizontal = 16.dp)
+                                    .onFocusChanged { isSliderFocused = it.isFocused }
+                                    .scale(if (isSliderFocused) 1.04f else 1f)
+                                    .onPreviewKeyEvent { event ->
+                                        if (event.key == Key.DirectionRight || event.key == Key.DirectionLeft) {
+                                            if (event.type == KeyEventType.KeyDown) {
+                                                isScrubbingActive = true
+                                                val stepMs = if (isTV) {
+                                                    when {
+                                                        duration > 45 * 60 * 1000L -> 60_000L // 1 min for full movies
+                                                        duration > 15 * 60 * 1000L -> 30_000L // 30s for medium videos
+                                                        else -> 10_000L // 10s for short videos
+                                                    }
+                                                } else {
+                                                    10_000L
+                                                }
+                                                val stepFraction = if (duration > 0L) (stepMs.toFloat() / duration).coerceAtLeast(0.002f) else 0.05f
+                                                val current = scrubbingFraction ?: currentFraction
+                                                val nextFraction = if (event.key == Key.DirectionRight) {
+                                                    (current + stepFraction).coerceIn(0f, 1f)
+                                                } else {
+                                                    (current - stepFraction).coerceIn(0f, 1f)
+                                                }
+                                                executeSeek(nextFraction)
+                                            }
+                                            true
+                                        } else if ((event.key == Key.DirectionCenter || event.key == Key.Enter) && event.type == KeyEventType.KeyDown) {
+                                            scrubbingFraction?.let { frac: Float ->
+                                                pendingSeekJob?.cancel()
+                                                val targetMs = (frac * duration).toLong().coerceIn(0L, duration)
+                                                player?.seekTo(targetMs)
+                                                scope.launch {
+                                                    delay(500)
+                                                    isScrubbingActive = false
+                                                    scrubbingFraction = null
+                                                }
+                                            }
+                                            true
+                                        } else {
+                                            false
+                                        }
+                                    },
+                                colors = SliderDefaults.colors(
+                                    thumbColor = if (isSliderFocused || isScrubbingActive) Color.White else Color.Red,
+                                    activeTrackColor = Color.Red,
+                                    inactiveTrackColor = Color.Gray.copy(alpha = 0.5f)
+                                )
+                            )
+                            Text(
+                                text = formatTime(duration), 
+                                color = Color.White, 
+                                fontSize = if (isTV) 18.sp else 14.sp
+                            )
+                        }
                     }
                 }
             }

@@ -422,6 +422,15 @@ class MainActivity : AppCompatActivity() {
                                 }
                             }
 
+                            val onAppVideoClick: (String) -> Unit = { id ->
+                                if (com.duta.movie.model.LiveTvCatalog.isLiveVideo(id)) {
+                                    val ch = com.duta.movie.model.LiveTvCatalog.getChannelById(id)
+                                    navController.navigate(Destination.Player(id, ch?.videoUrl))
+                                } else {
+                                    navController.navigate(Destination.VideoDetail(id))
+                                }
+                            }
+
                             NavHost(
                                 navController = navController,
                                 startDestination = Destination.Home,
@@ -440,7 +449,7 @@ class MainActivity : AppCompatActivity() {
                                     VideoListScreen(
                                         viewModel = videoViewModel,
                                         windowSizeClass = windowSizeClass,
-                                        onVideoClick = { navController.navigate(Destination.VideoDetail(it)) },
+                                        onVideoClick = onAppVideoClick,
                                         onSettingsClick = { navController.navigate(Destination.Settings) }
                                     )
                                 }
@@ -451,7 +460,7 @@ class MainActivity : AppCompatActivity() {
                                         viewModel = videoViewModel,
                                         windowSizeClass = windowSizeClass,
                                         onBackClick = { navController.popBackStack() },
-                                        onVideoClick = { navController.navigate(Destination.VideoDetail(it)) }
+                                        onVideoClick = onAppVideoClick
                                     )
                                 }
                                 composable<Destination.TVShows> {
@@ -461,7 +470,7 @@ class MainActivity : AppCompatActivity() {
                                         viewModel = videoViewModel,
                                         windowSizeClass = windowSizeClass,
                                         onBackClick = { navController.popBackStack() },
-                                        onVideoClick = { navController.navigate(Destination.VideoDetail(it)) }
+                                        onVideoClick = onAppVideoClick
                                     )
                                 }
                                 composable<Destination.MyList> {
@@ -472,7 +481,7 @@ class MainActivity : AppCompatActivity() {
                                         viewModel = videoViewModel,
                                         windowSizeClass = windowSizeClass,
                                         onBackClick = { navController.popBackStack() },
-                                        onVideoClick = { navController.navigate(Destination.VideoDetail(it)) },
+                                        onVideoClick = onAppVideoClick,
                                         customVideos = myListVideos
                                     )
                                 }
@@ -498,7 +507,7 @@ class MainActivity : AppCompatActivity() {
                                         viewModel = videoViewModel,
                                         windowSizeClass = windowSizeClass,
                                         onBackClick = { navController.popBackStack() },
-                                        onVideoClick = { navController.navigate(Destination.VideoDetail(it)) }
+                                        onVideoClick = onAppVideoClick
                                     )
                                 }
                                 composable<Destination.ActressProfile> { backStackEntry ->
@@ -509,7 +518,7 @@ class MainActivity : AppCompatActivity() {
                                         viewModel = videoViewModel,
                                         windowSizeClass = windowSizeClass,
                                         onBackClick = { navController.popBackStack() },
-                                        onVideoClick = { navController.navigate(Destination.VideoDetail(it)) }
+                                        onVideoClick = onAppVideoClick
                                     )
                                 }
                                 composable<Destination.Player> { backStackEntry ->

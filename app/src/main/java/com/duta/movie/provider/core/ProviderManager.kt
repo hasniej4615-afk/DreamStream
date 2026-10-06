@@ -42,7 +42,8 @@ class ProviderManager @Inject constructor(
             "com.duta.provider.pusatfilm",
             "com.duta.provider.lk21",
             "com.duta.provider.dutamovie",
-            "com.duta.provider.moviebox"
+            "com.duta.provider.moviebox",
+            "com.duta.provider.rtmlivetv"
         )
     }
 
@@ -238,10 +239,49 @@ class ProviderManager @Inject constructor(
                     configJson = "{\"searchPath\": \"/wefeed-h5api-bff/subject/search\", \"isSeriesSupported\": true}",
                     isEnabled = true,
                     priorityOrder = 6
+                ),
+                InstalledProviderEntity(
+                    id = "com.duta.provider.rtmlivetv",
+                    repoId = OFFICIAL_REPO_ID,
+                    name = "RTMKlik Live TV",
+                    displayName = "RTMKlik & Live TV (Malaysia)",
+                    description = "Official Malaysian Live TV channels (TV1, TV2, Okey, Sukan RTM, Berita RTM, TV6, Parlimen, RTM ASEAN) in direct 1080p Full HD.",
+                    author = "DreamStream Team",
+                    version = 1,
+                    versionName = "1.0.0",
+                    mediaType = "MULTI",
+                    engineType = "TEMPLATE",
+                    templateType = "LIVETV",
+                    baseUrlsJson = "[\"https://d25tgymtnqzu8s.cloudfront.net\", \"https://rtmklik.rtm.gov.my\"]",
+                    configJson = "{\"isLiveSupported\": true}",
+                    isEnabled = true,
+                    priorityOrder = 7
                 )
             )
             repoDao.insertOrUpdateProviders(defaultProviders)
         } else {
+            // Self-heal: ensure RTMKlik Live TV exists for existing installations
+            val rtmlivetv = existingProviders.find { it.id == "com.duta.provider.rtmlivetv" }
+            if (rtmlivetv == null) {
+                val liveTvEntity = InstalledProviderEntity(
+                    id = "com.duta.provider.rtmlivetv",
+                    repoId = OFFICIAL_REPO_ID,
+                    name = "RTMKlik Live TV",
+                    displayName = "RTMKlik & Live TV (Malaysia)",
+                    description = "Official Malaysian Live TV channels (TV1, TV2, Okey, Sukan RTM, Berita RTM, TV6, Parlimen, RTM ASEAN) in direct 1080p Full HD.",
+                    author = "DreamStream Team",
+                    version = 1,
+                    versionName = "1.0.0",
+                    mediaType = "MULTI",
+                    engineType = "TEMPLATE",
+                    templateType = "LIVETV",
+                    baseUrlsJson = "[\"https://d25tgymtnqzu8s.cloudfront.net\", \"https://rtmklik.rtm.gov.my\"]",
+                    configJson = "{\"isLiveSupported\": true}",
+                    isEnabled = true,
+                    priorityOrder = 7
+                )
+                repoDao.insertOrUpdateProvider(liveTvEntity)
+            }
             // Self-heal: ensure MovieBox exists for existing installations
             val moviebox = existingProviders.find { it.id == "com.duta.provider.moviebox" }
             if (moviebox == null) {
@@ -368,6 +408,7 @@ class ProviderManager @Inject constructor(
                 continue
             }
             val instance: MediaProvider = when {
+                p.id.contains("rtm") || p.id.contains("livetv") || p.templateType == "LIVETV" -> com.duta.movie.provider.engine.LiveTvProvider(p)
                 p.id.contains("moviebox") || p.templateType == "MOVIEBOX" -> com.duta.movie.provider.engine.MovieboxProvider(p)
                 p.engineType == "DEX" -> DexPluginProvider(context, p)
                 else -> TemplateProvider(p)

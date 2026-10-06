@@ -1850,6 +1850,7 @@ fun ListSectionHeader(title: String, isLargeLayout: Boolean = false, isRealTV: B
 @Composable
 fun translateCategoryName(name: String): String {
     return when(name) {
+        "LIVE TV", "Live TV" -> stringResource(R.string.live_tv)
         "Newly Updated" -> stringResource(R.string.newly_updated)
         "Movies" -> stringResource(R.string.movies)
         "TV Series" -> stringResource(R.string.tv_series)
