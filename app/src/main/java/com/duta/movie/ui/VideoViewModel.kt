@@ -834,6 +834,7 @@ class VideoViewModel @Inject constructor(
     private var searchJob: Job? = null
     private var backgroundDetailsJob: Job? = null
     private var fullDetailsJob: Job? = null
+    private var fastTrackMbJob: Job? = null
     private var currentPage = 1
     private var rotationCount = 0
     private var isRotationLocked = false
@@ -1484,6 +1485,9 @@ class VideoViewModel @Inject constructor(
         prewarmJob?.cancel()
         backgroundDetailsJob?.cancel()
         fullDetailsJob?.cancel()
+        fastTrackMbJob?.cancel()
+
+        activeVideoId = videoId
 
         val isCompleteCached: (Video?) -> Boolean = { v ->
             v != null && (
@@ -1505,13 +1509,24 @@ class VideoViewModel @Inject constructor(
             _currentEpisode.value = null
             _currentServerUrl.value = null
             _resolvedUrl.value = null
-            activeVideoId = null
         }
 
-        val immediateCached = metadataCache[videoId] 
+        var immediateCached = metadataCache[videoId] 
             ?: (if (cleanId.length >= 3) metadataCache.entries.find { isIdMatch(it.key) }?.value else null)
             ?: videoRepository.getCachedVideo(videoId)?.takeIf { isIdMatch(it.id) }
             ?: getVideo(videoId)?.takeIf { isIdMatch(it.id) }
+
+        // Merge any previously discovered mirrors (e.g. from discoveredAltServers) into immediateCached upfront
+        val initialCachedAlts = discoveredAltServers[videoId].orEmpty()
+        if (initialCachedAlts.isNotEmpty() && immediateCached != null) {
+            val mergedWithAlts = (immediateCached.servers + initialCachedAlts).distinctBy {
+                if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() 
+                else "${it.name.trim()}_${it.url.substringBefore('?')}" 
+            }.sortedByDescending { 
+                com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) 
+            }
+            immediateCached = immediateCached.copy(servers = mergedWithAlts)
+        }
 
         if (isCompleteCached(immediateCached)) {
             var toDisplay = immediateCached!!
@@ -1537,6 +1552,26 @@ class VideoViewModel @Inject constructor(
         loadComments(videoId)
         loadRecommendation(videoId)
 
+        // 0ms MovieBox Fast-Track:
+        // Launch MovieBox REST search immediately at 0ms without waiting for slow HTML web scrapers.
+        // MovieBox uses a lightweight REST API that completes in ~400ms, populating high-speed HD streams upfront.
+        val seedForMb = immediateCached ?: getVideo(videoId) ?: videoRepository.getCachedVideo(videoId)
+        val hasMoviebox = (seedForMb?.servers?.any { it.name.startsWith("MovieBox", ignoreCase = true) } == true) ||
+                          (discoveredAltServers[videoId]?.any { it.name.startsWith("MovieBox", ignoreCase = true) } == true)
+        if (seedForMb != null && !hasMoviebox) {
+            fastTrackMbJob = viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val firstEp = seedForMb.episodes.firstOrNull() ?: _currentEpisode.value
+                    val mbServers = videoRepository.findMovieBoxMirrorsForVideo(seedForMb, firstEp)
+                    if (mbServers.isNotEmpty()) {
+                        withContext(Dispatchers.Main) {
+                            appendDiscoveredServers(videoId, seedForMb.title, mbServers)
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+
         fullDetailsJob = viewModelScope.launch { 
             try { 
                 if (videoId.startsWith("yt_") || videoId.startsWith("bili_") || videoId.startsWith("dm_")) {
@@ -1551,8 +1586,17 @@ class VideoViewModel @Inject constructor(
 
                 // Instant cache/DB check: if memory or local DB already has verified servers/episodes, display them immediately
                 val cached = metadataCache[videoId] ?: videoRepository.getCachedVideo(videoId)
+                val currentDiscovered = discoveredAltServers[videoId].orEmpty()
                 if (isCompleteCached(cached)) {
                     var toDisplay = cached!!
+                    if (currentDiscovered.isNotEmpty()) {
+                        toDisplay = toDisplay.copy(servers = (toDisplay.servers + currentDiscovered).distinctBy { 
+                            if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() 
+                            else "${it.name.trim()}_${it.url.substringBefore('?')}" 
+                        }.sortedByDescending { 
+                            com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) 
+                        })
+                    }
                     if (toDisplay.servers.isEmpty() && toDisplay.episodes.isNotEmpty()) {
                         val firstEp = toDisplay.episodes.firstOrNull()
                         val epSlug = firstEp?.let { com.duta.movie.util.VideoExtractor.extractStableId(it.url) }
@@ -1568,6 +1612,14 @@ class VideoViewModel @Inject constructor(
                     val dbVideo = videoRepository.getCachedOrDbVideo(videoId)
                     if (isCompleteCached(dbVideo)) {
                         var toDisplay = dbVideo!!
+                        if (currentDiscovered.isNotEmpty()) {
+                            toDisplay = toDisplay.copy(servers = (toDisplay.servers + currentDiscovered).distinctBy { 
+                                if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() 
+                                else "${it.name.trim()}_${it.url.substringBefore('?')}" 
+                            }.sortedByDescending { 
+                                com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) 
+                            })
+                        }
                         if (toDisplay.servers.isEmpty() && toDisplay.episodes.isNotEmpty()) {
                             val firstEp = toDisplay.episodes.firstOrNull()
                             val epSlug = firstEp?.let { com.duta.movie.util.VideoExtractor.extractStableId(it.url) }
@@ -1597,6 +1649,19 @@ class VideoViewModel @Inject constructor(
                             detailed = detailed.copy(servers = cachedEpServers)
                         }
                     }
+
+                    // CRITICAL PRESERVATION: Merge newly scraped servers with any mirrors already discovered
+                    // (especially MovieBox fast-tracked mirrors or cached alt mirrors) so they are NEVER wiped out!
+                    val currentServers = _videoMetadata.value?.servers.orEmpty()
+                    val existingAlts = discoveredAltServers[videoId].orEmpty()
+                    val mergedServers = (detailed.servers + currentServers + existingAlts).distinctBy { 
+                        if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() 
+                        else "${it.name.trim()}_${it.url.substringBefore('?')}" 
+                    }.sortedByDescending { 
+                        com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) 
+                    }
+                    detailed = detailed.copy(servers = mergedServers)
+
                     _videoMetadata.value = applyMetadata(detailed)
                     updateMetadataCache(listOf(detailed), triggerBackground = false) 
                     _isDetailLoading.value = false
@@ -1823,7 +1888,16 @@ class VideoViewModel @Inject constructor(
                         }
                     }
                 } else if (video != null) {
-                    _videoMetadata.value = applyMetadata(video)
+                    val currentServers = _videoMetadata.value?.servers.orEmpty()
+                    val existingAlts = discoveredAltServers[videoId].orEmpty()
+                    val mergedServers = (video.servers + currentServers + existingAlts).distinctBy { 
+                        if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() 
+                        else "${it.name.trim()}_${it.url.substringBefore('?')}" 
+                    }.sortedByDescending { 
+                        com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) 
+                    }
+                    val updatedVid = video.copy(servers = mergedServers)
+                    _videoMetadata.value = applyMetadata(updatedVid)
                     if (video.thumbnailUrl.isEmpty()) {
                         viewModelScope.launch(Dispatchers.IO) {
                             val poster = com.duta.movie.util.VideoExtractor.findPosterForTitle(video.title, video.date)
@@ -1843,7 +1917,7 @@ class VideoViewModel @Inject constructor(
                             }
                         }
                     }
-                    if (video.servers.none { it.name.startsWith("MovieBox", ignoreCase = true) }) {
+                    if (updatedVid.servers.none { it.name.startsWith("MovieBox", ignoreCase = true) }) {
                         viewModelScope.launch(Dispatchers.IO) {
                             try {
                                 val firstEp = video.episodes.firstOrNull() ?: _currentEpisode.value
@@ -1895,7 +1969,28 @@ class VideoViewModel @Inject constructor(
             else "${it.name.trim()}_${it.url.substringBefore('?')}" 
         }
 
-        if (!isTargetMatch) return
+        if (!isTargetMatch) {
+            if (activeVideoId == targetVideoId || com.duta.movie.util.VideoExtractor.stripSourcePrefix(activeVideoId ?: "") == com.duta.movie.util.VideoExtractor.stripSourcePrefix(targetVideoId)) {
+                val seed = metadataCache[targetVideoId] ?: getVideo(targetVideoId)
+                if (seed != null) {
+                    val merged = (seed.servers + matchingNew).distinctBy {
+                        if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() 
+                        else "${it.name.trim()}_${it.url.substringBefore('?')}" 
+                    }.sortedByDescending { 
+                        com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) 
+                    }
+                    val updated = applyMetadata(seed.copy(servers = merged))
+                    metadataCache[targetVideoId] = updated
+                    _videoMetadata.value = updated
+                    if (persistToDb) {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            videoRepository.updateVideoInDb(updated)
+                        }
+                    }
+                }
+            }
+            return
+        }
 
         val baseActiveServers = current.servers
         val cleanCurrentServers = (if (current.isSeries == true) baseActiveServers else {

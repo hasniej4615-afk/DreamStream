@@ -584,6 +584,7 @@ class VideoRepository @Inject constructor(
 
             val cleanTargetTitle = VideoExtractor.cleanTitle(video.title)
             val cleanTargetBase = cleanTargetTitle.replace(Regex("""(?i)\b(?:season|s)[-_ ]?\d+\b"""), "").replace(Regex("""[\(\)\[\]\{\}\-_,:\.'\"\|\\\/–—]"""), " ").trim()
+            val targetBaseNoYear = cleanTargetBase.replace(Regex("""\b(19\d{2}|20\d{2})\b"""), "").replace(Regex("""\s+"""), " ").trim()
             val candidateVideos = mutableListOf<Video>()
 
             for (q in queries.take(3)) {
@@ -599,6 +600,8 @@ class VideoRepository @Inject constructor(
                     } else true
 
                     val cleanCandBase = cleanCandTitle.replace(Regex("""(?i)\b(?:season|s)[-_ ]?\d+\b"""), "").replace(Regex("""[\(\)\[\]\{\}\-_,:\.'\"\|\\\/–—]"""), " ").trim()
+                    val candBaseNoYear = cleanCandBase.replace(Regex("""\b(19\d{2}|20\d{2})\b"""), "").replace(Regex("""\s+"""), " ").trim()
+
                     val isSeriesTitleMatch = isSeriesPlayback && isSeasonMatch && (
                         cleanCandBase.equals(cleanTargetBase, ignoreCase = true) ||
                         item.title.startsWith(video.title, ignoreCase = true) ||
@@ -607,7 +610,14 @@ class VideoRepository @Inject constructor(
                         item.title.contains("$cleanTargetBase Season $targetSeason", ignoreCase = true)
                     )
 
+                    val isNoYearTitleMatch = candBaseNoYear.isNotBlank() && targetBaseNoYear.isNotBlank() && (
+                        candBaseNoYear.equals(targetBaseNoYear, ignoreCase = true) ||
+                        cleanCandTitle.startsWith(targetBaseNoYear, ignoreCase = true) ||
+                        cleanTargetTitle.startsWith(candBaseNoYear, ignoreCase = true)
+                    )
+
                     val isMatch = isSeriesTitleMatch ||
+                                  isNoYearTitleMatch ||
                                   VideoExtractor.isCrossProviderMovieMatch(video, item) ||
                                   item.title.equals(video.title, ignoreCase = true) ||
                                   item.title.equals(q, ignoreCase = true)
