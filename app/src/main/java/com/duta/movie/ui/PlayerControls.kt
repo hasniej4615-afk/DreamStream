@@ -44,6 +44,9 @@ import kotlinx.coroutines.launch
 import java.util.*
 import java.util.concurrent.TimeUnit
 import androidx.compose.ui.input.key.*
+import android.widget.Toast
+import androidx.compose.ui.platform.LocalContext
+import com.duta.movie.audio.VoiceEnhancerMode
 
 data class VideoQualityTrack(val label: String, val groupIndex: Int, val trackIndex: Int)
 
@@ -75,9 +78,12 @@ fun PlayerControls(
     onResizeModeToggle: (() -> Unit)? = null,
     audioBoostLevel: Int = 0,
     onAudioBoostToggle: (() -> Unit)? = null,
+    voiceEnhancerMode: Int = 0,
+    onVoiceEnhancerSelect: ((Int) -> Unit)? = null,
     playbackSpeed: Float = 1.0f,
     onSpeedSelect: ((Float) -> Unit)? = null
 ) {
+    val context = LocalContext.current
     val playbackState by rememberPlayerState(player)
     val isPlaying = rememberIsPlaying(player, isVisible)
     val currentPosition = rememberPlayerPosition(player, isVisible)
@@ -86,6 +92,7 @@ fun PlayerControls(
     var isPlayFocused by remember { mutableStateOf(false) }
     var showQualityMenu by remember { mutableStateOf(false) }
     var showSpeedMenu by remember { mutableStateOf(false) }
+    var showVoiceEnhancerMenu by remember { mutableStateOf(false) }
 
     val currentOnVisibilityToggle by rememberUpdatedState(onVisibilityToggle)
 
@@ -169,24 +176,65 @@ fun PlayerControls(
                         }
                     }
 
-                    // Audio Boost button
-                    if (onAudioBoostToggle != null) {
+                    // Voice Enhancer / Audio Boost button
+                    if (onVoiceEnhancerSelect != null || onAudioBoostToggle != null) {
                         var isAudioFocused by remember { mutableStateOf(false) }
                         val audioScale by animateFloatAsState(if (isAudioFocused) 1.2f else 1f)
+                        val isBoostActive = voiceEnhancerMode > 0 || audioBoostLevel > 0
                         IconButton(
-                            onClick = onAudioBoostToggle,
+                            onClick = {
+                                if (onVoiceEnhancerSelect != null) {
+                                    showVoiceEnhancerMenu = true
+                                } else {
+                                    onAudioBoostToggle?.invoke()
+                                }
+                            },
                             modifier = Modifier
                                 .scale(audioScale)
                                 .onFocusChanged { isAudioFocused = it.isFocused }
+                                .onKeyEvent { keyEvent ->
+                                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                        if (onVoiceEnhancerSelect != null) {
+                                            showVoiceEnhancerMenu = true
+                                        } else {
+                                            onAudioBoostToggle?.invoke()
+                                        }
+                                        true
+                                    } else false
+                                }
                                 .focusable()
                                 .background(if (isAudioFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
                                 .border(if (isAudioFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                         ) {
-                            Icon(
-                                Icons.Default.GraphicEq,
-                                contentDescription = stringResource(R.string.audio_boost),
-                                tint = if (audioBoostLevel > 0) Color(0xFFFF5252) else Color.White
-                            )
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Default.GraphicEq,
+                                    contentDescription = stringResource(R.string.voice_enhancer),
+                                    tint = if (isBoostActive) Color(0xFFFF5252) else Color.White
+                                )
+                                if (isBoostActive) {
+                                    val badgeText = when (voiceEnhancerMode) {
+                                        1 -> "+4dB"
+                                        2 -> "+7dB"
+                                        3 -> "+10dB"
+                                        else -> "ON"
+                                    }
+                                    Text(
+                                        text = badgeText,
+                                        color = Color.White,
+                                        fontSize = 7.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .align(Alignment.TopEnd)
+                                            .offset(x = 6.dp, y = (-4).dp)
+                                            .background(Color(0xFFFF5252), RoundedCornerShape(3.dp))
+                                            .padding(horizontal = 2.dp, vertical = 0.dp)
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -714,6 +762,120 @@ fun PlayerControls(
                     ) { Text(stringResource(R.string.close), color = if (isCloseSpeedFocused) Color.White else Color.Red) }
                 },
                 containerColor = Color(0xFF1A1A1A)
+            )
+        }
+
+        if (showVoiceEnhancerMenu && onVoiceEnhancerSelect != null) {
+            val modes = listOf(
+                VoiceEnhancerMode.OFF,
+                VoiceEnhancerMode.CLEAR_VOICE,
+                VoiceEnhancerMode.ACTION_SFX_CUT,
+                VoiceEnhancerMode.NIGHT_MAX
+            )
+            val currentSelectedMode = VoiceEnhancerMode.fromId(voiceEnhancerMode)
+            AlertDialog(
+                onDismissRequest = { showVoiceEnhancerMenu = false },
+                title = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.GraphicEq, contentDescription = null, tint = Color(0xFFFF5252), modifier = Modifier.size(24.dp))
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(stringResource(R.string.voice_enhancer), color = Color.White, fontWeight = FontWeight.Bold)
+                    }
+                },
+                text = {
+                    val firstVoiceFocusRequester = remember { FocusRequester() }
+                    LaunchedEffect(Unit) {
+                        try { firstVoiceFocusRequester.requestFocus() } catch (_: Exception) {}
+                    }
+                    LazyColumn(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        itemsIndexed(modes) { index, mode ->
+                            val isSelected = (currentSelectedMode == mode)
+                            var isFocused by remember { mutableStateOf(false) }
+                            val isFirstItem = (index == 0)
+                            ListItem(
+                                headlineContent = {
+                                    Text(
+                                        stringResource(mode.titleResId),
+                                        color = if (isSelected) Color(0xFFFF5252) else Color.White,
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                    )
+                                },
+                                supportingContent = {
+                                    Text(
+                                        stringResource(mode.descResId),
+                                        color = Color.Gray,
+                                        fontSize = 12.sp
+                                    )
+                                },
+                                trailingContent = {
+                                    if (isSelected) {
+                                        Icon(Icons.Default.Check, contentDescription = null, tint = Color(0xFFFF5252))
+                                    }
+                                },
+                                modifier = Modifier
+                                    .then(if (isFirstItem) Modifier.focusRequester(firstVoiceFocusRequester) else Modifier)
+                                    .onFocusChanged { isFocused = it.isFocused }
+                                    .onKeyEvent { keyEvent ->
+                                        if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                            (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                            onVoiceEnhancerSelect(mode.id)
+                                            val label = context.getString(mode.shortLabelResId)
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.voice_enhancer_toast, label),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                            showVoiceEnhancerMenu = false
+                                            true
+                                        } else false
+                                    }
+                                    .focusable()
+                                    .clickable {
+                                        onVoiceEnhancerSelect(mode.id)
+                                        val label = context.getString(mode.shortLabelResId)
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.voice_enhancer_toast, label),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        showVoiceEnhancerMenu = false
+                                    }
+                                    .border(
+                                        if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent),
+                                        RoundedCornerShape(8.dp)
+                                    ),
+                                colors = ListItemDefaults.colors(
+                                    containerColor = if (isFocused) Color.White.copy(alpha = 0.15f) else Color.Transparent
+                                )
+                            )
+                        }
+                    }
+                },
+                confirmButton = {
+                    var isCloseVoiceFocused by remember { mutableStateOf(false) }
+                    TextButton(
+                        onClick = { showVoiceEnhancerMenu = false },
+                        modifier = Modifier
+                            .onFocusChanged { isCloseVoiceFocused = it.isFocused }
+                            .onKeyEvent { keyEvent ->
+                                if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                    (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                    showVoiceEnhancerMenu = false
+                                    true
+                                } else false
+                            }
+                            .focusable()
+                            .background(if (isCloseVoiceFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
+                            .border(if (isCloseVoiceFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                    ) {
+                        Text(stringResource(R.string.close), color = if (isCloseVoiceFocused) Color.White else Color(0xFFFF5252))
+                    }
+                },
+                containerColor = Color(0xFF1E1E1E)
             )
         }
     }

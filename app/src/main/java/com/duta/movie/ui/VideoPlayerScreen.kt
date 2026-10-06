@@ -35,6 +35,8 @@ import androidx.compose.ui.zIndex
 import androidx.compose.runtime.*
 import androidx.compose.ui.res.stringResource
 import com.duta.movie.R
+import com.duta.movie.audio.VoiceEnhancerManager
+import com.duta.movie.audio.VoiceEnhancerMode
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -348,6 +350,12 @@ fun VideoPlayerScreen(
     val subtitleError by viewModel.subtitleError.collectAsStateWithLifecycle()
     val subtitleOffset by viewModel.subtitleOffset.collectAsStateWithLifecycle()
     val subtitleCues by viewModel.subtitleCues.collectAsStateWithLifecycle()
+    val voiceEnhancerMode by viewModel.voiceEnhancerMode.collectAsStateWithLifecycle()
+    val voiceEnhancerManager = remember { VoiceEnhancerManager() }
+
+    LaunchedEffect(voiceEnhancerMode) {
+        voiceEnhancerManager.setMode(VoiceEnhancerMode.fromId(voiceEnhancerMode))
+    }
     
     val subFirstItemFocusRequester = remember { FocusRequester() }
     LaunchedEffect(showSubtitleDialog) {
@@ -527,6 +535,33 @@ fun VideoPlayerScreen(
                 trackBuilder.setMaxVideoSize(1280, 720)
             }
             trackSelectionParameters = trackBuilder.build()
+        }
+    }
+
+    DisposableEffect(exoPlayer, voiceEnhancerManager) {
+        val analyticsListener = object : androidx.media3.exoplayer.analytics.AnalyticsListener {
+            override fun onAudioSessionIdChanged(
+                eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,
+                audioSessionId: Int
+            ) {
+                if (audioSessionId > 0) {
+                    voiceEnhancerManager.attachSession(audioSessionId)
+                }
+            }
+        }
+        exoPlayer.addAnalyticsListener(analyticsListener)
+        try {
+            val sid = exoPlayer.audioSessionId
+            if (sid > 0) {
+                voiceEnhancerManager.attachSession(sid)
+            }
+        } catch (_: Throwable) {}
+
+        onDispose {
+            try {
+                exoPlayer.removeAnalyticsListener(analyticsListener)
+            } catch (_: Throwable) {}
+            voiceEnhancerManager.release()
         }
     }
 
@@ -1824,7 +1859,9 @@ fun VideoPlayerScreen(
         videoId = videoId,
         onUserPauseChange = { userInitiatedPause = it },
         onUserSeek = { lastSeekTimeMs = System.currentTimeMillis() },
-        fallbackDurationMs = fallbackDurationMs
+        fallbackDurationMs = fallbackDurationMs,
+        voiceEnhancerMode = voiceEnhancerMode,
+        onVoiceEnhancerSelect = { viewModel.setVoiceEnhancerMode(it) }
     )
 
     if (showResolutionLog) {
@@ -2723,7 +2760,9 @@ fun VideoPlayerContent(
     videoId: String = "",
     onUserPauseChange: (Boolean) -> Unit = {},
     onUserSeek: () -> Unit = {},
-    fallbackDurationMs: Long = 0L
+    fallbackDurationMs: Long = 0L,
+    voiceEnhancerMode: Int = 0,
+    onVoiceEnhancerSelect: ((Int) -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val isYouTube = remember(extractedUrl) {
@@ -3273,7 +3312,9 @@ fun VideoPlayerContent(
                 },
                 playPauseFocusRequester = playPauseFocusRequester,
                 fallbackDurationMs = fallbackDurationMs,
-                isTV = isTV
+                isTV = isTV,
+                voiceEnhancerMode = voiceEnhancerMode,
+                onVoiceEnhancerSelect = onVoiceEnhancerSelect
             )
         }
 

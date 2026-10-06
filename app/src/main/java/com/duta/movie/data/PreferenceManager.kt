@@ -43,6 +43,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         private val USER_NICKNAME_KEY = stringPreferencesKey("user_nickname")
         private val MY_COMMENT_IDS_KEY = stringSetPreferencesKey("my_comment_ids")
         private val MY_RECOMMENDED_VIDEO_IDS_KEY = stringSetPreferencesKey("my_recommended_video_ids")
+        private val VOICE_ENHANCER_MODE_KEY = intPreferencesKey("voice_enhancer_mode")
 
         val DEFAULT_ENABLED_CATEGORIES = setOf(
             "/",
@@ -528,5 +529,10 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
             val current = prefs[MY_RECOMMENDED_VIDEO_IDS_KEY] ?: emptySet()
             prefs[MY_RECOMMENDED_VIDEO_IDS_KEY] = current - videoId
         }
+    }
+
+    val voiceEnhancerMode: Flow<Int> = context.dataStore.data.map { it[VOICE_ENHANCER_MODE_KEY] ?: 0 }
+    suspend fun setVoiceEnhancerMode(mode: Int) {
+        context.dataStore.edit { it[VOICE_ENHANCER_MODE_KEY] = mode }
     }
 }

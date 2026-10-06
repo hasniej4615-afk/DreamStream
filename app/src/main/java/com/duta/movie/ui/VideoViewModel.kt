@@ -859,6 +859,7 @@ class VideoViewModel @Inject constructor(
     val isAutoSubtitleEnabled: StateFlow<Boolean> = videoRepository.isAutoSubtitleEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     val isDebugModeEnabled: StateFlow<Boolean> = preferenceManager.isDebugModeEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val isMobileLandscapeEnabled: StateFlow<Boolean> = preferenceManager.isMobileLandscapeEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val voiceEnhancerMode: StateFlow<Int> = preferenceManager.voiceEnhancerMode.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
     val activeBaseUrl: StateFlow<String> = preferenceManager.activeBaseUrl.onEach { url ->
         if (url.isNotEmpty()) VideoExtractor.setBaseUrl(url)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, VideoExtractor.getBaseUrl())
@@ -1147,6 +1148,7 @@ class VideoViewModel @Inject constructor(
     fun setAutoSubtitleEnabled(enabled: Boolean) { viewModelScope.launch { preferenceManager.setAutoSubtitleEnabled(enabled) } }
     fun setDebugModeEnabled(enabled: Boolean) { viewModelScope.launch { preferenceManager.setDebugModeEnabled(enabled) } }
     fun setMobileLandscapeEnabled(enabled: Boolean) { viewModelScope.launch { preferenceManager.setMobileLandscapeEnabled(enabled) } }
+    fun setVoiceEnhancerMode(mode: Int) { viewModelScope.launch { preferenceManager.setVoiceEnhancerMode(mode) } }
 
     private val _totalInstallCount = MutableStateFlow<Int?>(null)
     val totalInstallCount: StateFlow<Int?> = _totalInstallCount.asStateFlow()

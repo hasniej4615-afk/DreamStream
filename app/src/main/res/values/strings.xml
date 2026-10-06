@@ -546,4 +546,19 @@ Tap to re-scout and refresh content</string>
     <string name="next_episode_in">Playing next episode in %ds</string>
     <string name="play_now">Play Now</string>
     <string name="dismiss">Dismiss</string>
+    <!-- Voice Enhancer -->
+    <string name="voice_enhancer">Voice Enhancer</string>
+    <string name="voice_enhancer_off">Off (Original Audio)</string>
+    <string name="voice_enhancer_off_short">Off</string>
+    <string name="voice_enhancer_off_desc">Standard balanced sound with original dynamics</string>
+    <string name="voice_enhancer_clear">Clear Voice (+4dB)</string>
+    <string name="voice_enhancer_clear_short">Clear Voice</string>
+    <string name="voice_enhancer_clear_desc">Boosts dialogue frequencies and gently reduces background rumble</string>
+    <string name="voice_enhancer_action">Action &amp; Heavy BGM (+7dB)</string>
+    <string name="voice_enhancer_action_short">Action Mode</string>
+    <string name="voice_enhancer_action_desc">Significantly cuts boomy explosions &amp; loud music to isolate speech</string>
+    <string name="voice_enhancer_night">Night / Max Voice (+10dB)</string>
+    <string name="voice_enhancer_night_short">Night Mode</string>
+    <string name="voice_enhancer_night_desc">Maximum dialogue boost with dynamic leveling for quiet listening</string>
+    <string name="voice_enhancer_toast">Voice Enhancer: %s</string>
 </resources>
