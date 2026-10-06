@@ -1289,6 +1289,14 @@ fun SettingsScreen(
                                 }
                                 item {
                                     HelpTopicCard(
+                                        title = stringResource(R.string.help_topic_profile_title),
+                                        description = stringResource(R.string.help_topic_profile_desc),
+                                        content = stringResource(R.string.help_topic_profile_content),
+                                        tag = "[PROFILE]"
+                                    )
+                                }
+                                item {
+                                    HelpTopicCard(
                                         title = stringResource(R.string.help_topic_pakcik_title),
                                         description = stringResource(R.string.help_topic_pakcik_desc),
                                         content = stringResource(R.string.help_topic_pakcik_content),
