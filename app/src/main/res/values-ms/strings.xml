@@ -90,7 +90,19 @@
 
     <string name="minus_0_5s">-0.5s</string>
     <string name="plus_0_5s">+0.5s</string>
-
+    <string name="minus_2_0s">-2.0s</string>
+    <string name="plus_2_0s">+2.0s</string>
+    <string name="minus_0_1s">-0.1s</string>
+    <string name="plus_0_1s">+0.1s</string>
+    <string name="reset_sync">Set Semula 0s</string>
+    <string name="snap_line_now">⚡ Selaras ke Baris Audio</string>
+    <string name="align_first_dialogue">Selaras Dialog Pertama</string>
+    <string name="nearest_dialogue_label">Baris Pertuturan Terdekat:</string>
+    <string name="intro_offset_label">Ofset Intro:</string>
+    <string name="minus_10s">-10s Intro</string>
+    <string name="plus_10s">+10s</string>
+    <string name="current_playback_time">Masa Main Balik: %s</string>
+    <string name="subtitle_synced_toast">Sari kata diselaras! Ofset ditetapkan ke %s</string>
     <string name="done">Selesai</string>
 
     <string name="select_episode">Pilih Episod</string>

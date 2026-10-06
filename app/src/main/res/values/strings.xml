@@ -91,7 +91,19 @@
 
     <string name="minus_0_5s">-0.5s</string>
     <string name="plus_0_5s">+0.5s</string>
-
+    <string name="minus_2_0s">-2.0s</string>
+    <string name="plus_2_0s">+2.0s</string>
+    <string name="minus_0_1s">-0.1s</string>
+    <string name="plus_0_1s">+0.1s</string>
+    <string name="reset_sync">Reset 0s</string>
+    <string name="snap_line_now">⚡ Snap Line to Audio</string>
+    <string name="align_first_dialogue">Align First Dialogue</string>
+    <string name="nearest_dialogue_label">Nearest Spoken Line:</string>
+    <string name="intro_offset_label">Intro Bumper:</string>
+    <string name="minus_10s">-10s Intro</string>
+    <string name="plus_10s">+10s</string>
+    <string name="current_playback_time">Current Playback: %s</string>
+    <string name="subtitle_synced_toast">Subtitle synced! Offset set to %s</string>
     <string name="done">Done</string>
 
     <string name="select_episode">Select Episode</string>

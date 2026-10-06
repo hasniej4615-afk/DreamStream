@@ -3872,6 +3872,8 @@ class VideoViewModel @Inject constructor(
     }
 
     fun adjustSubtitleOffset(delta: Long) { _subtitleOffset.value += delta }
+    fun setSubtitleOffset(offset: Long) { _subtitleOffset.value = offset }
+    fun resetSubtitleOffset() { _subtitleOffset.value = 0L }
 
     fun selectSubtitle(subtitle: Subtitle?) {
         subResolveJob?.cancel()

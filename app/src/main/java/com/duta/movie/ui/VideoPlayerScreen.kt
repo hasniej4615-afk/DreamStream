@@ -17,6 +17,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
@@ -1104,7 +1106,7 @@ fun VideoPlayerScreen(
             
             // For Google Cast: serve WebVTT subtitles via local LAN CastSubtitleServer
             val castSubUrl = if (isCasting && sub != null && subtitleCues.isNotEmpty()) {
-                val vtt = SubtitleParser.toWebVtt(subtitleCues, subtitleOffset)
+                val vtt = SubtitleParser.toWebVtt(subtitleCues, -subtitleOffset)
                 CastSubtitleServer.setSubtitle(vtt)
             } else {
                 if (isCasting && sub == null) CastSubtitleServer.clear()
@@ -2191,63 +2193,348 @@ fun VideoPlayerScreen(
             try { syncFirstButtonFocusRequester.requestFocus() } catch(_: Exception) {}
         }
         
+        val currentPlaybackMs = if (useWebView && !isCasting) {
+            webPlayerState.value.position
+        } else if (isCasting && castPlayer != null) {
+            castPlayer.currentPosition
+        } else {
+            currentPlayer.currentPosition
+        }
+
+        // Active or nearest subtitle cue
+        val activeCue = subtitleCues.firstOrNull { cue ->
+            cue.startTimeMs <= (currentPlaybackMs + subtitleOffset) && (currentPlaybackMs + subtitleOffset) <= cue.endTimeMs
+        }
+        val nearestCue = activeCue ?: subtitleCues.minByOrNull { cue ->
+            Math.abs(cue.startTimeMs - (currentPlaybackMs + subtitleOffset))
+        }
+
+        // First non-ad dialogue cue for intro alignment
+        val firstDialogueCue = remember(subtitleCues) {
+            subtitleCues.firstOrNull { cue ->
+                val txt = cue.text.lowercase()
+                !txt.contains("subscene") && !txt.contains("opensubtitles") &&
+                !txt.contains("subdl") && !txt.contains("translated") &&
+                !txt.contains("credit") && !txt.contains("www.") &&
+                !txt.contains(".com") && !txt.contains(".org") &&
+                !txt.contains("sync") && !txt.contains("duta")
+            }
+        }
+
+        val syncScrollState = rememberScrollState()
+
         AlertDialog(
             onDismissRequest = { showSyncDialog = false },
-            title = { Text(stringResource(R.string.subtitle_sync), color = Color.White) },
-            containerColor = Color(0xFF1A1A1A),
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.Sync, contentDescription = null, tint = Color.Red, modifier = Modifier.size(22.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Text(stringResource(R.string.subtitle_sync), color = Color.White, fontWeight = FontWeight.Bold)
+                }
+            },
+            containerColor = Color(0xFF1E1E1E),
             text = {
-                Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.fillMaxWidth()) {
-                    Text(stringResource(R.string.adjust_subtitle_timing), color = Color.Gray, fontSize = 14.sp)
-                    Spacer(Modifier.height(16.dp))
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(syncScrollState)
+                ) {
                     Text(
                         text = "${if (subtitleOffset >= 0) "+" else ""}${subtitleOffset / 1000.0}s", 
                         color = Color.White, 
                         style = MaterialTheme.typography.headlineMedium,
                         fontWeight = FontWeight.Bold
                     )
-                    Spacer(Modifier.height(24.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                        var isMinusFocused by remember { mutableStateOf(false) }
-                        Button(
-                            onClick = { viewModel.adjustSubtitleOffset(-500) },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isMinusFocused) Color.White else Color(0xFF333333)),
-                            modifier = Modifier
-                                .focusRequester(syncFirstButtonFocusRequester)
-                                .onFocusChanged { isMinusFocused = it.isFocused }
-                                .onKeyEvent { keyEvent ->
-                                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
-                                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
-                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
-                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
-                                        viewModel.adjustSubtitleOffset(-500)
-                                        true
-                                    } else false
+                    Text(
+                        text = stringResource(R.string.current_playback_time, SubtitleParser.formatVttTimestamp(currentPlaybackMs).substringBefore(".")), 
+                        color = Color.Gray, 
+                        fontSize = 12.sp
+                    )
+                    Spacer(Modifier.height(12.dp))
+
+                    // 1-Click Auto Snap Section
+                    if (nearestCue != null) {
+                        Surface(
+                            color = Color(0xFF2A2A2A),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(10.dp)) {
+                                Text(
+                                    text = stringResource(R.string.nearest_dialogue_label),
+                                    color = Color.LightGray,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Spacer(Modifier.height(2.dp))
+                                Text(
+                                    text = "\"${nearestCue.text.replace("\n", " ").trim()}\"",
+                                    color = Color.White,
+                                    fontSize = 13.sp,
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Spacer(Modifier.height(8.dp))
+                                var isSnapFocused by remember { mutableStateOf(false) }
+                                Button(
+                                    onClick = {
+                                        val newOffset = nearestCue.startTimeMs - currentPlaybackMs
+                                        viewModel.setSubtitleOffset(newOffset)
+                                        val sign = if (newOffset >= 0) "+" else ""
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.subtitle_synced_toast, "$sign${newOffset / 1000.0}s"),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                    },
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isSnapFocused) Color.White else Color(0xFFE50914)
+                                    ),
+                                    shape = RoundedCornerShape(8.dp),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .focusRequester(syncFirstButtonFocusRequester)
+                                        .onFocusChanged { isSnapFocused = it.isFocused }
+                                        .onKeyEvent { keyEvent ->
+                                            if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                                (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                                 keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                                 keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                                val newOffset = nearestCue.startTimeMs - currentPlaybackMs
+                                                viewModel.setSubtitleOffset(newOffset)
+                                                val sign = if (newOffset >= 0) "+" else ""
+                                                Toast.makeText(
+                                                    context,
+                                                    context.getString(R.string.subtitle_synced_toast, "$sign${newOffset / 1000.0}s"),
+                                                    Toast.LENGTH_SHORT
+                                                ).show()
+                                                true
+                                            } else false
+                                        }
+                                        .focusable()
+                                        .scale(if (isSnapFocused) 1.04f else 1f)
+                                ) {
+                                    Text(
+                                        stringResource(R.string.snap_line_now),
+                                        color = if (isSnapFocused) Color.Black else Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 13.sp
+                                    )
                                 }
-                                .focusable()
-                                .scale(if (isMinusFocused) 1.1f else 1f)
-                        ) { 
-                            Text(stringResource(R.string.minus_0_5s), color = if (isMinusFocused) Color.Black else Color.White) 
+                            }
                         }
-                        
-                        var isPlusFocused by remember { mutableStateOf(false) }
+                    }
+
+                    // Stepper Adjustment Buttons (Standard: ±0.5s, Coarse: ±2.0s)
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                    ) {
+                        listOf(
+                            Triple("-2.0s", -2000L, R.string.minus_2_0s),
+                            Triple("-0.5s", -500L, R.string.minus_0_5s),
+                            Triple("+0.5s", 500L, R.string.plus_0_5s),
+                            Triple("+2.0s", 2000L, R.string.plus_2_0s)
+                        ).forEach { (label, delta, strRes) ->
+                            var isStepFocused by remember { mutableStateOf(false) }
+                            Button(
+                                onClick = { viewModel.adjustSubtitleOffset(delta) },
+                                colors = ButtonDefaults.buttonColors(containerColor = if (isStepFocused) Color.White else Color(0xFF333333)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .onFocusChanged { isStepFocused = it.isFocused }
+                                    .onKeyEvent { keyEvent ->
+                                        if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                            (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                            viewModel.adjustSubtitleOffset(delta)
+                                            true
+                                        } else false
+                                    }
+                                    .focusable()
+                                    .scale(if (isStepFocused) 1.08f else 1f)
+                            ) {
+                                Text(stringResource(strRes), color = if (isStepFocused) Color.Black else Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                            }
+                        }
+                    }
+
+                    // Fine Tuning (±0.1s) and Reset
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp)
+                    ) {
+                        var isMinusFineFocused by remember { mutableStateOf(false) }
                         Button(
-                            onClick = { viewModel.adjustSubtitleOffset(500) },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isPlusFocused) Color.White else Color(0xFF333333)),
+                            onClick = { viewModel.adjustSubtitleOffset(-100) },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isMinusFineFocused) Color.White else Color(0xFF2C2C2C)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                             modifier = Modifier
-                                .onFocusChanged { isPlusFocused = it.isFocused }
+                                .weight(1f)
+                                .onFocusChanged { isMinusFineFocused = it.isFocused }
                                 .onKeyEvent { keyEvent ->
                                     if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
                                         (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
                                          keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
                                          keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
-                                        viewModel.adjustSubtitleOffset(500)
+                                        viewModel.adjustSubtitleOffset(-100)
                                         true
                                     } else false
                                 }
                                 .focusable()
-                                .scale(if (isPlusFocused) 1.1f else 1f)
-                        ) { 
-                            Text(stringResource(R.string.plus_0_5s), color = if (isPlusFocused) Color.Black else Color.White) 
+                                .scale(if (isMinusFineFocused) 1.08f else 1f)
+                        ) {
+                            Text(stringResource(R.string.minus_0_1s), color = if (isMinusFineFocused) Color.Black else Color.White, fontSize = 12.sp)
+                        }
+
+                        var isResetFocused by remember { mutableStateOf(false) }
+                        Button(
+                            onClick = { viewModel.resetSubtitleOffset() },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isResetFocused) Color.White else Color(0xFF444444)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .weight(1.2f)
+                                .onFocusChanged { isResetFocused = it.isFocused }
+                                .onKeyEvent { keyEvent ->
+                                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                        viewModel.resetSubtitleOffset()
+                                        true
+                                    } else false
+                                }
+                                .focusable()
+                                .scale(if (isResetFocused) 1.08f else 1f)
+                        ) {
+                            Text(stringResource(R.string.reset_sync), color = if (isResetFocused) Color.Black else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+
+                        var isPlusFineFocused by remember { mutableStateOf(false) }
+                        Button(
+                            onClick = { viewModel.adjustSubtitleOffset(100) },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isPlusFineFocused) Color.White else Color(0xFF2C2C2C)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .onFocusChanged { isPlusFineFocused = it.isFocused }
+                                .onKeyEvent { keyEvent ->
+                                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                        viewModel.adjustSubtitleOffset(100)
+                                        true
+                                    } else false
+                                }
+                                .focusable()
+                                .scale(if (isPlusFineFocused) 1.08f else 1f)
+                        ) {
+                            Text(stringResource(R.string.plus_0_1s), color = if (isPlusFineFocused) Color.Black else Color.White, fontSize = 12.sp)
+                        }
+                    }
+
+                    // Intro Bumper & First Dialogue Alignment
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 4.dp)
+                    ) {
+                        var isIntroMinusFocused by remember { mutableStateOf(false) }
+                        Button(
+                            onClick = { viewModel.adjustSubtitleOffset(-10000) },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isIntroMinusFocused) Color.White else Color(0xFF252525)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .onFocusChanged { isIntroMinusFocused = it.isFocused }
+                                .onKeyEvent { keyEvent ->
+                                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                        viewModel.adjustSubtitleOffset(-10000)
+                                        true
+                                    } else false
+                                }
+                                .focusable()
+                                .scale(if (isIntroMinusFocused) 1.08f else 1f)
+                        ) {
+                            Text(stringResource(R.string.minus_10s), color = if (isIntroMinusFocused) Color.Black else Color.LightGray, fontSize = 11.sp)
+                        }
+
+                        if (firstDialogueCue != null) {
+                            var isFirstDiagFocused by remember { mutableStateOf(false) }
+                            Button(
+                                onClick = {
+                                    val newOffset = firstDialogueCue.startTimeMs - currentPlaybackMs
+                                    viewModel.setSubtitleOffset(newOffset)
+                                    val sign = if (newOffset >= 0) "+" else ""
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.subtitle_synced_toast, "$sign${newOffset / 1000.0}s"),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                },
+                                colors = ButtonDefaults.buttonColors(containerColor = if (isFirstDiagFocused) Color.White else Color(0xFF333333)),
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                                modifier = Modifier
+                                    .weight(1.3f)
+                                    .onFocusChanged { isFirstDiagFocused = it.isFocused }
+                                    .onKeyEvent { keyEvent ->
+                                        if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                            (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                            val newOffset = firstDialogueCue.startTimeMs - currentPlaybackMs
+                                            viewModel.setSubtitleOffset(newOffset)
+                                            val sign = if (newOffset >= 0) "+" else ""
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.subtitle_synced_toast, "$sign${newOffset / 1000.0}s"),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                            true
+                                        } else false
+                                    }
+                                    .focusable()
+                                    .scale(if (isFirstDiagFocused) 1.08f else 1f)
+                            ) {
+                                Text(stringResource(R.string.align_first_dialogue), color = if (isFirstDiagFocused) Color.Black else Color.White, fontSize = 11.sp, maxLines = 1)
+                            }
+                        }
+
+                        var isIntroPlusFocused by remember { mutableStateOf(false) }
+                        Button(
+                            onClick = { viewModel.adjustSubtitleOffset(10000) },
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isIntroPlusFocused) Color.White else Color(0xFF252525)),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .onFocusChanged { isIntroPlusFocused = it.isFocused }
+                                .onKeyEvent { keyEvent ->
+                                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                        viewModel.adjustSubtitleOffset(10000)
+                                        true
+                                    } else false
+                                }
+                                .focusable()
+                                .scale(if (isIntroPlusFocused) 1.08f else 1f)
+                        ) {
+                            Text(stringResource(R.string.plus_10s), color = if (isIntroPlusFocused) Color.Black else Color.LightGray, fontSize = 11.sp)
                         }
                     }
                 }
