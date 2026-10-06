@@ -3678,9 +3678,9 @@ class VideoViewModel @Inject constructor(
 
     fun selectSubtitle(subtitle: Subtitle?) {
         subResolveJob?.cancel()
-        _subtitleCues.value = emptyList()
         if (subtitle == null) {
             _selectedSubtitle.value = null
+            _subtitleCues.value = emptyList()
             _subtitleError.value = null
             userExplicitlyDismissedSubtitles = true
             return
@@ -3689,11 +3689,14 @@ class VideoViewModel @Inject constructor(
         userExplicitlyDismissedSubtitles = false
         _selectedSubtitle.value = subtitle
         _isSubtitleLoading.value = true
+        _subtitleError.value = null
 
         subResolveJob = viewModelScope.launch(Dispatchers.IO) {
             try {
                 val localUri = if (subtitle.url.startsWith("file://")) {
                     subtitle.url
+                } else if (subtitle.localUri != null && subtitle.localUri.startsWith("file://") && File(subtitle.localUri.removePrefix("file://")).exists()) {
+                    subtitle.localUri
                 } else {
                     SubtitleExtractor.resolveSubtitleUrl(subtitle.url, subtitle.language)
                 }
@@ -3707,14 +3710,19 @@ class VideoViewModel @Inject constructor(
                         _selectedSubtitle.value = subtitle.copy(localUri = localUri)
                         Log.i("VideoViewModel", "Subtitle resolved & parsed: ${cues.size} cues loaded from ${file.name}")
                     } else {
+                        _subtitleCues.value = emptyList()
                         withContext(Dispatchers.Main) { _subtitleError.value = "Subtitle file not found" }
                     }
                 } else {
+                    _subtitleCues.value = emptyList()
                     withContext(Dispatchers.Main) { _subtitleError.value = "Failed to download subtitle" }
                 }
             } catch (e: Exception) {
-                Log.e("VideoViewModel", "Subtitle resolution error", e)
-                withContext(Dispatchers.Main) { _subtitleError.value = "Subtitle error: ${e.message}" }
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    _subtitleCues.value = emptyList()
+                    Log.e("VideoViewModel", "Subtitle resolution error", e)
+                    withContext(Dispatchers.Main) { _subtitleError.value = "Subtitle error: ${e.message}" }
+                }
             } finally {
                 _isSubtitleLoading.value = false
             }

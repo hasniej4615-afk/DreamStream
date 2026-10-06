@@ -36,4 +36,30 @@ class SubtitleExtractorTest {
             "Expected 'Tarung Unforgiven 2026', got '$cleanBase' (must not cut 'nf' out of Unforgiven)"
         }
     }
+
+    @Test
+    fun testSubSourceDownloadRegex() {
+        val sampleHtml = """
+            <a href="https://api.subsource.net/v1/subtitle/download/2c7bea97d549128df7d2fb8c97830304a29f55ab254e8d37d516dcf1bd999a4f" download="" class="btn">Download</a>
+        """.trimIndent()
+        val regex = Regex("""https?://(?:api\.)?subsource\.net/(?:api/)?v1/subtitle/download/[a-zA-Z0-9_-]+""")
+        val match = regex.find(sampleHtml)?.value
+        org.junit.Assert.assertNotNull(match)
+        org.junit.Assert.assertEquals(
+            "https://api.subsource.net/v1/subtitle/download/2c7bea97d549128df7d2fb8c97830304a29f55ab254e8d37d516dcf1bd999a4f",
+            match
+        )
+    }
+
+    @Test
+    fun testLanguageNormalization() {
+        org.junit.Assert.assertEquals("Indonesian", SubtitleExtractor.normalizeLanguage("id"))
+        org.junit.Assert.assertEquals("Indonesian", SubtitleExtractor.normalizeLanguage("indo"))
+        org.junit.Assert.assertEquals("Indonesian", SubtitleExtractor.normalizeLanguage("indonesian"))
+        org.junit.Assert.assertEquals("Indonesian", SubtitleExtractor.normalizeLanguage("bahasa indonesia"))
+        org.junit.Assert.assertEquals("English", SubtitleExtractor.normalizeLanguage("en"))
+        org.junit.Assert.assertEquals("English", SubtitleExtractor.normalizeLanguage("english"))
+        org.junit.Assert.assertEquals("Malay", SubtitleExtractor.normalizeLanguage("ms"))
+        org.junit.Assert.assertEquals("Malay", SubtitleExtractor.normalizeLanguage("malay"))
+    }
 }

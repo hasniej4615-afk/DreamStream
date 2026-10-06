@@ -1155,18 +1155,25 @@ fun VideoPlayerScreen(
                         } else emptyList()
                     } else {
                         sub?.let { s ->
-                            val effectiveSubUri = if (s.localUri != null) s.localUri else s.url
-                            val mimeType = if (effectiveSubUri.contains(".vtt")) MimeTypes.TEXT_VTT 
-                                          else if (effectiveSubUri.contains(".ass") || effectiveSubUri.contains(".ssa")) MimeTypes.TEXT_SSA 
-                                          else MimeTypes.APPLICATION_SUBRIP
-                            listOf(
-                                MediaItem.SubtitleConfiguration.Builder(effectiveSubUri.toUri())
-                                    .setMimeType(mimeType)
-                                    .setLanguage(currentPreferredLang.value)
-                                    .setLabel(s.label)
-                                    .setSelectionFlags(C.SELECTION_FLAG_DEFAULT or C.SELECTION_FLAG_FORCED)
-                                    .build()
-                            )
+                            val effectiveSubUri = when {
+                                s.localUri != null -> s.localUri
+                                s.url.startsWith("file://") -> s.url
+                                s.url.lowercase().let { it.endsWith(".srt") || it.endsWith(".vtt") || it.endsWith(".ass") || it.endsWith(".ssa") } -> s.url
+                                else -> null
+                            }
+                            if (effectiveSubUri != null) {
+                                val mimeType = if (effectiveSubUri.contains(".vtt")) MimeTypes.TEXT_VTT 
+                                              else if (effectiveSubUri.contains(".ass") || effectiveSubUri.contains(".ssa")) MimeTypes.TEXT_SSA 
+                                              else MimeTypes.APPLICATION_SUBRIP
+                                listOf(
+                                    MediaItem.SubtitleConfiguration.Builder(effectiveSubUri.toUri())
+                                        .setMimeType(mimeType)
+                                        .setLanguage(currentPreferredLang.value)
+                                        .setLabel(s.label)
+                                        .setSelectionFlags(C.SELECTION_FLAG_DEFAULT or C.SELECTION_FLAG_FORCED)
+                                        .build()
+                                )
+                            } else emptyList()
                         } ?: emptyList()
                     }
                 )

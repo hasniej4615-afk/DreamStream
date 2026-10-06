@@ -43,6 +43,7 @@ object SubtitleExtractor {
     private var appContext: android.content.Context? = null
     private val webViewSemaphore = Semaphore(2)
     private val imdbCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val subtitleCache = java.util.concurrent.ConcurrentHashMap<String, String>()
 
     private fun pruneImdbCache() {
         if (imdbCache.size > 1000) {
@@ -299,6 +300,18 @@ object SubtitleExtractor {
     suspend fun resolveSubtitleUrl(subUrl: String, preferredLanguage: String? = null): String? = withContext(Dispatchers.IO) {
         try {
             if (subUrl.startsWith("file:") || subUrl.startsWith("data:")) return@withContext subUrl
+
+            // 1. Check in-memory cache for instant switching
+            subtitleCache[subUrl]?.let { cachedUri ->
+                val f = File(cachedUri.removePrefix("file://"))
+                if (f.exists() && f.length() > 100) {
+                    Log.i(TAG, "Reusing cached subtitle: $cachedUri for $subUrl")
+                    return@withContext cachedUri
+                } else {
+                    subtitleCache.remove(subUrl)
+                }
+            }
+
             val provider = providers.find { subUrl.contains(it.baseUrl.substringAfter("://")) || subUrl.startsWith("osubs://") || subUrl.contains("subdl.com") || subUrl.contains("subsource.net") }
             
             val resolved = try { provider?.resolve(subUrl, preferredLanguage) } catch(_: Exception) { null }
@@ -306,17 +319,37 @@ object SubtitleExtractor {
             
             Log.d(TAG, "Resolving URL: $finalUrl ($preferredLanguage)")
 
+            // Check if finalUrl is already cached
+            subtitleCache[finalUrl]?.let { cachedUri ->
+                val f = File(cachedUri.removePrefix("file://"))
+                if (f.exists() && f.length() > 100) {
+                    Log.i(TAG, "Reusing cached subtitle from finalUrl: $cachedUri")
+                    subtitleCache[subUrl] = cachedUri
+                    return@withContext cachedUri
+                } else {
+                    subtitleCache.remove(finalUrl)
+                }
+            }
+
             // Enhanced referer for SubtitleCat and SubSource
             val downloadReferer = if (finalUrl.contains("subtitlecat.com")) "https://subtitlecat.com/" 
                                   else if (finalUrl.contains("subsource.net") || subUrl.contains("subsource.net")) "https://subsource.net/" 
                                   else subUrl
 
             var result = downloadToInternalFile(finalUrl, downloadReferer, preferredLanguage)
-            result?.let { return@withContext it }
+            if (result != null) {
+                subtitleCache[subUrl] = result
+                subtitleCache[finalUrl] = result
+                return@withContext result
+            }
 
-            Log.d(TAG, "Direct download failed, starting Deep-Context Bridge")
+            Log.i(TAG, "Direct download failed, starting Deep-Context Bridge for $finalUrl")
             result = downloadViaBrowserToFile(finalUrl, downloadReferer, preferredLanguage)
-            result?.let { return@withContext it }
+            if (result != null) {
+                subtitleCache[subUrl] = result
+                subtitleCache[finalUrl] = result
+                return@withContext result
+            }
             
             if (finalUrl.lowercase().let { it.contains(".vtt") || it.contains(".srt") || it.contains(".ass") }) finalUrl else null
         } catch (_: Exception) { null }
@@ -337,6 +370,18 @@ object SubtitleExtractor {
             if (isSubSource) {
                 reqBuilder.header("Origin", "https://subsource.net")
             }
+            
+            // Forward existing browser / session cookies if available
+            val cookies = try {
+                withContext(Dispatchers.Main) {
+                    CookieManager.getInstance().getCookie(url)
+                        ?: if (isSubSource) CookieManager.getInstance().getCookie("https://subsource.net") else null
+                }
+            } catch (_: Exception) { null }
+            if (!cookies.isNullOrEmpty()) {
+                reqBuilder.header("Cookie", cookies)
+            }
+
             val req = reqBuilder.build()
             
             NetworkConfig.okHttpClient.newCall(req).execute().use { resp ->
@@ -491,7 +536,18 @@ object SubtitleExtractor {
                     CoroutineScope(Dispatchers.IO).launch {
                         try {
                             val cookies = withContext(Dispatchers.Main) {
-                                try { CookieManager.getInstance().getCookie(target) } catch (_: Exception) { null }
+                                try {
+                                    CookieManager.getInstance().getCookie(target)
+                                        ?: CookieManager.getInstance().getCookie(currentUrl)
+                                        ?: CookieManager.getInstance().getCookie("https://subsource.net")
+                                } catch (_: Exception) { null }
+                            }
+                            if (!cookies.isNullOrEmpty()) {
+                                NetworkConfig.injectCookies(currentUrl, cookies)
+                                NetworkConfig.injectCookies(target, cookies)
+                                if (target.contains("subsource.net") || currentUrl.contains("subsource.net")) {
+                                    NetworkConfig.injectCookies("https://subsource.net", cookies)
+                                }
                             }
                             val reqBuilder = Request.Builder()
                                 .url(target)
@@ -545,13 +601,12 @@ object SubtitleExtractor {
             
             val injectionJs = """
                 (function() {
-                    if (window.bridgeStarted && (window.captured || window.isWaiting)) return;
+                    if (window.bridgeStarted && window.captured) return;
                     window.bridgeStarted = true;
                     
                     function toB64(str) {
                         try { 
                             if (!str) return "";
-                            // Filter out HTML if the string is clearly a full page
                             if (str.indexOf('<html') !== -1 && str.indexOf('-->') === -1) return "";
                             return btoa(unescape(encodeURIComponent(str))); 
                         }
@@ -565,7 +620,6 @@ object SubtitleExtractor {
                             var data = JSON.parse(str);
                             var text = data.text || data.content || "";
                             if (text && text.length > 100) {
-                                // SubtitleCat sometimes returns JSON with HTML-escaped characters
                                 if (text.indexOf('&') !== -1) {
                                     var txtEl = document.createElement('textarea');
                                     txtEl.innerHTML = text;
@@ -597,67 +651,6 @@ object SubtitleExtractor {
                         };
                     }
 
-                    window.checkContent = function() {
-                        if (window.captured) return;
-                        var bt = document.body ? document.body.innerText : "";
-                        var bh = document.body ? document.body.innerHTML : "";
-                        
-                        // Cloudflare detection
-                        if (bt.indexOf('Checking your browser') !== -1 || bh.indexOf('cf-browser-verification') !== -1) {
-                            if (!window.cfLogged) {
-                                Bridge.onLog('Cloudflare detected, waiting...');
-                                window.cfLogged = true;
-                            }
-                            return; // Wait for redirect
-                        }
-
-                        // 1. Raw SRT Match (more patterns)
-                        if ((bt.indexOf('-->') !== -1 || bt.indexOf('Dialogue:') !== -1 || bt.indexOf('WEBVTT') !== -1) && bt.length > 100) {
-                            Bridge.onLog('Raw Subtitle Detected in Body');
-                            window.captured = true; Bridge.onRaw(toB64(bt)); return;
-                        }
-                        
-                        // 2. JSON Search in Body (more aggressive)
-                        var matches = bt.match(/\{"text":[\s\S]+?\}/g) || bh.match(/\{"text":[\s\S]+?\}/g);
-                        if (matches) {
-                            for (var i = 0; i < matches.length; i++) {
-                                if (processJSON(matches[i])) return;
-                            }
-                        }
-
-                        // 3. SubCat Specific Extraction
-                        if (window.location.host.indexOf('subtitlecat.com') !== -1) {
-                            // Check for "Translate" or "Go" buttons and click them automatically
-                            var goBtn = document.querySelector('button[onclick*="go()"], #go, .btn-success, input[type="button"][value="Go"]');
-                            if (goBtn && !window.goClicked) {
-                                window.goClicked = true;
-                                Bridge.onLog('SubCat: Clicking Go/Translate');
-                                goBtn.click();
-                            }
-
-                            // Aggressive Div Search for SRT text
-                            var selectors = ['#sub', '.sub', '#subtitle_content', 'pre', '.container pre', '#main pre', '.content pre', '.content div[style*=\"white-space\"]'];
-                            for (var i = 0; i < selectors.length; i++) {
-                                var el = document.querySelector(selectors[i]);
-                                if (el && (el.innerText.indexOf('-->') !== -1 || el.innerText.indexOf('00:') !== -1 || el.innerText.indexOf('Dialogue:') !== -1) && el.innerText.length > 100) {
-                                    Bridge.onLog('SubCat Content Scraped from ' + selectors[i]);
-                                    window.captured = true; Bridge.onRaw(toB64(el.innerText)); return;
-                                }
-                            }
-
-                            // Check for dynamic download links that appear after "Go"
-                            var dlLink = document.querySelector('a[href*="download.php"], a[href*=\"action=download\"]');
-                            if (dlLink && dlLink.offsetParent !== null && !window.dlTriggered) {
-                                window.dlTriggered = true;
-                                Bridge.onLog('SubCat: Dynamic Download Link Found');
-                                capture(dlLink.href);
-                            }
-                        }
-                    };
-
-                    setInterval(window.checkContent, 2000);
-                    window.checkContent();
-
                     function capture(t) {
                         if (!t || typeof t !== 'string' || window.captured) return;
                         if (t.startsWith('//')) t = 'https:' + t;
@@ -665,7 +658,6 @@ object SubtitleExtractor {
                         
                         if (t === window.location.href) {
                             var bt = document.body ? document.body.innerText : "";
-                            // Filter out typical SubCat landing text or "Nothing shared" messages
                             if (bt && bt.indexOf('-->') !== -1 && bt.length > 200 && bt.indexOf('Nothing shared') === -1) {
                                 Bridge.onLog('Direct raw match at target URL');
                                 window.captured = true;
@@ -694,123 +686,160 @@ object SubtitleExtractor {
                         x.onerror = function() { Bridge.onTriggerDownload(t, window.location.href); };
                         x.send();
                     }
-                    
-                    var bt = document.body ? document.body.innerText : "";
-                    if (bt && (bt.indexOf('-->') !== -1 || bt.indexOf('Dialogue:') !== -1 || bt.indexOf('WEBVTT') !== -1) && bt.length > 200) {
-                        var b64 = toB64(bt);
-                        if (b64 && b64.length > 100) { 
-                            window.captured = true; Bridge.onRaw(b64); return;
-                        }
-                    }
 
-                    if (window.location.host.indexOf('subsource.net') !== -1) {
-                        var dl = document.querySelector('a[href*="/subtitle/download/"], a[href*="api.subsource.net"], a[download]');
-                        if (dl && dl.href) {
-                            Bridge.onLog('SubSource Match: ' + dl.href);
-                            capture(dl.href);
+                    window.checkContent = function() {
+                        if (window.captured) return;
+                        var host = window.location.host;
+                        var currentUrl = window.location.href;
+                        var bt = document.body ? document.body.innerText : "";
+                        var bh = document.body ? document.body.innerHTML : "";
+                        
+                        // Cloudflare detection
+                        if (bt.indexOf('Checking your browser') !== -1 || bh.indexOf('cf-browser-verification') !== -1) {
+                            if (!window.cfLogged) {
+                                Bridge.onLog('Cloudflare detected, waiting...');
+                                window.cfLogged = true;
+                            }
                             return;
                         }
-                    }
 
-                    if (window.location.host.indexOf('subtitlecat.com') !== -1) {
-                        var links = document.querySelectorAll('a');
-                        for(var i=0; i<links.length; i++) {
-                            var href = links[i].href || "";
-                            var txt = links[i].innerText.toLowerCase();
-                            // Prioritize original files over translations
-                            if((href.indexOf('action=download') !== -1 || href.indexOf('download.php') !== -1) && href.indexOf('lang=') === -1) {
-                                Bridge.onLog('SubCat Original Download Found: ' + href);
-                                capture(href);
+                        // 1. SubSource Extraction (Dynamic SPA button/link)
+                        if (host.indexOf('subsource.net') !== -1) {
+                            var dl = document.querySelector('a[href*="/subtitle/download/"], a[href*="api.subsource.net"], a[download]');
+                            if (dl && dl.href) {
+                                Bridge.onLog('SubSource Match: ' + dl.href);
+                                capture(dl.href);
                                 return;
                             }
                         }
-                        // Fallback to any download if original not found
-                        for(var i=0; i<links.length; i++) {
-                            var href = links[i].href || "";
-                            if(href.indexOf('action=download') !== -1 || href.indexOf('download.php') !== -1) {
-                                Bridge.onLog('SubCat Fallback Download Found: ' + href);
-                                capture(href);
+
+                        // 2. Subdl Extraction
+                        if (host.indexOf('subdl.com') !== -1) {
+                            var dl = document.querySelector('a[href*="/dl/"], a.download-link');
+                            if (dl && dl.href) {
+                                Bridge.onLog('Subdl Match: ' + dl.href);
+                                capture(dl.href);
                                 return;
                             }
                         }
-                    }
 
-                    
-                    if (window.location.host.indexOf('subdl.com') !== -1) {
-                        var dl = document.querySelector('a[href*="/dl/"], a.download-link');
-                        if (dl) { Bridge.onLog('Subdl Match'); capture(dl.href); return; }
-                    }
-
-                    var target = null;
-                    var targetEl = null;
-                    var btns = document.querySelectorAll('a, button');
-                    for (var i = 0; i < btns.length; i++) {
-                        var txt = btns[i].innerText.toLowerCase();
-                        var hr = btns[i].href || btns[i].getAttribute('href') || "";
-                        if ((txt.indexOf('download') !== -1) && (txt.indexOf('indonesia') !== -1 || txt.indexOf('malay') !== -1 || txt.indexOf('english') !== -1)) {
-                            target = hr; targetEl = btns[i];
-                            if (target) { Bridge.onLog('Lang Btn Match: ' + target); break; }
+                        // 3. Raw SRT / WebVTT / ASS Match in Body
+                        if ((bt.indexOf('-->') !== -1 || bt.indexOf('Dialogue:') !== -1 || bt.indexOf('WEBVTT') !== -1) && bt.length > 100) {
+                            Bridge.onLog('Raw Subtitle Detected in Body');
+                            window.captured = true;
+                            Bridge.onRaw(toB64(bt));
+                            return;
                         }
-                    }
+                        
+                        // 4. JSON Search in Body
+                        var matches = bt.match(/\{"text":[\s\S]+?\}/g) || bh.match(/\{"text":[\s\S]+?\}/g);
+                        if (matches) {
+                            for (var i = 0; i < matches.length; i++) {
+                                if (processJSON(matches[i])) return;
+                            }
+                        }
 
-                    if (!target) {
-                        var allLinks = document.querySelectorAll('a');
-                        for (var i = 0; i < allLinks.length; i++) {
-                            var row = allLinks[i].closest('tr') || allLinks[i].closest('div');
-                            var rowText = (row ? row.innerText : allLinks[i].innerText).toLowerCase();
-                            if (rowText.indexOf('indonesia') !== -1 || rowText.indexOf('malay') !== -1 || rowText.indexOf('english') !== -1) {
-                                var hr = allLinks[i].href || allLinks[i].getAttribute('href');
-                                if (hr && (hr.indexOf('.srt') !== -1 || hr.indexOf('.vtt') !== -1 || hr.indexOf('download') !== -1 || hr.indexOf('.zip') !== -1)) {
-                                    target = hr; targetEl = allLinks[i];
-                                    Bridge.onLog('Row Lang Match: ' + target);
-                                    break;
+                        // 5. SubCat Specific Extraction
+                        if (host.indexOf('subtitlecat.com') !== -1) {
+                            var goBtn = document.querySelector('button[onclick*="go()"], #go, .btn-success, input[type="button"][value="Go"]');
+                            if (goBtn && !window.goClicked) {
+                                window.goClicked = true;
+                                Bridge.onLog('SubCat: Clicking Go/Translate');
+                                goBtn.click();
+                            }
+
+                            var selectors = ['#sub', '.sub', '#subtitle_content', 'pre', '.container pre', '#main pre', '.content pre', '.content div[style*="white-space"]'];
+                            for (var i = 0; i < selectors.length; i++) {
+                                var el = document.querySelector(selectors[i]);
+                                if (el && (el.innerText.indexOf('-->') !== -1 || el.innerText.indexOf('00:') !== -1 || el.innerText.indexOf('Dialogue:') !== -1) && el.innerText.length > 100) {
+                                    Bridge.onLog('SubCat Content Scraped from ' + selectors[i]);
+                                    window.captured = true;
+                                    Bridge.onRaw(toB64(el.innerText));
+                                    return;
+                                }
+                            }
+
+                            var dlLink = document.querySelector('a[href*="download.php"], a[href*="action=download"]');
+                            if (dlLink && dlLink.offsetParent !== null && !window.dlTriggered) {
+                                window.dlTriggered = true;
+                                Bridge.onLog('SubCat: Dynamic Download Link Found');
+                                capture(dlLink.href);
+                                return;
+                            }
+
+                            var links = document.querySelectorAll('a');
+                            for(var i=0; i<links.length; i++) {
+                                var href = links[i].href || "";
+                                if((href.indexOf('action=download') !== -1 || href.indexOf('download.php') !== -1) && href.indexOf('lang=') === -1) {
+                                    Bridge.onLog('SubCat Original Download Found: ' + href);
+                                    capture(href);
+                                    return;
                                 }
                             }
                         }
-                    }
-                    
-                    if (!target) {
-                        var selectors = ['a[href*=\"action=download\"]', 'a[href*=\"download.php\"]', 'a[href*=\"/dl/\"]', 'a[href*=\"/download/\"]', 'a[href*=\".zip\"]', '#download_button', '.download', 'button.download', '.download-link'];
-                        for (var i = 0; i < selectors.length; i++) {
-                            var el = document.querySelector(selectors[i]);
-                            if (el && el.offsetParent !== null) { 
-                                target = el.href || el.getAttribute('href'); targetEl = el;
-                                if (target) { Bridge.onLog('Selector Match: ' + target); break; }
+
+                        // 6. Language specific download buttons (e.g. Indonesian / Malay / English)
+                        var target = null;
+                        var targetEl = null;
+                        var btns = document.querySelectorAll('a, button');
+                        for (var i = 0; i < btns.length; i++) {
+                            var txt = btns[i].innerText.toLowerCase();
+                            var hr = btns[i].href || btns[i].getAttribute('href') || "";
+                            if ((txt.indexOf('download') !== -1) && (txt.indexOf('indonesia') !== -1 || txt.indexOf('malay') !== -1 || txt.indexOf('english') !== -1)) {
+                                target = hr; targetEl = btns[i];
+                                if (target) { Bridge.onLog('Lang Btn Match: ' + target); break; }
                             }
                         }
-                    }
-                    
-                    if (target) {
-                        if (target.startsWith('http') || target.startsWith('/') || target.startsWith('//')) {
-                            if (targetEl && targetEl.click) {
-                                Bridge.onLog('Simulating click on target element');
-                                window.captured = true;
-                                targetEl.click();
-                                setTimeout(function() { window.captured = false; capture(target); }, 4000);
-                            } else {
-                                capture(target);
-                            }
-                        } else if (window.location.href.indexOf('download') !== -1) {
-                            capture(window.location.href);
-                        }
-                    } else {
-                        if (!window.isWaiting) {
-                            window.isWaiting = true;
-                            setTimeout(function() {
-                                if (!window.captured) {
-                                    var bt = document.body ? document.body.innerText : "";
-                                    if ((bt.indexOf('-->') !== -1 || bt.indexOf('Dialogue:') !== -1) && bt.length > 200) {
-                                        Bridge.onLog('Final fallback raw capture');
-                                        window.captured = true;
-                                        Bridge.onRaw(toB64(bt));
-                                    } else {
-                                        Bridge.onLog('Final fallback failed. Length: ' + bt.length + ' Content: ' + bt.substring(0, 100));
+
+                        // 7. Row language match
+                        if (!target) {
+                            var allLinks = document.querySelectorAll('a');
+                            for (var i = 0; i < allLinks.length; i++) {
+                                var row = allLinks[i].closest('tr') || allLinks[i].closest('div');
+                                var rowText = (row ? row.innerText : allLinks[i].innerText).toLowerCase();
+                                if (rowText.indexOf('indonesia') !== -1 || rowText.indexOf('malay') !== -1 || rowText.indexOf('english') !== -1) {
+                                    var hr = allLinks[i].href || allLinks[i].getAttribute('href');
+                                    if (hr && (hr.indexOf('.srt') !== -1 || hr.indexOf('.vtt') !== -1 || hr.indexOf('download') !== -1 || hr.indexOf('.zip') !== -1)) {
+                                        target = hr; targetEl = allLinks[i];
+                                        Bridge.onLog('Row Lang Match: ' + target);
+                                        break;
                                     }
                                 }
-                                window.isWaiting = false;
-                            }, 10000);
+                            }
                         }
+                        
+                        // 8. General download selector match
+                        if (!target) {
+                            var dlSelectors = ['a[href*="action=download"]', 'a[href*="download.php"]', 'a[href*="/dl/"]', 'a[href*="/download/"]', 'a[href*=".zip"]', '#download_button', '.download', 'button.download', '.download-link'];
+                            for (var i = 0; i < dlSelectors.length; i++) {
+                                var el = document.querySelector(dlSelectors[i]);
+                                if (el && el.offsetParent !== null) { 
+                                    target = el.href || el.getAttribute('href'); targetEl = el;
+                                    if (target) { Bridge.onLog('Selector Match: ' + target); break; }
+                                }
+                            }
+                        }
+                        
+                        if (target) {
+                            if (target.startsWith('http') || target.startsWith('/') || target.startsWith('//')) {
+                                if (targetEl && targetEl.click && !window.targetClicked) {
+                                    window.targetClicked = true;
+                                    Bridge.onLog('Simulating click on target element');
+                                    targetEl.click();
+                                    setTimeout(function() { capture(target); }, 2000);
+                                } else {
+                                    capture(target);
+                                }
+                            } else if (currentUrl.indexOf('download') !== -1) {
+                                capture(currentUrl);
+                            }
+                        }
+                    };
+
+                    if (!window.checkInterval) {
+                        window.checkInterval = setInterval(window.checkContent, 1000);
                     }
+                    window.checkContent();
                 })();
             """.trimIndent()
 
@@ -836,12 +865,16 @@ object SubtitleExtractor {
                     override fun onPageFinished(view: android.webkit.WebView?, u: String?) {
                         if (!done) {
                             try { view?.evaluateJavascript(injectionJs, null) } catch (_: Exception) {}
-                            // Trigger checkContent again after a short delay for Cloudflare redirects
                             handler.postDelayed({ 
                                 if (!done) {
-                                    try { view?.evaluateJavascript("if(window.checkContent) checkContent();", null) } catch (_: Exception) {}
+                                    try { view?.evaluateJavascript("if(window.checkContent) window.checkContent();", null) } catch (_: Exception) {}
                                 }
-                            }, 5000)
+                            }, 1000)
+                            handler.postDelayed({ 
+                                if (!done) {
+                                    try { view?.evaluateJavascript("if(window.checkContent) window.checkContent();", null) } catch (_: Exception) {}
+                                }
+                            }, 2500)
                         }
                     }
                     override fun shouldOverrideUrlLoading(view: android.webkit.WebView?, request: android.webkit.WebResourceRequest?): Boolean {
@@ -1370,14 +1403,28 @@ object SubtitleExtractor {
 
         override suspend fun resolve(url: String): String {
             try {
+                // If it's already a direct download link (e.g. https://api.subsource.net/v1/subtitle/download/...)
+                if (url.contains("/subtitle/download/") || url.contains("/subtitles/download/")) {
+                    return url
+                }
+
                 // If it's a SubSource webpage (e.g. https://subsource.net/subtitle/...), extract the direct download link
                 if (url.contains("subsource.net/subtitle/")) {
-                    val req = Request.Builder()
+                    val cfCookies = try {
+                        withContext(Dispatchers.Main) {
+                            CookieManager.getInstance().getCookie("https://subsource.net")
+                        }
+                    } catch (_: Exception) { null }
+
+                    val reqBuilder = Request.Builder()
                         .url(url)
                         .header("User-Agent", NetworkConfig.SHARED_USER_AGENT)
                         .header("Accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8")
                         .header("Referer", "https://subsource.net/")
-                        .build()
+                    if (!cfCookies.isNullOrEmpty()) {
+                        reqBuilder.header("Cookie", cfCookies)
+                    }
+                    val req = reqBuilder.build()
                     val directDownload = withContext(Dispatchers.IO) {
                         try {
                             NetworkConfig.okHttpClient.newCall(req).execute().use { resp ->
@@ -1388,7 +1435,9 @@ object SubtitleExtractor {
                                         ?: Regex("""https?://(?:api\.)?subsource\.net/(?:api/)?v1/subtitle/download/[a-zA-Z0-9_-]+""").find(html)?.value
                                         ?: Regex("""https?://api\.subsource\.net/v1/subtitle/download/[a-zA-Z0-9_-]+""").find(html)?.value
                                         ?: Regex("""/subtitle/download/[a-zA-Z0-9_-]+""").find(html)?.value?.let { if (it.startsWith("http")) it else "https://api.subsource.net$it" }
-                                    Log.d("SubtitleExtractor", "SubSource resolved direct download link: $link")
+                                    if (!link.isNullOrEmpty()) {
+                                        Log.i("SubtitleExtractor", "SubSource resolved direct download link: $link")
+                                    }
                                     link
                                 } else null
                             }
