@@ -1601,6 +1601,21 @@ class VideoViewModel @Inject constructor(
                     updateMetadataCache(listOf(detailed), triggerBackground = false) 
                     _isDetailLoading.value = false
                     _isLoading.value = false
+
+                    // Fast-track MovieBox HD streams concurrently if not already present
+                    if (detailed.servers.none { it.name.startsWith("MovieBox", ignoreCase = true) }) {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try {
+                                val firstEp = detailed.episodes.firstOrNull() ?: _currentEpisode.value
+                                val mbServers = videoRepository.findMovieBoxMirrorsForVideo(detailed, firstEp)
+                                if (mbServers.isNotEmpty()) {
+                                    withContext(Dispatchers.Main) {
+                                        appendDiscoveredServers(detailed.id, detailed.title, mbServers)
+                                    }
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    }
                     
                     // Asynchronously discover alternative mirrors, missing series episode servers, and posters
                     viewModelScope.launch(Dispatchers.IO) {
@@ -1762,7 +1777,7 @@ class VideoViewModel @Inject constructor(
                             val hasProviderServers = current?.servers?.any { it.name.startsWith("MovieBox", ignoreCase = true) } == true ||
                                                      detailed.servers.any { it.name.startsWith("MovieBox", ignoreCase = true) }
                             val firstEp = detailed.episodes.firstOrNull() ?: _currentEpisode.value
-                            val providerServers = if (hasProviderServers || !needsAlternativeSearch) emptyList() else videoRepository.findProviderMirrorsForVideo(detailed, firstEp)
+                            val providerServers = if (hasProviderServers || !needsAlternativeSearch) emptyList() else videoRepository.findMovieBoxMirrorsForVideo(detailed, firstEp).ifEmpty { videoRepository.findProviderMirrorsForVideo(detailed, firstEp) }
                             val allDiscoveredServers = (altServers + providerServers)
                                 .filter { com.duta.movie.util.VideoExtractor.isServerMatchingMovie(detailed.title, it) }
                                 .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
@@ -1828,6 +1843,19 @@ class VideoViewModel @Inject constructor(
                             }
                         }
                     }
+                    if (video.servers.none { it.name.startsWith("MovieBox", ignoreCase = true) }) {
+                        viewModelScope.launch(Dispatchers.IO) {
+                            try {
+                                val firstEp = video.episodes.firstOrNull() ?: _currentEpisode.value
+                                val mbServers = videoRepository.findMovieBoxMirrorsForVideo(video, firstEp)
+                                if (mbServers.isNotEmpty()) {
+                                    withContext(Dispatchers.Main) {
+                                        appendDiscoveredServers(video.id, video.title, mbServers)
+                                    }
+                                }
+                            } catch (_: Exception) {}
+                        }
+                    }
                 }
             } catch (e: Exception) { 
                 Log.e("VideoViewModel", "Failed to load details", e) 
@@ -1835,6 +1863,77 @@ class VideoViewModel @Inject constructor(
                 _isDetailLoading.value = false
                 _isLoading.value = false
             }
+        }
+    }
+
+    /**
+     * Thread-safe progressive mirror injector.
+     * Merges newly discovered mirrors into UI state immediately without waiting for other slower search jobs.
+     */
+    fun appendDiscoveredServers(
+        targetVideoId: String,
+        movieTitle: String,
+        newServers: List<VideoServer>,
+        persistToDb: Boolean = true
+    ) {
+        if (newServers.isEmpty()) return
+        val current = _videoMetadata.value
+        val isTargetMatch = current != null && (
+            current.id == targetVideoId || 
+            current.title.equals(movieTitle, ignoreCase = true) || 
+            com.duta.movie.util.VideoExtractor.stripSourcePrefix(current.id) == com.duta.movie.util.VideoExtractor.stripSourcePrefix(targetVideoId)
+        )
+
+        // Filter against movie title to prevent any junk/mismatched links
+        val matchingNew = newServers.filter { com.duta.movie.util.VideoExtractor.isServerMatchingMovie(movieTitle, it) }
+        if (matchingNew.isEmpty()) return
+
+        // Always update discoveredAltServers cache so it is available even if user navigates back
+        val currentCached = discoveredAltServers[targetVideoId].orEmpty()
+        discoveredAltServers[targetVideoId] = (currentCached + matchingNew).distinctBy { 
+            if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() 
+            else "${it.name.trim()}_${it.url.substringBefore('?')}" 
+        }
+
+        if (!isTargetMatch) return
+
+        val baseActiveServers = current.servers
+        val cleanCurrentServers = (if (current.isSeries == true) baseActiveServers else {
+            val filtered = baseActiveServers.filter { server ->
+                com.duta.movie.util.VideoExtractor.isServerMatchingMovie(current.title, server) 
+            }
+            if (filtered.isEmpty() && baseActiveServers.isNotEmpty()) {
+                baseActiveServers.filter { com.duta.movie.util.VideoExtractor.isGenuineMirror(it.name, it.url) }
+            } else filtered
+        }).distinctBy { 
+            if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() 
+            else "${it.name.trim()}_${it.url.substringBefore('?')}" 
+        }
+
+        val existingServerUrls = cleanCurrentServers.map { it.url.substringBefore('?').trimEnd('/') }.toSet()
+        val existingServerNames = cleanCurrentServers.map { it.name.trim().lowercase() }.toSet()
+        val trulyNew = matchingNew.filter { 
+            !existingServerUrls.contains(it.url.substringBefore('?').trimEnd('/')) &&
+            !existingServerNames.contains(it.name.trim().lowercase())
+        }
+
+        if (trulyNew.isNotEmpty() || cleanCurrentServers.size != current.servers.size) {
+            val combined = (cleanCurrentServers + trulyNew)
+                .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
+                .sortedByDescending { 
+                    com.duta.movie.util.VideoExtractor.getProviderPriority(it.name, it.url) 
+                }
+            val updated = current.copy(servers = combined)
+            val applied = applyMetadata(updated)
+            metadataCache[targetVideoId] = applied
+            _videoMetadata.value = applied
+            if (persistToDb) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    videoRepository.updateVideoInDb(applied)
+                    updateMetadataCache(listOf(applied), triggerBackground = false)
+                }
+            }
+            Log.i("VideoViewModel", "Progressively merged ${trulyNew.size} mirrors for '${current.title}' (Total: ${combined.size})")
         }
     }
 
@@ -2474,9 +2573,10 @@ class VideoViewModel @Inject constructor(
                     // Direct CDN Provider Pre-population: Check for high-speed direct CDN streams (MovieBox) if missing
                     if (!isRotation && !checkedProviderVideos.contains(epSlug) && finalServers.none { it.name.startsWith("MovieBox", ignoreCase = true) || it.url.contains("hakunaymatata") || it.url.contains("aoneroom") }) {
                         checkedProviderVideos.add(epSlug)
-                        addResolutionLog("Checking direct CDN streams for episode...")
                         val targetEpObj = targetEpisode ?: _currentEpisode.value ?: Episode(id = episodePageUrl, name = episodePageUrl, url = episodePageUrl, season = "")
-                        val provServers = videoRepository.findProviderMirrorsForVideo(video, targetEpObj)
+                        val provServers = videoRepository.findMovieBoxMirrorsForVideo(video, targetEpObj).ifEmpty {
+                            videoRepository.findProviderMirrorsForVideo(video, targetEpObj)
+                        }
                         if (provServers.isNotEmpty()) {
                             finalServers = (provServers + finalServers)
                                 .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
@@ -2656,7 +2756,9 @@ class VideoViewModel @Inject constructor(
                 // Direct CDN Provider Pre-population for movies: Check for high-speed direct CDN streams (MovieBox) if missing
                 if (!isRotation && !checkedProviderVideos.contains(videoId) && video!!.isSeries != true && baseVideoServers.none { it.name.startsWith("MovieBox", ignoreCase = true) || it.url.contains("hakunaymatata") || it.url.contains("aoneroom") }) {
                     checkedProviderVideos.add(videoId)
-                    val provServers = videoRepository.findProviderMirrorsForVideo(video, null)
+                    val provServers = videoRepository.findMovieBoxMirrorsForVideo(video, null).ifEmpty {
+                        videoRepository.findProviderMirrorsForVideo(video, null)
+                    }
                     if (provServers.isNotEmpty()) {
                         baseVideoServers = (provServers + baseVideoServers)
                             .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
@@ -4316,29 +4418,71 @@ class VideoViewModel @Inject constructor(
                     return@launch
                 }
 
-                addResolutionLog("Searching all primary and alternative mirrors across providers...")
-                val primaryClusterMirrors = com.duta.movie.util.VideoExtractor.findAlternativeSources(video)
-                val extFallback = com.duta.movie.util.VideoExtractor.searchExternalPartnerMirrors(video)
+                addResolutionLog("Searching all primary and alternative mirrors across providers concurrently...")
                 val curEp = _currentEpisode.value
-                val providerMirrors = videoRepository.findProviderMirrorsForVideo(video, curEp)
-                val combinedAlts = (primaryClusterMirrors + extFallback + providerMirrors)
-                    .filter { com.duta.movie.util.VideoExtractor.isServerMatchingMovie(video.title, it) }
-                    .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
 
-                if (combinedAlts.isNotEmpty()) {
-                    discoveredAltServers[effectiveVideoId] = (discoveredAltServers[effectiveVideoId].orEmpty() + combinedAlts).distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
-                    val combinedServers = (video.servers + combinedAlts).distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
-                    val updatedVideo = video.copy(servers = combinedServers)
-                    val appliedVideo = applyMetadata(updatedVideo)
-                    metadataCache[effectiveVideoId] = appliedVideo
-                    withContext(Dispatchers.Main) {
-                        _videoMetadata.value = appliedVideo
+                coroutineScope {
+                    // 1. MovieBox fast-track (runs on dedicated REST API, completes in ~400-600ms)
+                    val mbJob = launch(Dispatchers.IO) {
+                        try {
+                            val mbMirrors = videoRepository.findMovieBoxMirrorsForVideo(video, curEp)
+                            if (mbMirrors.isNotEmpty()) {
+                                withContext(Dispatchers.Main) {
+                                    appendDiscoveredServers(effectiveVideoId, video.title, mbMirrors)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.w("VideoViewModel", "Fast-track Moviebox mirror error: ${e.message}")
+                        }
                     }
-                    viewModelScope.launch { videoRepository.updateVideoInDb(appliedVideo) }
-                    withContext(Dispatchers.Main) { onResult?.invoke(appliedVideo.servers.size) }
-                } else {
-                    withContext(Dispatchers.Main) { onResult?.invoke(0) }
+
+                    // 2. Primary cluster web scrapers (Pusatfilm, LK21, PencuriMovie, etc.)
+                    val clusterJob = launch(Dispatchers.IO) {
+                        try {
+                            val clusterMirrors = com.duta.movie.util.VideoExtractor.findAlternativeSources(video)
+                            if (clusterMirrors.isNotEmpty()) {
+                                withContext(Dispatchers.Main) {
+                                    appendDiscoveredServers(effectiveVideoId, video.title, clusterMirrors)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.w("VideoViewModel", "Cluster mirror error: ${e.message}")
+                        }
+                    }
+
+                    // 3. External media partners (YouTube, Bilibili, Dailymotion)
+                    val extJob = launch(Dispatchers.IO) {
+                        try {
+                            val extMirrors = com.duta.movie.util.VideoExtractor.searchExternalPartnerMirrors(video)
+                            if (extMirrors.isNotEmpty()) {
+                                withContext(Dispatchers.Main) {
+                                    appendDiscoveredServers(effectiveVideoId, video.title, extMirrors)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.w("VideoViewModel", "External partner mirror error: ${e.message}")
+                        }
+                    }
+
+                    // 4. Other enabled provider mirrors
+                    val provJob = launch(Dispatchers.IO) {
+                        try {
+                            val provMirrors = videoRepository.findProviderMirrorsForVideo(video, curEp)
+                            if (provMirrors.isNotEmpty()) {
+                                withContext(Dispatchers.Main) {
+                                    appendDiscoveredServers(effectiveVideoId, video.title, provMirrors)
+                                }
+                            }
+                        } catch (e: Exception) {
+                            Log.w("VideoViewModel", "Provider mirror error: ${e.message}")
+                        }
+                    }
+
+                    joinAll(mbJob, clusterJob, extJob, provJob)
                 }
+
+                val finalTotal = _videoMetadata.value?.servers?.size ?: 0
+                withContext(Dispatchers.Main) { onResult?.invoke(finalTotal) }
             } catch (e: Exception) {
                 Log.e("VideoViewModel", "Error searching external partner mirrors: ${e.message}", e)
                 withContext(Dispatchers.Main) { onResult?.invoke(0) }
@@ -4371,35 +4515,71 @@ class VideoViewModel @Inject constructor(
                     return@launch
                 }
 
-                val healed = VideoExtractor.healVideoFromAlternativeSources(video)
-                val primaryCluster = VideoExtractor.findAlternativeSources(video)
-                val extFallback = VideoExtractor.searchExternalPartnerMirrors(video)
                 val curEp = _currentEpisode.value
-                val providerMirrors = videoRepository.findProviderMirrorsForVideo(video, curEp)
-                val altServers = (healed?.servers.orEmpty() + primaryCluster + extFallback + providerMirrors)
-                    .filter { VideoExtractor.isServerMatchingMovie(video.title, it) }
-                    .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
-                if (altServers.isNotEmpty() || healed?.episodes?.isNotEmpty() == true) {
-                    if (altServers.isNotEmpty()) {
-                        discoveredAltServers[effectiveVideoId] = (discoveredAltServers[effectiveVideoId].orEmpty() + altServers).distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
+                coroutineScope {
+                    val healJob = launch(Dispatchers.IO) {
+                        try {
+                            val healed = VideoExtractor.healVideoFromAlternativeSources(video)
+                            if (healed != null && healed.servers.isNotEmpty()) {
+                                withContext(Dispatchers.Main) {
+                                    appendDiscoveredServers(effectiveVideoId, video.title, healed.servers)
+                                    if (healed.episodes.isNotEmpty() && _videoMetadata.value?.episodes.isNullOrEmpty()) {
+                                        _videoMetadata.value = _videoMetadata.value?.copy(episodes = healed.episodes, isSeries = true)
+                                    }
+                                }
+                            }
+                        } catch (_: Exception) {}
                     }
-                    val combinedServers = (video.servers + altServers).distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
-                    val resolvedEpisodes = if (video.episodes.isEmpty() && healed?.episodes?.isNotEmpty() == true) healed.episodes else video.episodes
-                    val updatedVideo = video.copy(
-                        servers = combinedServers,
-                        episodes = resolvedEpisodes,
-                        isSeries = if (resolvedEpisodes.isNotEmpty()) true else video.isSeries
-                    )
-                    val appliedVideo = applyMetadata(updatedVideo)
-                    metadataCache[effectiveVideoId] = appliedVideo
-                    withContext(Dispatchers.Main) {
-                        _videoMetadata.value = appliedVideo
+
+                    val mbJob = launch(Dispatchers.IO) {
+                        try {
+                            val mbMirrors = videoRepository.findMovieBoxMirrorsForVideo(video, curEp)
+                            if (mbMirrors.isNotEmpty()) {
+                                withContext(Dispatchers.Main) {
+                                    appendDiscoveredServers(effectiveVideoId, video.title, mbMirrors)
+                                }
+                            }
+                        } catch (_: Exception) {}
                     }
-                    viewModelScope.launch { videoRepository.updateVideoInDb(appliedVideo) }
-                    withContext(Dispatchers.Main) { onResult?.invoke(appliedVideo.servers.size) }
-                } else {
-                    withContext(Dispatchers.Main) { onResult?.invoke(0) }
+
+                    val clusterJob = launch(Dispatchers.IO) {
+                        try {
+                            val clusterMirrors = VideoExtractor.findAlternativeSources(video)
+                            if (clusterMirrors.isNotEmpty()) {
+                                withContext(Dispatchers.Main) {
+                                    appendDiscoveredServers(effectiveVideoId, video.title, clusterMirrors)
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+
+                    val extJob = launch(Dispatchers.IO) {
+                        try {
+                            val extMirrors = VideoExtractor.searchExternalPartnerMirrors(video)
+                            if (extMirrors.isNotEmpty()) {
+                                withContext(Dispatchers.Main) {
+                                    appendDiscoveredServers(effectiveVideoId, video.title, extMirrors)
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+
+                    val provJob = launch(Dispatchers.IO) {
+                        try {
+                            val provMirrors = videoRepository.findProviderMirrorsForVideo(video, curEp)
+                            if (provMirrors.isNotEmpty()) {
+                                withContext(Dispatchers.Main) {
+                                    appendDiscoveredServers(effectiveVideoId, video.title, provMirrors)
+                                }
+                            }
+                        } catch (_: Exception) {}
+                    }
+
+                    joinAll(healJob, mbJob, clusterJob, extJob, provJob)
                 }
+
+                val finalTotal = _videoMetadata.value?.servers?.size ?: 0
+                withContext(Dispatchers.Main) { onResult?.invoke(finalTotal) }
             } catch (e: Exception) {
                 Log.e("VideoViewModel", "Error searching alternative sources: ${e.message}", e)
                 withContext(Dispatchers.Main) { onResult?.invoke(0) }

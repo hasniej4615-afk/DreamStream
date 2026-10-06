@@ -282,7 +282,7 @@ class VideoRepository @Inject constructor(
                                 )
                             }
                         }
-                        val providerServers = findProviderMirrorsForVideo(toSave)
+                        val providerServers = findMovieBoxMirrorsForVideo(toSave).ifEmpty { findProviderMirrorsForVideo(toSave) }
                         if (providerServers.isNotEmpty()) {
                             val combined = (toSave.servers + providerServers)
                                 .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
@@ -309,7 +309,7 @@ class VideoRepository @Inject constructor(
                                 )
                             }
                         }
-                        val providerServers = findProviderMirrorsForVideo(toSave)
+                        val providerServers = findMovieBoxMirrorsForVideo(toSave).ifEmpty { findProviderMirrorsForVideo(toSave) }
                         if (providerServers.isNotEmpty()) {
                             val combined = (toSave.servers + providerServers)
                                 .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
@@ -368,7 +368,7 @@ class VideoRepository @Inject constructor(
             }
 
             if (merged.servers.isEmpty() && merged.episodes.isEmpty()) {
-                val providerServers = findProviderMirrorsForVideo(merged)
+                val providerServers = findMovieBoxMirrorsForVideo(merged).ifEmpty { findProviderMirrorsForVideo(merged) }
                 if (providerServers.isNotEmpty()) {
                     val combined = (merged.servers + providerServers)
                         .distinctBy { if (it.name.startsWith("MovieBox", ignoreCase = true)) it.name.trim() else "${it.name.trim()}_${it.url.substringBefore('?')}" }
@@ -560,6 +560,93 @@ class VideoRepository @Inject constructor(
             isSeries = resolvedIsSeries,
             imdbId = if (new.imdbId?.isNotEmpty() == true) new.imdbId else old.imdbId
         )
+    }
+
+    /**
+     * Dedicated fast-track for MovieBox direct CDN streams.
+     * Uses the lightweight REST API directly without waiting for slower HTML web scrapers.
+     */
+    suspend fun findMovieBoxMirrorsForVideo(video: Video, targetEpisode: Episode? = null): List<VideoServer> = withContext(Dispatchers.IO) {
+        val results = mutableListOf<VideoServer>()
+        try {
+            val isSeriesPlayback = video.isSeries == true || targetEpisode != null
+            val epSeasonStr = if (!targetEpisode?.season.isNullOrEmpty()) targetEpisode?.season else targetEpisode?.url ?: video.title
+            val epNameStr = if (!targetEpisode?.name.isNullOrEmpty()) targetEpisode?.name else targetEpisode?.url ?: video.title
+            val targetSeason = Regex("""(?i)\b(?:season|s)[-_ ]?(\d+)\b""").find(epSeasonStr ?: "")?.groupValues?.get(1)?.toIntOrNull() ?: 1
+            val targetEp = Regex("""(?i)\b(?:episode|eps|ep)[-_ ]?(\d+)\b""").find(epNameStr ?: "")?.groupValues?.get(1)?.toIntOrNull() ?: 1
+
+            val baseQueries = VideoExtractor.buildAlternativeSearchQueries(video.title)
+            val queries = if (isSeriesPlayback && targetSeason > 0) {
+                listOf(video.title, "${video.title} S$targetSeason", "${video.title} Season $targetSeason") + baseQueries
+            } else {
+                baseQueries
+            }.distinct()
+
+            val cleanTargetTitle = VideoExtractor.cleanTitle(video.title)
+            val cleanTargetBase = cleanTargetTitle.replace(Regex("""(?i)\b(?:season|s)[-_ ]?\d+\b"""), "").replace(Regex("""[\(\)\[\]\{\}\-_,:\.'\"\|\\\/–—]"""), " ").trim()
+            val candidateVideos = mutableListOf<Video>()
+
+            for (q in queries.take(3)) {
+                val found = providerManager.searchMoviebox(q)
+                for (item in found) {
+                    if (item.id == video.id || item.videoUrl == video.videoUrl) continue
+                    if (candidateVideos.any { it.id == item.id }) continue
+
+                    val cleanCandTitle = VideoExtractor.cleanTitle(item.title)
+                    val candSeason = Regex("""(?i)\b(?:season|s)[-_ ]?(\d+)\b""").find(item.title)?.groupValues?.get(1)?.toIntOrNull()
+                    val isSeasonMatch = if (isSeriesPlayback) {
+                        (candSeason == null || candSeason == targetSeason)
+                    } else true
+
+                    val cleanCandBase = cleanCandTitle.replace(Regex("""(?i)\b(?:season|s)[-_ ]?\d+\b"""), "").replace(Regex("""[\(\)\[\]\{\}\-_,:\.'\"\|\\\/–—]"""), " ").trim()
+                    val isSeriesTitleMatch = isSeriesPlayback && isSeasonMatch && (
+                        cleanCandBase.equals(cleanTargetBase, ignoreCase = true) ||
+                        item.title.startsWith(video.title, ignoreCase = true) ||
+                        video.title.startsWith(cleanCandBase, ignoreCase = true) ||
+                        item.title.contains("$cleanTargetBase S$targetSeason", ignoreCase = true) ||
+                        item.title.contains("$cleanTargetBase Season $targetSeason", ignoreCase = true)
+                    )
+
+                    val isMatch = isSeriesTitleMatch ||
+                                  VideoExtractor.isCrossProviderMovieMatch(video, item) ||
+                                  item.title.equals(video.title, ignoreCase = true) ||
+                                  item.title.equals(q, ignoreCase = true)
+
+                    if (isMatch) {
+                        candidateVideos.add(item)
+                    }
+                }
+                if (candidateVideos.isNotEmpty()) break
+            }
+
+            candidateVideos.sortWith(
+                compareByDescending<Video> { 
+                    if (it.id.startsWith("mb_") || it.videoUrl.startsWith("moviebox://")) 10 else 0 
+                }.thenBy { 
+                    val low = it.title.lowercase()
+                    if (low.contains("cam") || low.contains("hindi") || low.contains("dub")) 1 else 0 
+                }
+            )
+
+            for (cand in candidateVideos.take(3)) {
+                val fetchCand = if (isSeriesPlayback && (cand.isSeries == true || cand.id.startsWith("mb_") || cand.videoUrl.startsWith("moviebox://"))) {
+                    if (!cand.videoUrl.contains("se=") && !cand.videoUrl.contains("ep=")) {
+                        cand.copy(videoUrl = "${cand.videoUrl}&se=$targetSeason&ep=$targetEp", isSeries = true)
+                    } else cand
+                } else cand
+                val servers = providerManager.fetchServers(fetchCand)
+                for (s in servers) {
+                    if (VideoExtractor.isServerMatchingMovie(video.title, s) && 
+                        results.none { it.url == s.url || it.name.trim().equals(s.name.trim(), ignoreCase = true) }) {
+                        results.add(s)
+                    }
+                }
+                if (results.isNotEmpty()) break
+            }
+        } catch (e: Exception) {
+            Log.w("VideoRepository", "Error finding fast-track MovieBox mirrors for '${video.title}': ${e.message}")
+        }
+        results
     }
 
     suspend fun findProviderMirrorsForVideo(video: Video, targetEpisode: Episode? = null): List<VideoServer> = withContext(Dispatchers.IO) {

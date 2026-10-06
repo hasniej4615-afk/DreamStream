@@ -543,6 +543,28 @@ class ProviderManager @Inject constructor(
     }
 
     /**
+     * Fast-track dedicated search specifically for MovieBox without waiting for slower web scrapers.
+     */
+    suspend fun searchMoviebox(query: String, page: Int = 1): List<Video> = withContext(Dispatchers.IO) {
+        var mb = activeProviderInstances.values.firstOrNull { 
+            it.isEnabled && (it.id.contains("moviebox") || it.name.contains("moviebox", ignoreCase = true)) 
+        }
+        if (mb == null && activeProviderInstances.isEmpty()) {
+            initializeActiveProviders()
+            mb = activeProviderInstances.values.firstOrNull { 
+                it.isEnabled && (it.id.contains("moviebox") || it.name.contains("moviebox", ignoreCase = true)) 
+            }
+        }
+        if (mb == null) return@withContext emptyList()
+        try {
+            mb.search(query, page)
+        } catch (e: Exception) {
+            Log.w(TAG, "Fast-track Moviebox search failed: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /**
      * Fetches category items from all enabled custom (non-core) providers.
      * Merged into Home categories alongside official sources.
      */
