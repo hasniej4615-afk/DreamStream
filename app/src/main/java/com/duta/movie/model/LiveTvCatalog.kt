@@ -68,18 +68,6 @@ object LiveTvCatalog {
             isSeries = false
         ),
         Video(
-            id = "live_tv6",
-            title = "TV6",
-            thumbnailUrl = "https://i.imgur.com/bK8UH9D.png",
-            backdropUrl = "https://i.imgur.com/bK8UH9D.png",
-            videoUrl = "https://d25tgymtnqzu8s.cloudfront.net/smil:tv6/playlist.m3u8?id=6",
-            duration = "LIVE",
-            quality = "1080p FHD",
-            description = "Saluran nostalgia RTM menyiarkan filem klasik, drama retro dan khazanah arkib rancangan hiburan malar segar.",
-            servers = listOf(VideoServer("RTM CloudFront (1080p)", "https://d25tgymtnqzu8s.cloudfront.net/smil:tv6/playlist.m3u8?id=6")),
-            isSeries = false
-        ),
-        Video(
             id = "live_parlimen_rakyat",
             title = "Parlimen (Dewan Rakyat)",
             thumbnailUrl = "https://i.postimg.cc/mgrVsTMY/header.png",

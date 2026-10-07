@@ -1239,7 +1239,6 @@ fun NetflixThumbnail(
                             id.contains("okey") -> listOf(Color(0xFF0C2E25), Color(0xFF061813), Color(0xFF020B09))
                             id.contains("sukan") -> listOf(Color(0xFF3B0D12), Color(0xFF1E0609), Color(0xFF0E0204))
                             id.contains("berita") -> listOf(Color(0xFF102542), Color(0xFF081322), Color(0xFF030810))
-                            id.contains("tv6") -> listOf(Color(0xFF331D08), Color(0xFF1A0E04), Color(0xFF0C0602))
                             id.contains("parlimen") -> listOf(Color(0xFF2E0F14), Color(0xFF17070A), Color(0xFF0B0305))
                             id.contains("asean") -> listOf(Color(0xFF0C2636), Color(0xFF06131B), Color(0xFF02090E))
                             else -> listOf(Color(0xFF1B2330), Color(0xFF0F141D), Color(0xFF080A0F))
