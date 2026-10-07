@@ -2912,15 +2912,24 @@ class VideoViewModel @Inject constructor(
                         val matchesSeason = targetSeasonNum == null || epSeasonNum == null || epSeasonNum == targetSeasonNum
                         notMeta && matchesSeason
                     }
-                    if (isEpisodeUrl || targetEpisode != null) {
-                        val primaryTargetUrl = if (isEpisodeUrl) episodeUrl!! else targetEpisode!!.url
-                        val primarySlug = VideoExtractor.extractCleanSlug(primaryTargetUrl)
-                        val matchingEp = filteredEps.find { 
-                            it.url == primaryTargetUrl || it.id == primaryTargetUrl ||
-                            (VideoExtractor.extractCleanSlug(it.url) == primarySlug) || 
-                            (primaryTargetUrl.contains(VideoExtractor.extractCleanSlug(it.url)) && VideoExtractor.extractCleanSlug(it.url).length > 5) || 
-                            (it.url.contains(primarySlug) && primarySlug.length > 5)
-                        }
+                    if (targetEpisode != null) {
+                        _currentEpisode.value = filteredEps.find { it.url == targetEpisode.url || it.id == targetEpisode.id } ?: targetEpisode
+                    } else if (isEpisodeUrl) {
+                        val primaryTargetUrl = episodeUrl!!
+                        val matchingEp = filteredEps.find { it.url == primaryTargetUrl || it.id == primaryTargetUrl }
+                            ?: filteredEps.find { 
+                                val pSe = Regex("""(?i)[?&]se=(\d+)""").find(primaryTargetUrl)?.groupValues?.get(1)
+                                val pEp = Regex("""(?i)[?&]ep=(\d+)""").find(primaryTargetUrl)?.groupValues?.get(1)
+                                val tSe = Regex("""(?i)[?&]se=(\d+)""").find(it.url)?.groupValues?.get(1)
+                                val tEp = Regex("""(?i)[?&]ep=(\d+)""").find(it.url)?.groupValues?.get(1)
+                                pEp != null && tEp != null && pEp == tEp && (pSe == null || tSe == null || pSe == tSe)
+                            }
+                            ?: filteredEps.find { 
+                                val pEpNum = Regex("""(?i)(?:episode|eps|ep)[-_.:\s]*(\d+)""").find(primaryTargetUrl)?.groupValues?.get(1)
+                                val tEpNum = Regex("""(?i)(?:episode|eps|ep)[-_.:\s]*(\d+)""").find(it.url)?.groupValues?.get(1)
+                                    ?: Regex("""(?i)(?:episode|eps|ep)[-_.:\s]*(\d+)""").find(it.name)?.groupValues?.get(1)
+                                pEpNum != null && tEpNum != null && pEpNum == tEpNum
+                            }
                         if (matchingEp != null) _currentEpisode.value = matchingEp
                     } else if (_currentEpisode.value == null && filteredEps.isNotEmpty()) {
                         val videoSlug = VideoExtractor.extractCleanSlug(video!!.videoUrl)
@@ -2947,8 +2956,8 @@ class VideoViewModel @Inject constructor(
                     return@launch
                 }
 
-                val episodePageUrl = if (isEpisodeUrl) episodeUrl 
-                                     else if (targetEpisode != null) targetEpisode.url
+                val episodePageUrl = if (targetEpisode != null) targetEpisode.url
+                                     else if (isEpisodeUrl) episodeUrl 
                                      else if (video?.isSeries == true || video?.isShortTv == true) _currentEpisode.value?.url 
                                      else null
                 
@@ -3523,28 +3532,32 @@ class VideoViewModel @Inject constructor(
                 }
                 
                 // CRITICAL FIX: Ensure _currentEpisode.value is NEVER null if we have episodes
-                val curEpSeason = Regex("""(?i)\b(?:season|s)[-_ ]?(\d+)\b""").find(_currentEpisode.value?.season?.ifEmpty { _currentEpisode.value?.url ?: "" } ?: "")?.groupValues?.get(1)?.toIntOrNull()
-                if (targetSeasonNum != null && curEpSeason != null && curEpSeason != targetSeasonNum) {
-                    _currentEpisode.value = null
-                }
-                if (_currentEpisode.value == null && video!!.episodes.isNotEmpty()) {
-                    val filteredEps = video!!.episodes.filter { ep ->
-                        val low = ep.name.lowercase()
-                        val notMeta = !low.contains("lihat semua") && !low.contains("see all") && 
-                                      !low.contains("episode list") && !low.contains("daftar episode")
-                        val epSeasonNum = Regex("""(?i)\b(?:season|s)[-_ ]?(\d+)\b""").find(ep.season.ifEmpty { ep.url })?.groupValues?.get(1)?.toIntOrNull()
-                        val matchesSeason = targetSeasonNum == null || epSeasonNum == null || epSeasonNum == targetSeasonNum
-                        notMeta && matchesSeason
+                if (targetEpisode != null) {
+                    _currentEpisode.value = targetEpisode
+                } else {
+                    val curEpSeason = Regex("""(?i)\b(?:season|s)[-_ ]?(\d+)\b""").find(_currentEpisode.value?.season?.ifEmpty { _currentEpisode.value?.url ?: "" } ?: "")?.groupValues?.get(1)?.toIntOrNull()
+                    if (targetSeasonNum != null && curEpSeason != null && curEpSeason != targetSeasonNum) {
+                        _currentEpisode.value = null
                     }
-                    val videoSlug = VideoExtractor.extractCleanSlug(video!!.videoUrl)
-                    val idSlug = VideoExtractor.stripSourcePrefix(videoId)
-                    val matched = filteredEps.find { ep ->
-                        val epSlug = VideoExtractor.extractCleanSlug(ep.url)
-                        epSlug == videoSlug || epSlug == idSlug ||
-                        (videoSlug.length > 5 && (epSlug.contains(videoSlug) || videoSlug.contains(epSlug))) ||
-                        (idSlug.length > 5 && (epSlug.contains(idSlug) || idSlug.contains(epSlug)))
+                    if (_currentEpisode.value == null && video!!.episodes.isNotEmpty()) {
+                        val filteredEps = video!!.episodes.filter { ep ->
+                            val low = ep.name.lowercase()
+                            val notMeta = !low.contains("lihat semua") && !low.contains("see all") && 
+                                          !low.contains("episode list") && !low.contains("daftar episode")
+                            val epSeasonNum = Regex("""(?i)\b(?:season|s)[-_ ]?(\d+)\b""").find(ep.season.ifEmpty { ep.url })?.groupValues?.get(1)?.toIntOrNull()
+                            val matchesSeason = targetSeasonNum == null || epSeasonNum == null || epSeasonNum == targetSeasonNum
+                            notMeta && matchesSeason
+                        }
+                        val videoSlug = VideoExtractor.extractCleanSlug(video!!.videoUrl)
+                        val idSlug = VideoExtractor.stripSourcePrefix(videoId)
+                        val matched = filteredEps.find { ep ->
+                            val epSlug = VideoExtractor.extractCleanSlug(ep.url)
+                            epSlug == videoSlug || epSlug == idSlug ||
+                            (videoSlug.length > 5 && (epSlug.contains(videoSlug) || videoSlug.contains(epSlug))) ||
+                            (idSlug.length > 5 && (epSlug.contains(idSlug) || idSlug.contains(epSlug)))
+                        }
+                        _currentEpisode.value = matched ?: filteredEps.firstOrNull() ?: video!!.episodes.first()
                     }
-                    _currentEpisode.value = matched ?: filteredEps.firstOrNull() ?: video!!.episodes.first()
                 }
 
                 val trendingContent = video!!.title.contains("Agent Kim", ignoreCase = true) || 
@@ -3576,8 +3589,8 @@ class VideoViewModel @Inject constructor(
                     !it.contains("player=") && !it.contains("mirror=") 
                 } ?: false
                 
-                val episodePageUrl = if (isEpisodeUrl) serverUrl 
-                                     else if (targetEpisode != null) targetEpisode.url
+                val episodePageUrl = if (targetEpisode != null) targetEpisode.url
+                                     else if (isEpisodeUrl) serverUrl 
                                      else _currentEpisode.value?.url 
                                      
                 val baseServers = if (episodePageUrl != null) {
@@ -3598,7 +3611,7 @@ class VideoViewModel @Inject constructor(
 
                 if (baseServers.isNotEmpty()) {
                     val cur = _videoMetadata.value
-                    if (cur != null && cur.servers.isEmpty()) {
+                    if (cur != null) {
                         val updated = cur.copy(servers = baseServers)
                         withContext(Dispatchers.Main) {
                             _videoMetadata.value = applyMetadata(updated)
@@ -5183,12 +5196,12 @@ class VideoViewModel @Inject constructor(
             val idx = episodes.indexOfFirst { it.url == currentEp.url || it.id == currentEp.id }
             if (idx == -1) {
                 val slug = VideoExtractor.extractStableId(currentEp.url)
-                episodes.indexOfFirst { VideoExtractor.extractStableId(it.url) == slug || it.url.contains(slug) }
+                episodes.indexOfFirst { VideoExtractor.extractStableId(it.url) == slug }
             } else idx
         } else {
             val activeUrl = _currentServerUrl.value ?: ""
             val activeSlug = VideoExtractor.extractStableId(activeUrl)
-            episodes.indexOfFirst { it.url == activeUrl || VideoExtractor.extractStableId(it.url) == activeSlug || it.url.contains(activeSlug) }
+            episodes.indexOfFirst { it.url == activeUrl || VideoExtractor.extractStableId(it.url) == activeSlug }
         }
         
         Log.d("VideoViewModel", "AUTOPLAY Engine: FoundIdx=$currentIdx, TotalEps=${episodes.size}, ActiveEp=${currentEp?.name}")
@@ -5225,7 +5238,7 @@ class VideoViewModel @Inject constructor(
             val idx = episodes.indexOfFirst { it.url == currentEp.url || it.id == currentEp.id }
             if (idx == -1) {
                 val slug = VideoExtractor.extractStableId(currentEp.url)
-                episodes.indexOfFirst { VideoExtractor.extractStableId(it.url) == slug || it.url.contains(slug) }
+                episodes.indexOfFirst { VideoExtractor.extractStableId(it.url) == slug }
             } else idx
         } else -1
 

@@ -612,6 +612,7 @@ fun VideoPlayerScreen(
     // Ensures that when switching episodes, all states are fully reset to prevent "stuck loading".
     val activeContentKey = remember(videoId, currentEpisode?.url) { "$videoId-${currentEpisode?.url}" }
     val lastKnownContentKey = remember { mutableStateOf(activeContentKey) }
+    val currentUrl = remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(activeContentKey) {
         if (activeContentKey != lastKnownContentKey.value) {
@@ -629,6 +630,7 @@ fun VideoPlayerScreen(
             // Force player to clear its state for the new media item
             exoPlayer.stop()
             exoPlayer.clearMediaItems()
+            currentUrl.value = null
         }
     }
 
@@ -911,7 +913,6 @@ fun VideoPlayerScreen(
         }
     }
 
-    val currentUrl = remember { mutableStateOf<String?>(null) }
     val currentSub = remember { mutableStateOf<String?>(null) }
     val currentPreferredLang = rememberUpdatedState(preferredLanguageCode)
     val currentSelectedSubtitle = rememberUpdatedState(selectedSubtitle)
@@ -1318,8 +1319,8 @@ fun VideoPlayerScreen(
                     castPlayer.play()
                 }
             } else {
-                // FOR LOCAL PLAYBACK: Only load and prepare when stream URL actually changes
-                if (currentUrl.value != url) {
+                // FOR LOCAL PLAYBACK: Only load and prepare when stream URL actually changes or content key changes
+                if (currentUrl.value != url || activeContentKey != lastKnownContentKey.value) {
                     exoPlayer.stop()
                     exoPlayer.clearMediaItems()
                     val isHls = url.lowercase().contains(".m3u8") || url.lowercase().contains(".txt") || 
@@ -1629,8 +1630,8 @@ fun VideoPlayerScreen(
                     Log.d("VideoPlayerScreen", "Playback ended normally. Triggering autoplay.")
                     
                     scope.launch {
-                        // Small "breathe" delay for TV hardware to clear buffers
-                        delay(1200) 
+                        // Small "breathe" delay for player buffer reset and smooth continuous autoplay
+                        delay(300) 
                         val hasNext = viewModel.resolveNextEpisode(videoId)
                         if (!hasNext) {
                             Log.d("VideoPlayerScreen", "Kicked out: No next episode for movie/series end.")
@@ -3637,8 +3638,7 @@ fun VideoPlayerContent(
                         val slug = com.duta.movie.util.VideoExtractor.extractStableId(currentEp.url)
                         val idx = episodes.indexOfFirst { 
                             it.url == currentEp.url || it.id == currentEp.id || 
-                            com.duta.movie.util.VideoExtractor.extractStableId(it.url) == slug ||
-                            it.url.contains(slug)
+                            com.duta.movie.util.VideoExtractor.extractStableId(it.url) == slug
                         }
                         if (idx == -1 && episodes.isNotEmpty()) 0 else idx
                     } else if (episodes.isNotEmpty()) 0 else -1

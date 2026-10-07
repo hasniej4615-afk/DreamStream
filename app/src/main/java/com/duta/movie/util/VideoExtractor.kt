@@ -4888,20 +4888,29 @@ object VideoExtractor {
     }
 
     fun extractStableId(url: String): String {
-        val slug = url.substringBefore('?').trimEnd('/').substringAfterLast('/')
+        val baseSlug = url.substringBefore('?').trimEnd('/').substringAfterLast('/')
+        val seMatch = Regex("""(?i)[?&](?:se|season)=(\d+)""").find(url)?.groupValues?.get(1)
+        val epMatch = Regex("""(?i)[?&](?:ep|epid|episode)=(\d+)""").find(url)?.groupValues?.get(1)
+        val epSuffix = if (epMatch != null) {
+            if (seMatch != null) "_s${seMatch}_e${epMatch}" else "_ep${epMatch}"
+        } else ""
+
         return when {
-            url.contains("mantab.men", ignoreCase = true) || url.contains("df31", ignoreCase = true) -> {
-                val epMatch = Regex("""[?&]ep=(\d+)""").find(url)
-                if (epMatch != null) "dfw_${slug.removeSuffix(".html")}_ep${epMatch.groupValues[1]}"
-                else "dfw_${slug.removeSuffix(".html")}"
+            url.startsWith("moviebox://", ignoreCase = true) || url.contains("moviebox", ignoreCase = true) -> {
+                val idMatch = Regex("""(?i)[?&]id=([^&]+)""").find(url)?.groupValues?.get(1) ?: baseSlug
+                val cleanId = idMatch.removePrefix("mb_")
+                "mb_${cleanId}${epSuffix}"
             }
-            url.contains("pusatfilm", ignoreCase = true) -> "pf_$slug"
-            url.contains("dutamovie21.cam", ignoreCase = true) || (url.contains("/film/", ignoreCase = true) && url.contains("dutamovie", ignoreCase = true)) -> "dm_film_$slug"
-            url.contains("204.3.234.75", ignoreCase = true) || url.contains("dutamovie", ignoreCase = true) || url.contains("balletroyale.com", ignoreCase = true) -> "dm_$slug"
-            url.contains("bullerswood", ignoreCase = true) || url.contains("lk21", ignoreCase = true) || url.contains("inlionsforisbvi", ignoreCase = true) -> "bw_$slug"
-            url.contains("pencurimovie", ignoreCase = true) || url.contains("pencurifilm", ignoreCase = true) -> "pm_$slug"
-            isClusterSite(url) || url.contains("159.89.249.45") || url.contains("dutafilm", ignoreCase = true) -> "df_$slug"
-            else -> slug
+            url.contains("mantab.men", ignoreCase = true) || url.contains("df31", ignoreCase = true) -> {
+                "dfw_${baseSlug.removeSuffix(".html")}${epSuffix}"
+            }
+            url.contains("pusatfilm", ignoreCase = true) -> "pf_${baseSlug}${epSuffix}"
+            url.contains("dutamovie21.cam", ignoreCase = true) || (url.contains("/film/", ignoreCase = true) && url.contains("dutamovie", ignoreCase = true)) -> "dm_film_${baseSlug}${epSuffix}"
+            url.contains("204.3.234.75", ignoreCase = true) || url.contains("dutamovie", ignoreCase = true) || url.contains("balletroyale.com", ignoreCase = true) -> "dm_${baseSlug}${epSuffix}"
+            url.contains("bullerswood", ignoreCase = true) || url.contains("lk21", ignoreCase = true) || url.contains("inlionsforisbvi", ignoreCase = true) -> "bw_${baseSlug}${epSuffix}"
+            url.contains("pencurimovie", ignoreCase = true) || url.contains("pencurifilm", ignoreCase = true) -> "pm_${baseSlug}${epSuffix}"
+            isClusterSite(url) || url.contains("159.89.249.45") || url.contains("dutafilm", ignoreCase = true) -> "df_${baseSlug}${epSuffix}"
+            else -> "${baseSlug}${epSuffix}"
         }
     }
 
