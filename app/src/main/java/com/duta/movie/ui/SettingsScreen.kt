@@ -185,6 +185,9 @@ fun SettingsScreen(
     var showClearPakcikDialog by remember { mutableStateOf(false) }
     var isClearingPakcik by remember { mutableStateOf(false) }
 
+    var showBroadcastAdminDialog by remember { mutableStateOf(false) }
+    var showBroadcastUserDialog by remember { mutableStateOf(false) }
+
     var showBaseUrlDialog by remember { mutableStateOf(false) }
     var baseUrlInput by remember { mutableStateOf("") }
     val activeBaseUrl by viewModel.activeBaseUrl.collectAsStateWithLifecycle()
@@ -578,6 +581,21 @@ fun SettingsScreen(
                 }
             },
             containerColor = Color(0xFF1E1E1E)
+        )
+    }
+
+    if (showBroadcastAdminDialog && isDebugModeEnabled) {
+        BroadcastAdminDialog(
+            viewModel = viewModel,
+            onDismissRequest = { showBroadcastAdminDialog = false }
+        )
+    }
+
+    val activeBroadcastMessage by viewModel.activeBroadcast.collectAsStateWithLifecycle()
+    if (showBroadcastUserDialog && activeBroadcastMessage != null) {
+        BroadcastAnnouncementDialog(
+            broadcast = activeBroadcastMessage!!,
+            onDismissRequest = { showBroadcastUserDialog = false }
         )
     }
 
@@ -1633,6 +1651,16 @@ fun SettingsScreen(
                                 }
                                 item {
                                     SettingsActionCard(
+                                        title = "Broadcast Message to All Users",
+                                        description = "Admin: Hantar notifikasi & mesej pengumuman rasmi ke seluruh peranti pengguna Duta Movie",
+                                        icon = Icons.Default.Campaign,
+                                        onClick = {
+                                            showBroadcastAdminDialog = true
+                                        }
+                                    )
+                                }
+                                item {
+                                    SettingsActionCard(
                                         title = "Clear 'Pakcik Rekomen' (Supabase Cloud)",
                                         description = "Admin: Padam semua data cadangan video dari cloud database Supabase",
                                         icon = Icons.Default.DeleteForever,
@@ -1822,6 +1850,18 @@ fun SettingsScreen(
                             }
 
                             SettingsSection.ABOUT -> {
+                                if (activeBroadcastMessage != null && activeBroadcastMessage!!.isActive) {
+                                    item {
+                                        SettingsActionCard(
+                                            title = "Pengumuman: ${activeBroadcastMessage!!.title.ifBlank { "Mesej Rasmi" }}",
+                                            description = "Ketik untuk membaca siaran pengumuman terkini daripada pihak pentadbir",
+                                            icon = Icons.Default.Campaign,
+                                            onClick = {
+                                                showBroadcastUserDialog = true
+                                            }
+                                        )
+                                    }
+                                }
                                 item {
                                     SettingsActionCard(
                                         title = stringResource(R.string.user_manual_guide),

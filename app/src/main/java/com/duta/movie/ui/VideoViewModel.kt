@@ -18,6 +18,8 @@ import com.duta.movie.model.Comment
 import com.duta.movie.data.remote.CommentService
 import com.duta.movie.data.remote.RecommendationService
 import com.duta.movie.data.remote.CloudBackupService
+import com.duta.movie.data.remote.BroadcastService
+import com.duta.movie.model.BroadcastMessage
 import com.duta.movie.model.Recommendation
 import com.duta.movie.model.toVideo
 import com.duta.movie.util.SubtitleExtractor
@@ -54,6 +56,7 @@ class VideoViewModel @Inject constructor(
     private val commentService: CommentService,
     private val recommendationService: RecommendationService,
     private val cloudBackupService: CloudBackupService,
+    private val broadcastService: BroadcastService,
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -888,6 +891,7 @@ class VideoViewModel @Inject constructor(
 
     init {
         cleanDeadMirrors()
+        fetchActiveBroadcast(forceShow = false)
         com.duta.movie.util.SubtitleExtractor.init(context)
         val defaultCategories = listOf(
             mapOf("name" to "LIVE TV", "path" to "/live-tv/"),
@@ -1318,6 +1322,107 @@ class VideoViewModel @Inject constructor(
                 _isCloudRestoreLoading.value = false
                 onResult(false, e.localizedMessage ?: "Unexpected restore error")
             }
+        }
+    }
+
+    // Global Broadcast Announcement System (Remote push to all users via Supabase)
+    private val _activeBroadcast = MutableStateFlow<BroadcastMessage?>(null)
+    val activeBroadcast: StateFlow<BroadcastMessage?> = _activeBroadcast.asStateFlow()
+
+    private val _showBroadcastDialog = MutableStateFlow(false)
+    val showBroadcastDialog: StateFlow<Boolean> = _showBroadcastDialog.asStateFlow()
+
+    private val _isSendingBroadcast = MutableStateFlow(false)
+    val isSendingBroadcast: StateFlow<Boolean> = _isSendingBroadcast.asStateFlow()
+
+    private val _isBroadcastLoading = MutableStateFlow(false)
+    val isBroadcastLoading: StateFlow<Boolean> = _isBroadcastLoading.asStateFlow()
+
+    fun fetchActiveBroadcast(forceShow: Boolean = false) {
+        viewModelScope.launch {
+            _isBroadcastLoading.value = true
+            try {
+                val res = broadcastService.getBroadcast()
+                res.fold(
+                    onSuccess = { msg ->
+                        _activeBroadcast.value = msg
+                        if (msg != null && msg.isActive && msg.message.isNotBlank()) {
+                            val lastDismissed = preferenceManager.lastDismissedBroadcastId.first()
+                            if (forceShow || lastDismissed != msg.id) {
+                                _showBroadcastDialog.value = true
+                            }
+                        } else {
+                            if (!forceShow) {
+                                _showBroadcastDialog.value = false
+                            }
+                        }
+                    },
+                    onFailure = { err ->
+                        Log.w("VideoViewModel", "Failed to fetch broadcast: ${err.message}")
+                    }
+                )
+            } catch (e: Exception) {
+                Log.e("VideoViewModel", "Error fetching broadcast", e)
+            } finally {
+                _isBroadcastLoading.value = false
+            }
+        }
+    }
+
+    fun dismissBroadcastDialog() {
+        viewModelScope.launch {
+            val currentId = _activeBroadcast.value?.id
+            if (!currentId.isNullOrBlank()) {
+                preferenceManager.setLastDismissedBroadcastId(currentId)
+            }
+            _showBroadcastDialog.value = false
+        }
+    }
+
+    fun sendBroadcastMessage(
+        title: String,
+        message: String,
+        type: String = "info",
+        onResult: (Boolean, String) -> Unit
+    ) {
+        viewModelScope.launch {
+            _isSendingBroadcast.value = true
+            val res = broadcastService.sendBroadcast(
+                title = title,
+                message = message,
+                type = type,
+                author = "Admin"
+            )
+            res.fold(
+                onSuccess = { sentMsg ->
+                    _activeBroadcast.value = sentMsg
+                    _isSendingBroadcast.value = false
+                    onResult(true, "Mesej siaran berjaya dihantar ke semua pengguna!")
+                },
+                onFailure = { err ->
+                    _isSendingBroadcast.value = false
+                    onResult(false, err.message ?: "Gagal menghantar mesej siaran.")
+                }
+            )
+        }
+    }
+
+    fun clearBroadcastMessage(onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            _isSendingBroadcast.value = true
+            val res = broadcastService.clearBroadcast()
+            res.fold(
+                onSuccess = {
+                    _activeBroadcast.value = null
+                    _showBroadcastDialog.value = false
+                    _isSendingBroadcast.value = false
+                    onResult(true, "Siaran mesej berjaya dipadam/dihentikan.")
+                },
+                onFailure = { err ->
+                    _isSendingBroadcast.value = false
+                    onResult(false, err.message ?: "Gagal memadam siaran mesej.")
+                }
+            )
         }
     }
 

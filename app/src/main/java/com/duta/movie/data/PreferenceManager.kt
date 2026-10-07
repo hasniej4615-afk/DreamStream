@@ -46,6 +46,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         private val VOICE_ENHANCER_MODE_KEY = intPreferencesKey("voice_enhancer_mode")
         private val USER_AVATAR_PATH_KEY = stringPreferencesKey("user_avatar_path")
         private val LAST_CLOUD_PIN_KEY = stringPreferencesKey("last_cloud_pin")
+        private val LAST_DISMISSED_BROADCAST_ID_KEY = stringPreferencesKey("last_dismissed_broadcast_id")
 
         val DEFAULT_ENABLED_CATEGORIES = setOf(
             "/live-tv/",
@@ -549,6 +550,11 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
     val lastCloudPin: Flow<String> = context.dataStore.data.map { it[LAST_CLOUD_PIN_KEY] ?: "" }
     suspend fun setLastCloudPin(pin: String) {
         context.dataStore.edit { it[LAST_CLOUD_PIN_KEY] = pin }
+    }
+
+    val lastDismissedBroadcastId: Flow<String> = context.dataStore.data.map { it[LAST_DISMISSED_BROADCAST_ID_KEY] ?: "" }
+    suspend fun setLastDismissedBroadcastId(id: String) {
+        context.dataStore.edit { it[LAST_DISMISSED_BROADCAST_ID_KEY] = id }
     }
 
     fun getSubtitleOffset(videoId: String): Flow<Long> = context.dataStore.data.map {

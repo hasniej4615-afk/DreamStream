@@ -59,6 +59,7 @@ import com.duta.movie.ui.CategoryResultsScreen
 import com.duta.movie.ui.ActressProfileScreen
 import com.duta.movie.ui.SettingsScreen
 import com.duta.movie.ui.UpdateDialog
+import com.duta.movie.ui.BroadcastAnnouncementDialog
 import com.duta.movie.ui.navigation.Destination
 import com.duta.movie.ui.VideoViewModel
 import dagger.hilt.android.AndroidEntryPoint
@@ -225,6 +226,15 @@ class MainActivity : AppCompatActivity() {
                 val videoViewModel: VideoViewModel = hiltViewModel()
                 val isPlayerActive by videoViewModel.isPlayerActive.collectAsStateWithLifecycle()
                 val isMobileLandscapeEnabled by videoViewModel.isMobileLandscapeEnabled.collectAsStateWithLifecycle()
+                val showBroadcastDialog by videoViewModel.showBroadcastDialog.collectAsStateWithLifecycle()
+                val activeBroadcast by videoViewModel.activeBroadcast.collectAsStateWithLifecycle()
+
+                if (showBroadcastDialog && activeBroadcast != null && updateInfo == null && !isPlayerActive) {
+                    BroadcastAnnouncementDialog(
+                        broadcast = activeBroadcast!!,
+                        onDismissRequest = { videoViewModel.dismissBroadcastDialog() }
+                    )
+                }
                 
                 val uiSafeAreaPadding by videoViewModel.uiSafeAreaPadding.collectAsStateWithLifecycle()
                 val uiScaleFactor by videoViewModel.uiScaleFactor.collectAsStateWithLifecycle()
