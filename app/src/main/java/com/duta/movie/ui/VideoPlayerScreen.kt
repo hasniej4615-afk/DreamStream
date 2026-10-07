@@ -630,21 +630,26 @@ fun VideoPlayerScreen(
             
             // OWL'S EYE: Auto-Resume after mirror rotation
             // Only apply if the content key (episode) matches the one we captured the position from.
-            if (pendingRotationResumePosition > 0 && activeContentKey == pendingRotationContentKey) {
+            // Never apply resume to live streams to ensure playback stays at the live edge.
+            if (!isLive && pendingRotationResumePosition > 0 && activeContentKey == pendingRotationContentKey) {
                 Log.i("VideoPlayer", "Auto-resuming to $pendingRotationResumePosition for $activeContentKey")
                 exoPlayer.seekTo(pendingRotationResumePosition)
                 pendingRotationResumePosition = -1L
                 pendingRotationContentKey = null
                 viewModel.setSuppressResume(true)
-            } else if (pendingRotationResumePosition > 0) {
-                Log.w("VideoPlayer", "Discarding stale resume position for different episode.")
+            } else if (isLive || pendingRotationResumePosition > 0) {
+                if (isLive) {
+                    Log.d("VideoPlayer", "Live TV stream: discarding any resume position to maintain live edge.")
+                } else {
+                    Log.w("VideoPlayer", "Discarding stale resume position for different episode.")
+                }
                 pendingRotationResumePosition = -1L
                 pendingRotationContentKey = null
             }
 
             // OWL'S EYE: Only show resume dialog if we have meaningful progress (> 5s)
-            // AND we haven't already suppressed it for this session.
-            if (savedProgress > 5000L && !shouldSuppressResume) { 
+            // AND we haven't already suppressed it for this session. Exclude Live TV streams.
+            if (!isLive && savedProgress > 5000L && !shouldSuppressResume) { 
                 showResumeDialog = true 
             }
             // Reset suppression for future manual reloads
@@ -825,7 +830,7 @@ fun VideoPlayerScreen(
 
                 // Reject suspiciously short videos (< 60s for full movie or episode) as fake/dead bumper clips
                 val isAltPartner = extractedUrl?.let { com.duta.movie.util.VideoExtractor.isAlternativePartnerHost(it) } ?: false
-                val isShortFakeDuration = useWebView && !isCasting && !isAltPartner && duration in 1..59_999L && (currentPos >= duration - 2000L || stallCount >= 3)
+                val isShortFakeDuration = !isLive && useWebView && !isCasting && !isAltPartner && duration in 1..59_999L && (currentPos >= duration - 2000L || stallCount >= 3)
                 if (isShortFakeDuration) {
                     Log.w("VideoPlayer", "Stall Guard: Suspiciously short duration ($duration ms, ended/stuck at $currentPos ms) detected on WebView. Rotating mirror.")
                     if (!isCasting) {
@@ -849,16 +854,24 @@ fun VideoPlayerScreen(
                     stallCount++
                     val maxStallCycles = if (isTrending) 3 else 4 // 9s for trending vs 16s for normal
                     if (stallCount >= maxStallCycles) {
-                        Log.w("VideoPlayer", "Stall Guard: Content stuck at $currentPos (playing=$isPlayingOrBuffering, progressing=$isProgressing). Rotating mirror.")
-                        if (currentPos > 2000) {
-                            pendingRotationResumePosition = currentPos
-                            pendingRotationContentKey = activeContentKey
+                        if (isLive || activePlayer.isCurrentMediaItemLive) {
+                            Log.i("VideoPlayer", "Stall Guard on Live TV: Reconnecting live player to live edge...")
+                            activePlayer.seekToDefaultPosition()
+                            activePlayer.prepare()
+                            activePlayer.play()
+                            stallCount = 0
+                        } else {
+                            Log.w("VideoPlayer", "Stall Guard: Content stuck at $currentPos (playing=$isPlayingOrBuffering, progressing=$isProgressing). Rotating mirror.")
+                            if (currentPos > 2000) {
+                                pendingRotationResumePosition = currentPos
+                                pendingRotationContentKey = activeContentKey
+                            }
+                            if (!isCasting) {
+                                extractedUrl?.let { viewModel.notifyPlaybackFailure(it) }
+                                viewModel.resolveNextServer(videoId, viewModel.currentServerUrl.value)
+                            }
+                            break
                         }
-                        if (!isCasting) {
-                            extractedUrl?.let { viewModel.notifyPlaybackFailure(it) }
-                            viewModel.resolveNextServer(videoId, viewModel.currentServerUrl.value)
-                        }
-                        break
                     }
                 } else {
                     stallCount = 0
@@ -1378,6 +1391,13 @@ fun VideoPlayerScreen(
                         delay(4000)
                         val stillResolving = isResolvingState || viewModel.isResolving.value
                         if (currentPlayer.playbackState == Player.STATE_IDLE && !useWebView && !isCasting && !isVideoReady && !isFinishing && !stillResolving) {
+                            if (isLive || currentPlayer.isCurrentMediaItemLive) {
+                                Log.w("VideoPlayerScreen", "Live TV ExoPlayer in STATE_IDLE for 4s. Re-preparing live stream...")
+                                currentPlayer.seekToDefaultPosition()
+                                currentPlayer.prepare()
+                                currentPlayer.play()
+                                return@launch
+                            }
                             Log.w("VideoPlayerScreen", "ExoPlayer stranded in STATE_IDLE for 4s. Media failed to load. Rotating to next server...")
                             isFinishing = true
                             extractedUrl?.let { viewModel.notifyPlaybackFailure(it) }
@@ -1425,6 +1445,16 @@ fun VideoPlayerScreen(
                             // If we have had no progress for effectiveTimeout, or overall stuck beyond maxTimeout:
                             if ((timeSinceLastProgress >= effectiveTimeout) || (totalTimeElapsed >= maxTimeout)) {
                                 if (currentPlayer.playbackState == Player.STATE_BUFFERING && !isFinishing) {
+                                    if (isLive || currentPlayer.isCurrentMediaItemLive) {
+                                        Log.w("VideoPlayerScreen", "Buffering timeout on Live TV. Re-preparing live stream to live edge...")
+                                        scope.launch {
+                                            delay(1000)
+                                            currentPlayer.seekToDefaultPosition()
+                                            currentPlayer.prepare()
+                                            currentPlayer.play()
+                                        }
+                                        break
+                                    }
                                     Log.w("VideoPlayerScreen", "Stuck in BUFFERING for ${totalTimeElapsed / 1000}s (no progress for ${timeSinceLastProgress / 1000}s, bufferedDuration=${currentBufferedDuration}ms, isInitialStartup=$isInitialStartup). Stream appears dead. Rotating.")
                                     if (currentPlayer.currentPosition > 2000) {
                                         pendingRotationResumePosition = currentPlayer.currentPosition
@@ -1442,25 +1472,41 @@ fun VideoPlayerScreen(
 
                 if (state == Player.STATE_READY) {
                     isUserSeeking = false
-                    // OWL'S EYE: Zombie Detection
-                    // If a "Full Movie" reported duration is less than 5 minutes, it's likely an ad loop or broken mirror.
-                    val duration = currentPlayer.duration
-                    val isMovie = video?.isSeries == false
-                    val isZombie = if (isMovie) {
-                        duration in 1..300_000L
-                    } else {
-                        // For series, be slightly more permissive but still catch 1-3 minute ad loops
-                        duration in 1..180_000L
-                    }
+                    val isLiveStream = isLive || currentPlayer.isCurrentMediaItemLive
+                    if (!isLiveStream) {
+                        // OWL'S EYE: Zombie Detection
+                        // If a "Full Movie" reported duration is less than 5 minutes, it's likely an ad loop or broken mirror.
+                        // Live TV channels have short sliding window durations (90-100s) and are excluded.
+                        val duration = currentPlayer.duration
+                        val isMovie = video?.isSeries == false
+                        val isZombie = if (isMovie) {
+                            duration in 1..300_000L
+                        } else {
+                            // For series, be slightly more permissive but still catch 1-3 minute ad loops
+                            duration in 1..180_000L
+                        }
 
-                    if (isZombie && !extractedUrl.isNullOrEmpty() && !extractedUrl!!.contains("preview")) {
-                        Log.w("VideoPlayerScreen", "Owl's Eye: Zombie Stream Detected (${duration/1000}s). Rotating...")
-                        isFinishing = true
-                        viewModel.notifyPlaybackFailure(extractedUrl!!)
-                        viewModel.resolveNextServer(videoId, viewModel.currentServerUrl.value)
+                        if (isZombie && !extractedUrl.isNullOrEmpty() && !extractedUrl!!.contains("preview")) {
+                            Log.w("VideoPlayerScreen", "Owl's Eye: Zombie Stream Detected (${duration/1000}s). Rotating...")
+                            isFinishing = true
+                            viewModel.notifyPlaybackFailure(extractedUrl!!)
+                            viewModel.resolveNextServer(videoId, viewModel.currentServerUrl.value)
+                        }
                     }
                 }
                 if (state == Player.STATE_ENDED) {
+                    val isLiveStream = isLive || currentPlayer.isCurrentMediaItemLive
+                    if (isLiveStream) {
+                        Log.i("VideoPlayerScreen", "Live TV stream reached ENDED. Re-preparing to live edge...")
+                        scope.launch {
+                            delay(1500)
+                            currentPlayer.seekToDefaultPosition()
+                            currentPlayer.prepare()
+                            currentPlayer.play()
+                        }
+                        return
+                    }
+
                     if (isFinishing) {
                         Log.d("VideoPlayerScreen", "ENDED reached but isFinishing=true. Ignoring autoplay.")
                         return
@@ -1522,7 +1568,7 @@ fun VideoPlayerScreen(
                 val cause = error.cause?.message ?: ""
                 Log.e("VideoPlayerScreen", "Player Error: $message | Cause: $cause | URL: ${extractedUrl?.take(60)}")
                 
-                if (currentPlayer.currentPosition > 2000) {
+                if (!isLive && !currentPlayer.isCurrentMediaItemLive && currentPlayer.currentPosition > 2000) {
                     pendingRotationResumePosition = currentPlayer.currentPosition
                     pendingRotationContentKey = activeContentKey
                 }

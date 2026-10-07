@@ -2299,6 +2299,13 @@ class VideoViewModel @Inject constructor(
     }
 
     fun notifyPlaybackFailure(url: String) {
+        val lowUrl = url.lowercase()
+        val currentVid = activeVideoId ?: _videoMetadata.value?.id ?: ""
+        if (lowUrl.contains("cloudfront.net") || lowUrl.contains("rtm") || lowUrl.contains("glueapi") ||
+            (currentVid.isNotEmpty() && com.duta.movie.model.LiveTvCatalog.isLiveVideo(currentVid))) {
+            Log.w("VideoViewModel", "notifyPlaybackFailure: Ignored for Live TV / CloudFront: $url")
+            return
+        }
         if (url.isNotEmpty()) {
             deadMirrors.add(url)
             exhaustedServerUrls.add(url)
@@ -4372,6 +4379,21 @@ class VideoViewModel @Inject constructor(
 
         val effectiveVideoId = videoId.ifEmpty { activeVideoId ?: _videoMetadata.value?.id ?: "" }
         Log.i("VideoViewModel", "resolveNextServer invoked: videoId='$videoId' (effective='$effectiveVideoId'), currentServer='$currentServerUrl'")
+
+        if (com.duta.movie.model.LiveTvCatalog.isLiveVideo(effectiveVideoId)) {
+            Log.i("VideoViewModel", "resolveNextServer: Live TV channel '$effectiveVideoId' retry requested. Refreshing live stream.")
+            isRotationLocked = false
+            rotationCount = 0
+            val liveVideo = com.duta.movie.model.LiveTvCatalog.channels.find { it.id == effectiveVideoId }
+            if (liveVideo != null) {
+                _videoMetadata.value = liveVideo
+                _resolvedUrl.value = liveVideo.videoUrl
+                _currentServerUrl.value = liveVideo.videoUrl
+                _isResolving.value = false
+                _error.value = null
+            }
+            return
+        }
 
         viewModelScope.launch {
             try {
