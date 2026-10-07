@@ -24,6 +24,7 @@ ALTER TABLE public.user_backups ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Allow public read backups by pin" ON public.user_backups;
 DROP POLICY IF EXISTS "Allow public insert backups" ON public.user_backups;
 DROP POLICY IF EXISTS "Allow public update backups by pin" ON public.user_backups;
+DROP POLICY IF EXISTS "Allow public delete backups" ON public.user_backups;
 
 -- 4. Policies for public anon key access
 CREATE POLICY "Allow public read backups by pin" ON public.user_backups
@@ -34,3 +35,6 @@ CREATE POLICY "Allow public insert backups" ON public.user_backups
 
 CREATE POLICY "Allow public update backups by pin" ON public.user_backups
     FOR UPDATE USING (true) WITH CHECK (true);
+
+CREATE POLICY "Allow public delete backups" ON public.user_backups
+    FOR DELETE USING (true);
