@@ -989,11 +989,12 @@ fun VideoPlayerScreen(
     }
 
     // Secondary listener for internal server rotation
-    var lastObservedServerUrl by remember(videoId, serverUrl, currentEpisode?.url) { mutableStateOf(serverUrl) }
-    LaunchedEffect(currentServerUrlFromVm) {
+    var lastObservedServerUrl by remember(activeContentKey) { mutableStateOf(currentEpisode?.url ?: serverUrl) }
+    LaunchedEffect(currentServerUrlFromVm, activeContentKey) {
         val newServer = currentServerUrlFromVm
         if (newServer != null) {
-            if (lastObservedServerUrl != null && newServer != lastObservedServerUrl) {
+            val isEpisodeAdvance = (activeContentKey != lastKnownContentKey.value)
+            if (lastObservedServerUrl != null && newServer != lastObservedServerUrl && !isEpisodeAdvance && !isFinishing) {
                 Log.i("VideoPlayerScreen", "Internal server rotation detected: from $lastObservedServerUrl to $newServer")
                 if (pendingRotationResumePosition == -1L && exoPlayer.currentPosition > 2000) {
                     pendingRotationResumePosition = exoPlayer.currentPosition

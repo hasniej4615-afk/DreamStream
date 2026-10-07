@@ -2971,7 +2971,7 @@ class VideoViewModel @Inject constructor(
                     if (cachedServers.isNullOrEmpty() || (forceReset && isEpisodeUrl)) {
                         // 1. Direct Provider Resolution for Moviebox / Short TV / Custom Provider series
                         if (episodePageUrl.startsWith("moviebox://") || video!!.videoUrl.startsWith("moviebox://") || videoId.startsWith("mb_") || video!!.isShortTv) {
-                            val epVideo = video!!.copy(videoUrl = episodePageUrl, isSeries = true, isShortTv = video!!.isShortTv)
+                            val epVideo = video!!.copy(videoUrl = episodePageUrl, isSeries = true, isShortTv = video!!.isShortTv, servers = emptyList())
                             val provServers = videoRepository.providerManager.fetchServers(epVideo)
                             if (provServers.isNotEmpty()) {
                                 finalServers = provServers
@@ -3597,7 +3597,7 @@ class VideoViewModel @Inject constructor(
                     val epSlug = com.duta.movie.util.VideoExtractor.extractStableId(episodePageUrl)
                     var fromCache = episodeServersCache[epSlug]
                     if (fromCache.isNullOrEmpty() && (episodePageUrl.startsWith("moviebox://") || video!!.videoUrl.startsWith("moviebox://") || videoId.startsWith("mb_") || video!!.isShortTv)) {
-                        val epVideo = video!!.copy(videoUrl = episodePageUrl, isSeries = true, isShortTv = video!!.isShortTv)
+                        val epVideo = video!!.copy(videoUrl = episodePageUrl, isSeries = true, isShortTv = video!!.isShortTv, servers = emptyList())
                         val provServers = videoRepository.providerManager.fetchServers(epVideo)
                         if (provServers.isNotEmpty()) {
                             episodeServersCache[epSlug] = provServers
@@ -3917,7 +3917,7 @@ class VideoViewModel @Inject constructor(
                 try {
                     val result = if (url.startsWith("moviebox://")) {
                         val curVid = _videoMetadata.value ?: Video(id = activeVideoId ?: "", title = "", thumbnailUrl = "", duration = "", videoUrl = url, isSeries = true)
-                        val epVideo = curVid.copy(videoUrl = url, isSeries = true)
+                        val epVideo = curVid.copy(videoUrl = url, isSeries = true, servers = emptyList())
                         val provServers = videoRepository.providerManager.fetchServers(epVideo)
                         val direct = provServers.firstOrNull { com.duta.movie.util.VideoExtractor.isDirectVideoUrl(it.url) } ?: provServers.firstOrNull()
                         if (direct != null) {
@@ -5251,9 +5251,24 @@ class VideoViewModel @Inject constructor(
             isPrefetching = true
             viewModelScope.launch(Dispatchers.IO) {
                 try {
-                    val fetched = VideoExtractor.fetchVideoDetails(nextEp.url)
-                    val activeMirrors = fetched?.servers?.map { it.url }?.filter { !it.contains("youtube") && !it.contains("trailer") } ?: emptyList()
-                    if (activeMirrors.isNotEmpty()) {
+                    val fetchedServers = if (nextEp.url.startsWith("moviebox://") || video.isShortTv || videoId.startsWith("mb_")) {
+                        val epVideo = video.copy(videoUrl = nextEp.url, isSeries = true, isShortTv = video.isShortTv, servers = emptyList())
+                        videoRepository.providerManager.fetchServers(epVideo)
+                    } else {
+                        val fetched = VideoExtractor.fetchVideoDetails(nextEp.url)
+                        fetched?.servers ?: emptyList()
+                    }
+                    if (fetchedServers.isNotEmpty()) {
+                        val epSlug = VideoExtractor.extractStableId(nextEp.url)
+                        episodeServersCache[epSlug] = fetchedServers
+                        val direct = fetchedServers.firstOrNull { VideoExtractor.isDirectVideoUrl(it.url) } ?: fetchedServers.firstOrNull()
+                        if (direct != null) {
+                            prefetchedMirrors[cacheKey] = com.duta.movie.util.VideoExtractor.ExtractionResult(direct.url, sourceMirrorUrl = nextEp.url)
+                            Log.i("VideoViewModel", "AUTOPLAY Engine: Pre-fetched successfully")
+                        }
+                    }
+                    val activeMirrors = fetchedServers.map { it.url }.filter { !it.contains("youtube") && !it.contains("trailer") }
+                    if (activeMirrors.isNotEmpty() && !nextEp.url.startsWith("moviebox://")) {
                         val limit = 12
                         val limitedMirrors = if (activeMirrors.size > limit) activeMirrors.subList(0, limit) else activeMirrors
                         val fastestMirror = executeGodModeRace(limitedMirrors, nextEp.url, true)
@@ -5316,7 +5331,7 @@ class VideoViewModel @Inject constructor(
     
     fun saveVideoProgress(videoId: String, position: Long, duration: Long, episodeUrl: String? = null) {
         viewModelScope.launch {
-            val progressId = if (episodeUrl != null && (episodeUrl.contains("/episode/") || episodeUrl.contains("-eps-") || episodeUrl.contains("-episode-") || episodeUrl.contains("/ep-"))) {
+            val progressId = if (!episodeUrl.isNullOrBlank()) {
                 getEpisodeProgressId(videoId, episodeUrl)
             } else {
                 videoId

@@ -148,9 +148,9 @@ class TemplateProvider(
 
     override suspend fun fetchServers(video: Video): List<VideoServer> = withContext(Dispatchers.IO) {
         try {
-            if (video.servers.isNotEmpty()) return@withContext video.servers
+            if (video.servers.isNotEmpty() && video.isSeries != true && !video.isShortTv && !video.videoUrl.contains("&ep=") && !video.videoUrl.contains("/eps/")) return@withContext video.servers
             val detailed = VideoExtractor.fetchVideoDetails(video.videoUrl)
-            detailed?.servers ?: emptyList()
+            detailed?.servers?.takeIf { it.isNotEmpty() } ?: video.servers
         } catch (e: Exception) {
             Log.e(TAG, "Servers fetch error on provider $name: ${e.message}")
             emptyList()

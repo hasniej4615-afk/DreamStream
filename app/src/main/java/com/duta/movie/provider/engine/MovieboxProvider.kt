@@ -442,7 +442,6 @@ class MovieboxProvider(
     }
 
     override suspend fun fetchServers(video: Video): List<VideoServer> = withContext(Dispatchers.IO) {
-        if (video.servers.isNotEmpty()) return@withContext video.servers
         val sid = extractParam(video.videoUrl, "id").ifBlank { video.id.removePrefix("mb_") }
         val dp = extractDetailPath(video.videoUrl)
         var se = extractParam(video.videoUrl, "se").toIntOrNull() ?: 0
@@ -451,7 +450,8 @@ class MovieboxProvider(
             se = 1
             ep = 1
         }
-        fetchPlayStreams(sid, dp, se, ep)
+        val streams = fetchPlayStreams(sid, dp, se, ep)
+        if (streams.isNotEmpty()) streams else video.servers
     }
 
     private fun fetchPlayStreams(sid: String, dp: String, se: Int, ep: Int): List<VideoServer> {
