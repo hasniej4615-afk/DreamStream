@@ -580,8 +580,10 @@ Tap to re-scout and refresh content</string>
     <string name="avatar_updated_toast">Profile photo updated!</string>
     <string name="avatar_removed_toast">Profile photo removed</string>
     <string name="stats_title">Profile Overview</string>
-    <string name="stats_bookmarks">My List Bookmarks</string>
-    <string name="stats_history">Watch History</string>
+    <string name="stats_bookmarks">Bookmarks</string>
+    <string name="stats_history">History</string>
+    <string name="stats_enhancer">Voice Boost</string>
+    <string name="backup_now_btn">Backup Now</string>
     <string name="backup_settings_title">Save Settings to Device</string>
     <string name="backup_settings_desc">Export all your settings, username, favorites, and watch history anywhere on your device</string>
     <string name="save_to_downloads_title">Quick Save to Downloads</string>

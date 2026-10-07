@@ -724,18 +724,18 @@ fun SettingsScreen(
                                 item {
                                     Card(
                                         modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(16.dp),
+                                        shape = RoundedCornerShape(14.dp),
                                         colors = CardDefaults.cardColors(containerColor = Color(0xFF1E1E1E))
                                     ) {
-                                        Column(modifier = Modifier.padding(20.dp)) {
+                                        Column(modifier = Modifier.padding(16.dp)) {
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(20.dp)
+                                                horizontalArrangement = Arrangement.spacedBy(14.dp)
                                             ) {
-                                                // Avatar Container
+                                                // Avatar Container with camera badge overlay
                                                 Box(
                                                     modifier = Modifier
-                                                        .size(80.dp)
+                                                        .size(64.dp)
                                                         .clip(CircleShape)
                                                         .background(Color(0xFF2A2A2A))
                                                         .border(2.dp, Color(0xFFFF5252), CircleShape)
@@ -758,7 +758,7 @@ fun SettingsScreen(
                                                             Text(
                                                                 text = initial,
                                                                 color = Color.White,
-                                                                fontSize = 32.sp,
+                                                                fontSize = 26.sp,
                                                                 fontWeight = FontWeight.Bold
                                                             )
                                                         } else {
@@ -766,77 +766,112 @@ fun SettingsScreen(
                                                                 imageVector = Icons.Default.Person,
                                                                 contentDescription = null,
                                                                 tint = Color.LightGray,
-                                                                modifier = Modifier.size(44.dp)
+                                                                modifier = Modifier.size(36.dp)
                                                             )
                                                         }
+                                                    }
+
+                                                    // Small camera badge icon at bottom-right
+                                                    Box(
+                                                        modifier = Modifier
+                                                            .align(Alignment.BottomEnd)
+                                                            .size(20.dp)
+                                                            .clip(CircleShape)
+                                                            .background(Color(0xFFFF5252)),
+                                                        contentAlignment = Alignment.Center
+                                                    ) {
+                                                        Icon(
+                                                            imageVector = Icons.Default.PhotoCamera,
+                                                            contentDescription = null,
+                                                            tint = Color.White,
+                                                            modifier = Modifier.size(11.dp)
+                                                        )
                                                     }
                                                 }
 
                                                 // Username edit and action buttons
                                                 Column(modifier = Modifier.weight(1f)) {
                                                     Text(
-                                                        text = stringResource(R.string.profile_info_title),
+                                                        text = if (userNickname.isNotBlank()) userNickname else stringResource(R.string.profile_info_title),
                                                         color = Color.White,
-                                                        fontSize = 18.sp,
-                                                        fontWeight = FontWeight.Bold
+                                                        fontSize = 16.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis
                                                     )
                                                     Text(
                                                         text = stringResource(R.string.profile_info_desc),
                                                         color = Color.Gray,
-                                                        fontSize = 12.sp,
-                                                        modifier = Modifier.padding(bottom = 8.dp)
+                                                        fontSize = 11.sp,
+                                                        maxLines = 1,
+                                                        overflow = TextOverflow.Ellipsis,
+                                                        modifier = Modifier.padding(bottom = 6.dp)
                                                     )
 
                                                     Row(
-                                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                                        verticalAlignment = Alignment.CenterVertically
                                                     ) {
                                                         Button(
                                                             onClick = { photoPickerLauncher.launch("image/*") },
                                                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333333)),
                                                             shape = RoundedCornerShape(8.dp),
-                                                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                                            contentPadding = PaddingValues(horizontal = 10.dp, vertical = 0.dp),
+                                                            modifier = Modifier.height(32.dp)
                                                         ) {
-                                                            Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(16.dp))
-                                                            Spacer(modifier = Modifier.width(6.dp))
-                                                            Text(stringResource(R.string.change_avatar), fontSize = 12.sp)
+                                                            Icon(Icons.Default.PhotoCamera, contentDescription = null, modifier = Modifier.size(13.dp))
+                                                            Spacer(modifier = Modifier.width(4.dp))
+                                                            Text(stringResource(R.string.change_avatar), fontSize = 11.sp)
                                                         }
 
                                                         if (userAvatarPath.isNotBlank()) {
-                                                            OutlinedButton(
+                                                            IconButton(
                                                                 onClick = {
                                                                     viewModel.removeAvatar()
                                                                     Toast.makeText(context, context.getString(R.string.avatar_removed_toast), Toast.LENGTH_SHORT).show()
                                                                 },
-                                                                shape = RoundedCornerShape(8.dp),
-                                                                contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp)
+                                                                modifier = Modifier
+                                                                    .size(32.dp)
+                                                                    .clip(RoundedCornerShape(8.dp))
+                                                                    .background(Color(0xFF382222))
                                                             ) {
-                                                                Text(stringResource(R.string.remove_avatar), color = Color.LightGray, fontSize = 12.sp)
+                                                                Icon(
+                                                                    imageVector = Icons.Default.DeleteOutline,
+                                                                    contentDescription = stringResource(R.string.remove_avatar),
+                                                                    tint = Color(0xFFFF5252),
+                                                                    modifier = Modifier.size(16.dp)
+                                                                )
                                                             }
                                                         }
                                                     }
                                                 }
                                             }
 
-                                            Spacer(modifier = Modifier.height(16.dp))
+                                            Spacer(modifier = Modifier.height(14.dp))
 
                                             // Username TextField & Save Row
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(10.dp)
+                                                horizontalArrangement = Arrangement.spacedBy(8.dp)
                                             ) {
                                                 OutlinedTextField(
                                                     value = usernameInput,
                                                     onValueChange = { usernameInput = it },
-                                                    label = { Text(stringResource(R.string.username_label)) },
-                                                    placeholder = { Text(stringResource(R.string.username_placeholder)) },
+                                                    label = { Text(stringResource(R.string.username_label), fontSize = 11.sp) },
+                                                    placeholder = { Text(stringResource(R.string.username_placeholder), fontSize = 12.sp) },
                                                     singleLine = true,
                                                     colors = OutlinedTextFieldDefaults.colors(
                                                         focusedBorderColor = Color(0xFFFF5252),
-                                                        unfocusedBorderColor = Color.DarkGray,
-                                                        focusedLabelColor = Color(0xFFFF5252)
+                                                        unfocusedBorderColor = Color(0xFF3A3A3A),
+                                                        focusedLabelColor = Color(0xFFFF5252),
+                                                        focusedTextColor = Color.White,
+                                                        unfocusedTextColor = Color.White
                                                     ),
-                                                    modifier = Modifier.weight(1f)
+                                                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp),
+                                                    modifier = Modifier
+                                                        .weight(1f)
+                                                        .height(52.dp)
                                                 )
 
                                                 Button(
@@ -846,11 +881,12 @@ fun SettingsScreen(
                                                     },
                                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
                                                     shape = RoundedCornerShape(8.dp),
-                                                    modifier = Modifier.height(56.dp)
+                                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 0.dp),
+                                                    modifier = Modifier.height(52.dp)
                                                 ) {
-                                                    Icon(Icons.Default.Check, contentDescription = null)
+                                                    Icon(Icons.Default.Check, contentDescription = null, modifier = Modifier.size(15.dp))
                                                     Spacer(modifier = Modifier.width(4.dp))
-                                                    Text(stringResource(R.string.save_username), fontWeight = FontWeight.Bold)
+                                                    Text(stringResource(R.string.save_username), fontSize = 12.sp, fontWeight = FontWeight.Bold)
                                                 }
                                             }
                                         }
@@ -867,29 +903,64 @@ fun SettingsScreen(
                                         Row(
                                             modifier = Modifier
                                                 .fillMaxWidth()
-                                                .padding(16.dp),
-                                            horizontalArrangement = Arrangement.SpaceAround,
+                                                .padding(vertical = 12.dp, horizontal = 6.dp),
+                                            horizontalArrangement = Arrangement.SpaceEvenly,
                                             verticalAlignment = Alignment.CenterVertically
                                         ) {
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Text("${myList.size}", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                                                Text(stringResource(R.string.stats_bookmarks), color = Color.Gray, fontSize = 12.sp)
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Text("${myList.size}", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                                Text(
+                                                    text = stringResource(R.string.stats_bookmarks),
+                                                    color = Color.Gray,
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    textAlign = TextAlign.Center
+                                                )
                                             }
-                                            Box(modifier = Modifier.width(1.dp).height(32.dp).background(Color(0xFF2A2A2A)))
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Text("${recentlyWatched.size}", color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                                                Text(stringResource(R.string.stats_history), color = Color.Gray, fontSize = 12.sp)
+                                            Box(modifier = Modifier.width(1.dp).height(24.dp).background(Color(0xFF2A2A2A)))
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                modifier = Modifier.weight(1f)
+                                            ) {
+                                                Text("${recentlyWatched.size}", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                                                Text(
+                                                    text = stringResource(R.string.stats_history),
+                                                    color = Color.Gray,
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    textAlign = TextAlign.Center
+                                                )
                                             }
-                                            Box(modifier = Modifier.width(1.dp).height(32.dp).background(Color(0xFF2A2A2A)))
-                                            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                                            Box(modifier = Modifier.width(1.dp).height(24.dp).background(Color(0xFF2A2A2A)))
+                                            Column(
+                                                horizontalAlignment = Alignment.CenterHorizontally,
+                                                modifier = Modifier.weight(1f)
+                                            ) {
                                                 val enhancerShort = when (voiceEnhancerMode) {
                                                     1 -> "+4dB"
                                                     2 -> "+7dB"
                                                     3 -> "+10dB"
                                                     else -> "OFF"
                                                 }
-                                                Text(enhancerShort, color = if (voiceEnhancerMode > 0) Color(0xFFFF5252) else Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-                                                Text(stringResource(R.string.voice_enhancer), color = Color.Gray, fontSize = 12.sp)
+                                                Text(
+                                                    text = enhancerShort,
+                                                    color = if (voiceEnhancerMode > 0) Color(0xFFFF5252) else Color.White,
+                                                    fontSize = 18.sp,
+                                                    fontWeight = FontWeight.Bold
+                                                )
+                                                Text(
+                                                    text = stringResource(R.string.stats_enhancer),
+                                                    color = Color.Gray,
+                                                    fontSize = 11.sp,
+                                                    maxLines = 1,
+                                                    overflow = TextOverflow.Ellipsis,
+                                                    textAlign = TextAlign.Center
+                                                )
                                             }
                                         }
                                     }
@@ -899,33 +970,33 @@ fun SettingsScreen(
                                 item {
                                     Card(
                                         modifier = Modifier.fillMaxWidth(),
-                                        shape = RoundedCornerShape(14.dp),
+                                        shape = RoundedCornerShape(12.dp),
                                         colors = CardDefaults.cardColors(containerColor = Color(0xFF221616)),
                                         border = BorderStroke(1.dp, Color(0x66FF5252))
                                     ) {
-                                        Column(modifier = Modifier.padding(16.dp)) {
+                                        Column(modifier = Modifier.padding(14.dp)) {
                                             Row(
                                                 verticalAlignment = Alignment.CenterVertically,
-                                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                                horizontalArrangement = Arrangement.spacedBy(12.dp)
                                             ) {
                                                 Box(
                                                     modifier = Modifier
-                                                        .size(48.dp)
-                                                        .background(Color(0xFFFF5252).copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                                                        .size(42.dp)
+                                                        .background(Color(0xFFFF5252).copy(alpha = 0.15f), RoundedCornerShape(10.dp)),
                                                     contentAlignment = Alignment.Center
                                                 ) {
                                                     if (isCloudBackupLoading) {
                                                         CircularProgressIndicator(
-                                                            modifier = Modifier.size(24.dp),
+                                                            modifier = Modifier.size(20.dp),
                                                             color = Color(0xFFFF5252),
-                                                            strokeWidth = 2.5.dp
+                                                            strokeWidth = 2.dp
                                                         )
                                                     } else {
                                                         Icon(
                                                             imageVector = Icons.Default.CloudUpload,
                                                             contentDescription = null,
                                                             tint = Color(0xFFFF5252),
-                                                            modifier = Modifier.size(26.dp)
+                                                            modifier = Modifier.size(22.dp)
                                                         )
                                                     }
                                                 }
@@ -934,17 +1005,18 @@ fun SettingsScreen(
                                                     Text(
                                                         text = stringResource(R.string.cloud_backup_title),
                                                         color = Color.White,
-                                                        fontSize = 15.sp,
+                                                        fontSize = 14.sp,
                                                         fontWeight = FontWeight.Bold
                                                     )
                                                     Text(
                                                         text = stringResource(R.string.cloud_backup_desc),
                                                         color = Color.LightGray,
-                                                        fontSize = 12.sp
+                                                        fontSize = 11.sp,
+                                                        lineHeight = 15.sp
                                                     )
 
                                                     if (lastCloudPin.isNotBlank()) {
-                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        Spacer(modifier = Modifier.height(3.dp))
                                                         val fmtPin = if (lastCloudPin.length == 6) "${lastCloudPin.take(3)} ${lastCloudPin.takeLast(3)}" else lastCloudPin
                                                         Text(
                                                             text = stringResource(R.string.last_synced_pin, fmtPin),
@@ -956,7 +1028,7 @@ fun SettingsScreen(
                                                 }
                                             }
 
-                                            Spacer(modifier = Modifier.height(12.dp))
+                                            Spacer(modifier = Modifier.height(10.dp))
 
                                             Row(
                                                 modifier = Modifier.fillMaxWidth(),
@@ -976,12 +1048,14 @@ fun SettingsScreen(
                                                     },
                                                     enabled = !isCloudBackupLoading,
                                                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
-                                                    shape = RoundedCornerShape(8.dp)
+                                                    shape = RoundedCornerShape(8.dp),
+                                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                                    modifier = Modifier.height(36.dp)
                                                 ) {
-                                                    Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(15.dp))
                                                     Spacer(modifier = Modifier.width(6.dp))
                                                     Text(
-                                                        text = if (isCloudBackupLoading) stringResource(R.string.backing_up_to_cloud) else stringResource(R.string.cloud_backup_title),
+                                                        text = if (isCloudBackupLoading) stringResource(R.string.backing_up_to_cloud) else stringResource(R.string.backup_now_btn),
                                                         fontSize = 12.sp,
                                                         fontWeight = FontWeight.Bold
                                                     )

@@ -579,8 +579,10 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="avatar_updated_toast">Gambar profil dikemas kini!</string>
     <string name="avatar_removed_toast">Gambar profil dipadamkan</string>
     <string name="stats_title">Gambaran Profil</string>
-    <string name="stats_bookmarks">Senarai Kegemaran</string>
-    <string name="stats_history">Sejarah Tontonan</string>
+    <string name="stats_bookmarks">Kegemaran</string>
+    <string name="stats_history">Sejarah</string>
+    <string name="stats_enhancer">Peningkat Suara</string>
+    <string name="backup_now_btn">Sandar Sekarang</string>
     <string name="backup_settings_title">Simpan Tetapan ke Peranti</string>
     <string name="backup_settings_desc">Eksport semua tetapan, nama pengguna, kegemaran, dan sejarah ke mana-mana lokasi peranti anda</string>
     <string name="save_to_downloads_title">Simpan Pantas ke Muat Turun</string>
