@@ -1314,6 +1314,14 @@ fun SettingsScreen(
                                     )
                                 }
                                 item {
+                                    SettingsActionCard(
+                                        title = stringResource(R.string.help_topic_subtitle_sync_title),
+                                        description = stringResource(R.string.subtitle_sync_manual_shortcut_desc),
+                                        icon = Icons.Default.Timer,
+                                        onClick = { selectedSection = SettingsSection.HELP }
+                                    )
+                                }
+                                item {
                                     Text(
                                         stringResource(R.string.default_language),
                                         color = Color.White,
@@ -1745,6 +1753,14 @@ fun SettingsScreen(
                                         description = stringResource(R.string.help_topic_subtitles_desc),
                                         content = stringResource(R.string.help_topic_subtitles_content),
                                         tag = "[SUBTITLES]"
+                                    )
+                                }
+                                item {
+                                    HelpTopicCard(
+                                        title = stringResource(R.string.help_topic_subtitle_sync_title),
+                                        description = stringResource(R.string.help_topic_subtitle_sync_desc),
+                                        content = stringResource(R.string.help_topic_subtitle_sync_content),
+                                        tag = "[SUBTITLE SYNC]"
                                     )
                                 }
                                 item {

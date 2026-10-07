@@ -2570,7 +2570,14 @@ fun VideoPlayerScreen(
                         color = Color.Gray, 
                         fontSize = 12.sp
                     )
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(3.dp))
+                    Text(
+                        text = stringResource(R.string.subtitle_sync_helper_hint),
+                        color = Color.LightGray.copy(alpha = 0.7f),
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center
+                    )
+                    Spacer(Modifier.height(10.dp))
 
                     // 1-Click Auto Snap Section
                     if (nearestCue != null) {
