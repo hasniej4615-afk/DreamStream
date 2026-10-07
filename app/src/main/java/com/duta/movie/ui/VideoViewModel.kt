@@ -2649,7 +2649,7 @@ class VideoViewModel @Inject constructor(
         val video = getVideo(videoId) ?: return null
         return video.servers.firstOrNull { 
             val lowName = it.name.lowercase()
-            (lowName.contains("direct") || lowName.contains("mp4") || lowName.contains("vip")) && 
+            (lowName.contains("direct") || lowName.contains("mp4") || lowName.contains("vip") || lowName.contains("moviebox")) && 
             VideoExtractor.isCastFriendlyUrl(it.url)
         }?.url
     }

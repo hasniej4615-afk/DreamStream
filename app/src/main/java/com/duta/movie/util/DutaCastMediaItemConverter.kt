@@ -77,16 +77,17 @@ class DutaCastMediaItemConverter(
             fontScale = 1.0f
         }
 
-        val contentId = if (mediaItem.mediaId.isEmpty() || mediaItem.mediaId == MediaItem.DEFAULT_MEDIA_ID) {
-            baseMediaInfo.contentId ?: baseMediaInfo.contentUrl ?: ""
-        } else {
-            mediaItem.mediaId
-        }
+        val contentUrl = baseMediaInfo.contentUrl?.ifBlank { null }
+            ?: mediaItem.localConfiguration?.uri?.toString()
+            ?: mediaItem.requestMetadata.mediaUri?.toString()
+            ?: ""
+        val contentId = baseMediaInfo.contentId?.ifBlank { null }
+            ?: contentUrl
 
         val newMediaInfo = MediaInfo.Builder(contentId)
             .setStreamType(baseMediaInfo.streamType)
             .setContentType(baseMediaInfo.contentType ?: "video/mp4")
-            .setContentUrl(baseMediaInfo.contentUrl ?: "")
+            .setContentUrl(contentUrl)
             .setMetadata(baseMediaInfo.metadata)
             .setStreamDuration(baseMediaInfo.streamDuration)
             .setCustomData(baseMediaInfo.customData)

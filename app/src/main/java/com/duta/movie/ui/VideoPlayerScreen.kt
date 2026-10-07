@@ -727,11 +727,14 @@ fun VideoPlayerScreen(
                 val castContext = CastContext.getSharedInstance(context)
                 val session = castContext.sessionManager.currentCastSession
                 val rmc = session?.remoteMediaClient
-                if (rmc != null) {
+                if (rmc != null && rmc.hasMediaSession() && rmc.mediaStatus != null) {
+                    val currentActive = rmc.mediaStatus?.activeTrackIds ?: longArrayOf()
                     if (currentCastSubUrl != null) {
-                        rmc.setActiveMediaTracks(longArrayOf(1L))
-                        Log.i("VideoPlayerScreen", "Cast: Explicitly set active media tracks to [1]")
-                    } else {
+                        if (!currentActive.contains(1L)) {
+                            rmc.setActiveMediaTracks(longArrayOf(1L))
+                            Log.i("VideoPlayerScreen", "Cast: Explicitly set active media tracks to [1]")
+                        }
+                    } else if (currentActive.isNotEmpty()) {
                         rmc.setActiveMediaTracks(longArrayOf())
                         Log.i("VideoPlayerScreen", "Cast: Deactivated all media tracks")
                     }
