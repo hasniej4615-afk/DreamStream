@@ -576,6 +576,10 @@ object NetworkConfig {
                 } else if (host.contains("cloudfront.net") || host.contains("rtm") || host.contains("glueapi")) {
                     requestBuilder.header("Referer", currentReferer ?: "https://rtmklik.rtm.gov.my/")
                     requestBuilder.header("Origin", originFromReferer ?: "https://rtmklik.rtm.gov.my")
+                    if (urlString.contains(".m3u8")) {
+                        requestBuilder.header("Cache-Control", "no-cache, no-store, must-revalidate")
+                        requestBuilder.header("Pragma", "no-cache")
+                    }
                 } else {
                     requestBuilder.header("Origin", finalOrigin)
                     if (currentReferer != null) {

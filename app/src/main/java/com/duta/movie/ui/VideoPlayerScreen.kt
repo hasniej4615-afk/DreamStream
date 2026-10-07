@@ -1281,10 +1281,30 @@ fun VideoPlayerScreen(
                     
                     if (isHls) {
                         val hlsOkHttpFactory = OkHttpDataSource.Factory(NetworkConfig.permissiveOkHttpClient).setUserAgent(NetworkConfig.SHARED_USER_AGENT)
-                        val hlsCacheFactory = com.duta.movie.util.PlayerCacheManager.getCacheDataSourceFactory(context, hlsOkHttpFactory)
-                        val hlsMediaSource = HlsMediaSource.Factory(hlsCacheFactory)
+                        val dataSourceFactory = if (isLive) {
+                            // Live TV broadcasts are real-time streams and must NEVER use disk cache.
+                            // Disk caching causes stale playlist tracking and PlaylistStuckException!
+                            hlsOkHttpFactory
+                        } else {
+                            com.duta.movie.util.PlayerCacheManager.getCacheDataSourceFactory(context, hlsOkHttpFactory)
+                        }
+                        val hlsSourceFactory = HlsMediaSource.Factory(dataSourceFactory)
                             .setAllowChunklessPreparation(true)
-                            .createMediaSource(mediaItem)
+
+                        if (isLive) {
+                            hlsSourceFactory.setLoadErrorHandlingPolicy(
+                                object : androidx.media3.exoplayer.upstream.DefaultLoadErrorHandlingPolicy(10) {
+                                    override fun getRetryDelayMsFor(loadErrorInfo: androidx.media3.exoplayer.upstream.LoadErrorHandlingPolicy.LoadErrorInfo): Long {
+                                        return if (loadErrorInfo.exception is androidx.media3.exoplayer.hls.playlist.HlsPlaylistTracker.PlaylistStuckException) {
+                                            1000L
+                                        } else {
+                                            super.getRetryDelayMsFor(loadErrorInfo)
+                                        }
+                                    }
+                                }
+                            )
+                        }
+                        val hlsMediaSource = hlsSourceFactory.createMediaSource(mediaItem)
                         
                         exoPlayer.setMediaSource(hlsMediaSource, /* resetPosition = */ true)
                     } else {
@@ -1578,13 +1598,18 @@ fun VideoPlayerScreen(
                 val effectiveCurrentServer = viewModel.currentServerUrl.value ?: currentServerUrlFromVm ?: currentServerUrl.value
 
                 if (isLive) {
-                    if (autoRetryCount < 5) {
+                    if (autoRetryCount < 10) {
                         autoRetryCount++
                         Log.i("VideoPlayerScreen", "Live TV stream retry ($autoRetryCount) after error: ${error.errorCode} | $message")
                         playerErrorMessage = "Connecting to live stream (Attempt $autoRetryCount)..."
                         scope.launch {
-                            delay(2000)
-                            viewModel.playMovie(currentVideoId.value, effectiveCurrentServer, forceReset = true)
+                            delay(1200)
+                            currentUrl.value = null // Invalidate currentUrl so local player re-initializes
+                            val liveCh = com.duta.movie.model.LiveTvCatalog.getChannelById(currentVideoId.value)
+                            val streamUrl = effectiveCurrentServer ?: liveCh?.videoUrl ?: ""
+                            if (streamUrl.isNotEmpty()) {
+                                viewModel.playMovie(currentVideoId.value, streamUrl, forceReset = true)
+                            }
                         }
                     } else {
                         playerErrorMessage = "Live TV broadcast currently unavailable. Please try again later."
