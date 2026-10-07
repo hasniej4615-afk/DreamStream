@@ -1950,7 +1950,7 @@ fun SettingsScreen(
 
         AlertDialog(
             onDismissRequest = { showChangelogDialog = false },
-            title = { Text(stringResource(R.string.changelog_v2_0_9), color = Color.White) },
+            title = { Text(stringResource(R.string.changelog_v2_1_0), color = Color.White) },
             text = {
                 Column(
                     modifier = Modifier
@@ -2038,6 +2038,14 @@ fun SettingsScreen(
                         .verticalScroll(changelogScrollState)
                         .padding(end = 8.dp)
                 ) {
+                    Text(stringResource(R.string.v2_1_0_updates), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_0_highlight_1), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_0_highlight_2), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_0_highlight_3), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_0_highlight_4), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_0_highlight_5), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(stringResource(R.string.v2_0_9_updates), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
                     Text(stringResource(R.string.v2_0_9_highlight_1), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
                     Text(stringResource(R.string.v2_0_9_highlight_2), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
