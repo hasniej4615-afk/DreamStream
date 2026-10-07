@@ -1184,12 +1184,17 @@ fun VideoPlayerScreen(
             }
             currentCastSubUrl = castSubUrl
 
-            // For Google Cast: if stream has anti-hotlinking protection (e.g. MovieBox or mirrors requiring Referer)
-            // proxy via local LAN server with full CORS and spoofed headers so Chromecast plays it seamlessly
-            val effectiveMediaUri = if (isCasting && (url.contains("hakunaymatata.com") || url.contains("aoneroom.com") || (!effectiveReferer.isNullOrEmpty() && !effectiveReferer.contains("157.245.199.231")))) {
+            val isHls = url.lowercase().let { it.contains(".m3u8") || it.contains("/hls/") || it.contains(".txt") }
+            val isMovieBoxStream = url.contains("hakunaymatata.com") || url.contains("aoneroom.com")
+
+            // For Google Cast:
+            // - MovieBox and hotlink-protected MP4s require Referer spoofing via local LAN proxy to bypass 429 errors.
+            // - HLS streams (.m3u8) have native CORS headers (Access-Control-Allow-Origin: *) on CDNs (premilkyway, etc.)
+            //   and should be cast directly so Chromecast can resolve all variant playlists and chunks from the CDN.
+            val effectiveMediaUri = if (isCasting && !isHls && (isMovieBoxStream || (!effectiveReferer.isNullOrEmpty() && !effectiveReferer.contains("157.245.199.231")))) {
                 val proxied = CastSubtitleServer.setMediaStream(url, effectiveReferer)
                 if (proxied != null) {
-                    Log.i("VideoPlayerScreen", "Cast: Streaming via local LAN proxy with Referer spoofing: $proxied (upstream: $url)")
+                    Log.i("VideoPlayerScreen", "Cast: Streaming MP4 via local LAN proxy with Referer spoofing: $proxied (upstream: $url)")
                     proxied
                 } else url
             } else {

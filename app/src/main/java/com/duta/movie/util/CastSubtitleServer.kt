@@ -208,14 +208,27 @@ object CastSubtitleServer {
                 return
             }
 
-            // Handle GET / HEAD for media streaming proxy
-            if ((method == "GET" || method == "HEAD") && path.contains("/stream")) {
-                val targetUrl = streamUrl
-                if (targetUrl.isNullOrEmpty()) {
+            // Handle GET / HEAD for media streaming proxy (handles /stream.* and any relative HLS playlists/segments)
+            val isMediaRequest = (method == "GET" || method == "HEAD") && !path.contains(".vtt") && streamUrl != null
+            if (isMediaRequest) {
+                val baseStream = streamUrl
+                if (baseStream.isNullOrEmpty()) {
                     val notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n"
                     out.write(notFound.toByteArray(Charsets.UTF_8))
                     out.flush()
                     return
+                }
+
+                val targetUrl = if (path.contains("/stream")) {
+                    baseStream
+                } else {
+                    try {
+                        val baseUri = java.net.URI(baseStream)
+                        val relativePath = if (path.startsWith("/")) path.substring(1) else path
+                        baseUri.resolve(relativePath).toString()
+                    } catch (e: Exception) {
+                        baseStream
+                    }
                 }
 
                 client.soTimeout = 30000 // Extended timeout for media streaming
@@ -237,7 +250,13 @@ object CastSubtitleServer {
                     val response = NetworkConfig.permissiveOkHttpClient.newCall(reqBuilder.build()).execute()
                     val code = response.code
                     val body = response.body
-                    val contentType = response.header("Content-Type") ?: "video/mp4"
+                    val rawContentType = response.header("Content-Type")
+                    val contentType = when {
+                        !rawContentType.isNullOrBlank() -> rawContentType
+                        targetUrl.lowercase().contains(".m3u8") -> "application/vnd.apple.mpegurl"
+                        targetUrl.lowercase().contains(".ts") -> "video/mp2t"
+                        else -> "video/mp4"
+                    }
                     val contentLength = response.header("Content-Length")
                     val contentRange = response.header("Content-Range")
                     val acceptRanges = response.header("Accept-Ranges") ?: "bytes"
