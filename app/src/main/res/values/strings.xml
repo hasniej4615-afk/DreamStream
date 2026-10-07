@@ -603,4 +603,25 @@ Tap to re-scout and refresh content</string>
     <string name="filter_other">Other</string>
     <string name="open_local_subtitle">Open from Device</string>
     <string name="open_local_subtitle_desc">Select a .srt or .vtt subtitle file from device</string>
+
+    <!-- Cloud Backup & Restore -->
+    <string name="cloud_backup_title">Backup to Cloud (6-Digit PIN)</string>
+    <string name="cloud_backup_desc">Upload profile, bookmarks, and watch history to cloud. Restore instantly on any TV or phone using a PIN code.</string>
+    <string name="cloud_restore_title">Restore from Cloud (Enter PIN)</string>
+    <string name="cloud_restore_desc">Enter a 6-digit PIN code to restore your profile and library from another device.</string>
+    <string name="cloud_backup_dialog_title">Cloud Backup Successful!</string>
+    <string name="cloud_backup_pin_label">Your 6-Digit Restore PIN:</string>
+    <string name="cloud_backup_instructions">Use this 6-digit PIN on any Android TV or phone to restore all your favorites, watch history, and settings.</string>
+    <string name="cloud_restore_dialog_title">Restore from Cloud</string>
+    <string name="cloud_restore_dialog_desc">Enter the 6-digit PIN code shown when you backed up your data:</string>
+    <string name="cloud_restore_btn">Restore Now</string>
+    <string name="cloud_restore_invalid_pin">Please enter a valid 6-digit PIN.</string>
+    <string name="cloud_restore_success">Profile and settings restored successfully!</string>
+    <string name="cloud_restore_failed">Restore failed: %s</string>
+    <string name="cloud_backup_failed">Cloud backup failed: %s</string>
+    <string name="copy_pin">Copy PIN</string>
+    <string name="pin_copied">PIN copied to clipboard!</string>
+    <string name="last_synced_pin">Current Cloud PIN: %s</string>
+    <string name="backing_up_to_cloud">Uploading backup to cloud...</string>
+    <string name="restoring_from_cloud">Restoring from cloud...</string>
 </resources>

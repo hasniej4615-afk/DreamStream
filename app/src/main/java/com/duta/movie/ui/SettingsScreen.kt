@@ -173,6 +173,15 @@ fun SettingsScreen(
     var manualUpdateInfo by remember { mutableStateOf<com.duta.movie.util.UpdateInfo?>(null) }
     var isCheckingUpdate by remember { mutableStateOf(false) }
 
+    var showCloudBackupSuccessDialog by remember { mutableStateOf(false) }
+    var cloudBackupPin by remember { mutableStateOf("") }
+    var showCloudRestoreDialog by remember { mutableStateOf(false) }
+    var cloudRestorePinInput by remember { mutableStateOf("") }
+    var cloudRestoreError by remember { mutableStateOf<String?>(null) }
+    val lastCloudPin by viewModel.lastCloudPin.collectAsStateWithLifecycle()
+    val isCloudBackupLoading by viewModel.isCloudBackupLoading.collectAsStateWithLifecycle()
+    val isCloudRestoreLoading by viewModel.isCloudRestoreLoading.collectAsStateWithLifecycle()
+
     var showClearPakcikDialog by remember { mutableStateOf(false) }
     var isClearingPakcik by remember { mutableStateOf(false) }
 
@@ -199,6 +208,209 @@ fun SettingsScreen(
     
 
     
+
+    if (showCloudBackupSuccessDialog) {
+        AlertDialog(
+            onDismissRequest = { showCloudBackupSuccessDialog = false },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.CloudDone,
+                        contentDescription = null,
+                        tint = Color(0xFF4CAF50),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = stringResource(R.string.cloud_backup_dialog_title),
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                }
+            },
+            text = {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(
+                        text = stringResource(R.string.cloud_backup_instructions),
+                        color = Color.LightGray,
+                        fontSize = 13.sp,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(bottom = 16.dp)
+                    )
+
+                    Text(
+                        text = stringResource(R.string.cloud_backup_pin_label),
+                        color = Color.Gray,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    Surface(
+                        shape = RoundedCornerShape(12.dp),
+                        color = Color(0xFF2A2A2A),
+                        border = BorderStroke(1.5.dp, Color(0xFFFF5252))
+                    ) {
+                        val formattedPin = if (cloudBackupPin.length == 6) {
+                            "${cloudBackupPin.take(3)} ${cloudBackupPin.takeLast(3)}"
+                        } else cloudBackupPin
+
+                        Text(
+                            text = formattedPin,
+                            color = Color.White,
+                            fontSize = 32.sp,
+                            fontWeight = FontWeight.ExtraBold,
+                            letterSpacing = 4.sp,
+                            modifier = Modifier.padding(horizontal = 24.dp, vertical = 12.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = {
+                            val clipboard = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("DreamStream PIN", cloudBackupPin))
+                            Toast.makeText(context, context.getString(R.string.pin_copied), Toast.LENGTH_SHORT).show()
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333333)),
+                        shape = RoundedCornerShape(8.dp)
+                    ) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(stringResource(R.string.copy_pin), fontSize = 13.sp)
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = { showCloudBackupSuccessDialog = false },
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252))
+                ) {
+                    Text(stringResource(R.string.close), color = Color.White)
+                }
+            },
+            containerColor = Color(0xFF1E1E1E)
+        )
+    }
+
+    if (showCloudRestoreDialog) {
+        AlertDialog(
+            onDismissRequest = {
+                if (!isCloudRestoreLoading) {
+                    showCloudRestoreDialog = false
+                    cloudRestoreError = null
+                }
+            },
+            title = {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(
+                        imageVector = Icons.Default.CloudDownload,
+                        contentDescription = null,
+                        tint = Color(0xFFFF5252),
+                        modifier = Modifier.size(28.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = stringResource(R.string.cloud_restore_dialog_title),
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp
+                    )
+                }
+            },
+            text = {
+                Column(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = stringResource(R.string.cloud_restore_dialog_desc),
+                        color = Color.LightGray,
+                        fontSize = 13.sp,
+                        modifier = Modifier.padding(bottom = 12.dp)
+                    )
+
+                    OutlinedTextField(
+                        value = cloudRestorePinInput,
+                        onValueChange = { input ->
+                            val digits = input.filter { it.isDigit() }.take(6)
+                            cloudRestorePinInput = digits
+                            cloudRestoreError = null
+                        },
+                        placeholder = { Text("e.g. 582914", color = Color.DarkGray) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        isError = cloudRestoreError != null,
+                        supportingText = cloudRestoreError?.let { { Text(it, color = Color.Red) } },
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = Color(0xFFFF5252),
+                            unfocusedBorderColor = Color.Gray,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
+                        ),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    if (isCloudRestoreLoading) {
+                        Spacer(modifier = Modifier.height(12.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.Center,
+                            modifier = Modifier.fillMaxWidth()
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(20.dp),
+                                color = Color(0xFFFF5252),
+                                strokeWidth = 2.dp
+                            )
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(stringResource(R.string.restoring_from_cloud), color = Color.Gray, fontSize = 12.sp)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val cleanPin = cloudRestorePinInput.filter { it.isDigit() }
+                        if (cleanPin.length != 6) {
+                            cloudRestoreError = context.getString(R.string.cloud_restore_invalid_pin)
+                            return@Button
+                        }
+                        viewModel.restoreFromCloud(cleanPin) { success, msg ->
+                            if (success) {
+                                showCloudRestoreDialog = false
+                                cloudRestorePinInput = ""
+                                cloudRestoreError = null
+                                Toast.makeText(context, context.getString(R.string.cloud_restore_success), Toast.LENGTH_LONG).show()
+                            } else {
+                                cloudRestoreError = msg
+                            }
+                        }
+                    },
+                    enabled = !isCloudRestoreLoading && cloudRestorePinInput.filter { it.isDigit() }.length == 6,
+                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252))
+                ) {
+                    Text(stringResource(R.string.cloud_restore_btn), color = Color.White)
+                }
+            },
+            dismissButton = {
+                TextButton(
+                    onClick = {
+                        showCloudRestoreDialog = false
+                        cloudRestoreError = null
+                    },
+                    enabled = !isCloudRestoreLoading
+                ) {
+                    Text(stringResource(R.string.cancel), color = Color.Gray)
+                }
+            },
+            containerColor = Color(0xFF1E1E1E)
+        )
+    }
 
     if (showBaseUrlDialog) {
         AlertDialog(
@@ -681,6 +893,116 @@ fun SettingsScreen(
                                             }
                                         }
                                     }
+                                }
+
+                                // Cloud Backup (PIN) - Hero Card
+                                item {
+                                    Card(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        shape = RoundedCornerShape(14.dp),
+                                        colors = CardDefaults.cardColors(containerColor = Color(0xFF221616)),
+                                        border = BorderStroke(1.dp, Color(0x66FF5252))
+                                    ) {
+                                        Column(modifier = Modifier.padding(16.dp)) {
+                                            Row(
+                                                verticalAlignment = Alignment.CenterVertically,
+                                                horizontalArrangement = Arrangement.spacedBy(16.dp)
+                                            ) {
+                                                Box(
+                                                    modifier = Modifier
+                                                        .size(48.dp)
+                                                        .background(Color(0xFFFF5252).copy(alpha = 0.15f), RoundedCornerShape(12.dp)),
+                                                    contentAlignment = Alignment.Center
+                                                ) {
+                                                    if (isCloudBackupLoading) {
+                                                        CircularProgressIndicator(
+                                                            modifier = Modifier.size(24.dp),
+                                                            color = Color(0xFFFF5252),
+                                                            strokeWidth = 2.5.dp
+                                                        )
+                                                    } else {
+                                                        Icon(
+                                                            imageVector = Icons.Default.CloudUpload,
+                                                            contentDescription = null,
+                                                            tint = Color(0xFFFF5252),
+                                                            modifier = Modifier.size(26.dp)
+                                                        )
+                                                    }
+                                                }
+
+                                                Column(modifier = Modifier.weight(1f)) {
+                                                    Text(
+                                                        text = stringResource(R.string.cloud_backup_title),
+                                                        color = Color.White,
+                                                        fontSize = 15.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                    Text(
+                                                        text = stringResource(R.string.cloud_backup_desc),
+                                                        color = Color.LightGray,
+                                                        fontSize = 12.sp
+                                                    )
+
+                                                    if (lastCloudPin.isNotBlank()) {
+                                                        Spacer(modifier = Modifier.height(4.dp))
+                                                        val fmtPin = if (lastCloudPin.length == 6) "${lastCloudPin.take(3)} ${lastCloudPin.takeLast(3)}" else lastCloudPin
+                                                        Text(
+                                                            text = stringResource(R.string.last_synced_pin, fmtPin),
+                                                            color = Color(0xFFFF8A80),
+                                                            fontSize = 11.sp,
+                                                            fontWeight = FontWeight.SemiBold
+                                                        )
+                                                    }
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.height(12.dp))
+
+                                            Row(
+                                                modifier = Modifier.fillMaxWidth(),
+                                                horizontalArrangement = Arrangement.End,
+                                                verticalAlignment = Alignment.CenterVertically
+                                            ) {
+                                                Button(
+                                                    onClick = {
+                                                        viewModel.backupToCloud { success, pin, err ->
+                                                            if (success) {
+                                                                cloudBackupPin = pin
+                                                                showCloudBackupSuccessDialog = true
+                                                            } else {
+                                                                Toast.makeText(context, context.getString(R.string.cloud_backup_failed, err ?: "Unknown error"), Toast.LENGTH_LONG).show()
+                                                            }
+                                                        }
+                                                    },
+                                                    enabled = !isCloudBackupLoading,
+                                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
+                                                    shape = RoundedCornerShape(8.dp)
+                                                ) {
+                                                    Icon(Icons.Default.CloudUpload, contentDescription = null, modifier = Modifier.size(16.dp))
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Text(
+                                                        text = if (isCloudBackupLoading) stringResource(R.string.backing_up_to_cloud) else stringResource(R.string.cloud_backup_title),
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Bold
+                                                    )
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+
+                                // Cloud Restore (PIN) Action Card
+                                item {
+                                    SettingsActionCard(
+                                        title = stringResource(R.string.cloud_restore_title),
+                                        description = stringResource(R.string.cloud_restore_desc),
+                                        icon = Icons.Default.CloudDownload,
+                                        onClick = {
+                                            cloudRestorePinInput = ""
+                                            cloudRestoreError = null
+                                            showCloudRestoreDialog = true
+                                        }
+                                    )
                                 }
 
                                 // 3. Backup: Save Settings Anywhere (SAF)

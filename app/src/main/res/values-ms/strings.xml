@@ -602,4 +602,25 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="filter_other">Lain-lain</string>
     <string name="open_local_subtitle">Buka dari Peranti</string>
     <string name="open_local_subtitle_desc">Pilih fail sari kata .srt atau .vtt dari peranti</string>
+
+    <!-- Cloud Backup & Restore -->
+    <string name="cloud_backup_title">Sandaran ke Awan (PIN 6-Digit)</string>
+    <string name="cloud_backup_desc">Muat naik profil, kegemaran &amp; sejarah tontonan ke awan. Pulihkan serta-merta pada mana-mana TV atau telefon menggunakan Kod PIN.</string>
+    <string name="cloud_restore_title">Pulihkan dari Awan (Masukkan PIN)</string>
+    <string name="cloud_restore_desc">Masukkan kod PIN 6-digit untuk memulihkan profil dan pustaka anda dari peranti lain.</string>
+    <string name="cloud_backup_dialog_title">Sandaran Awan Berjaya!</string>
+    <string name="cloud_backup_pin_label">Kod PIN Pulihan 6-Digit Anda:</string>
+    <string name="cloud_backup_instructions">Gunakan kod PIN 6-digit ini pada mana-mana Android TV atau telefon untuk memulihkan semua kegemaran, sejarah dan tetapan anda.</string>
+    <string name="cloud_restore_dialog_title">Pulihkan dari Awan</string>
+    <string name="cloud_restore_dialog_desc">Masukkan kod PIN 6-digit yang dipaparkan semasa anda membuat sandaran:</string>
+    <string name="cloud_restore_btn">Pulihkan Sekarang</string>
+    <string name="cloud_restore_invalid_pin">Sila masukkan 6-digit PIN yang sah.</string>
+    <string name="cloud_restore_success">Profil dan tetapan berjaya dipulihkan!</string>
+    <string name="cloud_restore_failed">Gagal memulihkan: %s</string>
+    <string name="cloud_backup_failed">Gagal membuat sandaran ke awan: %s</string>
+    <string name="copy_pin">Salin PIN</string>
+    <string name="pin_copied">PIN disalin ke papan klip!</string>
+    <string name="last_synced_pin">PIN Awan Terkini: %s</string>
+    <string name="backing_up_to_cloud">Memuat naik sandaran ke awan...</string>
+    <string name="restoring_from_cloud">Memulihkan dari awan...</string>
 </resources>

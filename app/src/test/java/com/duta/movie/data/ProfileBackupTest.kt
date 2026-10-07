@@ -95,4 +95,16 @@ class ProfileBackupTest {
         assertTrue("Filename should start with DreamStream_Backup_", fileName.startsWith("DreamStream_Backup_"))
         assertTrue("Filename should end with .json", fileName.endsWith(".json"))
     }
+
+    @Test
+    fun testCloudPinGeneration() {
+        val cloudBackupService = com.duta.movie.data.remote.CloudBackupService(okhttp3.OkHttpClient())
+        for (i in 1..20) {
+            val pin = cloudBackupService.generatePin()
+            assertEquals("PIN must be exactly 6 characters", 6, pin.length)
+            assertTrue("PIN must be all digits", pin.all { it.isDigit() })
+            val num = pin.toInt()
+            assertTrue("PIN must be between 100000 and 999999", num in 100000..999999)
+        }
+    }
 }

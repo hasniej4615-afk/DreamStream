@@ -17,6 +17,7 @@ import com.duta.movie.model.Subtitle
 import com.duta.movie.model.Comment
 import com.duta.movie.data.remote.CommentService
 import com.duta.movie.data.remote.RecommendationService
+import com.duta.movie.data.remote.CloudBackupService
 import com.duta.movie.model.Recommendation
 import com.duta.movie.model.toVideo
 import com.duta.movie.util.SubtitleExtractor
@@ -52,6 +53,7 @@ class VideoViewModel @Inject constructor(
     private val preferenceManager: PreferenceManager,
     private val commentService: CommentService,
     private val recommendationService: RecommendationService,
+    private val cloudBackupService: CloudBackupService,
     @param:ApplicationContext private val context: Context
 ) : ViewModel() {
 
@@ -1241,6 +1243,82 @@ class VideoViewModel @Inject constructor(
     suspend fun getBackupJson(): String {
         val data = preferenceManager.exportBackupData()
         return com.duta.movie.data.ProfileBackupManager.toJson(data)
+    }
+
+    val lastCloudPin: StateFlow<String> = preferenceManager.lastCloudPin
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), "")
+
+    private val _isCloudBackupLoading = MutableStateFlow(false)
+    val isCloudBackupLoading: StateFlow<Boolean> = _isCloudBackupLoading.asStateFlow()
+
+    private val _isCloudRestoreLoading = MutableStateFlow(false)
+    val isCloudRestoreLoading: StateFlow<Boolean> = _isCloudRestoreLoading.asStateFlow()
+
+    fun backupToCloud(forceNewPin: Boolean = false, onResult: (Boolean, String, String?) -> Unit) {
+        viewModelScope.launch {
+            _isCloudBackupLoading.value = true
+            try {
+                val data = preferenceManager.exportBackupData()
+                val json = com.duta.movie.data.ProfileBackupManager.toJson(data)
+                val existingPin = preferenceManager.lastCloudPin.first()
+                val pinToUse = if (!forceNewPin && existingPin.filter { it.isDigit() }.length == 6) {
+                    existingPin
+                } else {
+                    cloudBackupService.generatePin()
+                }
+
+                val uploadResult = cloudBackupService.uploadBackup(pinToUse, data.username, json)
+                uploadResult.fold(
+                    onSuccess = { pin ->
+                        preferenceManager.setLastCloudPin(pin)
+                        _isCloudBackupLoading.value = false
+                        onResult(true, pin, null)
+                    },
+                    onFailure = { err ->
+                        _isCloudBackupLoading.value = false
+                        onResult(false, "", err.localizedMessage ?: "Upload failed")
+                    }
+                )
+            } catch (e: Exception) {
+                _isCloudBackupLoading.value = false
+                onResult(false, "", e.localizedMessage ?: "Unexpected error")
+            }
+        }
+    }
+
+    fun restoreFromCloud(pinCode: String, onResult: (Boolean, String) -> Unit) {
+        viewModelScope.launch {
+            _isCloudRestoreLoading.value = true
+            try {
+                val fetchResult = cloudBackupService.fetchBackup(pinCode)
+                fetchResult.fold(
+                    onSuccess = { jsonStr ->
+                        val data = com.duta.movie.data.ProfileBackupManager.fromJson(jsonStr)
+                        if (data == null) {
+                            _isCloudRestoreLoading.value = false
+                            onResult(false, "Invalid backup data received from cloud.")
+                            return@fold
+                        }
+                        val restored = preferenceManager.restoreBackupData(data)
+                        if (restored) {
+                            preferenceManager.setLastCloudPin(pinCode.filter { it.isDigit() })
+                            _isCloudRestoreLoading.value = false
+                            onResult(true, "Profile & settings restored successfully!")
+                        } else {
+                            _isCloudRestoreLoading.value = false
+                            onResult(false, "Failed to apply restored data.")
+                        }
+                    },
+                    onFailure = { err ->
+                        _isCloudRestoreLoading.value = false
+                        onResult(false, err.localizedMessage ?: "Cloud fetch failed")
+                    }
+                )
+            } catch (e: Exception) {
+                _isCloudRestoreLoading.value = false
+                onResult(false, e.localizedMessage ?: "Unexpected restore error")
+            }
+        }
     }
 
     private val _totalInstallCount = MutableStateFlow<Int?>(null)
