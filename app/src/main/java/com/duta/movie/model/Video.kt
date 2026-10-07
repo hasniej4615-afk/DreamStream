@@ -41,7 +41,8 @@ data class Video(
     val actressImages: Map<String, String> = emptyMap(), // Name to Image mapping
     val servers: List<VideoServer> = emptyList(),
     val episodes: List<Episode> = emptyList(),
-    val isSeries: Boolean? = null // null = unknown, true = series, false = movie
+    val isSeries: Boolean? = null, // null = unknown, true = series, false = movie
+    val isShortTv: Boolean = false
 )
 
 @Immutable

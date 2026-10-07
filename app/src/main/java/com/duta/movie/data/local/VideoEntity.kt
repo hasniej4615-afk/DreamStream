@@ -55,7 +55,8 @@ fun VideoEntity.toDomain(): Video = Video(
         !lowN.contains("google.com") && !lowN.contains("pagead")
     },
     episodes = episodes,
-    isSeries = isSeries
+    isSeries = isSeries,
+    isShortTv = (videoUrl.contains("type=5") || videoUrl.contains("short-tv"))
 )
 
 fun Video.toEntity(isFavorite: Boolean = false, lastWatched: Long = 0): VideoEntity = VideoEntity(

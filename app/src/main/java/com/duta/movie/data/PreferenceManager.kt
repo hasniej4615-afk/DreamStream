@@ -53,6 +53,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
             "/",
             "/movies/",
             "/series/",
+            "/short-tv/",
             "/top-imdb/",
             "/country/malaysia/",
             "/source/bullerswood/",

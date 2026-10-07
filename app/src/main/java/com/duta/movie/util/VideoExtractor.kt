@@ -2886,6 +2886,7 @@ object VideoExtractor {
 
     fun isLikelySeries(video: Video?): Boolean {
         if (video == null) return false
+        if (video.isShortTv) return true
         val validEpisodes = video.episodes.filter { !it.name.contains("unnamed", ignoreCase = true) }
         if (validEpisodes.size > 1) return true
         if (isLikelySeriesUrl(video.videoUrl)) return true
@@ -2904,7 +2905,7 @@ object VideoExtractor {
         return lowUrl.contains("/series/") || lowUrl.contains("/serial-tv/") || lowUrl.contains("/tv/") ||
                lowUrl.contains("/serial-tv-terbaru/") || lowUrl.contains("/eps/") || lowUrl.contains("/episode/") ||
                lowUrl.contains("-episode-") || lowUrl.contains("/episod/") || lowUrl.contains("-episod-") ||
-               lowUrl.contains("media_type=tv")
+               lowUrl.contains("media_type=tv") || lowUrl.contains("type=5") || lowUrl.contains("short-tv")
     }
 
     /**

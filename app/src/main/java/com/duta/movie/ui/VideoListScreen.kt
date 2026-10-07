@@ -1441,7 +1441,26 @@ fun NetflixThumbnail(
                         }
                     }
 
-                    if (isPakcikRekomen) {
+                    val isShortTvItem = video.isShortTv || video.videoUrl.contains("type=5") || video.videoUrl.contains("short-tv")
+                    if (isShortTvItem) {
+                        val isNarrowCard = (width != null && width < 120.dp) || (isRealTV && (width ?: 165.dp) < 120.dp)
+                        Surface(
+                            color = Color(0xFFE50914),
+                            shape = RoundedCornerShape(bottomEnd = 4.dp),
+                            modifier = Modifier.align(Alignment.TopStart)
+                        ) {
+                            Text(
+                                text = "ShortTV",
+                                color = Color.White,
+                                fontSize = if (isNarrowCard) 9.sp else 11.sp,
+                                fontWeight = FontWeight.Black,
+                                modifier = Modifier.padding(
+                                    horizontal = if (isNarrowCard) 4.dp else 6.dp, 
+                                    vertical = if (isNarrowCard) 2.dp else 3.dp
+                                )
+                            )
+                        }
+                    } else if (isPakcikRekomen) {
                         val isNarrowCard = (width != null && width < 120.dp) || (isRealTV && (width ?: 165.dp) < 120.dp)
                         Surface(
                             color = Color.Red,

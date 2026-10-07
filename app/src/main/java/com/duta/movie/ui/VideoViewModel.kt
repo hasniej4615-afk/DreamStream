@@ -553,6 +553,7 @@ class VideoViewModel @Inject constructor(
             "/",
             "/movies/",
             "/series/",
+            "/short-tv/",
             "/top-imdb/",
             "/most-viewed/"
         ).map { VideoExtractor.normalizePath(it) }
@@ -611,8 +612,8 @@ class VideoViewModel @Inject constructor(
             val lowName = name.trim().lowercase()
 
             return when {
-                normPath == "/live-tv/" || lowPath.contains("live-tv") || lowName == "live tv" || normPath == "/" || lowPath.contains("/movie") || lowPath.contains("/series") || lowPath.contains("/serial-tv") || lowPath.contains("/tv") || lowPath.contains("box-office") || lowPath.contains("top-imdb") || lowPath.contains("most-viewed") ||
-                lowName in listOf("live tv", "newly updated", "movies", "movie", "tv series", "serial tv", "series", "box-office", "top imdb", "most viewed") -> CategoryGroup.CORE
+                normPath == "/live-tv/" || lowPath.contains("live-tv") || lowName == "live tv" || normPath == "/" || normPath == "/short-tv/" || lowPath.contains("short-tv") || lowName.contains("short tv") || lowPath.contains("/movie") || lowPath.contains("/series") || lowPath.contains("/serial-tv") || lowPath.contains("/tv") || lowPath.contains("box-office") || lowPath.contains("top-imdb") || lowPath.contains("most-viewed") ||
+                lowName in listOf("live tv", "newly updated", "movies", "movie", "tv series", "serial tv", "series", "short tv", "box-office", "top imdb", "most viewed") -> CategoryGroup.CORE
 
                 lowPath.startsWith("/country/") || lowPath.contains("bullerswood") || lowPath.contains("lk21") || lowPath.contains("dutafilm") ||
                 lowName in listOf("malaysia", "viet nam", "vietnam", "indonesia", "indonesian", "lk21", "layarkaca21", "bullerswood", "dutafilm", "korea", "south korea", "thailand", "japan", "china", "hong kong", "india", "usa", "united states", "united kingdom", "uk", "australia", "canada", "france", "germany", "italy", "philippines", "spain", "taiwan", "russia", "netherlands") -> CategoryGroup.REGIONAL
@@ -911,6 +912,7 @@ class VideoViewModel @Inject constructor(
             mapOf("name" to "Newly Updated", "path" to "/"),
             mapOf("name" to "Movies", "path" to moviePath),
             mapOf("name" to "TV Series", "path" to seriesPath),
+            mapOf("name" to "Short TV", "path" to "/short-tv/"),
             mapOf("name" to "Top IMDb", "path" to "/top-imdb/"),
             mapOf("name" to "Trending", "path" to "/most-viewed/"),
             mapOf("name" to "Malay Subbed", "path" to "/genre/subbed/malay-subbed/"),

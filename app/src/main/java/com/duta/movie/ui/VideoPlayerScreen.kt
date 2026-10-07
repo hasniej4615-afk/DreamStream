@@ -119,11 +119,11 @@ fun isSeriesPlayback(video: com.duta.movie.model.Video?, url: String?): Boolean 
     val isEpisodeUrl = url?.let { 
         (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || 
          it.contains("/episod/") || it.contains("-episod-") || it.contains("-epi-") || 
-         it.contains("/ep-") || it.contains("epid=")) && 
+         it.contains("/ep-") || it.contains("epid=") || it.contains("&se=") || it.contains("&ep=")) && 
         !it.contains("player=") && !it.contains("mirror=") 
     } ?: false
-    val isExplicitSeries = video?.videoUrl?.let { it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") } ?: false
-    val hasEpisodesOrSeriesFlag = video?.isSeries == true || (video?.episodes?.isNotEmpty() == true)
+    val isExplicitSeries = video?.videoUrl?.let { it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") || it.contains("type=5") || it.contains("short-tv") } ?: false
+    val hasEpisodesOrSeriesFlag = video?.isSeries == true || video?.isShortTv == true || (video?.episodes?.isNotEmpty() == true)
     return isExplicitSeries || hasEpisodesOrSeriesFlag || isEpisodeUrl
 }
 
@@ -397,14 +397,32 @@ fun VideoPlayerScreen(
     var currentCues by remember { mutableStateOf<List<Cue>>(emptyList()) }
 
     
+    val isShortTvPlayback = remember(video, serverUrl, extractedUrl) {
+        video?.isShortTv == true || 
+        (serverUrl != null && (serverUrl.contains("type=5") || serverUrl.contains("short-tv"))) ||
+        (extractedUrl != null && (extractedUrl!!.contains("type=5") || extractedUrl!!.contains("short-tv"))) ||
+        video?.videoUrl?.contains("type=5") == true ||
+        video?.videoUrl?.contains("short-tv") == true
+    }
+
     // Auto-rotate and hide system bars when fullscreen is toggled
-    LaunchedEffect(isFullscreen) {
+    LaunchedEffect(isFullscreen, isShortTvPlayback) {
         val activity = context.findActivity() ?: return@LaunchedEffect
         val window = activity.window
         val view = window.decorView
         val controller = WindowCompat.getInsetsController(window, view)
 
-        if (isFullscreen) {
+        if (isShortTvPlayback) {
+            // Short TV: Mobile displays full vertical like drama apps; TV stays landscape with vertical video centered
+            if (!isTV) {
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        } else if (isFullscreen) {
             activity.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
             controller.hide(WindowInsetsCompat.Type.systemBars())
             controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -1560,7 +1578,7 @@ fun VideoPlayerScreen(
                     // OWL'S EYE: Healthy Duration Guard
                     // A real episode is rarely < 10 mins (600s). A real movie is rarely < 40 mins (2400s).
                     // If it ends before this, it's a "False End" (Broken Stream/Ad Loop).
-                    val minHealthyDuration = if (video?.isSeries == true) 600_000L else 1_800_000L
+                    val minHealthyDuration = if (video?.isShortTv == true || isShortTvPlayback) 30_000L else if (video?.isSeries == true) 600_000L else 1_800_000L
                     
                     // CRITICAL: Fail-safe for premature "Ended" signals.
                     val isNaturalEnd = totalDuration > minHealthyDuration && playedDuration > (totalDuration * 0.9)
@@ -3445,10 +3463,27 @@ fun VideoPlayerContent(
                     }
                 }
             } else if (!useWebView) {
+                val isShortTvPlaybackContent = remember(video, extractedUrl) {
+                    video?.isShortTv == true || 
+                    (video?.videoUrl?.contains("type=5") == true) || 
+                    (video?.videoUrl?.contains("short-tv") == true) ||
+                    (extractedUrl?.contains("type=5") == true) ||
+                    (extractedUrl?.contains("short-tv") == true)
+                }
+                val targetResizeMode = if (isShortTvPlaybackContent) {
+                    if (isTV) {
+                        androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                    } else {
+                        androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+                    }
+                } else {
+                    androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+                }
                 AndroidView(factory = { ctx -> 
                     PlayerView(android.view.ContextThemeWrapper(ctx, R.style.TexturePlayerStyle)).apply {
                         player = exoPlayer
                         useController = false
+                        resizeMode = targetResizeMode
                         try { findViewById<android.view.View>(androidx.media3.ui.R.id.exo_shutter)?.visibility = android.view.View.GONE } catch(_: Exception) {}
                         subtitleView?.visibility = android.view.View.GONE
                         keepScreenOn = true
@@ -3477,6 +3512,7 @@ fun VideoPlayerContent(
                     } 
                 }, modifier = Modifier.fillMaxSize().alpha(if (isVideoReady) 1f else 0f), update = { 
                     it.player = exoPlayer
+                    it.resizeMode = targetResizeMode
                 })
             }
         }

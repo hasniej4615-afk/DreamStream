@@ -606,6 +606,28 @@ class ProviderManager @Inject constructor(
     }
 
     /**
+     * Dedicated section fetch for MovieBox (e.g. Short TV / micro-dramas).
+     */
+    suspend fun fetchMovieboxSection(path: String, page: Int = 1, count: Int = 30): List<Video> = withContext(Dispatchers.IO) {
+        var mb = activeProviderInstances.values.firstOrNull { 
+            it.isEnabled && (it.id.contains("moviebox") || it.name.contains("moviebox", ignoreCase = true)) 
+        }
+        if (mb == null && activeProviderInstances.isEmpty()) {
+            initializeActiveProviders()
+            mb = activeProviderInstances.values.firstOrNull { 
+                it.isEnabled && (it.id.contains("moviebox") || it.name.contains("moviebox", ignoreCase = true)) 
+            }
+        }
+        if (mb == null) return@withContext emptyList()
+        try {
+            mb.fetchSection(path, page, count)
+        } catch (e: Exception) {
+            Log.w(TAG, "Moviebox fetchSection failed: ${e.message}")
+            emptyList()
+        }
+    }
+
+    /**
      * Fetches category items from all enabled custom (non-core) providers.
      * Merged into Home categories alongside official sources.
      */

@@ -7,6 +7,8 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNotNull
 import com.duta.movie.ui.VideoViewModel
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 
 class MyLocalTest {
     @Test
@@ -166,9 +168,12 @@ class MyLocalTest {
         // 3. Intra-group ordering
         val coreNewly = VideoViewModel.getIntraGroupRank(VideoViewModel.CategoryGroup.CORE, "/", "Newly Updated")
         val coreMovies = VideoViewModel.getIntraGroupRank(VideoViewModel.CategoryGroup.CORE, "/movie/", "Movies")
+        val coreShortTv = VideoViewModel.getIntraGroupRank(VideoViewModel.CategoryGroup.CORE, "/short-tv/", "Short TV")
         val coreBoxOffice = VideoViewModel.getIntraGroupRank(VideoViewModel.CategoryGroup.CORE, "/box-office/", "Box-Office")
         assertTrue(coreNewly < coreMovies)
-        assertTrue(coreMovies < coreBoxOffice)
+        assertTrue(coreMovies < coreShortTv)
+        assertTrue(coreShortTv < coreBoxOffice)
+        assertEquals(VideoViewModel.CategoryGroup.CORE, VideoViewModel.getCategoryGroup("/short-tv/", "Short TV"))
 
         val streamNetflix = VideoViewModel.getIntraGroupRank(VideoViewModel.CategoryGroup.STREAMING, "/network/netflix/", "Netflix")
         val streamApple = VideoViewModel.getIntraGroupRank(VideoViewModel.CategoryGroup.STREAMING, "/network/apple-tv/", "Apple TV+")
@@ -812,6 +817,37 @@ class MyLocalTest {
             }
             println("\nVerified $verifiedCount series successfully with episode lists!")
             assertTrue("At least 1 series must have episodes resolved", verifiedCount > 0)
+        }
+    }
+
+    @Test
+    fun testMovieboxShortTv() {
+        kotlinx.coroutines.runBlocking {
+            val entity = com.duta.movie.data.local.InstalledProviderEntity(
+                id = "com.duta.provider.moviebox",
+                repoId = "dreamstream-official",
+                name = "MovieBox",
+                displayName = "MovieBox",
+                author = "DreamStream",
+                version = 1,
+                versionName = "1.0.0",
+                mediaType = "MULTI",
+                engineType = "TEMPLATE",
+                templateType = "MOVIEBOX",
+                baseUrlsJson = "[\"https://h5-api.aoneroom.com\"]",
+                configJson = "{}",
+                isEnabled = true,
+                priorityOrder = 6
+            )
+            val provider = com.duta.movie.provider.engine.MovieboxProvider(entity)
+            val results = provider.search("Shorts", 1)
+            println("=== MovieBox Search 'Shorts' count: ${results.size} ===")
+            results.take(5).forEach { v ->
+                println(" - [${v.id}] ${v.title} | ${v.videoUrl} | quality=${v.quality} | isSeries=${v.isSeries} | isShortTv=${v.isShortTv}")
+            }
+            val shortItem = results.firstOrNull { it.videoUrl.contains("type=5") }
+            assertNotNull("Should find at least 1 short TV item with type=5", shortItem)
+            println("Found Short TV item: ${shortItem?.title} -> ${shortItem?.videoUrl}")
         }
     }
 }

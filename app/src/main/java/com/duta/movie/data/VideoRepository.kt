@@ -150,6 +150,14 @@ class VideoRepository @Inject constructor(
         if (cat == "/live-tv/" || cat == "live-tv" || cat.equals("LIVE TV", ignoreCase = true) || cat.startsWith("/live-tv")) {
             return@coroutineScope com.duta.movie.model.LiveTvCatalog.channels
         }
+        val isShortTvCat = cat == "/short-tv/" || cat == "short-tv" || cat.contains("short-tv") || cat.equals("Short TV", ignoreCase = true)
+        if (isShortTvCat) {
+            val shortTvVideos = providerManager.fetchMovieboxSection("/short-tv/", page, count)
+            if (page == 1) videoDao.updateCategoryCache(cat, shortTvVideos.map { it.toEntity() })
+            else videoDao.appendCategoryCache(cat, shortTvVideos.map { it.toEntity() })
+            shortTvVideos.forEach { videoCache[it.id] = it }
+            return@coroutineScope shortTvVideos
+        }
         val extractorDeferred = async(Dispatchers.IO) {
             try {
                 VideoExtractor.fetchVideosBySection(cat, page, count)
