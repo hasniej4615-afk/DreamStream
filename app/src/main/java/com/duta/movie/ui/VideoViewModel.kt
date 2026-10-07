@@ -2889,10 +2889,16 @@ class VideoViewModel @Inject constructor(
 
                 withContext(Dispatchers.Main) { _videoMetadata.value = video }
                 
-                val isEpisodeUrl = episodeUrl?.let { (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || it.contains("/episod/") || it.contains("-episod-") || it.contains("-epi-") || it.contains("/ep-") || it.contains("epid=")) && !it.contains("player=") && !it.contains("mirror=") } ?: false
+                val isEpisodeUrl = episodeUrl?.let { 
+                    (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || 
+                     it.contains("/episod/") || it.contains("-episod-") || it.contains("-epi-") || 
+                     it.contains("/ep-") || it.contains("epid=") || it.contains("&se=") || it.contains("&ep=") ||
+                     (it.contains("moviebox://") && (it.contains("type=2") || it.contains("type=7") || it.contains("type=5")))) && 
+                    !it.contains("player=") && !it.contains("mirror=") 
+                } ?: false
                 
                 // Re-check for matching episode after fetch
-                if (video?.isSeries == true) {
+                if (video?.isSeries == true || video?.isShortTv == true) {
                     val curEpSeason = Regex("""(?i)\b(?:season|s)[-_ ]?(\d+)\b""").find(_currentEpisode.value?.season?.ifEmpty { _currentEpisode.value?.url ?: "" } ?: "")?.groupValues?.get(1)?.toIntOrNull()
                     if (targetSeasonNum != null && curEpSeason != null && curEpSeason != targetSeasonNum) {
                         _currentEpisode.value = null
@@ -2926,8 +2932,11 @@ class VideoViewModel @Inject constructor(
                     }
                 }
 
-                val isExplicitSeries = video?.videoUrl?.let { it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") } ?: false
-                val hasEpisodesOrSeriesFlag = video?.isSeries == true || (video?.episodes?.isNotEmpty() == true)
+                val isExplicitSeries = video?.videoUrl?.let { 
+                    it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") || 
+                    it.contains("type=5") || it.contains("type=7") || it.contains("short-tv") || it.contains("dramabox") 
+                } ?: false
+                val hasEpisodesOrSeriesFlag = video?.isSeries == true || video?.isShortTv == true || (video?.episodes?.isNotEmpty() == true)
                 val isSeriesPlayback = isExplicitSeries || hasEpisodesOrSeriesFlag || isEpisodeUrl || targetEpisode != null
                 if (!isSeriesPlayback || video?.isSeries == false || (video?.episodes?.isEmpty() == true && !isEpisodeUrl && targetEpisode == null)) {
                     Log.i("VideoViewModel", "playTVSeries: Video is a movie or has no episodes. Redirecting to startMoviePlaybackResolution...")
@@ -2937,48 +2946,60 @@ class VideoViewModel @Inject constructor(
 
                 val episodePageUrl = if (isEpisodeUrl) episodeUrl 
                                      else if (targetEpisode != null) targetEpisode.url
-                                     else if (video?.isSeries == true) _currentEpisode.value?.url 
+                                     else if (video?.isSeries == true || video?.isShortTv == true) _currentEpisode.value?.url 
                                      else null
                 
                 // OWL'S EYE: State Engine decoupled from TV Show metadata
                 var finalServers: List<VideoServer> = emptyList()
-                if (video != null && video!!.isSeries == true && episodePageUrl != null) {
+                if (video != null && (video!!.isSeries == true || video!!.isShortTv) && episodePageUrl != null) {
                     val epSlug = VideoExtractor.extractStableId(episodePageUrl)
                     val cachedServers = episodeServersCache[epSlug]
                     
                     finalServers = cachedServers ?: emptyList()
                     if (cachedServers.isNullOrEmpty() || (forceReset && isEpisodeUrl)) {
-                        addResolutionLog("Scoping servers for episode...")
-                        val fetched = VideoExtractor.fetchVideoDetails(episodePageUrl)
-                        
-                        finalServers = fetched?.servers ?: emptyList()
-                        
-                        // Parent fallback if episode page fails
-                        if (finalServers.isEmpty()) {
-                            val parentPath = episodePageUrl.substringBefore("/eps/").substringBefore("/episode/").substringBefore("/episod/").substringBefore("-episod-").substringBefore("-episode-")
-                            val parentUrl = if (parentPath.contains("/tv/") || parentPath.endsWith("/")) parentPath else "$parentPath/tv/$videoId/"
-                            addResolutionLog("Episode servers missing. Attempting parent recovery: $parentUrl")
-                            val parentFetched = VideoExtractor.fetchVideoDetails(parentUrl)
-                            finalServers = parentFetched?.servers ?: emptyList()
+                        // 1. Direct Provider Resolution for Moviebox / Short TV / Custom Provider series
+                        if (episodePageUrl.startsWith("moviebox://") || video!!.videoUrl.startsWith("moviebox://") || videoId.startsWith("mb_") || video!!.isShortTv) {
+                            val epVideo = video!!.copy(videoUrl = episodePageUrl, isSeries = true, isShortTv = video!!.isShortTv)
+                            val provServers = videoRepository.providerManager.fetchServers(epVideo)
+                            if (provServers.isNotEmpty()) {
+                                finalServers = provServers
+                            }
                         }
 
-                        // Unwrap any multi-server wrappers (KotakAjaib / PusatFilm)
-                        if (finalServers.any { VideoExtractor.isKotakWrapper(it.url) }) {
-                            val unboxed = mutableListOf<VideoServer>()
-                            for (s in finalServers) {
-                                if (VideoExtractor.isKotakWrapper(s.url)) {
-                                    val children = VideoExtractor.unwrapKotakServers(s.url, episodePageUrl)
-                                    if (children.isNotEmpty()) unboxed.addAll(children) else unboxed.add(s)
-                                } else {
-                                    unboxed.add(s)
-                                }
+                        // 2. Otherwise / fallback to HTML scraper for web providers
+                        if (finalServers.isEmpty() && !episodePageUrl.startsWith("moviebox://")) {
+                            addResolutionLog("Scoping servers for episode...")
+                            val fetched = VideoExtractor.fetchVideoDetails(episodePageUrl)
+                            
+                            finalServers = fetched?.servers ?: emptyList()
+                            
+                            // Parent fallback if episode page fails
+                            if (finalServers.isEmpty()) {
+                                val parentPath = episodePageUrl.substringBefore("/eps/").substringBefore("/episode/").substringBefore("/episod/").substringBefore("-episod-").substringBefore("-episode-")
+                                val parentUrl = if (parentPath.contains("/tv/") || parentPath.endsWith("/")) parentPath else "$parentPath/tv/$videoId/"
+                                addResolutionLog("Episode servers missing. Attempting parent recovery: $parentUrl")
+                                val parentFetched = VideoExtractor.fetchVideoDetails(parentUrl)
+                                finalServers = parentFetched?.servers ?: emptyList()
                             }
-                            finalServers = unboxed.distinctBy { it.url }
+
+                            // Unwrap any multi-server wrappers (KotakAjaib / PusatFilm)
+                            if (finalServers.any { VideoExtractor.isKotakWrapper(it.url) }) {
+                                val unboxed = mutableListOf<VideoServer>()
+                                for (s in finalServers) {
+                                    if (VideoExtractor.isKotakWrapper(s.url)) {
+                                        val children = VideoExtractor.unwrapKotakServers(s.url, episodePageUrl)
+                                        if (children.isNotEmpty()) unboxed.addAll(children) else unboxed.add(s)
+                                    } else {
+                                        unboxed.add(s)
+                                    }
+                                }
+                                finalServers = unboxed.distinctBy { it.url }
+                            }
                         }
                     }
 
                     // Direct CDN Provider Pre-population: Check for high-speed direct CDN streams (MovieBox) if missing
-                    if (!isRotation && !checkedProviderVideos.contains(epSlug) && finalServers.none { it.name.startsWith("MovieBox", ignoreCase = true) || it.url.contains("hakunaymatata") || it.url.contains("aoneroom") }) {
+                    if (!isRotation && !checkedProviderVideos.contains(epSlug) && !videoId.startsWith("mb_") && !episodePageUrl.startsWith("moviebox://") && finalServers.none { it.name.startsWith("MovieBox", ignoreCase = true) || it.url.contains("hakunaymatata") || it.url.contains("aoneroom") }) {
                         checkedProviderVideos.add(epSlug)
                         val targetEpObj = targetEpisode ?: _currentEpisode.value ?: Episode(id = episodePageUrl, name = episodePageUrl, url = episodePageUrl, season = "")
                         val provServers = videoRepository.findMovieBoxMirrorsForVideo(video, targetEpObj).ifEmpty {
@@ -3543,7 +3564,13 @@ class VideoViewModel @Inject constructor(
                     kotlinx.coroutines.delay(500)
                 }
 
-                val isEpisodeUrl = serverUrl?.let { (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || it.contains("/episod/") || it.contains("-episod-") || it.contains("-epi-") || it.contains("/ep-") || it.contains("epid=")) && !it.contains("player=") && !it.contains("mirror=") } ?: false
+                val isEpisodeUrl = serverUrl?.let { 
+                    (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || 
+                     it.contains("/episod/") || it.contains("-episod-") || it.contains("-epi-") || 
+                     it.contains("/ep-") || it.contains("epid=") || it.contains("&se=") || it.contains("&ep=") ||
+                     (it.contains("moviebox://") && (it.contains("type=2") || it.contains("type=7") || it.contains("type=5")))) && 
+                    !it.contains("player=") && !it.contains("mirror=") 
+                } ?: false
                 
                 val episodePageUrl = if (isEpisodeUrl) serverUrl 
                                      else if (targetEpisode != null) targetEpisode.url
@@ -3551,7 +3578,16 @@ class VideoViewModel @Inject constructor(
                                      
                 val baseServers = if (episodePageUrl != null) {
                     val epSlug = com.duta.movie.util.VideoExtractor.extractStableId(episodePageUrl)
-                    episodeServersCache[epSlug] ?: video!!.servers
+                    var fromCache = episodeServersCache[epSlug]
+                    if (fromCache.isNullOrEmpty() && (episodePageUrl.startsWith("moviebox://") || video!!.videoUrl.startsWith("moviebox://") || videoId.startsWith("mb_") || video!!.isShortTv)) {
+                        val epVideo = video!!.copy(videoUrl = episodePageUrl, isSeries = true, isShortTv = video!!.isShortTv)
+                        val provServers = videoRepository.providerManager.fetchServers(epVideo)
+                        if (provServers.isNotEmpty()) {
+                            episodeServersCache[epSlug] = provServers
+                            fromCache = provServers
+                        }
+                    }
+                    fromCache ?: video!!.servers
                 } else {
                     video!!.servers
                 }
@@ -3605,7 +3641,7 @@ class VideoViewModel @Inject constructor(
                     !com.duta.movie.util.VideoExtractor.isConfirmedDead(it.url) 
                 }
 
-                val isExplicitServer = !serverUrl.isNullOrEmpty() && !isEpisodeUrl &&
+                val isExplicitServer = !serverUrl.isNullOrEmpty() && !isEpisodeUrl && !serverUrl.startsWith("moviebox://") &&
                     !deadMirrors.contains(serverUrl) && !hardDeadMirrors.contains(serverUrl) &&
                     !exhaustedServerUrls.contains(serverUrl) && !com.duta.movie.util.VideoExtractor.isConfirmedDead(serverUrl)
 
@@ -3862,7 +3898,17 @@ class VideoViewModel @Inject constructor(
                     return@launch
                 }
                 try {
-                    val result = com.duta.movie.util.VideoExtractor.extractVideoUrl(url, referer = primaryUrl)
+                    val result = if (url.startsWith("moviebox://")) {
+                        val curVid = _videoMetadata.value ?: Video(id = activeVideoId ?: "", title = "", thumbnailUrl = "", duration = "", videoUrl = url, isSeries = true)
+                        val epVideo = curVid.copy(videoUrl = url, isSeries = true)
+                        val provServers = videoRepository.providerManager.fetchServers(epVideo)
+                        val direct = provServers.firstOrNull { com.duta.movie.util.VideoExtractor.isDirectVideoUrl(it.url) } ?: provServers.firstOrNull()
+                        if (direct != null) {
+                            com.duta.movie.util.VideoExtractor.ExtractionResult(direct.url, sourceMirrorUrl = url)
+                        } else null
+                    } else {
+                        com.duta.movie.util.VideoExtractor.extractVideoUrl(url, referer = primaryUrl)
+                    }
                     if (result != null) {
                         val enrichedResult = result.copy(
                             sourceMirrorUrl = url,
@@ -4624,7 +4670,7 @@ class VideoViewModel @Inject constructor(
     
                 // Important: Use the servers from the current episode cache if available
                 val extraAlt = discoveredAltServers[effectiveVideoId] ?: emptyList()
-                val rawServers = if (video.isSeries == true && _currentEpisode.value != null) {
+                val rawServers = if ((video.isSeries == true || video.isShortTv) && _currentEpisode.value != null) {
                     val epSlug = VideoExtractor.extractStableId(_currentEpisode.value!!.url)
                     episodeServersCache[epSlug] ?: video.servers
                 } else {
@@ -4642,7 +4688,7 @@ class VideoViewModel @Inject constructor(
                 
                 if (serversToUse.isEmpty()) {
                      val epUrl = _currentEpisode.value?.url ?: currentServerUrl
-                     if (video.isSeries == true && epUrl != null) {
+                     if ((video.isSeries == true || video.isShortTv) && epUrl != null) {
                         addResolutionLog("No mirrors in state. Retrying episode page resolution.")
                         playTVSeries(effectiveVideoId, epUrl, forceReset = false, isRotation = true)
                      } else {

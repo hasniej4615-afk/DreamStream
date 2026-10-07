@@ -3427,7 +3427,7 @@ fun VideoPlayerContent(
         }, contentAlignment = Alignment.Center) {
         
         if (extractedUrl != null && error == null && playerErrorMessage == null && isTransitionComplete) {
-            val showWebView = useWebView && !isCasting
+            val showWebView = useWebView && !isCasting && (extractedUrl?.startsWith("http") == true)
             val currentOnVisibilityToggle by rememberUpdatedState(onVisibilityToggle)
             val currentHandleSeek by rememberUpdatedState(handleSeek)
             val currentIsVideoReady by rememberUpdatedState(isVideoReady)
@@ -5126,7 +5126,9 @@ fun VideoPlayerWebView(
                  
                  view.setTag(R.id.active_content_key, activeContentKey)
                  view.setTag(R.id.active_url, url)
-                 view.loadUrl(url, mutableMapOf("Referer" to referer))
+                 if (url.startsWith("http://") || url.startsWith("https://")) {
+                     view.loadUrl(url, mutableMapOf("Referer" to referer))
+                 }
              }
         }, onRelease = { view -> 
             webViewRef.value = null
