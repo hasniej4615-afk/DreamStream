@@ -1363,12 +1363,16 @@ fun VideoDetailInfo(
             val watchedEpisodes by viewModel.getWatchedEpisodes(video.id).collectAsState(initial = emptySet())
             val displaySeason = if (currentSeason.isNotEmpty() && currentSeason in seasons) currentSeason else (seasons.firstOrNull() ?: "")
 
-            groupedEpisodes[displaySeason]?.sortedWith(compareBy { ep -> 
-                Regex("""(?i)\b(?:episod[e]?|eps|ep)[.:\s-]*(\d+)\b""").find(ep.name)?.groupValues?.get(1)?.toIntOrNull()
-                    ?: Regex("""(?i)(?:e|x)\s*(\d+)\b""").find(ep.name)?.groupValues?.get(1)?.toIntOrNull()
-                    ?: Regex("""(?i)[-_](?:episod[e]?|eps|ep)[-_](\d+)""").find(ep.url)?.groupValues?.get(1)?.toIntOrNull()
-                    ?: ep.name.filter { c -> c.isDigit() }.toIntOrNull() ?: 0
-            })?.forEachIndexed { index, episode ->
+            val sortedSeasonEpisodes = remember(displaySeason, groupedEpisodes) {
+                groupedEpisodes[displaySeason]?.sortedWith(compareBy { ep -> 
+                    Regex("""(?i)\b(?:episod[e]?|eps|ep)[.:\s-]*(\d+)\b""").find(ep.name)?.groupValues?.get(1)?.toIntOrNull()
+                        ?: Regex("""(?i)(?:e|x)\s*(\d+)\b""").find(ep.name)?.groupValues?.get(1)?.toIntOrNull()
+                        ?: Regex("""(?i)[-_](?:episod[e]?|eps|ep)[-_](\d+)""").find(ep.url)?.groupValues?.get(1)?.toIntOrNull()
+                        ?: ep.name.filter { c -> c.isDigit() }.toIntOrNull() ?: 0
+                }) ?: emptyList()
+            }
+
+            sortedSeasonEpisodes.forEachIndexed { index, episode ->
                 val progressId = viewModel.getEpisodeProgressId(video.id, episode.url)
                 val cleanEp = remember(episode, video.title, video.videoUrl) {
                     val cleaned = com.duta.movie.util.VideoExtractor.cleanEpisodeTitle(episode.name, video.title, video.videoUrl)

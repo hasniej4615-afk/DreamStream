@@ -2487,8 +2487,9 @@ class VideoViewModel @Inject constructor(
         val lowUrl = url.lowercase()
         val currentVid = activeVideoId ?: _videoMetadata.value?.id ?: ""
         if (lowUrl.contains("cloudfront.net") || lowUrl.contains("rtm") || lowUrl.contains("glueapi") ||
+            lowUrl.contains("hakunaymatata") || lowUrl.contains("aoneroom") || lowUrl.contains("netshort") ||
             (currentVid.isNotEmpty() && com.duta.movie.model.LiveTvCatalog.isLiveVideo(currentVid))) {
-            Log.w("VideoViewModel", "notifyPlaybackFailure: Ignored for Live TV / CloudFront: $url")
+            Log.w("VideoViewModel", "notifyPlaybackFailure: Ignored for Live TV / CloudFront / MovieBox CDN: $url")
             return
         }
         if (url.isNotEmpty()) {
@@ -2915,8 +2916,10 @@ class VideoViewModel @Inject constructor(
                         val primaryTargetUrl = if (isEpisodeUrl) episodeUrl!! else targetEpisode!!.url
                         val primarySlug = VideoExtractor.extractCleanSlug(primaryTargetUrl)
                         val matchingEp = filteredEps.find { 
-                            val epSlug = VideoExtractor.extractCleanSlug(it.url)
-                            epSlug == primarySlug || (primaryTargetUrl.contains(epSlug) && epSlug.length > 5) || (it.url.contains(primarySlug) && primarySlug.length > 5)
+                            it.url == primaryTargetUrl || it.id == primaryTargetUrl ||
+                            (VideoExtractor.extractCleanSlug(it.url) == primarySlug) || 
+                            (primaryTargetUrl.contains(VideoExtractor.extractCleanSlug(it.url)) && VideoExtractor.extractCleanSlug(it.url).length > 5) || 
+                            (it.url.contains(primarySlug) && primarySlug.length > 5)
                         }
                         if (matchingEp != null) _currentEpisode.value = matchingEp
                     } else if (_currentEpisode.value == null && filteredEps.isNotEmpty()) {
@@ -2938,7 +2941,7 @@ class VideoViewModel @Inject constructor(
                 } ?: false
                 val hasEpisodesOrSeriesFlag = video?.isSeries == true || video?.isShortTv == true || (video?.episodes?.isNotEmpty() == true)
                 val isSeriesPlayback = isExplicitSeries || hasEpisodesOrSeriesFlag || isEpisodeUrl || targetEpisode != null
-                if (!isSeriesPlayback || video?.isSeries == false || (video?.episodes?.isEmpty() == true && !isEpisodeUrl && targetEpisode == null)) {
+                if (!isSeriesPlayback || (video?.isSeries == false && video?.isShortTv != true) || (video?.episodes?.isEmpty() == true && !isEpisodeUrl && targetEpisode == null)) {
                     Log.i("VideoViewModel", "playTVSeries: Video is a movie or has no episodes. Redirecting to startMoviePlaybackResolution...")
                     startMoviePlaybackResolution(videoId, serverUrl = episodeUrl, forceReset = forceReset, isRotation = isRotation, clearBlacklist = clearBlacklist)
                     return@launch
@@ -3568,6 +3571,7 @@ class VideoViewModel @Inject constructor(
                     (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || 
                      it.contains("/episod/") || it.contains("-episod-") || it.contains("-epi-") || 
                      it.contains("/ep-") || it.contains("epid=") || it.contains("&se=") || it.contains("&ep=") ||
+                     it.startsWith("moviebox://episode") ||
                      (it.contains("moviebox://") && (it.contains("type=2") || it.contains("type=7") || it.contains("type=5")))) && 
                     !it.contains("player=") && !it.contains("mirror=") 
                 } ?: false
@@ -5162,7 +5166,7 @@ class VideoViewModel @Inject constructor(
     fun resolveNextEpisode(videoId: String): Boolean {
         Log.i("VideoViewModel", "AUTOPLAY: Looking for next episode for $videoId")
         val video = getVideo(videoId) ?: return false
-        if (video.isSeries == false || video.episodes.isEmpty()) {
+        if ((video.isSeries == false && !video.isShortTv) || video.episodes.isEmpty()) {
             Log.w("VideoViewModel", "AUTOPLAY: Not a series or no episodes found.")
             return false
         }
@@ -5207,7 +5211,7 @@ class VideoViewModel @Inject constructor(
     fun prefetchNextEpisode(videoId: String) {
         if (isPrefetching) return
         val video = getVideo(videoId) ?: return
-        if (video.isSeries == false || video.episodes.isEmpty()) return
+        if ((video.isSeries == false && !video.isShortTv) || video.episodes.isEmpty()) return
         
         val episodes = video.episodes.filter { ep ->
             val low = ep.name.lowercase()

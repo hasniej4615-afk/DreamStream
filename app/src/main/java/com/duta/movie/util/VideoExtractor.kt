@@ -2075,7 +2075,8 @@ object VideoExtractor {
         if (activeBaseHost != null && (low == activeBaseHost || low.contains(activeBaseHost))) return true
         if (pencuriHost != null && (low == pencuriHost || low.contains(pencuriHost))) return true
         if (isClusterSite(low)) return true
-        if (low.contains("cloudfront.net") || low.contains("rtm") || low.contains("glueapi")) return true
+        if (low.contains("cloudfront.net") || low.contains("rtm") || low.contains("glueapi") ||
+            low.contains("hakunaymatata") || low.contains("aoneroom") || low.contains("netshort") || low.contains("moviebox")) return true
         return low.contains("archive.org") || low.contains("pusatfilm") || low.contains("kotakajaib") ||
             low.contains("bullerswood") || low.contains("pencurimovie") || low.contains("pencurifilm") ||
             low.contains("159.89.249.45") || low.contains("dutafilm") || low.contains("mantab.men") || low.contains("df31") ||

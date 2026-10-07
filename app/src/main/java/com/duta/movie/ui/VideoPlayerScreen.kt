@@ -119,10 +119,11 @@ fun isSeriesPlayback(video: com.duta.movie.model.Video?, url: String?): Boolean 
     val isEpisodeUrl = url?.let { 
         (it.contains("/eps/") || it.contains("/episode/") || it.contains("-episode-") || 
          it.contains("/episod/") || it.contains("-episod-") || it.contains("-epi-") || 
-         it.contains("/ep-") || it.contains("epid=") || it.contains("&se=") || it.contains("&ep=")) && 
+         it.contains("/ep-") || it.contains("epid=") || it.contains("&se=") || it.contains("&ep=") ||
+         it.startsWith("moviebox://episode")) && 
         !it.contains("player=") && !it.contains("mirror=") 
     } ?: false
-    val isExplicitSeries = video?.videoUrl?.let { it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") || it.contains("type=5") || it.contains("type=7") || it.contains("short-tv") || it.contains("dramabox") } ?: false
+    val isExplicitSeries = video?.videoUrl?.let { it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") || it.contains("type=5") || it.contains("type=7") || it.contains("short-tv") || it.contains("dramabox") || it.contains("netshort") } ?: false
     val hasEpisodesOrSeriesFlag = video?.isSeries == true || video?.isShortTv == true || (video?.episodes?.isNotEmpty() == true)
     return isExplicitSeries || hasEpisodesOrSeriesFlag || isEpisodeUrl
 }
@@ -397,14 +398,17 @@ fun VideoPlayerScreen(
     var currentCues by remember { mutableStateOf<List<Cue>>(emptyList()) }
 
     
-    val isShortTvPlayback = remember(video, serverUrl, extractedUrl) {
+    val isShortTvPlayback = remember(video, serverUrl, extractedUrl, videoId) {
         video?.isShortTv == true || 
-        (serverUrl != null && (serverUrl.contains("type=5") || serverUrl.contains("type=7") || serverUrl.contains("short-tv") || serverUrl.contains("dramabox"))) ||
-        (extractedUrl != null && (extractedUrl!!.contains("type=5") || extractedUrl!!.contains("type=7") || extractedUrl!!.contains("short-tv") || extractedUrl!!.contains("dramabox"))) ||
+        (serverUrl != null && (serverUrl.contains("type=5") || serverUrl.contains("type=7") || serverUrl.contains("short-tv") || serverUrl.contains("dramabox") || serverUrl.contains("netshort") || serverUrl.contains("hakunaymatata"))) ||
+        (extractedUrl != null && (extractedUrl!!.contains("type=5") || extractedUrl!!.contains("type=7") || extractedUrl!!.contains("short-tv") || extractedUrl!!.contains("dramabox") || extractedUrl!!.contains("netshort") || extractedUrl!!.contains("hakunaymatata"))) ||
         video?.videoUrl?.contains("type=5") == true ||
         video?.videoUrl?.contains("type=7") == true ||
         video?.videoUrl?.contains("short-tv") == true ||
-        video?.videoUrl?.contains("dramabox") == true
+        video?.videoUrl?.contains("dramabox") == true ||
+        video?.videoUrl?.contains("netshort") == true ||
+        video?.videoUrl?.contains("hakunaymatata") == true ||
+        (videoId.startsWith("mb_") && (video?.episodes?.size ?: 0) >= 10 && (video?.duration.isNullOrEmpty() || (fallbackDurationMs in 1..600_000L)))
     }
 
     // Auto-rotate and hide system bars when fullscreen is toggled
@@ -1538,13 +1542,24 @@ fun VideoPlayerScreen(
                     if (!isLiveStream) {
                         // OWL'S EYE: Zombie Detection
                         // If a "Full Movie" reported duration is less than 5 minutes, it's likely an ad loop or broken mirror.
+                        // Direct CDN streams (Moviebox CDN hakunaymatata / netshort) are authentic provider streams, never fake ad loops.
                         // Live TV channels have short sliding window durations (90-100s) and are excluded.
+                        val isDirectShortDramaCdn = extractedUrl?.contains("hakunaymatata") == true || 
+                                                    extractedUrl?.contains("netshort") == true || 
+                                                    extractedUrl?.contains("dramabox") == true
                         val duration = currentPlayer.duration
-                        val isMovie = video?.isSeries == false
-                        val isZombie = if (isMovie) {
+                        val isShortDrama = isShortTvPlayback || video?.isShortTv == true || isDirectShortDramaCdn
+                        val isMovie = video?.isSeries == false && !isShortDrama
+                        val isZombie = if (isDirectShortDramaCdn) {
+                            // Direct Moviebox / Netshort CDN streams are authentic micro-episodes, never zombies
+                            false
+                        } else if (isShortDrama) {
+                            // Short drama episodes are naturally 1-3 minutes (60-180s); only flag if corrupt/under 10s
+                            duration in 1..10_000L
+                        } else if (isMovie) {
                             duration in 1..300_000L
                         } else {
-                            // For series, be slightly more permissive but still catch 1-3 minute ad loops
+                            // For traditional series, be slightly more permissive but still catch 1-3 minute ad loops
                             duration in 1..180_000L
                         }
 
@@ -1579,8 +1594,12 @@ fun VideoPlayerScreen(
                     
                     // OWL'S EYE: Healthy Duration Guard
                     // A real episode is rarely < 10 mins (600s). A real movie is rarely < 40 mins (2400s).
-                    // If it ends before this, it's a "False End" (Broken Stream/Ad Loop).
-                    val minHealthyDuration = if (video?.isShortTv == true || isShortTvPlayback) 30_000L else if (video?.isSeries == true) 600_000L else 1_800_000L
+                    // For Short TV, micro-drama episodes can be 20s - 180s.
+                    val isShortDrama = video?.isShortTv == true || isShortTvPlayback || 
+                                       extractedUrl?.contains("hakunaymatata") == true || 
+                                       extractedUrl?.contains("netshort") == true || 
+                                       extractedUrl?.contains("dramabox") == true
+                    val minHealthyDuration = if (isShortDrama) 10_000L else if (video?.isSeries == true) 600_000L else 1_800_000L
                     
                     // CRITICAL: Fail-safe for premature "Ended" signals.
                     val isNaturalEnd = totalDuration > minHealthyDuration && playedDuration > (totalDuration * 0.9)
@@ -3471,10 +3490,15 @@ fun VideoPlayerContent(
                     (video?.videoUrl?.contains("type=7") == true) || 
                     (video?.videoUrl?.contains("short-tv") == true) ||
                     (video?.videoUrl?.contains("dramabox") == true) ||
+                    (video?.videoUrl?.contains("netshort") == true) ||
+                    (video?.videoUrl?.contains("hakunaymatata") == true) ||
                     (extractedUrl?.contains("type=5") == true) ||
                     (extractedUrl?.contains("type=7") == true) ||
                     (extractedUrl?.contains("short-tv") == true) ||
-                    (extractedUrl?.contains("dramabox") == true)
+                    (extractedUrl?.contains("dramabox") == true) ||
+                    (extractedUrl?.contains("netshort") == true) ||
+                    (extractedUrl?.contains("hakunaymatata") == true) ||
+                    (videoId.startsWith("mb_") && (video?.episodes?.size ?: 0) >= 10)
                 }
                 val targetResizeMode = if (isShortTvPlaybackContent) {
                     if (isTV) {
