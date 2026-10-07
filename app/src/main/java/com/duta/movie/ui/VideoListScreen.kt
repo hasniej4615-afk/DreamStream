@@ -1441,7 +1441,7 @@ fun NetflixThumbnail(
                         }
                     }
 
-                    val isShortTvItem = video.isShortTv || video.videoUrl.contains("type=5") || video.videoUrl.contains("short-tv")
+                    val isShortTvItem = video.isShortTv || video.videoUrl.contains("type=5") || video.videoUrl.contains("type=7") || video.videoUrl.contains("short-tv") || video.videoUrl.contains("dramabox")
                     if (isShortTvItem) {
                         val isNarrowCard = (width != null && width < 120.dp) || (isRealTV && (width ?: 165.dp) < 120.dp)
                         Surface(

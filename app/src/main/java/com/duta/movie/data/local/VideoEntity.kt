@@ -56,7 +56,7 @@ fun VideoEntity.toDomain(): Video = Video(
     },
     episodes = episodes,
     isSeries = isSeries,
-    isShortTv = (videoUrl.contains("type=5") || videoUrl.contains("short-tv"))
+    isShortTv = (videoUrl.contains("type=5") || videoUrl.contains("type=7") || videoUrl.contains("short-tv") || videoUrl.contains("dramabox"))
 )
 
 fun Video.toEntity(isFavorite: Boolean = false, lastWatched: Long = 0): VideoEntity = VideoEntity(

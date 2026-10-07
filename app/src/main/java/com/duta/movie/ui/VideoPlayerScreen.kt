@@ -122,7 +122,7 @@ fun isSeriesPlayback(video: com.duta.movie.model.Video?, url: String?): Boolean 
          it.contains("/ep-") || it.contains("epid=") || it.contains("&se=") || it.contains("&ep=")) && 
         !it.contains("player=") && !it.contains("mirror=") 
     } ?: false
-    val isExplicitSeries = video?.videoUrl?.let { it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") || it.contains("type=5") || it.contains("short-tv") } ?: false
+    val isExplicitSeries = video?.videoUrl?.let { it.contains("/series/") || it.contains("/tv/") || it.contains("/serial-tv/") || it.contains("type=5") || it.contains("type=7") || it.contains("short-tv") || it.contains("dramabox") } ?: false
     val hasEpisodesOrSeriesFlag = video?.isSeries == true || video?.isShortTv == true || (video?.episodes?.isNotEmpty() == true)
     return isExplicitSeries || hasEpisodesOrSeriesFlag || isEpisodeUrl
 }
@@ -399,10 +399,12 @@ fun VideoPlayerScreen(
     
     val isShortTvPlayback = remember(video, serverUrl, extractedUrl) {
         video?.isShortTv == true || 
-        (serverUrl != null && (serverUrl.contains("type=5") || serverUrl.contains("short-tv"))) ||
-        (extractedUrl != null && (extractedUrl!!.contains("type=5") || extractedUrl!!.contains("short-tv"))) ||
+        (serverUrl != null && (serverUrl.contains("type=5") || serverUrl.contains("type=7") || serverUrl.contains("short-tv") || serverUrl.contains("dramabox"))) ||
+        (extractedUrl != null && (extractedUrl!!.contains("type=5") || extractedUrl!!.contains("type=7") || extractedUrl!!.contains("short-tv") || extractedUrl!!.contains("dramabox"))) ||
         video?.videoUrl?.contains("type=5") == true ||
-        video?.videoUrl?.contains("short-tv") == true
+        video?.videoUrl?.contains("type=7") == true ||
+        video?.videoUrl?.contains("short-tv") == true ||
+        video?.videoUrl?.contains("dramabox") == true
     }
 
     // Auto-rotate and hide system bars when fullscreen is toggled
@@ -3466,9 +3468,13 @@ fun VideoPlayerContent(
                 val isShortTvPlaybackContent = remember(video, extractedUrl) {
                     video?.isShortTv == true || 
                     (video?.videoUrl?.contains("type=5") == true) || 
+                    (video?.videoUrl?.contains("type=7") == true) || 
                     (video?.videoUrl?.contains("short-tv") == true) ||
+                    (video?.videoUrl?.contains("dramabox") == true) ||
                     (extractedUrl?.contains("type=5") == true) ||
-                    (extractedUrl?.contains("short-tv") == true)
+                    (extractedUrl?.contains("type=7") == true) ||
+                    (extractedUrl?.contains("short-tv") == true) ||
+                    (extractedUrl?.contains("dramabox") == true)
                 }
                 val targetResizeMode = if (isShortTvPlaybackContent) {
                     if (isTV) {

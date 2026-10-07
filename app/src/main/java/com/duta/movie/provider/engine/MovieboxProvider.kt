@@ -164,8 +164,8 @@ class MovieboxProvider(
                             duration = durStr,
                             date = releaseDate,
                             quality = if (rating.isNotBlank()) "★ $rating" else "HD",
-                            isSeries = (stype == 2 || stype == 5),
-                            isShortTv = (stype == 5)
+                            isSeries = (stype == 2 || stype == 5 || stype == 7),
+                            isShortTv = (stype == 5 || stype == 7)
                         )
                     )
                 }
@@ -227,8 +227,8 @@ class MovieboxProvider(
                             videoUrl = "moviebox://$dp?id=$sid&type=$stype",
                             duration = "",
                             quality = if (rating.isNotBlank()) "★ $rating" else "HD",
-                            isSeries = (stype == 2 || stype == 5),
-                            isShortTv = (stype == 5)
+                            isSeries = (stype == 2 || stype == 5 || stype == 7),
+                            isShortTv = (stype == 5 || stype == 7)
                         )
                     )
                 }
@@ -241,42 +241,85 @@ class MovieboxProvider(
     }
 
     private suspend fun fetchShortTvSection(page: Int, count: Int): List<Video> {
-        val token = ensureJwtToken() ?: return emptyList()
-        val keywords = listOf("shorts", "drama", "love", "secret", "mr", "wife", "boss", "sweet", "story", "heart", "mini", "series", "life", "episode")
-        val kwIdx = ((page - 1) * 2) % keywords.size
-        val targetKws = listOf(keywords[kwIdx], keywords[(kwIdx + 1) % keywords.size])
-
+        val token = ensureJwtToken()
         val list = mutableListOf<Video>()
         val seenSids = mutableSetOf<String>()
 
-        for (kw in targetKws) {
-            try {
-                val url = "$API_BASE/wefeed-h5api-bff/subject/search"
-                val payload = JSONObject().apply {
-                    put("keyword", kw)
-                    put("page", 1)
-                    put("perPage", count)
-                    put("subjectType", 5)
-                }.toString()
+        // 7844144696607102784 = "Hot Short TV" (DramaBox Chinese micro-dramas)
+        // 173752404280836544  = "Trending C-Drama" (Chinese drama series)
+        val targetPage = if (page <= 3) page else (page - 3)
+        val targetRankId = if (page <= 3) "7844144696607102784" else "173752404280836544"
 
+        try {
+            val url = "$API_BASE/wefeed-h5api-bff/ranking-list/content?id=$targetRankId&page=$targetPage&perPage=$count"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", UA)
+                .header("Accept", "application/json")
+                .header("X-Client-Info", "{\"timezone\":\"Africa/Lagos\"}")
+                .header("Origin", SITE_BASE)
+                .header("Referer", "$SITE_BASE/")
+                .apply { if (token != null) header("Authorization", "Bearer $token") }
+                .get()
+                .build()
+
+            okHttpClient.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val jsonStr = resp.body?.string() ?: ""
+                    val root = JSONObject(jsonStr)
+                    val items = root.optJSONObject("data")?.optJSONArray("subjectList") ?: JSONArray()
+                    for (i in 0 until items.length()) {
+                        val item = items.optJSONObject(i) ?: continue
+                        val sid = item.optString("subjectId")
+                        val dp = item.optString("detailPath")
+                        val title = item.optString("title")
+                        if (sid.isBlank() || title.isBlank() || !seenSids.add(sid)) continue
+
+                        val cover = item.optJSONObject("cover")?.optString("url") ?: ""
+                        val stype = item.optInt("subjectType", 7)
+                        val rating = item.optString("imdbRatingValue", "ShortTV")
+                        val releaseDate = item.optString("releaseDate", "")
+
+                        list.add(
+                            Video(
+                                id = "mb_$sid",
+                                title = title,
+                                thumbnailUrl = cover,
+                                videoUrl = "moviebox://$dp?id=$sid&type=$stype",
+                                duration = "",
+                                date = releaseDate,
+                                quality = if (rating.isNotBlank() && rating != "0" && rating != "HD") "★ $rating" else "ShortTV",
+                                isSeries = true,
+                                isShortTv = true
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed fetching Short TV ranking list: ${e.message}")
+        }
+
+        // Fallback: If ranking list returned empty (e.g. out of pages), try static ranking list endpoint
+        if (list.isEmpty() && page == 1) {
+            try {
+                val fallbackUrl = "$API_BASE/wefeed-h5api-bff/ranking-list?id=7844144696607102784&page=1&perPage=$count"
                 val request = Request.Builder()
-                    .url(url)
+                    .url(fallbackUrl)
                     .header("User-Agent", UA)
                     .header("Accept", "application/json")
-                    .header("Content-Type", "application/json")
                     .header("X-Client-Info", "{\"timezone\":\"Africa/Lagos\"}")
-                    .header("X-Request-Lang", "en")
                     .header("Origin", SITE_BASE)
                     .header("Referer", "$SITE_BASE/")
-                    .header("Authorization", "Bearer $token")
-                    .post(payload.toRequestBody("application/json".toMediaType()))
+                    .apply { if (token != null) header("Authorization", "Bearer $token") }
+                    .get()
                     .build()
 
                 okHttpClient.newCall(request).execute().use { resp ->
                     if (resp.isSuccessful) {
                         val jsonStr = resp.body?.string() ?: ""
                         val root = JSONObject(jsonStr)
-                        val items = root.optJSONObject("data")?.optJSONArray("items") ?: JSONArray()
+                        val items = root.optJSONObject("data")?.optJSONArray("subjectList") ?: JSONArray()
                         for (i in 0 until items.length()) {
                             val item = items.optJSONObject(i) ?: continue
                             val sid = item.optString("subjectId")
@@ -285,7 +328,8 @@ class MovieboxProvider(
                             if (sid.isBlank() || title.isBlank() || !seenSids.add(sid)) continue
 
                             val cover = item.optJSONObject("cover")?.optString("url") ?: ""
-                            val rating = item.optString("imdbRatingValue", "HD")
+                            val stype = item.optInt("subjectType", 7)
+                            val rating = item.optString("imdbRatingValue", "ShortTV")
                             val releaseDate = item.optString("releaseDate", "")
 
                             list.add(
@@ -293,10 +337,10 @@ class MovieboxProvider(
                                     id = "mb_$sid",
                                     title = title,
                                     thumbnailUrl = cover,
-                                    videoUrl = "moviebox://$dp?id=$sid&type=5",
+                                    videoUrl = "moviebox://$dp?id=$sid&type=$stype",
                                     duration = "",
                                     date = releaseDate,
-                                    quality = if (rating.isNotBlank() && rating != "0") "★ $rating" else "HD",
+                                    quality = if (rating.isNotBlank() && rating != "0" && rating != "HD") "★ $rating" else "ShortTV",
                                     isSeries = true,
                                     isShortTv = true
                                 )
@@ -305,9 +349,10 @@ class MovieboxProvider(
                     }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Failed fetching Short TV with kw=$kw: ${e.message}")
+                Log.w(TAG, "Failed fetching Short TV fallback: ${e.message}")
             }
         }
+
         return list
     }
 
@@ -335,7 +380,7 @@ class MovieboxProvider(
 
                 val title = subject.optString("title", video.title)
                 val description = subject.optString("description", video.description)
-                val stype = subject.optInt("subjectType", if (video.isSeries == true) 2 else 1)
+                val stype = subject.optInt("subjectType", if (video.isShortTv) 7 else if (video.isSeries == true) 2 else 1)
                 val sid = subject.optString("subjectId", video.id.removePrefix("mb_"))
                 val backdrop = subject.optJSONObject("trailer")?.optJSONObject("cover")?.optString("url") ?: ""
 
@@ -351,8 +396,9 @@ class MovieboxProvider(
                 }
 
                 // Episodes if TV Series or Short TV
+                val isShortDrama = (stype == 5 || stype == 7 || video.isShortTv || video.videoUrl.contains("type=7") || video.videoUrl.contains("type=5"))
                 val episodes = mutableListOf<Episode>()
-                if (stype == 2 || stype == 5) {
+                if (stype == 2 || isShortDrama) {
                     val seasons = resource?.optJSONArray("seasons")
                     if (seasons != null) {
                         for (i in 0 until seasons.length()) {
@@ -363,9 +409,9 @@ class MovieboxProvider(
                                 episodes.add(
                                     Episode(
                                         id = "mb_${sid}_s${se}_e${ep}",
-                                        name = if (stype == 5) "Episode $ep" else "Season $se Ep $ep",
+                                        name = if (isShortDrama) "Episode $ep" else "Season $se Ep $ep",
                                         url = "moviebox://$dp?id=$sid&type=$stype&se=$se&ep=$ep",
-                                        season = if (stype == 5) "Episodes" else "Season $se"
+                                        season = if (isShortDrama) "Episodes" else "Season $se"
                                     )
                                 )
                             }
@@ -385,8 +431,8 @@ class MovieboxProvider(
                     actresses = castList,
                     episodes = episodes,
                     servers = servers,
-                    isSeries = (stype == 2 || stype == 5),
-                    isShortTv = (stype == 5)
+                    isSeries = (stype == 2 || isShortDrama),
+                    isShortTv = isShortDrama
                 )
             }
         } catch (e: Exception) {

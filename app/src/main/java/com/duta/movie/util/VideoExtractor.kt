@@ -2905,7 +2905,7 @@ object VideoExtractor {
         return lowUrl.contains("/series/") || lowUrl.contains("/serial-tv/") || lowUrl.contains("/tv/") ||
                lowUrl.contains("/serial-tv-terbaru/") || lowUrl.contains("/eps/") || lowUrl.contains("/episode/") ||
                lowUrl.contains("-episode-") || lowUrl.contains("/episod/") || lowUrl.contains("-episod-") ||
-               lowUrl.contains("media_type=tv") || lowUrl.contains("type=5") || lowUrl.contains("short-tv")
+               lowUrl.contains("media_type=tv") || lowUrl.contains("type=5") || lowUrl.contains("type=7") || lowUrl.contains("short-tv") || lowUrl.contains("dramabox")
     }
 
     /**
