@@ -1184,8 +1184,21 @@ fun VideoPlayerScreen(
             }
             currentCastSubUrl = castSubUrl
 
+            // For Google Cast: if stream has anti-hotlinking protection (e.g. MovieBox or mirrors requiring Referer)
+            // proxy via local LAN server with full CORS and spoofed headers so Chromecast plays it seamlessly
+            val effectiveMediaUri = if (isCasting && (url.contains("hakunaymatata.com") || url.contains("aoneroom.com") || (!effectiveReferer.isNullOrEmpty() && !effectiveReferer.contains("157.245.199.231")))) {
+                val proxied = CastSubtitleServer.setMediaStream(url, effectiveReferer)
+                if (proxied != null) {
+                    Log.i("VideoPlayerScreen", "Cast: Streaming via local LAN proxy with Referer spoofing: $proxied (upstream: $url)")
+                    proxied
+                } else url
+            } else {
+                if (!isCasting) CastSubtitleServer.clearMediaStream()
+                url
+            }
+
             val mediaItem = MediaItem.Builder()
-                .setUri(url)
+                .setUri(if (isCasting) effectiveMediaUri else url)
                 .setMediaId(effectiveProgressId)
                 .setMediaMetadata(
                     MediaMetadata.Builder()
@@ -1197,7 +1210,7 @@ fun VideoPlayerScreen(
                 )
                 .setRequestMetadata(
                     MediaItem.RequestMetadata.Builder()
-                        .setMediaUri(url.toUri())
+                        .setMediaUri((if (isCasting) effectiveMediaUri else url).toUri())
                         .build()
                 )
                 .apply {
@@ -1270,6 +1283,7 @@ fun VideoPlayerScreen(
                     Log.i("VideoPlayerScreen", "Cast: Already playing this media at ${castCurrentPos}ms, skipping reload")
                 } else {
                     lastCastSubUrl = castSubUrl
+                    Log.i("VideoPlayerScreen", "Cast: Loading mediaItem onto castPlayer: uri=${mediaItem.localConfiguration?.uri} (startPos=${currentPos}ms)")
                     castPlayer.setMediaItem(mediaItem, currentPos)
                     castPlayer.prepare()
                     castPlayer.play()

@@ -1,6 +1,7 @@
 package com.duta.movie.util
 
 import android.util.Log
+import okhttp3.Request
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.io.OutputStream
@@ -13,7 +14,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Lightweight in-app micro HTTP server for streaming WebVTT subtitles
- * over the local Wi-Fi network directly to Google Cast receivers (Chromecast / Android TV).
+ * and proxying anti-hotlinking video streams over the local Wi-Fi network
+ * directly to Google Cast receivers (Chromecast / Android TV).
  *
  * Designed with zero external dependencies using standard ServerSocket.
  */
@@ -32,6 +34,15 @@ object CastSubtitleServer {
 
     @Volatile
     private var serverPort: Int = 0
+
+    @Volatile
+    private var streamUrl: String? = null
+
+    @Volatile
+    private var streamReferer: String? = null
+
+    @Volatile
+    private var streamUserAgent: String? = null
 
     /**
      * Starts the server if not already running.
@@ -91,8 +102,36 @@ object CastSubtitleServer {
         serverThread = null
         vttContent = ""
         currentVersionTag = ""
+        streamUrl = null
+        streamReferer = null
+        streamUserAgent = null
         serverPort = 0
         Log.i(TAG, "Cast subtitle server stopped")
+    }
+
+    /**
+     * Sets the active media stream URL and anti-hotlinking headers, returning
+     * a local LAN proxy URL (e.g. http://192.168.1.5:port/stream.mp4) for Chromecast.
+     */
+    fun setMediaStream(url: String, referer: String?, userAgent: String? = null): String? {
+        if (!start()) return null
+        val localIp = getLocalIpAddress() ?: return null
+        streamUrl = url
+        streamReferer = referer
+        streamUserAgent = userAgent
+        val extension = if (url.lowercase().contains(".m3u8")) "m3u8" else "mp4"
+        val proxyUrl = "http://$localIp:$serverPort/stream.$extension"
+        Log.i(TAG, "Configured Cast media proxy: $proxyUrl -> $url (Referer: $referer)")
+        return proxyUrl
+    }
+
+    /**
+     * Clears the active media stream proxy.
+     */
+    fun clearMediaStream() {
+        streamUrl = null
+        streamReferer = null
+        streamUserAgent = null
     }
 
     /**
@@ -137,10 +176,16 @@ object CastSubtitleServer {
             val requestLine = reader.readLine() ?: return
             Log.i(TAG, "Incoming client request from ${client.inetAddress.hostAddress}: $requestLine")
 
-            // Drain remaining headers
+            val headers = mutableMapOf<String, String>()
             while (true) {
                 val headerLine = reader.readLine() ?: break
                 if (headerLine.isEmpty()) break
+                val colonIdx = headerLine.indexOf(':')
+                if (colonIdx > 0) {
+                    val k = headerLine.substring(0, colonIdx).trim().lowercase()
+                    val v = headerLine.substring(colonIdx + 1).trim()
+                    headers[k] = v
+                }
             }
 
             val parts = requestLine.split(" ")
@@ -161,6 +206,72 @@ object CastSubtitleServer {
                 out.write(response.toByteArray(Charsets.UTF_8))
                 out.flush()
                 return
+            }
+
+            // Handle GET / HEAD for media streaming proxy
+            if ((method == "GET" || method == "HEAD") && path.contains("/stream")) {
+                val targetUrl = streamUrl
+                if (targetUrl.isNullOrEmpty()) {
+                    val notFound = "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nAccess-Control-Allow-Origin: *\r\nConnection: close\r\n\r\n"
+                    out.write(notFound.toByteArray(Charsets.UTF_8))
+                    out.flush()
+                    return
+                }
+
+                client.soTimeout = 30000 // Extended timeout for media streaming
+                val targetReferer = streamReferer
+                val targetUa = streamUserAgent ?: NetworkConfig.SHARED_USER_AGENT
+                val rangeHeader = headers["range"]
+
+                val reqBuilder = Request.Builder()
+                    .url(targetUrl)
+                    .header("User-Agent", targetUa)
+                if (!targetReferer.isNullOrEmpty()) {
+                    reqBuilder.header("Referer", targetReferer)
+                }
+                if (!rangeHeader.isNullOrEmpty()) {
+                    reqBuilder.header("Range", rangeHeader)
+                }
+
+                try {
+                    val response = NetworkConfig.permissiveOkHttpClient.newCall(reqBuilder.build()).execute()
+                    val code = response.code
+                    val body = response.body
+                    val contentType = response.header("Content-Type") ?: "video/mp4"
+                    val contentLength = response.header("Content-Length")
+                    val contentRange = response.header("Content-Range")
+                    val acceptRanges = response.header("Accept-Ranges") ?: "bytes"
+
+                    val statusLine = if (code == 206) "HTTP/1.1 206 Partial Content\r\n" else "HTTP/1.1 200 OK\r\n"
+                    val sb = StringBuilder(statusLine)
+                    sb.append("Content-Type: ").append(contentType).append("\r\n")
+                    if (contentLength != null) sb.append("Content-Length: ").append(contentLength).append("\r\n")
+                    if (contentRange != null) sb.append("Content-Range: ").append(contentRange).append("\r\n")
+                    sb.append("Accept-Ranges: ").append(acceptRanges).append("\r\n")
+                    sb.append("Access-Control-Allow-Origin: *\r\n")
+                    sb.append("Access-Control-Allow-Methods: GET, HEAD, OPTIONS\r\n")
+                    sb.append("Access-Control-Allow-Headers: *\r\n")
+                    sb.append("Connection: close\r\n\r\n")
+
+                    out.write(sb.toString().toByteArray(Charsets.UTF_8))
+                    out.flush()
+
+                    if (method == "GET" && body != null) {
+                        body.byteStream().use { inputStream ->
+                            val buffer = ByteArray(64 * 1024)
+                            var bytesRead: Int
+                            while (inputStream.read(buffer).also { bytesRead = it } != -1) {
+                                out.write(buffer, 0, bytesRead)
+                            }
+                            out.flush()
+                        }
+                    }
+                    response.close()
+                    return
+                } catch (e: Exception) {
+                    Log.d(TAG, "Stream proxy connection ended: ${e.message}")
+                    return
+                }
             }
 
             // Handle GET / HEAD for WebVTT

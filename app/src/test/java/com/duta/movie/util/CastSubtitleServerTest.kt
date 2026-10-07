@@ -76,4 +76,22 @@ class CastSubtitleServerTest {
         assertEquals(404, responseCode)
         conn.disconnect()
     }
+
+    @Test
+    fun testServerConfiguresMediaStreamProxy() {
+        val proxyUrl = CastSubtitleServer.setMediaStream("https://example.com/test.mp4", "https://movieboxonline.net/")
+        assertNotNull(proxyUrl)
+        assertTrue(proxyUrl!!.endsWith("/stream.mp4"))
+
+        val url = URL(proxyUrl)
+        val conn = url.openConnection() as HttpURLConnection
+        conn.requestMethod = "OPTIONS"
+        conn.connectTimeout = 3000
+        conn.readTimeout = 3000
+
+        val responseCode = conn.responseCode
+        assertEquals(204, responseCode)
+        assertEquals("*", conn.getHeaderField("Access-Control-Allow-Origin"))
+        conn.disconnect()
+    }
 }
