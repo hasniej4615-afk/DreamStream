@@ -889,6 +889,19 @@ class VideoViewModel @Inject constructor(
 
     val sourceWeights: StateFlow<Map<String, Int>> = preferenceManager.sourceWeights.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
 
+    // Global Broadcast Announcement System (Remote push to all users via Supabase)
+    private val _activeBroadcast = MutableStateFlow<BroadcastMessage?>(null)
+    val activeBroadcast: StateFlow<BroadcastMessage?> = _activeBroadcast.asStateFlow()
+
+    private val _showBroadcastDialog = MutableStateFlow(false)
+    val showBroadcastDialog: StateFlow<Boolean> = _showBroadcastDialog.asStateFlow()
+
+    private val _isSendingBroadcast = MutableStateFlow(false)
+    val isSendingBroadcast: StateFlow<Boolean> = _isSendingBroadcast.asStateFlow()
+
+    private val _isBroadcastLoading = MutableStateFlow(false)
+    val isBroadcastLoading: StateFlow<Boolean> = _isBroadcastLoading.asStateFlow()
+
     init {
         cleanDeadMirrors()
         fetchActiveBroadcast(forceShow = false)
@@ -1324,19 +1337,6 @@ class VideoViewModel @Inject constructor(
             }
         }
     }
-
-    // Global Broadcast Announcement System (Remote push to all users via Supabase)
-    private val _activeBroadcast = MutableStateFlow<BroadcastMessage?>(null)
-    val activeBroadcast: StateFlow<BroadcastMessage?> = _activeBroadcast.asStateFlow()
-
-    private val _showBroadcastDialog = MutableStateFlow(false)
-    val showBroadcastDialog: StateFlow<Boolean> = _showBroadcastDialog.asStateFlow()
-
-    private val _isSendingBroadcast = MutableStateFlow(false)
-    val isSendingBroadcast: StateFlow<Boolean> = _isSendingBroadcast.asStateFlow()
-
-    private val _isBroadcastLoading = MutableStateFlow(false)
-    val isBroadcastLoading: StateFlow<Boolean> = _isBroadcastLoading.asStateFlow()
 
     fun fetchActiveBroadcast(forceShow: Boolean = false) {
         viewModelScope.launch {
