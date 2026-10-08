@@ -60,6 +60,7 @@ class MovieboxProvider(
     private val shortTvSeenIds = mutableSetOf<String>()
     private var shortTvInitialized = false
     private val shortTvLock = Any()
+    @Volatile private var nextVskitCatalogPage: Int = 4
 
     private fun getClientToken(): String {
         val e = System.currentTimeMillis() / 1000
@@ -261,18 +262,23 @@ class MovieboxProvider(
     private suspend fun fetchShortTvSection(page: Int, count: Int): List<Video> {
         val token = ensureJwtToken()
         val startIndex = (page - 1) * count
+        val targetEndIndex = startIndex + count
 
         val needsInit = synchronized(shortTvLock) { !shortTvInitialized || shortTvCache.isEmpty() }
         if (needsInit) {
             populateShortTvCache(token)
         }
 
-        // On-demand pagination: if requesting beyond current cache size, fetch next page of micro-drama catalog
-        val currentSize = synchronized(shortTvLock) { shortTvCache.size }
-        if (startIndex + count > currentSize) {
-            val vskitPage = (currentSize / 50) + 1
-            val moreItems = fetchVskitCatalog(vskitPage, 50)
-            if (moreItems.isNotEmpty()) {
+        // On-demand pagination: while we don't have enough items to fulfill targetEndIndex,
+        // dynamically fetch subsequent pages from the MovieBox Vskit micro-drama catalog.
+        var consecutiveEmptyFetches = 0
+        while (synchronized(shortTvLock) { shortTvCache.size } < targetEndIndex && nextVskitCatalogPage <= 150 && consecutiveEmptyFetches < 2) {
+            val pageToFetch = synchronized(shortTvLock) { nextVskitCatalogPage++ }
+            val moreItems = fetchVskitCatalog(pageToFetch, 50)
+            if (moreItems.isEmpty()) {
+                consecutiveEmptyFetches++
+            } else {
+                consecutiveEmptyFetches = 0
                 synchronized(shortTvLock) {
                     for (v in moreItems) {
                         val sid = v.id.removePrefix("mb_")
@@ -288,7 +294,7 @@ class MovieboxProvider(
             if (startIndex >= shortTvCache.size) {
                 emptyList()
             } else {
-                val endIndex = minOf(startIndex + count, shortTvCache.size)
+                val endIndex = minOf(targetEndIndex, shortTvCache.size)
                 shortTvCache.subList(startIndex, endIndex).toList()
             }
         }
@@ -326,6 +332,7 @@ class MovieboxProvider(
                     }
                 }
             }
+            nextVskitCatalogPage = 4
             shortTvInitialized = true
         }
         Log.i(TAG, "MovieBox Short TV catalog loaded: ${shortTvCache.size} pure micro-drama titles in cache")

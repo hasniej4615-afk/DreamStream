@@ -2314,16 +2314,21 @@ class VideoViewModel @Inject constructor(
 
     fun fetchVideos(category: String?) {
         if (category == null) return
-        _selectedCategory.value = category; fetchJob?.cancel(); fetchJob = viewModelScope.launch { 
-            _isLoading.value = true; 
+        val isShortTv = category == "/short-tv/" || category.contains("short-tv") || category.equals("Short TV", ignoreCase = true)
+        _selectedCategory.value = category
+        _isEndReached.value = false
+        fetchJob?.cancel()
+        fetchJob = viewModelScope.launch { 
+            _isLoading.value = true
             try { 
-                val results = videoRepository.fetchVideosBySection(category, page = 1, count = 250) 
+                val pageSize = if (isShortTv) 60 else 250
+                val results = videoRepository.fetchVideosBySection(category, page = 1, count = pageSize) 
                 if (results.isNotEmpty()) { 
-                    val sorted = VideoExtractor.sortVideosByNewestRelease(results)
+                    val sorted = if (isShortTv) results else VideoExtractor.sortVideosByNewestRelease(results)
                     updateMetadataCache(sorted) 
                     prefetchThumbnails(sorted)
                     _resultVideos.value = sorted 
-                    currentPage = 6 
+                    currentPage = if (isShortTv) 1 else 6 
                 } else _error.value = "No videos found" 
             } catch (e: Exception) { 
                 if (e !is CancellationException) _error.value = "Failed to load: ${e.message}" 
@@ -2333,12 +2338,15 @@ class VideoViewModel @Inject constructor(
 
     fun loadMoreVideos() {
         val category = _selectedCategory.value ?: return
-        if (_isLoading.value) return
-        loadMoreJob?.cancel(); loadMoreJob = viewModelScope.launch { 
+        if (_isLoading.value || _isEndReached.value) return
+        val isShortTv = category == "/short-tv/" || category.contains("short-tv") || category.equals("Short TV", ignoreCase = true)
+        loadMoreJob?.cancel()
+        loadMoreJob = viewModelScope.launch { 
             _isLoading.value = true
             try { 
                 val nextPage = currentPage + 1
-                val moreVideos = videoRepository.fetchVideosBySection(category, page = nextPage, count = 250)
+                val pageSize = if (isShortTv) 60 else 250
+                val moreVideos = videoRepository.fetchVideosBySection(category, page = nextPage, count = pageSize)
                 if (moreVideos.isEmpty()) {
                     _isEndReached.value = true
                 } else { 
@@ -2346,9 +2354,11 @@ class VideoViewModel @Inject constructor(
                     prefetchThumbnails(moreVideos)
                     val currentIds = _resultVideos.value.asSequence().map { it.id }.toSet()
                     val newItems = moreVideos.filter { it.id !in currentIds }
-                    val sortedNewItems = VideoExtractor.sortVideosByNewestRelease(newItems)
-                    _resultVideos.value = _resultVideos.value + sortedNewItems
-                    currentPage = nextPage + 5
+                    val sortedNewItems = if (isShortTv) newItems else VideoExtractor.sortVideosByNewestRelease(newItems)
+                    if (sortedNewItems.isNotEmpty()) {
+                        _resultVideos.value = _resultVideos.value + sortedNewItems
+                    }
+                    currentPage = if (isShortTv) nextPage else (nextPage + 5)
                     loadBackgroundDetails(moreVideos) 
                 } 
             } catch (e: Exception) { 
@@ -4529,7 +4539,8 @@ class VideoViewModel @Inject constructor(
                             val remainingExisting = existing.filter { it.id !in newIds }
                             current + (category to (withMeta + remainingExisting))
                         }
-                        categoryPages[category] = 3 
+                        val isShortTv = category == "/short-tv/" || category.contains("short-tv") || category.equals("Short TV", ignoreCase = true)
+                        categoryPages[category] = if (isShortTv) 2 else 3 
                         categoryEndReached[category] = false
                         
                         // SYNC: Update specific state flows for headliner/UI stability
@@ -4560,7 +4571,8 @@ class VideoViewModel @Inject constructor(
         if (_categoryLoading.value[category] == true || categoryEndReached[category] == true || _isPlayerActive.value || _isDetailScreenActive.value) return
         if (!inFlightLoadMoreCategories.add(category)) return
         val job = viewModelScope.launch {
-            val nextPage = categoryPages[category] ?: 3
+            val isShortTv = category == "/short-tv/" || category.contains("short-tv") || category.equals("Short TV", ignoreCase = true)
+            val nextPage = categoryPages[category] ?: if (isShortTv) 2 else 3
             _categoryLoading.update { it + (category to true) }
             try { 
                 val more = withContext(Dispatchers.IO) {
@@ -4568,7 +4580,8 @@ class VideoViewModel @Inject constructor(
                 }
                 if (more.isNotEmpty()) { 
                     val withMeta = withContext(Dispatchers.Default) {
-                        val sorted = VideoExtractor.sortVideosByNewestRelease(more.distinctBy { it.id })
+                        val distinctMore = more.distinctBy { it.id }
+                        val sorted = if (isShortTv) distinctMore else VideoExtractor.sortVideosByNewestRelease(distinctMore)
                         sorted.forEach { v ->
                             val cleanedTitle = VideoExtractor.cleanTitle(v.title)
                             metadataCache.putIfAbsent(v.id, v.copy(title = cleanedTitle))
@@ -4595,7 +4608,7 @@ class VideoViewModel @Inject constructor(
                         }
                     }
                     categoryPages[category] = nextPage + 1
-                    if (newUniqueCount == 0) {
+                    if (newUniqueCount == 0 && more.size < 50) {
                         categoryEndReached[category] = true
                     }
                 } else {

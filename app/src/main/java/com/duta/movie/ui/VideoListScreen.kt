@@ -1441,7 +1441,7 @@ fun NetflixThumbnail(
                         }
                     }
 
-                    val isShortTvItem = video.isShortTv || video.videoUrl.contains("type=5") || video.videoUrl.contains("type=7") || video.videoUrl.contains("short-tv") || video.videoUrl.contains("dramabox")
+                    val isShortTvItem = video.isShortTv || video.videoUrl.contains("type=5") || video.videoUrl.contains("type=7") || video.videoUrl.contains("short-tv") || video.videoUrl.contains("dramabox") || video.videoUrl.contains("vskit")
                     if (isShortTvItem) {
                         val isNarrowCard = (width != null && width < 120.dp) || (isRealTV && (width ?: 165.dp) < 120.dp)
                         Surface(
@@ -1450,10 +1450,11 @@ fun NetflixThumbnail(
                             modifier = Modifier.align(Alignment.TopStart)
                         ) {
                             Text(
-                                text = "ShortTV",
+                                text = "SHORT TV",
                                 color = Color.White,
-                                fontSize = if (isNarrowCard) 9.sp else 11.sp,
+                                fontSize = if (isNarrowCard) 8.sp else 10.sp,
                                 fontWeight = FontWeight.Black,
+                                letterSpacing = 0.5.sp,
                                 modifier = Modifier.padding(
                                     horizontal = if (isNarrowCard) 4.dp else 6.dp, 
                                     vertical = if (isNarrowCard) 2.dp else 3.dp
@@ -1673,6 +1674,32 @@ fun FeaturedHero(
                                    .replace(Regex("\\s*\\d{4}$"), "")
                                    .trim()
                     } else video.title
+                }
+
+                val isShortTv = remember(video) {
+                    video.isShortTv || 
+                    video.videoUrl.contains("type=5") || 
+                    video.videoUrl.contains("type=7") || 
+                    video.videoUrl.contains("short-tv") || 
+                    video.videoUrl.contains("dramabox") || 
+                    video.videoUrl.contains("vskit")
+                }
+
+                if (isShortTv) {
+                    Surface(
+                        color = Color(0xFFE50914),
+                        shape = RoundedCornerShape(4.dp),
+                        modifier = Modifier.padding(bottom = 6.dp)
+                    ) {
+                        Text(
+                            text = "SHORT TV",
+                            color = Color.White,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 0.8.sp,
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                        )
+                    }
                 }
 
                 Text(

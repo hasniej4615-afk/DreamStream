@@ -127,14 +127,14 @@ fun CategoryResultsScreen(
         }
     }
 
-    // Detection for infinite scroll - More aggressive trigger for "As many as possible"
-    val shouldLoadMore by remember(videos, isLoading, isEndReached, customVideos) {
+    // Detection for infinite scroll - Seamless gapless prefetch trigger
+    val shouldLoadMore by remember(videos, isLoading, isEndReached, customVideos, columns) {
         derivedStateOf {
             val layoutInfo = gridState.layoutInfo
             val totalItemsCount = layoutInfo.totalItemsCount
             val lastVisibleItemIndex = layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-            // Trigger load more when 15 items away from end instead of 5
-            (customVideos == null && videos.isNotEmpty() && !isLoading && !isEndReached && totalItemsCount > 0 && lastVisibleItemIndex >= totalItemsCount - 15)
+            val prefetchDistance = maxOf(24, columns * 4)
+            (customVideos == null && videos.isNotEmpty() && !isLoading && !isEndReached && totalItemsCount > 0 && lastVisibleItemIndex >= totalItemsCount - prefetchDistance)
         }
     }
 

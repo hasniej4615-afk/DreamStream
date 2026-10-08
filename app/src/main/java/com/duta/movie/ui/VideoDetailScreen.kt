@@ -750,6 +750,32 @@ fun VideoDetailInfo(
             }
         }
 
+        val isShortTv = remember(video) {
+            video.isShortTv || 
+            video.videoUrl.contains("type=5") || 
+            video.videoUrl.contains("type=7") || 
+            video.videoUrl.contains("short-tv") || 
+            video.videoUrl.contains("dramabox") || 
+            video.videoUrl.contains("vskit")
+        }
+
+        if (isShortTv) {
+            Surface(
+                color = Color(0xFFE50914),
+                shape = RoundedCornerShape(4.dp),
+                modifier = Modifier.padding(bottom = 6.dp)
+            ) {
+                Text(
+                    text = "SHORT TV",
+                    color = Color.White,
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Black,
+                    letterSpacing = 0.8.sp,
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                )
+            }
+        }
+
         Text(text = video.title, color = Color.White, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Black)
         
         Row(

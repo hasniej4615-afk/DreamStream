@@ -845,16 +845,18 @@ class MyLocalTest {
                 priorityOrder = 6
             )
             val provider = com.duta.movie.provider.engine.MovieboxProvider(entity)
-            val p1 = provider.fetchSection("/short-tv/", 1, 20)
-            val p2 = provider.fetchSection("/short-tv/", 2, 20)
-            val p3 = provider.fetchSection("/short-tv/", 3, 20)
-            val p4 = provider.fetchSection("/short-tv/", 4, 20)
-            val p5 = provider.fetchSection("/short-tv/", 5, 20)
+            val pages = mutableListOf<List<Video>>()
+            for (p in 1..7) {
+                val batch = provider.fetchSection("/short-tv/", p, 50)
+                println("Page $p fetched: ${batch.size} items")
+                pages.add(batch)
+            }
 
-            val allFetched = p1 + p2 + p3 + p4 + p5
+            val allFetched = pages.flatten()
             val uniqueIds = allFetched.map { it.id }.toSet()
-            println("Short TV multi-page items: total=${allFetched.size}, unique=${uniqueIds.size}")
-            assertTrue("Should fetch at least 80 unique micro-dramas across 5 pages", uniqueIds.size >= 80)
+            println("Short TV 7-page items: total=${allFetched.size}, unique=${uniqueIds.size}")
+            assertTrue("Should fetch at least 250 unique micro-dramas across 7 pages", uniqueIds.size >= 250)
+            assertEquals("All fetched items across pages must be strictly unique (gapless pagination)", allFetched.size, uniqueIds.size)
 
             val forbiddenNormalShows = setOf("Stranger Things", "Suits", "Wednesday", "Lucifer", "Bridgerton", "Vikings", "Power", "Snowfall", "Tulsa King")
             for (item in allFetched) {
@@ -873,7 +875,7 @@ class MyLocalTest {
             }
 
             // Verify video details and episodes for the first Short TV item
-            val firstItem = p1.first()
+            val firstItem = allFetched.first()
             val details = provider.fetchVideoDetail(firstItem)
             assertNotNull("Details should not be null", details)
             println("Detail: ${details?.title}, episodes: ${details?.episodes?.size}")
