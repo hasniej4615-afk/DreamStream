@@ -1793,6 +1793,26 @@ fun VideoPlayerScreen(
                     targetGroup = textTracks.find { group -> (0 until group.length).any { i -> val format = group.getTrackFormat(i); (format.language == targetLang || format.language == currentPreferredLang.value || format.language == "id" || format.language == "ms") } }
                     targetTrackIndex = 0
                 }
+                // Automatic Embedded Track Prioritization: If no external sub is active and stream has embedded track in preferred language
+                if (targetGroup == null && sel == null && textTracks.isNotEmpty()) {
+                    val prefLang = currentPreferredLang.value.lowercase()
+                    val targetLang = if (prefLang.contains("indonesia")) "id" else if (prefLang.contains("malay")) "ms" else if (prefLang.contains("english")) "en" else "id"
+                    targetGroup = textTracks.find { group ->
+                        (0 until group.length).any { i ->
+                            val fLang = group.getTrackFormat(i).language?.lowercase() ?: ""
+                            fLang == targetLang || fLang == "id" || fLang == "ms" || fLang == "in" || fLang == "ind"
+                        }
+                    }
+                    if (targetGroup != null) {
+                        for (i in 0 until targetGroup!!.length) {
+                            val fLang = targetGroup!!.getTrackFormat(i).language?.lowercase() ?: ""
+                            if (fLang == targetLang || fLang == "id" || fLang == "ms" || fLang == "in" || fLang == "ind") {
+                                targetTrackIndex = i
+                                break
+                            }
+                        }
+                    }
+                }
                 if (targetGroup != null) {
                     currentPlayer.trackSelectionParameters = currentPlayer.trackSelectionParameters.buildUpon().setOverrideForType(TrackSelectionOverride(targetGroup.mediaTrackGroup, targetTrackIndex)).build()
                 }
@@ -2489,8 +2509,56 @@ fun VideoPlayerScreen(
                         }
                         items(filteredSubs, key = { it.url }) { sub ->
                             var isFocused by remember { mutableStateOf(false) }
+                            val isStreamSub = sub.url.startsWith("embedded://") || sub.label.startsWith("[Stream]")
+                            val isMatchedSub = remember(sub.label) {
+                                val low = sub.label.lowercase()
+                                low.contains("web-dl") || low.contains("webdl") || low.contains("bluray") || 
+                                low.contains("rarbg") || low.contains("yts") || low.contains("flux") || low.contains("psa")
+                            }
                             ListItem(
-                                headlineContent = { Text(sub.label, color = Color.White) },
+                                headlineContent = { 
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text(
+                                            text = sub.label, 
+                                            color = Color.White,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        if (isStreamSub) {
+                                            Spacer(Modifier.width(6.dp))
+                                            Surface(
+                                                color = Color(0xFF2E7D32),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "STREAM",
+                                                    color = Color.White,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        } else if (isMatchedSub) {
+                                            Spacer(Modifier.width(6.dp))
+                                            Surface(
+                                                color = Color(0xFF1976D2),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "MATCHED",
+                                                    color = Color.White,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+                                },
                                 supportingContent = { Text(sub.language, color = Color.Gray, fontSize = 12.sp) },
                                 leadingContent = { RadioButton(selected = selectedSubtitle?.url == sub.url, onClick = null, modifier = Modifier.focusable(false)) },
                                 modifier = Modifier

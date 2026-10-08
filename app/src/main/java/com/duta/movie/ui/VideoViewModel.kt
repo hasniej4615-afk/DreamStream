@@ -2804,7 +2804,10 @@ class VideoViewModel @Inject constructor(
         if (!isRotation) {
             viewModelScope.launch {
                 try {
-                    _subtitleOffset.value = preferenceManager.getSubtitleOffset(videoId).first()
+                    val saved = preferenceManager.getSubtitleOffset(videoId).first()
+                    _subtitleOffset.value = if (saved != 0L) saved else {
+                        com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper(serverUrl, null)
+                    }
                 } catch (_: Exception) {
                     _subtitleOffset.value = 0L
                 }
@@ -2851,7 +2854,11 @@ class VideoViewModel @Inject constructor(
         if (!isRotation) {
             viewModelScope.launch {
                 try {
-                    _subtitleOffset.value = preferenceManager.getSubtitleOffset(videoId).first()
+                    val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(videoId)
+                    val saved = preferenceManager.getSeriesOrVideoSubtitleOffset(videoId, seriesBase).first()
+                    _subtitleOffset.value = if (saved != 0L) saved else {
+                        com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper(episodeUrl ?: _currentServerUrl.value, null)
+                    }
                 } catch (_: Exception) {
                     _subtitleOffset.value = 0L
                 }
@@ -3832,6 +3839,31 @@ class VideoViewModel @Inject constructor(
                         _lastReferer.value = winner.referer ?: defaultReferer; _lastCookies.value = winner.cookies
                         _resolutionProgress.value = null
                         _isResolving.value = false 
+
+                        if (winner.subtitles.isNotEmpty()) {
+                            val streamSubs = winner.subtitles.map { sub ->
+                                if (!sub.label.contains("[Stream]") && !sub.label.contains("[Embedded]")) {
+                                    sub.copy(label = "[Stream] ${sub.label}")
+                                } else sub
+                            }
+                            val existing = _subtitles.value
+                            val allSubs = (streamSubs + existing).distinctBy { it.url }
+                            _subtitles.value = allSubs
+
+                            // Hardware/Stream Subtitle Auto-Selection
+                            if (!userExplicitlyDismissedSubtitles && isAutoSubtitleEnabled.value && _selectedSubtitle.value == null) {
+                                val defLang = defaultSubtitleLanguage.value
+                                if (defLang != "Off" && defLang != "None") {
+                                    val normDef = com.duta.movie.util.SubtitleExtractor.normalizeLanguage(defLang)
+                                    val streamMatch = streamSubs.find {
+                                        com.duta.movie.util.SubtitleExtractor.normalizeLanguage(it.language).equals(normDef, ignoreCase = true)
+                                    }
+                                    if (streamMatch != null) {
+                                        selectSubtitle(streamMatch)
+                                    }
+                                }
+                            }
+                        }
                     }
                 } else {
                     val targetCandidate = mirrorToResolve ?: topMirrors.firstOrNull()
@@ -4209,20 +4241,41 @@ class VideoViewModel @Inject constructor(
             _isSubtitleLoading.value = true
             _subtitles.value = emptyList()
             try { 
+                val streamSignature = com.duta.movie.util.SubtitleSyncEngine.extractSignature(
+                    title = effectiveTitle,
+                    quality = _videoMetadata.value?.quality,
+                    serverUrl = _currentServerUrl.value,
+                    streamUrl = _resolvedUrl.value
+                )
+
                 SubtitleExtractor.searchAndGetSubtitles(effectiveTitle, null, this, { subs -> 
-                    val combined = (_subtitles.value + subs).distinctBy { it.url }
+                    val combined = com.duta.movie.util.SubtitleSyncEngine.sortAndRankSubtitles(
+                        (_subtitles.value + subs).distinctBy { it.url },
+                        streamSignature
+                    )
                     _subtitles.value = combined
                     
-                    // Auto-select subtitle if enabled, none currently selected, and not explicitly dismissed
-                    if (_selectedSubtitle.value == null && !userExplicitlyDismissedSubtitles && isAutoSubtitleEnabled.value) {
+                    // Auto-select subtitle if enabled, and not explicitly dismissed
+                    if (!userExplicitlyDismissedSubtitles && isAutoSubtitleEnabled.value) {
                         val defLang = defaultSubtitleLanguage.value
                         if (defLang != "Off" && defLang != "None") {
-                            val normDef = SubtitleExtractor.normalizeLanguage(defLang)
-                            val match = combined.find { 
-                                SubtitleExtractor.normalizeLanguage(it.language).equals(normDef, ignoreCase = true)
-                            }
-                            if (match != null) {
-                                selectSubtitle(match)
+                            val bestMatch = com.duta.movie.util.SubtitleSyncEngine.findBestSubtitleMatch(
+                                combined,
+                                defLang,
+                                streamSignature
+                            )
+                            if (bestMatch != null) {
+                                val current = _selectedSubtitle.value
+                                if (current == null) {
+                                    selectSubtitle(bestMatch)
+                                } else if (current != bestMatch) {
+                                    val currentScore = com.duta.movie.util.SubtitleSyncEngine.scoreSubtitle(current, streamSignature)
+                                    val newScore = com.duta.movie.util.SubtitleSyncEngine.scoreSubtitle(bestMatch, streamSignature)
+                                    // Upgrade to an exact-matched subtitle if incoming score is significantly higher
+                                    if (newScore > currentScore + 25) {
+                                        selectSubtitle(bestMatch)
+                                    }
+                                }
                             }
                         }
                     }
@@ -4263,8 +4316,17 @@ class VideoViewModel @Inject constructor(
             _subtitles.value = emptyList()
             _subtitleError.value = null
             try {
+                val streamSignature = com.duta.movie.util.SubtitleSyncEngine.extractSignature(
+                    title = q,
+                    quality = _videoMetadata.value?.quality,
+                    serverUrl = _currentServerUrl.value,
+                    streamUrl = _resolvedUrl.value
+                )
                 SubtitleExtractor.searchAndGetSubtitles(q, null, this, { subs ->
-                    val combined = (_subtitles.value + subs).distinctBy { it.url }
+                    val combined = com.duta.movie.util.SubtitleSyncEngine.sortAndRankSubtitles(
+                        (_subtitles.value + subs).distinctBy { it.url },
+                        streamSignature
+                    )
                     _subtitles.value = combined
                 }, { _isSubtitleLoading.value = false })
             } catch (e: Exception) {
@@ -4280,7 +4342,13 @@ class VideoViewModel @Inject constructor(
         _subtitleOffset.value = newOffset
         val vid = activeVideoId ?: _videoMetadata.value?.id
         if (!vid.isNullOrEmpty()) {
-            viewModelScope.launch { preferenceManager.setSubtitleOffset(vid, newOffset) }
+            viewModelScope.launch { 
+                preferenceManager.setSubtitleOffset(vid, newOffset)
+                if (_videoMetadata.value?.isSeries == true || _currentEpisode.value != null) {
+                    val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(vid)
+                    preferenceManager.setSeriesSubtitleOffset(seriesBase, newOffset)
+                }
+            }
         }
     }
 
@@ -4288,7 +4356,13 @@ class VideoViewModel @Inject constructor(
         _subtitleOffset.value = offset
         val vid = activeVideoId ?: _videoMetadata.value?.id
         if (!vid.isNullOrEmpty()) {
-            viewModelScope.launch { preferenceManager.setSubtitleOffset(vid, offset) }
+            viewModelScope.launch { 
+                preferenceManager.setSubtitleOffset(vid, offset)
+                if (_videoMetadata.value?.isSeries == true || _currentEpisode.value != null) {
+                    val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(vid)
+                    preferenceManager.setSeriesSubtitleOffset(seriesBase, offset)
+                }
+            }
         }
     }
 
@@ -4296,7 +4370,13 @@ class VideoViewModel @Inject constructor(
         _subtitleOffset.value = 0L
         val vid = activeVideoId ?: _videoMetadata.value?.id
         if (!vid.isNullOrEmpty()) {
-            viewModelScope.launch { preferenceManager.setSubtitleOffset(vid, 0L) }
+            viewModelScope.launch { 
+                preferenceManager.setSubtitleOffset(vid, 0L)
+                if (_videoMetadata.value?.isSeries == true || _currentEpisode.value != null) {
+                    val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(vid)
+                    preferenceManager.setSeriesSubtitleOffset(seriesBase, 0L)
+                }
+            }
         }
     }
 

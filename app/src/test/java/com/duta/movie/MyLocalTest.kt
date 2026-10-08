@@ -4,6 +4,7 @@ import org.junit.Test
 import com.duta.movie.util.VideoExtractor
 import com.duta.movie.util.NetworkConfig
 import com.duta.movie.model.Video
+import com.duta.movie.model.Subtitle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNotNull
@@ -891,6 +892,51 @@ class MyLocalTest {
             servers.forEach { println(" - Server: ${it.name} | ${it.url.take(60)}...") }
             assertTrue("Ep1 should resolve playable streams", servers.isNotEmpty())
         }
+    }
+
+    @Test
+    fun testSubtitleSyncEngine() {
+        val title = "Dune: Part Two (2024) 1080p WEB-DL AMZN"
+        val signature = com.duta.movie.util.SubtitleSyncEngine.extractSignature(
+            title = title,
+            quality = "1080p",
+            serverUrl = "https://rebahin.vip/watch/dune-part-two",
+            streamUrl = "https://cdn.example.com/dune_amzn_1080p.m3u8"
+        )
+        assertEquals("1080p", signature.quality)
+        assertEquals("WEB-DL", signature.source)
+        assertEquals("AMZN", signature.platform)
+        assertEquals("rebahin", signature.serverHost)
+
+        val embeddedSub = Subtitle("[Stream] Indonesian", "embedded://0", "Indonesian")
+        val exactMatchSub = Subtitle("Dune.Part.Two.2024.1080p.AMZN.WEB-DL.DDP5.1-FLUX", "https://subdl.com/1", "Indonesian")
+        val genericWebSub = Subtitle("Dune.Part.Two.2024.WEBRip.x264", "https://opensubtitles.com/2", "Indonesian")
+        val bluraySub = Subtitle("Dune.Part.Two.2024.BluRay.1080p", "https://subdl.com/3", "Indonesian")
+        val camSub = Subtitle("Dune.Part.Two.2024.CAM.x264", "https://subdl.com/4", "Indonesian")
+        val englishSub = Subtitle("Dune.Part.Two.2024.1080p.AMZN.WEB-DL-FLUX", "https://subdl.com/5", "English")
+
+        val candidates = listOf(camSub, genericWebSub, embeddedSub, bluraySub, exactMatchSub, englishSub)
+        val ranked = com.duta.movie.util.SubtitleSyncEngine.sortAndRankSubtitles(candidates, signature)
+
+        assertEquals("Embedded stream track must rank #1", embeddedSub.url, ranked[0].url)
+        assertEquals("Exact release match must rank #2", exactMatchSub.url, ranked[1].url)
+        assertTrue("CAM subtitle must rank last", ranked.last().url == camSub.url)
+
+        val bestIndo = com.duta.movie.util.SubtitleSyncEngine.findBestSubtitleMatch(candidates, "Indonesian", signature)
+        assertEquals("Best match must be embedded track", embeddedSub.url, bestIndo?.url)
+
+        val bestWithoutEmbedded = com.duta.movie.util.SubtitleSyncEngine.findBestSubtitleMatch(listOf(camSub, genericWebSub, bluraySub, exactMatchSub), "Indonesian", signature)
+        assertEquals("Best external match must be exact release match", exactMatchSub.url, bestWithoutEmbedded?.url)
+
+        // Test Series Base ID extraction
+        assertEquals("kudrat-1968", com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId("kudrat-1968-season-1-episode-3"))
+        assertEquals("breaking-bad", com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId("breaking-bad-s02e05"))
+        assertEquals("game-of-thrones", com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId("game-of-thrones-ep-1"))
+
+        // Test Server Bumper Detection
+        assertEquals(10000L, com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper("https://rebahin21.vip/video", null))
+        assertEquals(9500L, com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper("https://lk21.me/film", null))
+        assertEquals(0L, com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper("https://faststream.com/play", null))
     }
 }
 

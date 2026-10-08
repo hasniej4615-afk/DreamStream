@@ -562,9 +562,31 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         it[longPreferencesKey("sub_offset_$videoId")] ?: 0L
     }
 
+    fun getSeriesOrVideoSubtitleOffset(videoId: String, seriesBaseId: String? = null): Flow<Long> = context.dataStore.data.map { prefs ->
+        val direct = prefs[longPreferencesKey("sub_offset_$videoId")]
+        if (direct != null && direct != 0L) return@map direct
+        if (!seriesBaseId.isNullOrEmpty()) {
+            val seriesOffset = prefs[longPreferencesKey("sub_offset_series_$seriesBaseId")]
+            if (seriesOffset != null) return@map seriesOffset
+        }
+        direct ?: 0L
+    }
+
     suspend fun setSubtitleOffset(videoId: String, offsetMs: Long) {
         context.dataStore.edit { prefs ->
             val key = longPreferencesKey("sub_offset_$videoId")
+            if (offsetMs == 0L) {
+                prefs.remove(key)
+            } else {
+                prefs[key] = offsetMs
+            }
+        }
+    }
+
+    suspend fun setSeriesSubtitleOffset(seriesBaseId: String, offsetMs: Long) {
+        if (seriesBaseId.isBlank()) return
+        context.dataStore.edit { prefs ->
+            val key = longPreferencesKey("sub_offset_series_$seriesBaseId")
             if (offsetMs == 0L) {
                 prefs.remove(key)
             } else {
