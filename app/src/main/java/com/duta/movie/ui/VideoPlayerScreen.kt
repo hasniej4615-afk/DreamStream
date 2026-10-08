@@ -400,15 +400,13 @@ fun VideoPlayerScreen(
     
     val isShortTvPlayback = remember(video, serverUrl, extractedUrl, videoId) {
         video?.isShortTv == true || 
-        (serverUrl != null && (serverUrl.contains("type=5") || serverUrl.contains("type=7") || serverUrl.contains("short-tv") || serverUrl.contains("dramabox") || serverUrl.contains("netshort") || serverUrl.contains("hakunaymatata"))) ||
-        (extractedUrl != null && (extractedUrl!!.contains("type=5") || extractedUrl!!.contains("type=7") || extractedUrl!!.contains("short-tv") || extractedUrl!!.contains("dramabox") || extractedUrl!!.contains("netshort") || extractedUrl!!.contains("hakunaymatata"))) ||
+        (serverUrl != null && (serverUrl.contains("type=5") || serverUrl.contains("type=7") || serverUrl.contains("short-tv") || serverUrl.contains("dramabox") || serverUrl.contains("netshort"))) ||
+        (extractedUrl != null && (extractedUrl!!.contains("type=5") || extractedUrl!!.contains("type=7") || extractedUrl!!.contains("short-tv") || extractedUrl!!.contains("dramabox") || extractedUrl!!.contains("netshort"))) ||
         video?.videoUrl?.contains("type=5") == true ||
         video?.videoUrl?.contains("type=7") == true ||
         video?.videoUrl?.contains("short-tv") == true ||
         video?.videoUrl?.contains("dramabox") == true ||
-        video?.videoUrl?.contains("netshort") == true ||
-        video?.videoUrl?.contains("hakunaymatata") == true ||
-        (videoId.startsWith("mb_") && (video?.episodes?.size ?: 0) >= 10 && (video?.duration.isNullOrEmpty() || (fallbackDurationMs in 1..600_000L)))
+        video?.videoUrl?.contains("netshort") == true
     }
 
     // Auto-rotate and hide system bars when fullscreen is toggled
@@ -3493,14 +3491,11 @@ fun VideoPlayerContent(
                     (video?.videoUrl?.contains("short-tv") == true) ||
                     (video?.videoUrl?.contains("dramabox") == true) ||
                     (video?.videoUrl?.contains("netshort") == true) ||
-                    (video?.videoUrl?.contains("hakunaymatata") == true) ||
                     (extractedUrl?.contains("type=5") == true) ||
                     (extractedUrl?.contains("type=7") == true) ||
                     (extractedUrl?.contains("short-tv") == true) ||
                     (extractedUrl?.contains("dramabox") == true) ||
-                    (extractedUrl?.contains("netshort") == true) ||
-                    (extractedUrl?.contains("hakunaymatata") == true) ||
-                    (videoId.startsWith("mb_") && (video?.episodes?.size ?: 0) >= 10)
+                    (extractedUrl?.contains("netshort") == true)
                 }
                 val targetResizeMode = if (isShortTvPlaybackContent) {
                     if (isTV) {

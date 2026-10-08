@@ -3,6 +3,7 @@ package com.duta.movie
 import org.junit.Test
 import com.duta.movie.util.VideoExtractor
 import com.duta.movie.util.NetworkConfig
+import com.duta.movie.model.Video
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNotNull
@@ -844,26 +845,50 @@ class MyLocalTest {
                 priorityOrder = 6
             )
             val provider = com.duta.movie.provider.engine.MovieboxProvider(entity)
-            // 1. Fetch Short TV section
-            val shortTvList = provider.fetchSection("/short-tv/", 1, 10)
-            println("Short TV section returned ${shortTvList.size} items:")
-            shortTvList.take(5).forEach {
+            // 1. Fetch Short TV section page 1
+            val p1 = provider.fetchSection("/short-tv/", 1, 20)
+            println("Short TV Page 1 returned ${p1.size} items:")
+            p1.take(5).forEach {
                 println(" - [${it.id}] ${it.title} | ${it.quality} | isShortTv=${it.isShortTv} | ${it.videoUrl}")
             }
-            assertTrue("Short TV section should not be empty", shortTvList.isNotEmpty())
-            assertTrue("Items must be marked isShortTv", shortTvList.first().isShortTv)
-            assertTrue("Items must be marked isSeries", shortTvList.first().isSeries == true)
-            assertTrue("URL should have type=7", shortTvList.first().videoUrl.contains("type=7"))
+            assertTrue("Page 1 should not be empty", p1.isNotEmpty())
+            assertTrue("Items must be marked isShortTv", p1.first().isShortTv)
+            assertTrue("Items must be marked isSeries", p1.first().isSeries == true)
+            assertTrue("URL should have type=7", p1.first().videoUrl.contains("type=7"))
 
-            // 2. Fetch Video Details with episode list
-            val firstItem = shortTvList.first()
+            // 2. Fetch Short TV section page 2
+            val p2 = provider.fetchSection("/short-tv/", 2, 20)
+            println("Short TV Page 2 returned ${p2.size} items:")
+            p2.take(3).forEach {
+                println(" - [${it.id}] ${it.title} | ${it.videoUrl}")
+            }
+
+            // 3. Fetch Short TV section page 3
+            val p3 = provider.fetchSection("/short-tv/", 3, 20)
+            println("Short TV Page 3 returned ${p3.size} items")
+
+            // 4. Fetch Short TV section page 4, 5, 6 (demonstrating multi-page expansion beyond ranking list)
+            val p4 = provider.fetchSection("/short-tv/", 4, 20)
+            println("Short TV Page 4 returned ${p4.size} items")
+            assertTrue("Page 4 should contain expanded drama titles", p4.isNotEmpty())
+
+            val p5 = provider.fetchSection("/short-tv/", 5, 20)
+            println("Short TV Page 5 returned ${p5.size} items")
+            assertTrue("Page 5 should contain expanded drama titles", p5.isNotEmpty())
+
+            val p6 = provider.fetchSection("/short-tv/", 6, 20)
+            println("Short TV Page 6 returned ${p6.size} items")
+            assertTrue("Page 6 should contain expanded drama titles", p6.isNotEmpty())
+
+            // 5. Fetch Video Details with episode list
+            val firstItem = p1.first()
             val details = provider.fetchVideoDetail(firstItem)
             assertNotNull("Details should not be null", details)
             println("Detail: ${details?.title}, episodes: ${details?.episodes?.size}")
             assertTrue("Short TV must have multi-episodes", (details?.episodes?.size ?: 0) > 0)
             assertEquals("Season grouping should be Episodes", "Episodes", details?.episodes?.first()?.season)
 
-            // 3. Fetch stream servers for Episode 1
+            // 6. Fetch stream servers for Episode 1
             val ep1 = details?.episodes?.first()
             assertNotNull(ep1)
             val ep1Video = firstItem.copy(videoUrl = ep1!!.url)
