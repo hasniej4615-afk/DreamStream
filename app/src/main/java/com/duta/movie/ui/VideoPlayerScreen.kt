@@ -399,14 +399,20 @@ fun VideoPlayerScreen(
 
     
     val isShortTvPlayback = remember(video, serverUrl, extractedUrl, videoId) {
-        video?.isShortTv == true || 
-        (serverUrl != null && (serverUrl.contains("type=5") || serverUrl.contains("type=7") || serverUrl.contains("short-tv") || serverUrl.contains("dramabox") || serverUrl.contains("netshort"))) ||
-        (extractedUrl != null && (extractedUrl!!.contains("type=5") || extractedUrl!!.contains("type=7") || extractedUrl!!.contains("short-tv") || extractedUrl!!.contains("dramabox") || extractedUrl!!.contains("netshort"))) ||
-        video?.videoUrl?.contains("type=5") == true ||
-        video?.videoUrl?.contains("type=7") == true ||
-        video?.videoUrl?.contains("short-tv") == true ||
-        video?.videoUrl?.contains("dramabox") == true ||
-        video?.videoUrl?.contains("netshort") == true
+        val isExplicitNormalContent = (video?.videoUrl?.contains("type=2") == true || video?.videoUrl?.contains("type=1") == true) &&
+                video?.videoUrl?.contains("type=7") != true && video?.videoUrl?.contains("type=5") != true
+        if (isExplicitNormalContent) {
+            false
+        } else {
+            video?.isShortTv == true || 
+            (serverUrl != null && (serverUrl.contains("type=5") || serverUrl.contains("type=7") || serverUrl.contains("short-tv") || serverUrl.contains("dramabox") || serverUrl.contains("netshort"))) ||
+            (extractedUrl != null && (extractedUrl!!.contains("type=5") || extractedUrl!!.contains("type=7") || extractedUrl!!.contains("short-tv") || extractedUrl!!.contains("dramabox") || extractedUrl!!.contains("netshort"))) ||
+            video?.videoUrl?.contains("type=5") == true ||
+            video?.videoUrl?.contains("type=7") == true ||
+            video?.videoUrl?.contains("short-tv") == true ||
+            video?.videoUrl?.contains("dramabox") == true ||
+            video?.videoUrl?.contains("netshort") == true
+        }
     }
 
     // Auto-rotate and hide system bars when fullscreen is toggled
@@ -3485,17 +3491,23 @@ fun VideoPlayerContent(
                 }
             } else if (!useWebView) {
                 val isShortTvPlaybackContent = remember(video, extractedUrl) {
-                    video?.isShortTv == true || 
-                    (video?.videoUrl?.contains("type=5") == true) || 
-                    (video?.videoUrl?.contains("type=7") == true) || 
-                    (video?.videoUrl?.contains("short-tv") == true) ||
-                    (video?.videoUrl?.contains("dramabox") == true) ||
-                    (video?.videoUrl?.contains("netshort") == true) ||
-                    (extractedUrl?.contains("type=5") == true) ||
-                    (extractedUrl?.contains("type=7") == true) ||
-                    (extractedUrl?.contains("short-tv") == true) ||
-                    (extractedUrl?.contains("dramabox") == true) ||
-                    (extractedUrl?.contains("netshort") == true)
+                    val isExplicitNormalContent = (video?.videoUrl?.contains("type=2") == true || video?.videoUrl?.contains("type=1") == true) &&
+                            video?.videoUrl?.contains("type=7") != true && video?.videoUrl?.contains("type=5") != true
+                    if (isExplicitNormalContent) {
+                        false
+                    } else {
+                        video?.isShortTv == true || 
+                        (video?.videoUrl?.contains("type=5") == true) || 
+                        (video?.videoUrl?.contains("type=7") == true) || 
+                        (video?.videoUrl?.contains("short-tv") == true) ||
+                        (video?.videoUrl?.contains("dramabox") == true) ||
+                        (video?.videoUrl?.contains("netshort") == true) ||
+                        (extractedUrl?.contains("type=5") == true) ||
+                        (extractedUrl?.contains("type=7") == true) ||
+                        (extractedUrl?.contains("short-tv") == true) ||
+                        (extractedUrl?.contains("dramabox") == true) ||
+                        (extractedUrl?.contains("netshort") == true)
+                    }
                 }
                 val targetResizeMode = if (isShortTvPlaybackContent) {
                     if (isTV) {

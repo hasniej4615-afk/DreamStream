@@ -70,7 +70,7 @@ class MovieboxProvider(
         return "$e,$hash"
     }
 
-    private fun ensureJwtToken(): String? {
+    internal fun ensureJwtToken(): String? {
         if (!cachedJwt.isNullOrBlank() && System.currentTimeMillis() < jwtExpiresAt) {
             return cachedJwt
         }
@@ -228,6 +228,15 @@ class MovieboxProvider(
                     val stype = item.optInt("subjectType", 1)
                     val rating = item.optString("imdbRatingValue", "HD")
 
+                    val isTvCategory = norm.contains("series") || norm.contains("tv")
+                    val isMovieCategory = norm.contains("movie") || norm.contains("film")
+
+                    // Strict category isolation: Never mix TV series, Movies, or Short Dramas
+                    if (isTvCategory && stype != 2) continue
+                    if (isMovieCategory && stype != 1) continue
+                    // Never include short micro-dramas in normal categories
+                    if (stype == 5 || stype == 7) continue
+
                     list.add(
                         Video(
                             id = "mb_$sid",
@@ -236,8 +245,8 @@ class MovieboxProvider(
                             videoUrl = "moviebox://$dp?id=$sid&type=$stype",
                             duration = "",
                             quality = if (rating.isNotBlank()) "★ $rating" else "HD",
-                            isSeries = (stype == 2 || stype == 5 || stype == 7),
-                            isShortTv = (stype == 5 || stype == 7)
+                            isSeries = (stype == 2),
+                            isShortTv = false
                         )
                     )
                 }
@@ -268,11 +277,10 @@ class MovieboxProvider(
         }
     }
 
-    private suspend fun populateShortTvCache(token: String?) = coroutineScope {
+    private suspend fun populateShortTvCache(token: String?) {
         val coreList = mutableListOf<Video>()
-        val coreSids = mutableListOf<String>()
 
-        // 1. Fetch ranking-list pages 1..3 of Hot Short TV (DramaBox Chinese micro-dramas)
+        // Fetch ranking-list pages 1..3 of official Short TV (DramaBox Chinese micro-dramas only)
         for (p in 1..3) {
             try {
                 val url = "$API_BASE/wefeed-h5api-bff/ranking-list/content?id=7844144696607102784&page=$p&perPage=20"
@@ -297,7 +305,13 @@ class MovieboxProvider(
                             val sid = item.optString("subjectId")
                             val dp = item.optString("detailPath")
                             val title = item.optString("title")
+                            val stype = item.optInt("subjectType", 7)
                             if (sid.isBlank() || title.isBlank()) continue
+
+                            // Strict validation: Only genuine Short TV / DramaBox items (subjectType 7 or 5)
+                            // Reject normal movies (1) or regular TV series (2)
+                            if (stype != 7 && stype != 5) continue
+                            if (dp.contains("/movie/") || dp.contains("/tv/") || dp.contains("/series/")) continue
 
                             val cover = item.optJSONObject("cover")?.optString("url") ?: ""
                             val rating = item.optString("imdbRatingValue", "ShortTV")
@@ -315,7 +329,6 @@ class MovieboxProvider(
                                 isShortTv = true
                             )
                             coreList.add(video)
-                            coreSids.add(sid)
                         }
                     }
                 }
@@ -324,90 +337,18 @@ class MovieboxProvider(
             }
         }
 
-        // Add core ranking list items into cache
         synchronized(shortTvLock) {
+            shortTvCache.clear()
+            shortTvSeenIds.clear()
             for (v in coreList) {
                 val sid = v.id.removePrefix("mb_")
                 if (shortTvSeenIds.add(sid)) {
                     shortTvCache.add(v)
                 }
             }
-        }
-
-        // 2. Concurrently expand via detail-rec across core drama items
-        val recJobs = coreSids.map { sid ->
-            async(Dispatchers.IO) {
-                fetchDetailRecommendations(sid, token)
-            }
-        }
-        val recResults = recJobs.awaitAll()
-
-        synchronized(shortTvLock) {
-            for (subList in recResults) {
-                for (v in subList) {
-                    val sid = v.id.removePrefix("mb_")
-                    if (shortTvSeenIds.add(sid)) {
-                        shortTvCache.add(v)
-                    }
-                }
-            }
             shortTvInitialized = true
         }
-        Log.i(TAG, "MovieBox Short TV catalog expanded: ${shortTvCache.size} unique titles loaded into cache")
-    }
-
-    private fun fetchDetailRecommendations(sid: String, token: String?): List<Video> {
-        val list = mutableListOf<Video>()
-        try {
-            val recUrl = "$API_BASE/wefeed-h5api-bff/subject/detail-rec?subjectId=$sid&page=1&perPage=20"
-            val req = Request.Builder()
-                .url(recUrl)
-                .header("User-Agent", UA)
-                .header("Accept", "application/json")
-                .header("X-Client-Info", "{\"timezone\":\"Africa/Lagos\"}")
-                .header("Origin", SITE_BASE)
-                .header("Referer", "$SITE_BASE/")
-                .apply { if (token != null) header("Authorization", "Bearer $token") }
-                .get()
-                .build()
-
-            okHttpClient.newCall(req).execute().use { resp ->
-                if (resp.isSuccessful) {
-                    val body = resp.body?.string() ?: ""
-                    val root = JSONObject(body)
-                    val items = root.optJSONObject("data")?.optJSONArray("items")
-                        ?: root.optJSONObject("data")?.optJSONArray("subjectList")
-                        ?: JSONArray()
-                    for (i in 0 until items.length()) {
-                        val obj = items.optJSONObject(i) ?: continue
-                        val rSid = obj.optString("subjectId")
-                        val rTitle = obj.optString("title")
-                        val rDp = obj.optString("detailPath")
-                        val cover = obj.optJSONObject("cover")?.optString("url") ?: ""
-                        val rating = obj.optString("imdbRatingValue", "ShortTV")
-                        val releaseDate = obj.optString("releaseDate", "")
-                        if (rSid.isNotBlank() && rTitle.isNotBlank()) {
-                            list.add(
-                                Video(
-                                    id = "mb_$rSid",
-                                    title = rTitle,
-                                    thumbnailUrl = cover,
-                                    videoUrl = "moviebox://$rDp?id=$rSid&type=7",
-                                    duration = "",
-                                    date = releaseDate,
-                                    quality = if (rating.isNotBlank() && rating != "0" && rating != "HD") "★ $rating" else "ShortTV",
-                                    isSeries = true,
-                                    isShortTv = true
-                                )
-                            )
-                        }
-                    }
-                }
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "detail-rec error for $sid: ${e.message}")
-        }
-        return list
+        Log.i(TAG, "MovieBox Short TV catalog loaded: ${shortTvCache.size} pure micro-drama titles in cache")
     }
 
     override suspend fun fetchVideoDetail(video: Video): Video? = withContext(Dispatchers.IO) {
@@ -450,7 +391,8 @@ class MovieboxProvider(
                 }
 
                 // Episodes if TV Series or Short TV
-                val isShortDrama = (stype == 5 || stype == 7 || video.isShortTv || video.videoUrl.contains("type=7") || video.videoUrl.contains("type=5"))
+                val isShortDrama = (stype == 5 || stype == 7 || video.isShortTv || video.videoUrl.contains("type=7") || video.videoUrl.contains("type=5")) && 
+                        (stype != 2 && stype != 1 && !video.videoUrl.contains("type=2") && !video.videoUrl.contains("type=1"))
                 val episodes = mutableListOf<Episode>()
                 if (stype == 2 || isShortDrama) {
                     val seasons = resource?.optJSONArray("seasons")

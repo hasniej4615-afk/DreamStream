@@ -143,7 +143,13 @@ class VideoRepository @Inject constructor(
                 }
             }
         }
-        return VideoExtractor.sortVideosByNewestRelease(cached)
+        val isShortTvCat = cat == "/short-tv/" || cat == "short-tv" || cat.contains("short-tv") || cat.equals("Short TV", ignoreCase = true)
+        val filtered = if (isShortTvCat) {
+            cached.filter { it.isShortTv && !it.videoUrl.contains("type=1") && !it.videoUrl.contains("type=2") }
+        } else {
+            cached.filter { !it.isShortTv && !it.videoUrl.contains("type=7") && !it.videoUrl.contains("type=5") && !it.videoUrl.contains("dramabox") }
+        }
+        return VideoExtractor.sortVideosByNewestRelease(filtered)
     }
 
     suspend fun fetchVideosBySection(cat: String, page: Int, count: Int): List<Video> = coroutineScope {
@@ -153,6 +159,7 @@ class VideoRepository @Inject constructor(
         val isShortTvCat = cat == "/short-tv/" || cat == "short-tv" || cat.contains("short-tv") || cat.equals("Short TV", ignoreCase = true)
         if (isShortTvCat) {
             val shortTvVideos = providerManager.fetchMovieboxSection("/short-tv/", page, count)
+                .filter { it.isShortTv && !it.videoUrl.contains("type=1") && !it.videoUrl.contains("type=2") }
             if (page == 1) videoDao.updateCategoryCache(cat, shortTvVideos.map { it.toEntity() })
             else videoDao.appendCategoryCache(cat, shortTvVideos.map { it.toEntity() })
             shortTvVideos.forEach { videoCache[it.id] = it }
@@ -193,9 +200,14 @@ class VideoRepository @Inject constructor(
             }
         }
 
-        val dbItems = videoDao.getVideosByIds(combined.map { it.id }).associateBy { it.id }
+        // Strict category isolation: Never allow short dramas into regular series or movie categories
+        val sanitizedCombined = combined.filter {
+            !it.isShortTv && !it.videoUrl.contains("type=7") && !it.videoUrl.contains("type=5") && !it.videoUrl.contains("dramabox")
+        }
+
+        val dbItems = videoDao.getVideosByIds(sanitizedCombined.map { it.id }).associateBy { it.id }
         val videos = VideoExtractor.sortVideosByNewestRelease(
-            combined.map { mergeVideos(it, dbItems[it.id]?.toDomain()).also { v -> videoCache[v.id] = v } }
+            sanitizedCombined.map { mergeVideos(it, dbItems[it.id]?.toDomain()).also { v -> videoCache[v.id] = v } }
         )
         if (page == 1) videoDao.updateCategoryCache(cat, videos.map { it.toEntity() })
         else videoDao.appendCategoryCache(cat, videos.map { it.toEntity() })
