@@ -846,15 +846,21 @@ class MyLocalTest {
             )
             val provider = com.duta.movie.provider.engine.MovieboxProvider(entity)
             val p1 = provider.fetchSection("/short-tv/", 1, 20)
-            println("Short TV items count: ${p1.size}")
-            assertTrue("Short TV list should not be empty", p1.isNotEmpty())
+            val p2 = provider.fetchSection("/short-tv/", 2, 20)
+            val p3 = provider.fetchSection("/short-tv/", 3, 20)
+            val p4 = provider.fetchSection("/short-tv/", 4, 20)
+            val p5 = provider.fetchSection("/short-tv/", 5, 20)
+
+            val allFetched = p1 + p2 + p3 + p4 + p5
+            val uniqueIds = allFetched.map { it.id }.toSet()
+            println("Short TV multi-page items: total=${allFetched.size}, unique=${uniqueIds.size}")
+            assertTrue("Should fetch at least 80 unique micro-dramas across 5 pages", uniqueIds.size >= 80)
 
             val forbiddenNormalShows = setOf("Stranger Things", "Suits", "Wednesday", "Lucifer", "Bridgerton", "Vikings", "Power", "Snowfall", "Tulsa King")
-            for (item in p1) {
-                println("Short TV item: ${item.title} | isShortTv=${item.isShortTv} | url=${item.videoUrl}")
-                assertTrue("Short TV item must have isShortTv=true", item.isShortTv)
-                assertTrue("Short TV item URL must contain type=7 or type=5: ${item.videoUrl}", item.videoUrl.contains("type=7") || item.videoUrl.contains("type=5"))
-                assertTrue("Short TV item URL must NOT contain type=1 or type=2: ${item.videoUrl}", !item.videoUrl.contains("type=1") && !item.videoUrl.contains("type=2"))
+            for (item in allFetched) {
+                assertTrue("Short TV item '${item.title}' must have isShortTv=true", item.isShortTv)
+                assertTrue("Short TV item '${item.title}' URL must contain type=7 or type=5: ${item.videoUrl}", item.videoUrl.contains("type=7") || item.videoUrl.contains("type=5"))
+                assertTrue("Short TV item '${item.title}' URL must NOT contain type=1 or type=2: ${item.videoUrl}", !item.videoUrl.contains("type=1") && !item.videoUrl.contains("type=2"))
                 assertTrue("Short TV must not contain normal TV show '${item.title}'", !forbiddenNormalShows.contains(item.title))
             }
 

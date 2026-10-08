@@ -267,6 +267,23 @@ class MovieboxProvider(
             populateShortTvCache(token)
         }
 
+        // On-demand pagination: if requesting beyond current cache size, fetch next page of micro-drama catalog
+        val currentSize = synchronized(shortTvLock) { shortTvCache.size }
+        if (startIndex + count > currentSize) {
+            val vskitPage = (currentSize / 50) + 1
+            val moreItems = fetchVskitCatalog(vskitPage, 50)
+            if (moreItems.isNotEmpty()) {
+                synchronized(shortTvLock) {
+                    for (v in moreItems) {
+                        val sid = v.id.removePrefix("mb_")
+                        if (shortTvSeenIds.add(sid)) {
+                            shortTvCache.add(v)
+                        }
+                    }
+                }
+            }
+        }
+
         return synchronized(shortTvLock) {
             if (startIndex >= shortTvCache.size) {
                 emptyList()
@@ -277,47 +294,82 @@ class MovieboxProvider(
         }
     }
 
-    private suspend fun populateShortTvCache(token: String?) {
-        val coreList = mutableListOf<Video>()
+    private suspend fun populateShortTvCache(token: String?) = coroutineScope {
+        val rankingDeferred = async(Dispatchers.IO) { fetchShortTvRanking(1, 50, token) }
+        val tabsDeferred = async(Dispatchers.IO) { fetchVskitTabs() }
+        val rec1Deferred = async(Dispatchers.IO) { fetchVskitRecommend(1) }
+        val rec2Deferred = async(Dispatchers.IO) { fetchVskitRecommend(2) }
+        val searchDeferred = async(Dispatchers.IO) { fetchVskitEveryoneSearch() }
+        val cat1Deferred = async(Dispatchers.IO) { fetchVskitCatalog(1, 50) }
+        val cat2Deferred = async(Dispatchers.IO) { fetchVskitCatalog(2, 50) }
+        val cat3Deferred = async(Dispatchers.IO) { fetchVskitCatalog(3, 50) }
 
-        // Fetch ranking-list pages 1..3 of official Short TV (DramaBox Chinese micro-dramas only)
-        for (p in 1..3) {
-            try {
-                val url = "$API_BASE/wefeed-h5api-bff/ranking-list/content?id=7844144696607102784&page=$p&perPage=20"
-                val request = Request.Builder()
-                    .url(url)
-                    .header("User-Agent", UA)
-                    .header("Accept", "application/json")
-                    .header("X-Client-Info", "{\"timezone\":\"Africa/Lagos\"}")
-                    .header("Origin", SITE_BASE)
-                    .header("Referer", "$SITE_BASE/")
-                    .apply { if (token != null) header("Authorization", "Bearer $token") }
-                    .get()
-                    .build()
+        val allResults = listOf(
+            rankingDeferred.await(),
+            tabsDeferred.await(),
+            rec1Deferred.await(),
+            rec2Deferred.await(),
+            searchDeferred.await(),
+            cat1Deferred.await(),
+            cat2Deferred.await(),
+            cat3Deferred.await()
+        )
 
-                okHttpClient.newCall(request).execute().use { resp ->
-                    if (resp.isSuccessful) {
-                        val jsonStr = resp.body?.string() ?: ""
-                        val root = JSONObject(jsonStr)
-                        val items = root.optJSONObject("data")?.optJSONArray("subjectList") ?: JSONArray()
-                        for (i in 0 until items.length()) {
-                            val item = items.optJSONObject(i) ?: continue
-                            val sid = item.optString("subjectId")
-                            val dp = item.optString("detailPath")
-                            val title = item.optString("title")
-                            val stype = item.optInt("subjectType", 7)
-                            if (sid.isBlank() || title.isBlank()) continue
+        synchronized(shortTvLock) {
+            shortTvCache.clear()
+            shortTvSeenIds.clear()
+            for (subList in allResults) {
+                for (v in subList) {
+                    val sid = v.id.removePrefix("mb_")
+                    if (shortTvSeenIds.add(sid)) {
+                        shortTvCache.add(v)
+                    }
+                }
+            }
+            shortTvInitialized = true
+        }
+        Log.i(TAG, "MovieBox Short TV catalog loaded: ${shortTvCache.size} pure micro-drama titles in cache")
+    }
 
-                            // Strict validation: Only genuine Short TV / DramaBox items (subjectType 7 or 5)
-                            // Reject normal movies (1) or regular TV series (2)
-                            if (stype != 7 && stype != 5) continue
-                            if (dp.contains("/movie/") || dp.contains("/tv/") || dp.contains("/series/")) continue
+    private fun fetchShortTvRanking(page: Int, count: Int, token: String?): List<Video> {
+        val list = mutableListOf<Video>()
+        try {
+            val url = "$API_BASE/wefeed-h5api-bff/ranking-list/content?id=7844144696607102784&page=$page&perPage=$count"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", UA)
+                .header("Accept", "application/json")
+                .header("X-Client-Info", "{\"timezone\":\"Africa/Lagos\"}")
+                .header("Origin", SITE_BASE)
+                .header("Referer", "$SITE_BASE/")
+                .apply { if (token != null) header("Authorization", "Bearer $token") }
+                .get()
+                .build()
 
-                            val cover = item.optJSONObject("cover")?.optString("url") ?: ""
-                            val rating = item.optString("imdbRatingValue", "ShortTV")
-                            val releaseDate = item.optString("releaseDate", "")
+            okHttpClient.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val jsonStr = resp.body?.string() ?: ""
+                    val root = JSONObject(jsonStr)
+                    val items = root.optJSONObject("data")?.optJSONArray("subjectList") ?: JSONArray()
+                    for (i in 0 until items.length()) {
+                        val item = items.optJSONObject(i) ?: continue
+                        val sid = item.optString("subjectId")
+                        val dp = item.optString("detailPath")
+                        val title = item.optString("title")
+                        val stype = item.optInt("subjectType", 7)
+                        if (sid.isBlank() || title.isBlank()) continue
 
-                            val video = Video(
+                        // Strict validation: Only genuine Short TV / DramaBox items (subjectType 7 or 5)
+                        // Reject normal movies (1) or regular TV series (2)
+                        if (stype != 7 && stype != 5) continue
+                        if (dp.contains("/movie/") || dp.contains("/tv/") || dp.contains("/series/")) continue
+
+                        val cover = item.optJSONObject("cover")?.optString("url") ?: ""
+                        val rating = item.optString("imdbRatingValue", "ShortTV")
+                        val releaseDate = item.optString("releaseDate", "")
+
+                        list.add(
+                            Video(
                                 id = "mb_$sid",
                                 title = title,
                                 thumbnailUrl = cover,
@@ -328,109 +380,343 @@ class MovieboxProvider(
                                 isSeries = true,
                                 isShortTv = true
                             )
-                            coreList.add(video)
-                        }
+                        )
                     }
                 }
-            } catch (e: Exception) {
-                Log.w(TAG, "Failed fetching Short TV ranking page $p: ${e.message}")
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed fetching Short TV ranking: ${e.message}")
         }
-
-        synchronized(shortTvLock) {
-            shortTvCache.clear()
-            shortTvSeenIds.clear()
-            for (v in coreList) {
-                val sid = v.id.removePrefix("mb_")
-                if (shortTvSeenIds.add(sid)) {
-                    shortTvCache.add(v)
-                }
-            }
-            shortTvInitialized = true
-        }
-        Log.i(TAG, "MovieBox Short TV catalog loaded: ${shortTvCache.size} pure micro-drama titles in cache")
+        return list
     }
 
-    override suspend fun fetchVideoDetail(video: Video): Video? = withContext(Dispatchers.IO) {
-        val dp = extractDetailPath(video.videoUrl)
-        if (dp.isBlank()) return@withContext video
+    private fun fetchVskitCatalog(page: Int, count: Int): List<Video> {
+        val list = mutableListOf<Video>()
         try {
-            val url = "$API_BASE/wefeed-h5api-bff/detail?detailPath=${URLEncoder.encode(dp, "UTF-8")}"
+            val url = "$API_BASE/wefeed-h5api-bff/vskit/subject/list"
+            val body = JSONObject().apply {
+                put("page", page)
+                put("perPage", count)
+            }.toString()
+
             val request = Request.Builder()
                 .url(url)
                 .header("User-Agent", UA)
-                .header("Accept", "application/json")
+                .header("Content-Type", "application/json")
                 .header("X-Client-Info", "{\"timezone\":\"Africa/Lagos\"}")
-                .header("Origin", SITE_BASE)
-                .header("Referer", "$SITE_BASE/")
+                .header("Origin", "https://vskit.online")
+                .header("Referer", "https://vskit.online/")
+                .post(body.toRequestBody("application/json".toMediaType()))
+                .build()
+
+            okHttpClient.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val root = JSONObject(resp.body?.string() ?: "")
+                    val items = root.optJSONObject("data")?.optJSONArray("items") ?: JSONArray()
+                    for (i in 0 until items.length()) {
+                        val item = items.optJSONObject(i) ?: continue
+                        val sid = item.optString("subjectId")
+                        val title = item.optString("title")
+                        val seoKey = item.optString("subjectSeoKey")
+                        val epCount = item.optInt("totalEpisode", 0)
+                        if (sid.isBlank() || title.isBlank()) continue
+                        if (seoKey.contains("/movie/") || seoKey.contains("/tv/") || seoKey.contains("/series/")) continue
+
+                        val cover = item.optJSONObject("cover")?.optString("url") ?: ""
+                        list.add(
+                            Video(
+                                id = "mb_$sid",
+                                title = title,
+                                thumbnailUrl = cover,
+                                videoUrl = "moviebox://$seoKey?id=$sid&type=7",
+                                duration = if (epCount > 0) "$epCount Eps" else "",
+                                date = "",
+                                quality = if (epCount > 0) "$epCount Eps" else "ShortTV",
+                                isSeries = true,
+                                isShortTv = true
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed fetching Vskit catalog page $page: ${e.message}")
+        }
+        return list
+    }
+
+    private fun fetchVskitTabs(): List<Video> {
+        val list = mutableListOf<Video>()
+        try {
+            val url = "$API_BASE/wefeed-h5api-bff/vskit/tab-operation-list"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", UA)
+                .header("X-Client-Info", "{\"timezone\":\"Africa/Lagos\"}")
+                .header("Origin", "https://vskit.online")
+                .header("Referer", "https://vskit.online/")
                 .get()
                 .build()
 
             okHttpClient.newCall(request).execute().use { resp ->
-                if (!resp.isSuccessful) return@withContext video
-                val jsonStr = resp.body?.string() ?: return@withContext video
-                val root = JSONObject(jsonStr)
-                val subject = root.optJSONObject("data")?.optJSONObject("subject") ?: return@withContext video
-                val resource = root.optJSONObject("data")?.optJSONObject("resource")
+                if (resp.isSuccessful) {
+                    val root = JSONObject(resp.body?.string() ?: "")
+                    val tabs = root.optJSONObject("data")?.optJSONArray("list") ?: JSONArray()
+                    for (t in 0 until tabs.length()) {
+                        val tab = tabs.optJSONObject(t) ?: continue
+                        val items = tab.optJSONArray("novelItems") ?: JSONArray()
+                        for (i in 0 until items.length()) {
+                            val item = items.optJSONObject(i) ?: continue
+                            val sid = item.optString("subjectId")
+                            val title = item.optString("title")
+                            val seoKey = item.optString("subjectSeoKey")
+                            val epCount = item.optInt("totalEpisode", 0)
+                            if (sid.isBlank() || title.isBlank()) continue
+                            if (seoKey.contains("/movie/") || seoKey.contains("/tv/") || seoKey.contains("/series/")) continue
 
-                val title = subject.optString("title", video.title)
-                val description = subject.optString("description", video.description)
-                val stype = subject.optInt("subjectType", if (video.isShortTv) 7 else if (video.isSeries == true) 2 else 1)
-                val sid = subject.optString("subjectId", video.id.removePrefix("mb_"))
-                val backdrop = subject.optJSONObject("trailer")?.optJSONObject("cover")?.optString("url") ?: ""
-
-                // Cast
-                val staffList = subject.optJSONArray("staffList")
-                val castList = mutableListOf<String>()
-                if (staffList != null) {
-                    for (i in 0 until staffList.length()) {
-                        val staff = staffList.optJSONObject(i) ?: continue
-                        val name = staff.optString("name")
-                        if (name.isNotBlank()) castList.add(name)
-                    }
-                }
-
-                // Episodes if TV Series or Short TV
-                val isShortDrama = (stype == 5 || stype == 7 || video.isShortTv || video.videoUrl.contains("type=7") || video.videoUrl.contains("type=5")) && 
-                        (stype != 2 && stype != 1 && !video.videoUrl.contains("type=2") && !video.videoUrl.contains("type=1"))
-                val episodes = mutableListOf<Episode>()
-                if (stype == 2 || isShortDrama) {
-                    val seasons = resource?.optJSONArray("seasons")
-                    if (seasons != null) {
-                        for (i in 0 until seasons.length()) {
-                            val seasonObj = seasons.optJSONObject(i) ?: continue
-                            val se = seasonObj.optInt("se", 1)
-                            val maxEp = seasonObj.optInt("maxEp", 1)
-                            for (ep in 1..maxEp) {
-                                episodes.add(
-                                    Episode(
-                                        id = "mb_${sid}_s${se}_e${ep}",
-                                        name = if (isShortDrama) "Episode $ep" else "Season $se Ep $ep",
-                                        url = "moviebox://$dp?id=$sid&type=$stype&se=$se&ep=$ep",
-                                        season = if (isShortDrama) "Episodes" else "Season $se"
-                                    )
+                            val cover = item.optJSONObject("cover")?.optString("url") ?: ""
+                            list.add(
+                                Video(
+                                    id = "mb_$sid",
+                                    title = title,
+                                    thumbnailUrl = cover,
+                                    videoUrl = "moviebox://$seoKey?id=$sid&type=7",
+                                    duration = if (epCount > 0) "$epCount Eps" else "",
+                                    date = "",
+                                    quality = if (epCount > 0) "$epCount Eps" else "ShortTV",
+                                    isSeries = true,
+                                    isShortTv = true
                                 )
-                            }
+                            )
                         }
                     }
                 }
-
-                // Pre-resolve movie streams if it is a single movie
-                val servers = if (stype == 1) {
-                    fetchPlayStreams(sid, dp, se = 0, ep = 0)
-                } else emptyList()
-
-                video.copy(
-                    title = title,
-                    description = description,
-                    backdropUrl = if (backdrop.isNotBlank()) backdrop else video.thumbnailUrl,
-                    actresses = castList,
-                    episodes = episodes,
-                    servers = servers,
-                    isSeries = (stype == 2 || isShortDrama),
-                    isShortTv = isShortDrama
-                )
             }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed fetching Vskit tabs: ${e.message}")
+        }
+        return list
+    }
+
+    private fun fetchVskitRecommend(page: Int): List<Video> {
+        val list = mutableListOf<Video>()
+        try {
+            val url = "$API_BASE/wefeed-h5api-bff/vskit/recommend-list?page=$page&perPage=50"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", UA)
+                .header("X-Client-Info", "{\"timezone\":\"Africa/Lagos\"}")
+                .header("Origin", "https://vskit.online")
+                .header("Referer", "https://vskit.online/")
+                .get()
+                .build()
+
+            okHttpClient.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val root = JSONObject(resp.body?.string() ?: "")
+                    val items = root.optJSONObject("data")?.optJSONArray("list") ?: JSONArray()
+                    for (i in 0 until items.length()) {
+                        val item = items.optJSONObject(i) ?: continue
+                        val sid = item.optString("subjectId")
+                        val title = item.optString("title")
+                        val seoKey = item.optString("subjectSeoKey")
+                        val epCount = item.optInt("totalEpisode", 0)
+                        if (sid.isBlank() || title.isBlank()) continue
+                        if (seoKey.contains("/movie/") || seoKey.contains("/tv/") || seoKey.contains("/series/")) continue
+
+                        val cover = item.optJSONObject("cover")?.optString("url") ?: ""
+                        list.add(
+                            Video(
+                                id = "mb_$sid",
+                                title = title,
+                                thumbnailUrl = cover,
+                                videoUrl = "moviebox://$seoKey?id=$sid&type=7",
+                                duration = if (epCount > 0) "$epCount Eps" else "",
+                                date = "",
+                                quality = if (epCount > 0) "$epCount Eps" else "ShortTV",
+                                isSeries = true,
+                                isShortTv = true
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed fetching Vskit recommend page $page: ${e.message}")
+        }
+        return list
+    }
+
+    private fun fetchVskitEveryoneSearch(): List<Video> {
+        val list = mutableListOf<Video>()
+        try {
+            val url = "$API_BASE/wefeed-h5api-bff/vskit/everyonesearch"
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", UA)
+                .header("X-Client-Info", "{\"timezone\":\"Africa/Lagos\"}")
+                .header("Origin", "https://vskit.online")
+                .header("Referer", "https://vskit.online/")
+                .get()
+                .build()
+
+            okHttpClient.newCall(request).execute().use { resp ->
+                if (resp.isSuccessful) {
+                    val root = JSONObject(resp.body?.string() ?: "")
+                    val items = root.optJSONObject("data")?.optJSONArray("recommendList") ?: JSONArray()
+                    for (i in 0 until items.length()) {
+                        val item = items.optJSONObject(i) ?: continue
+                        val sid = item.optString("subjectId")
+                        val title = item.optString("title")
+                        val seoKey = item.optString("subjectSeoKey")
+                        val epCount = item.optInt("totalEpisode", 0)
+                        if (sid.isBlank() || title.isBlank()) continue
+                        if (seoKey.contains("/movie/") || seoKey.contains("/tv/") || seoKey.contains("/series/")) continue
+
+                        val cover = item.optJSONObject("cover")?.optString("url") ?: ""
+                        list.add(
+                            Video(
+                                id = "mb_$sid",
+                                title = title,
+                                thumbnailUrl = cover,
+                                videoUrl = "moviebox://$seoKey?id=$sid&type=7",
+                                duration = if (epCount > 0) "$epCount Eps" else "",
+                                date = "",
+                                quality = if (epCount > 0) "$epCount Eps" else "ShortTV",
+                                isSeries = true,
+                                isShortTv = true
+                            )
+                        )
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed fetching Vskit everyone search: ${e.message}")
+        }
+        return list
+    }
+
+    override suspend fun fetchVideoDetail(video: Video): Video? = withContext(Dispatchers.IO) {
+        val dp = extractDetailPath(video.videoUrl)
+        val sidParam = extractParam(video.videoUrl, "id").ifBlank { video.id.removePrefix("mb_") }
+        if (dp.isBlank() && sidParam.isBlank()) return@withContext video
+        try {
+            val encodedDp = if (dp.isNotBlank()) URLEncoder.encode(dp, "UTF-8") else ""
+            var subject: JSONObject? = null
+            var resource: JSONObject? = null
+
+            // 1. Try detailPath lookup first if available
+            if (encodedDp.isNotBlank()) {
+                try {
+                    val url = "$API_BASE/wefeed-h5api-bff/detail?detailPath=$encodedDp"
+                    val request = Request.Builder()
+                        .url(url)
+                        .header("User-Agent", UA)
+                        .header("Accept", "application/json")
+                        .header("X-Client-Info", "{\"timezone\":\"Africa/Lagos\"}")
+                        .header("Origin", SITE_BASE)
+                        .header("Referer", "$SITE_BASE/")
+                        .get()
+                        .build()
+
+                    okHttpClient.newCall(request).execute().use { resp ->
+                        if (resp.isSuccessful) {
+                            val jsonStr = resp.body?.string() ?: ""
+                            val root = JSONObject(jsonStr)
+                            subject = root.optJSONObject("data")?.optJSONObject("subject")
+                            resource = root.optJSONObject("data")?.optJSONObject("resource")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "detailPath lookup failed for $dp: ${e.message}")
+                }
+            }
+
+            // 2. Fallback to subjectId lookup if detailPath was absent or returned no subject
+            if (subject == null && sidParam.isNotBlank()) {
+                try {
+                    val url = "$API_BASE/wefeed-h5api-bff/detail?subjectId=$sidParam"
+                    val request = Request.Builder()
+                        .url(url)
+                        .header("User-Agent", UA)
+                        .header("Accept", "application/json")
+                        .header("X-Client-Info", "{\"timezone\":\"Africa/Lagos\"}")
+                        .header("Origin", SITE_BASE)
+                        .header("Referer", "$SITE_BASE/")
+                        .get()
+                        .build()
+
+                    okHttpClient.newCall(request).execute().use { resp ->
+                        if (resp.isSuccessful) {
+                            val jsonStr = resp.body?.string() ?: ""
+                            val root = JSONObject(jsonStr)
+                            subject = root.optJSONObject("data")?.optJSONObject("subject")
+                            resource = root.optJSONObject("data")?.optJSONObject("resource")
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.w(TAG, "subjectId lookup failed for $sidParam: ${e.message}")
+                }
+            }
+
+            val validSubject = subject ?: return@withContext video
+            val title = validSubject.optString("title", video.title)
+            val description = validSubject.optString("description", video.description)
+            val stype = validSubject.optInt("subjectType", if (video.isShortTv) 7 else if (video.isSeries == true) 2 else 1)
+            val sid = validSubject.optString("subjectId", video.id.removePrefix("mb_"))
+            val backdrop = validSubject.optJSONObject("trailer")?.optJSONObject("cover")?.optString("url") ?: ""
+
+            // Cast
+            val staffList = validSubject.optJSONArray("staffList")
+            val castList = mutableListOf<String>()
+            if (staffList != null) {
+                for (i in 0 until staffList.length()) {
+                    val staff = staffList.optJSONObject(i) ?: continue
+                    val name = staff.optString("name")
+                    if (name.isNotBlank()) castList.add(name)
+                }
+            }
+
+            // Episodes if TV Series or Short TV
+            val isShortDrama = (stype == 5 || stype == 7 || video.isShortTv || video.videoUrl.contains("type=7") || video.videoUrl.contains("type=5")) && 
+                    (stype != 2 && stype != 1 && !video.videoUrl.contains("type=2") && !video.videoUrl.contains("type=1"))
+            val episodes = mutableListOf<Episode>()
+            if (stype == 2 || isShortDrama) {
+                val seasons = resource?.optJSONArray("seasons")
+                if (seasons != null) {
+                    for (i in 0 until seasons.length()) {
+                        val seasonObj = seasons.optJSONObject(i) ?: continue
+                        val se = seasonObj.optInt("se", 1)
+                        val maxEp = seasonObj.optInt("maxEp", 1)
+                        for (ep in 1..maxEp) {
+                            episodes.add(
+                                Episode(
+                                    id = "mb_${sid}_s${se}_e${ep}",
+                                    name = if (isShortDrama) "Episode $ep" else "Season $se Ep $ep",
+                                    url = "moviebox://$dp?id=$sid&type=$stype&se=$se&ep=$ep",
+                                    season = if (isShortDrama) "Episodes" else "Season $se"
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+
+            // Pre-resolve movie streams if it is a single movie
+            val servers = if (stype == 1) {
+                fetchPlayStreams(sid, dp, se = 0, ep = 0)
+            } else emptyList()
+
+            video.copy(
+                title = title,
+                description = description,
+                backdropUrl = if (backdrop.isNotBlank()) backdrop else video.thumbnailUrl,
+                actresses = castList,
+                episodes = episodes,
+                servers = servers,
+                isSeries = (stype == 2 || isShortDrama),
+                isShortTv = isShortDrama
+            )
         } catch (e: Exception) {
             Log.w(TAG, "Video detail error on Moviebox: ${e.message}")
             video
@@ -452,9 +738,10 @@ class MovieboxProvider(
 
     private fun fetchPlayStreams(sid: String, dp: String, se: Int, ep: Int): List<VideoServer> {
         val servers = mutableListOf<VideoServer>()
-        val encodedDp = try { URLEncoder.encode(dp, "UTF-8") } catch (_: Exception) { dp }
+        val playDp = if (dp.isNotBlank()) dp else sid
+        val encodedDp = try { URLEncoder.encode(playDp, "UTF-8") } catch (_: Exception) { playDp }
         val isTv = (se > 0)
-        val playReferer = "$SITE_BASE/videoPlayPage/$dp?type=" + (if (isTv) "/tv/detail" else "/movie/detail")
+        val playReferer = "$SITE_BASE/videoPlayPage/$playDp?type=" + (if (isTv) "/tv/detail" else "/movie/detail")
 
         // 1. Try /subject/play (Full quality 1080P/720P/480P)
         try {

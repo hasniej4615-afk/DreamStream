@@ -147,7 +147,7 @@ class VideoRepository @Inject constructor(
         val filtered = if (isShortTvCat) {
             cached.filter { it.isShortTv && !it.videoUrl.contains("type=1") && !it.videoUrl.contains("type=2") }
         } else {
-            cached.filter { !it.isShortTv && !it.videoUrl.contains("type=7") && !it.videoUrl.contains("type=5") && !it.videoUrl.contains("dramabox") }
+            cached.filter { !it.isShortTv && !it.videoUrl.contains("type=7") && !it.videoUrl.contains("type=5") && !it.videoUrl.contains("dramabox") && !it.videoUrl.contains("vskit") }
         }
         return VideoExtractor.sortVideosByNewestRelease(filtered)
     }
@@ -202,7 +202,7 @@ class VideoRepository @Inject constructor(
 
         // Strict category isolation: Never allow short dramas into regular series or movie categories
         val sanitizedCombined = combined.filter {
-            !it.isShortTv && !it.videoUrl.contains("type=7") && !it.videoUrl.contains("type=5") && !it.videoUrl.contains("dramabox")
+            !it.isShortTv && !it.videoUrl.contains("type=7") && !it.videoUrl.contains("type=5") && !it.videoUrl.contains("dramabox") && !it.videoUrl.contains("vskit")
         }
 
         val dbItems = videoDao.getVideosByIds(sanitizedCombined.map { it.id }).associateBy { it.id }

@@ -405,13 +405,14 @@ fun VideoPlayerScreen(
             false
         } else {
             video?.isShortTv == true || 
-            (serverUrl != null && (serverUrl.contains("type=5") || serverUrl.contains("type=7") || serverUrl.contains("short-tv") || serverUrl.contains("dramabox") || serverUrl.contains("netshort"))) ||
-            (extractedUrl != null && (extractedUrl!!.contains("type=5") || extractedUrl!!.contains("type=7") || extractedUrl!!.contains("short-tv") || extractedUrl!!.contains("dramabox") || extractedUrl!!.contains("netshort"))) ||
+            (serverUrl != null && (serverUrl.contains("type=5") || serverUrl.contains("type=7") || serverUrl.contains("short-tv") || serverUrl.contains("dramabox") || serverUrl.contains("netshort") || serverUrl.contains("vskit"))) ||
+            (extractedUrl != null && (extractedUrl!!.contains("type=5") || extractedUrl!!.contains("type=7") || extractedUrl!!.contains("short-tv") || extractedUrl!!.contains("dramabox") || extractedUrl!!.contains("netshort") || extractedUrl!!.contains("vskit"))) ||
             video?.videoUrl?.contains("type=5") == true ||
             video?.videoUrl?.contains("type=7") == true ||
             video?.videoUrl?.contains("short-tv") == true ||
             video?.videoUrl?.contains("dramabox") == true ||
-            video?.videoUrl?.contains("netshort") == true
+            video?.videoUrl?.contains("netshort") == true ||
+            video?.videoUrl?.contains("vskit") == true
         }
     }
 
@@ -3502,11 +3503,13 @@ fun VideoPlayerContent(
                         (video?.videoUrl?.contains("short-tv") == true) ||
                         (video?.videoUrl?.contains("dramabox") == true) ||
                         (video?.videoUrl?.contains("netshort") == true) ||
+                        (video?.videoUrl?.contains("vskit") == true) ||
                         (extractedUrl?.contains("type=5") == true) ||
                         (extractedUrl?.contains("type=7") == true) ||
                         (extractedUrl?.contains("short-tv") == true) ||
                         (extractedUrl?.contains("dramabox") == true) ||
-                        (extractedUrl?.contains("netshort") == true)
+                        (extractedUrl?.contains("netshort") == true) ||
+                        (extractedUrl?.contains("vskit") == true)
                     }
                 }
                 val targetResizeMode = if (isShortTvPlaybackContent) {
