@@ -2804,10 +2804,13 @@ class VideoViewModel @Inject constructor(
         if (!isRotation) {
             viewModelScope.launch {
                 try {
-                    val saved = preferenceManager.getSubtitleOffset(videoId).first()
-                    _subtitleOffset.value = if (saved != 0L) saved else {
+                    val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(videoId)
+                    val saved = preferenceManager.getSeriesOrVideoSubtitleOffset(videoId, seriesBase).first()
+                    val offset = if (saved != 0L) saved else {
                         com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper(serverUrl, null)
                     }
+                    _subtitleOffset.value = offset
+                    Log.i("SubtitleSyncEngine", "Initialized subtitle offset: ${offset}ms for $videoId (seriesBase=$seriesBase, saved=$saved)")
                 } catch (_: Exception) {
                     _subtitleOffset.value = 0L
                 }
@@ -2856,9 +2859,11 @@ class VideoViewModel @Inject constructor(
                 try {
                     val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(videoId)
                     val saved = preferenceManager.getSeriesOrVideoSubtitleOffset(videoId, seriesBase).first()
-                    _subtitleOffset.value = if (saved != 0L) saved else {
+                    val offset = if (saved != 0L) saved else {
                         com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper(episodeUrl ?: _currentServerUrl.value, null)
                     }
+                    _subtitleOffset.value = offset
+                    Log.i("SubtitleSyncEngine", "Initialized TV subtitle offset: ${offset}ms for $videoId (seriesBase=$seriesBase, saved=$saved)")
                 } catch (_: Exception) {
                     _subtitleOffset.value = 0L
                 }
@@ -3840,6 +3845,15 @@ class VideoViewModel @Inject constructor(
                         _resolutionProgress.value = null
                         _isResolving.value = false 
 
+                        // Auto-calibrate bumper if offset is still 0
+                        if (_subtitleOffset.value == 0L) {
+                            val detectedBumper = com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper(_currentServerUrl.value, winner.videoUrl)
+                            if (detectedBumper != 0L) {
+                                _subtitleOffset.value = detectedBumper
+                                Log.i("SubtitleSyncEngine", "Auto-calibrated bumper offset to ${detectedBumper}ms for server: ${_currentServerUrl.value}")
+                            }
+                        } 
+
                         if (winner.subtitles.isNotEmpty()) {
                             val streamSubs = winner.subtitles.map { sub ->
                                 if (!sub.label.contains("[Stream]") && !sub.label.contains("[Embedded]")) {
@@ -4249,11 +4263,18 @@ class VideoViewModel @Inject constructor(
                 )
 
                 SubtitleExtractor.searchAndGetSubtitles(effectiveTitle, null, this, { subs -> 
+                    val currentSignature = com.duta.movie.util.SubtitleSyncEngine.extractSignature(
+                        title = effectiveTitle,
+                        quality = _videoMetadata.value?.quality,
+                        serverUrl = _currentServerUrl.value,
+                        streamUrl = _resolvedUrl.value
+                    )
                     val combined = com.duta.movie.util.SubtitleSyncEngine.sortAndRankSubtitles(
                         (_subtitles.value + subs).distinctBy { it.url },
-                        streamSignature
+                        currentSignature
                     )
                     _subtitles.value = combined
+                    Log.i("SubtitleSyncEngine", "Evaluated ${combined.size} subtitle candidates with stream signature: $currentSignature (stream: ${_resolvedUrl.value})")
                     
                     // Auto-select subtitle if enabled, and not explicitly dismissed
                     if (!userExplicitlyDismissedSubtitles && isAutoSubtitleEnabled.value) {
@@ -4262,17 +4283,19 @@ class VideoViewModel @Inject constructor(
                             val bestMatch = com.duta.movie.util.SubtitleSyncEngine.findBestSubtitleMatch(
                                 combined,
                                 defLang,
-                                streamSignature
+                                currentSignature
                             )
                             if (bestMatch != null) {
                                 val current = _selectedSubtitle.value
+                                val newScore = com.duta.movie.util.SubtitleSyncEngine.scoreSubtitle(bestMatch, currentSignature)
                                 if (current == null) {
+                                    Log.i("SubtitleSyncEngine", "Auto-selected best-match subtitle: '${bestMatch.label}' [${bestMatch.language}] (score: $newScore)")
                                     selectSubtitle(bestMatch)
                                 } else if (current != bestMatch) {
-                                    val currentScore = com.duta.movie.util.SubtitleSyncEngine.scoreSubtitle(current, streamSignature)
-                                    val newScore = com.duta.movie.util.SubtitleSyncEngine.scoreSubtitle(bestMatch, streamSignature)
+                                    val currentScore = com.duta.movie.util.SubtitleSyncEngine.scoreSubtitle(current, currentSignature)
                                     // Upgrade to an exact-matched subtitle if incoming score is significantly higher
                                     if (newScore > currentScore + 25) {
+                                        Log.i("SubtitleSyncEngine", "Upgraded subtitle from '${current.label}' ($currentScore) to '${bestMatch.label}' ($newScore)")
                                         selectSubtitle(bestMatch)
                                     }
                                 }
@@ -4323,11 +4346,18 @@ class VideoViewModel @Inject constructor(
                     streamUrl = _resolvedUrl.value
                 )
                 SubtitleExtractor.searchAndGetSubtitles(q, null, this, { subs ->
+                    val currentSignature = com.duta.movie.util.SubtitleSyncEngine.extractSignature(
+                        title = q,
+                        quality = _videoMetadata.value?.quality,
+                        serverUrl = _currentServerUrl.value,
+                        streamUrl = _resolvedUrl.value
+                    )
                     val combined = com.duta.movie.util.SubtitleSyncEngine.sortAndRankSubtitles(
                         (_subtitles.value + subs).distinctBy { it.url },
-                        streamSignature
+                        currentSignature
                     )
                     _subtitles.value = combined
+                    Log.i("SubtitleSyncEngine", "Custom search ranked ${combined.size} candidates with signature: $currentSignature")
                 }, { _isSubtitleLoading.value = false })
             } catch (e: Exception) {
                 withContext(Dispatchers.Main) { _subtitleError.value = e.message }
@@ -5463,6 +5493,14 @@ class VideoViewModel @Inject constructor(
         rotationCount = 0
         exhaustedServerUrls.clear()
         consecutiveAllBlacklistedCount = 0
+        
+        if (_subtitleOffset.value == 0L) {
+            val detectedBumper = com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper(_currentServerUrl.value, url)
+            if (detectedBumper != 0L) {
+                _subtitleOffset.value = detectedBumper
+                Log.i("SubtitleSyncEngine", "Auto-calibrated bumper offset to ${detectedBumper}ms on playback success")
+            }
+        }
         
         val host = try { android.net.Uri.parse(url).host?.lowercase() } catch(_: Exception) { null }
         

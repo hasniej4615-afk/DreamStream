@@ -1,6 +1,7 @@
 package com.duta.movie.util
 
 import com.duta.movie.model.Subtitle
+import android.util.Log
 import java.util.Locale
 
 /**
@@ -223,13 +224,17 @@ object SubtitleSyncEngine {
      */
     fun detectServerIntroBumper(serverUrl: String?, streamUrl: String?): Long {
         val target = "${serverUrl ?: ""} ${streamUrl ?: ""}".lowercase()
-        return when {
+        val detected = when {
             target.contains("rebahin") -> 10000L      // Rebahin standard 10s intro bumper
             target.contains("lk21") || target.contains("layarkaca21") -> 9500L // LK21 9.5s betting bumper
             target.contains("indoxxi") -> 8000L     // Indoxxi 8s intro bumper
             target.contains("bioskopkeren") -> 6000L // Bioskopkeren 6s bumper
             else -> 0L
         }
+        if (detected != 0L) {
+            Log.i("SubtitleSyncEngine", "Detected bumper on host: offset=${detected}ms (target: $target)")
+        }
+        return detected
     }
 
     /**
