@@ -2307,8 +2307,14 @@ fun VideoPlayerScreen(
                 var isOpenLocalFocused by remember { mutableStateOf(false) }
                 var selectedLanguageFilter by remember { mutableStateOf("All") }
 
-                val targetLangCode = if (defaultSubtitleLanguage.contains("malay", ignoreCase = true) || selectedLanguageFilter == "Malay") "ms" else "id"
-                val targetLangName = if (targetLangCode == "ms") "Malay" else "Indonesian"
+                val targetLangCode = when {
+                    selectedLanguageFilter == "Malay" -> "ms"
+                    selectedLanguageFilter == "Indonesian" -> "id"
+                    selectedLanguageFilter == "English" -> "en"
+                    defaultSubtitleLanguage.isNotBlank() -> com.duta.movie.util.SubtitleTranslator.getLanguageCode(defaultSubtitleLanguage)
+                    else -> "id"
+                }
+                val targetLangName = com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName(targetLangCode)
 
                 fun getSubtitleCategory(sub: com.duta.movie.model.Subtitle): String {
                     val norm = com.duta.movie.util.SubtitleExtractor.normalizeLanguage(sub.language)
@@ -2883,7 +2889,7 @@ fun VideoPlayerScreen(
                                     modifier = Modifier.fillMaxWidth().padding(16.dp),
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
-                                    val isTargetLangFiltered = selectedLanguageFilter == "Indonesian" || selectedLanguageFilter == "Malay"
+                                    val isTargetLangFiltered = selectedLanguageFilter == "Indonesian" || selectedLanguageFilter == "Malay" || selectedLanguageFilter == "English" || selectedLanguageFilter == defaultSubtitleLanguage
                                     if (subtitleCues.isNotEmpty() && isTargetLangFiltered) {
                                         Text(
                                             stringResource(R.string.ai_translate_prompt, targetLangName),

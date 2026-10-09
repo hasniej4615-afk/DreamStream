@@ -4681,7 +4681,7 @@ class VideoViewModel @Inject constructor(
 
                 if (result != null) {
                     val (file, translatedCues) = result
-                    val targetLangName = if (targetLang == "id") "Indonesian" else if (targetLang == "ms") "Malay" else targetLang.uppercase()
+                    val targetLangName = com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName(targetLang)
                     val translatedSub = Subtitle(
                         label = "[AI Translated] $targetLangName",
                         url = "file://${file.absolutePath}",

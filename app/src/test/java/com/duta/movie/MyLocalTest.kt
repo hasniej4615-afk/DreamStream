@@ -1008,6 +1008,12 @@ class MyLocalTest {
         assertEquals("ko", com.duta.movie.util.SubtitleTranslator.getLanguageCode("Korean"))
         assertEquals("zh-CN", com.duta.movie.util.SubtitleTranslator.getLanguageCode("Chinese"))
         assertEquals("es", com.duta.movie.util.SubtitleTranslator.getLanguageCode("Spanish"))
+        assertEquals("th", com.duta.movie.util.SubtitleTranslator.getLanguageCode("Thai"))
+        assertEquals("ar", com.duta.movie.util.SubtitleTranslator.getLanguageCode("Arabic"))
+        assertEquals("Indonesian", com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName("id"))
+        assertEquals("English", com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName("en"))
+        assertEquals("Thai", com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName("th"))
+        assertEquals("Arabic", com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName("ar"))
     }
 }
 

@@ -656,7 +656,7 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="primary_sub_tab">Utama</string>
     <string name="dual_sub_tab">Dwi (Atas)</string>
     <string name="dual_sub_hint">Sari kata kedua dipaparkan di atas dalam warna kuning</string>
-    <string name="ai_translate_prompt">Tiada sari kata %s ditemui. Terjemah secara AI dari Bahasa Inggeris?</string>
+    <string name="ai_translate_prompt">Tiada sari kata %s ditemui. Terjemah secara AI?</string>
     <string name="ai_translate_btn">Terjemah AI ke %s</string>
     <string name="ai_translating">Menterjemah sari kata (%1$d/%2$d)...</string>
     <string name="vad_speech_detected">Pertuturan dikesan pada %s</string>

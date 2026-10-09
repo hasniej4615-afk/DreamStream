@@ -1237,7 +1237,7 @@ object SubtitleExtractor {
                 var allFailed = true
                 var authFailureCount = 0
                 for (key in goodKeys) {
-                    val url = "https://api.subdl.com/api/v1/subtitles?api_key=$key&languages=en,id,ms&$filmParam"
+                    val url = "https://api.subdl.com/api/v1/subtitles?api_key=$key&languages=en,id,ms,es,fr,ja,ko,zh,ar,th,de&$filmParam"
                     val res = withContext(Dispatchers.IO) {
                         try {
                             NetworkConfig.okHttpClient.newCall(Request.Builder().url(url).header("User-Agent", NetworkConfig.SHARED_USER_AGENT).build()).execute().use { r ->
@@ -1615,7 +1615,7 @@ object SubtitleExtractor {
         override val name = "OpenSubs"; override val baseUrl = "https://api.opensubtitles.com/api/v1"
         override suspend fun searchFast(title: String, imdbId: String?): List<Subtitle> = try {
             if (imdbId == null) emptyList() else {
-                val req = Request.Builder().url("$baseUrl/subtitles?imdb_id=${imdbId.removePrefix("tt")}&languages=en,id,ms")
+                val req = Request.Builder().url("$baseUrl/subtitles?imdb_id=${imdbId.removePrefix("tt")}&languages=en,id,ms,es,fr,ja,ko,zh,ar,th,de")
                     .header("Api-Key", "LIsb6D14Rcl6W14X16vR18vR20vR22vR")
                     .header("User-Agent", NetworkConfig.SHARED_USER_AGENT)
                     .header("Content-Type", "application/json")
