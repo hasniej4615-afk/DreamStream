@@ -2885,9 +2885,29 @@ object VideoExtractor {
     fun normalizeForDedup(video: Video, includeYear: Boolean = true): String =
         normalizeForDedup(video.title, video.date, video.videoUrl, includeYear)
 
+    fun isShortTv(video: Video?): Boolean {
+        if (video == null) return false
+        val lowUrl = video.videoUrl.lowercase()
+        if (lowUrl.contains("type=1") || lowUrl.contains("type=2")) {
+            if (!lowUrl.contains("type=7") && !lowUrl.contains("type=5")) {
+                return false
+            }
+        }
+        return video.isShortTv ||
+            lowUrl.contains("type=5") ||
+            lowUrl.contains("type=7") ||
+            lowUrl.contains("short-tv") ||
+            lowUrl.contains("dramabox") ||
+            lowUrl.contains("netshort") ||
+            lowUrl.contains("vskit") ||
+            video.id.startsWith("short_") ||
+            video.id.contains("short-tv") ||
+            video.quality.contains("ShortTV", ignoreCase = true)
+    }
+
     fun isLikelySeries(video: Video?): Boolean {
         if (video == null) return false
-        if (video.isShortTv) return true
+        if (isShortTv(video)) return true
         val validEpisodes = video.episodes.filter { !it.name.contains("unnamed", ignoreCase = true) }
         if (validEpisodes.size > 1) return true
         if (isLikelySeriesUrl(video.videoUrl)) return true

@@ -34,6 +34,7 @@ import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.ImeAction
 import com.duta.movie.util.VideoUtils
+import com.duta.movie.util.VideoExtractor
 
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.key.*
@@ -750,14 +751,7 @@ fun VideoDetailInfo(
             }
         }
 
-        val isShortTv = remember(video) {
-            video.isShortTv || 
-            video.videoUrl.contains("type=5") || 
-            video.videoUrl.contains("type=7") || 
-            video.videoUrl.contains("short-tv") || 
-            video.videoUrl.contains("dramabox") || 
-            video.videoUrl.contains("vskit")
-        }
+        val isShortTv = remember(video) { VideoExtractor.isShortTv(video) }
 
         if (isShortTv) {
             Surface(

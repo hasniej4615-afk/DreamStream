@@ -1493,7 +1493,7 @@ fun NetflixThumbnail(
                         }
                     }
 
-                    val isShortTvItem = video.isShortTv || video.videoUrl.contains("type=5") || video.videoUrl.contains("type=7") || video.videoUrl.contains("short-tv") || video.videoUrl.contains("dramabox") || video.videoUrl.contains("vskit")
+                    val isShortTvItem = VideoExtractor.isShortTv(video)
                     if (isShortTvItem) {
                         val isNarrowCard = (width != null && width < 120.dp) || (isRealTV && (width ?: 165.dp) < 120.dp)
                         Surface(
@@ -1728,14 +1728,7 @@ fun FeaturedHero(
                     } else video.title
                 }
 
-                val isShortTv = remember(video) {
-                    video.isShortTv || 
-                    video.videoUrl.contains("type=5") || 
-                    video.videoUrl.contains("type=7") || 
-                    video.videoUrl.contains("short-tv") || 
-                    video.videoUrl.contains("dramabox") || 
-                    video.videoUrl.contains("vskit")
-                }
+                val isShortTv = remember(video) { VideoExtractor.isShortTv(video) }
 
                 if (isShortTv) {
                     Surface(

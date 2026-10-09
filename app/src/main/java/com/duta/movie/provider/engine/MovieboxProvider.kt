@@ -179,6 +179,15 @@ class MovieboxProvider(
                         )
                     )
                 }
+                synchronized(shortTvLock) {
+                    if (shortTvCache.isNotEmpty()) {
+                        for (v in shortTvCache) {
+                            if (v.title.contains(query, ignoreCase = true) && list.none { it.id == v.id }) {
+                                list.add(v)
+                            }
+                        }
+                    }
+                }
                 Log.i(TAG, "MovieBox search query='$query' returned ${list.size} results")
                 list
             }

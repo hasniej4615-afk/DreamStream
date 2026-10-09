@@ -39,6 +39,7 @@ enum class SearchFilter(val label: String) {
     ALL("All"),
     MOVIES("Movies"),
     SERIES("Series"),
+    SHORT_TV("Short TV"),
     MALAY("Malay")
 }
 
@@ -1084,13 +1085,18 @@ class VideoViewModel @Inject constructor(
             val filtered = when (filter) {
                 SearchFilter.ALL -> processed
                 SearchFilter.MOVIES -> processed.filter { 
+                    !VideoExtractor.isShortTv(it) &&
                     it.isSeries != true && !it.videoUrl.contains("/series/") && !it.videoUrl.contains("/tv/") && 
                     !it.title.contains("Episod", ignoreCase = true) && !it.title.contains("Episode", ignoreCase = true)
                 }
                 SearchFilter.SERIES -> processed.filter { 
-                    it.isSeries == true || it.videoUrl.contains("/series/") || it.videoUrl.contains("/tv/") || 
+                    !VideoExtractor.isShortTv(it) &&
+                    (it.isSeries == true || it.videoUrl.contains("/series/") || it.videoUrl.contains("/tv/") || 
                     it.title.contains("Episod", ignoreCase = true) || it.title.contains("Episode", ignoreCase = true) ||
-                    it.title.contains("Season", ignoreCase = true)
+                    it.title.contains("Season", ignoreCase = true))
+                }
+                SearchFilter.SHORT_TV -> processed.filter { 
+                    VideoExtractor.isShortTv(it)
                 }
                 SearchFilter.MALAY -> processed.filter { 
                     it.id.startsWith("kb_") || it.id.startsWith("pm_") || it.videoUrl.contains("pencurimovie") || 

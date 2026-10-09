@@ -7,6 +7,7 @@ import com.duta.movie.model.Video
 import com.duta.movie.model.Subtitle
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import com.duta.movie.ui.VideoViewModel
 import okhttp3.MediaType.Companion.toMediaType
@@ -1014,6 +1015,76 @@ class MyLocalTest {
         assertEquals("English", com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName("en"))
         assertEquals("Thai", com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName("th"))
         assertEquals("Arabic", com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName("ar"))
+    }
+
+    @Test
+    fun testSearchFilterShortTv() {
+        // 1. Verify enum contains SHORT_TV with label "Short TV"
+        val filters = com.duta.movie.ui.SearchFilter.values()
+        assertTrue("SearchFilter must contain SHORT_TV", filters.contains(com.duta.movie.ui.SearchFilter.SHORT_TV))
+        assertEquals("Short TV", com.duta.movie.ui.SearchFilter.SHORT_TV.label)
+        assertEquals(listOf("All", "Movies", "Series", "Short TV", "Malay"), filters.map { it.label })
+
+        // 2. Test VideoExtractor.isShortTv detection
+        val shortTv1 = com.duta.movie.model.Video(
+            id = "mb_12345",
+            title = "My Billionaire Husband",
+            thumbnailUrl = "https://example.com/thumb.jpg",
+            videoUrl = "moviebox://drama?id=12345&type=7",
+            duration = "",
+            isSeries = true,
+            isShortTv = true
+        )
+        val shortTv2 = com.duta.movie.model.Video(
+            id = "short_abc",
+            title = "Revenge of the Heiress",
+            thumbnailUrl = "https://example.com/thumb2.jpg",
+            videoUrl = "https://example.com/short-tv/watch/abc",
+            duration = "",
+            isSeries = true,
+            isShortTv = false
+        )
+        val normalMovie = com.duta.movie.model.Video(
+            id = "mb_movie1",
+            title = "Gladiator II",
+            thumbnailUrl = "https://example.com/glad.jpg",
+            videoUrl = "moviebox://movie?id=movie1&type=1",
+            duration = "140m",
+            isSeries = false,
+            isShortTv = false
+        )
+        val normalSeries = com.duta.movie.model.Video(
+            id = "mb_series1",
+            title = "Severance",
+            thumbnailUrl = "https://example.com/sev.jpg",
+            videoUrl = "moviebox://series?id=series1&type=2",
+            duration = "",
+            isSeries = true,
+            isShortTv = false
+        )
+
+        assertTrue("shortTv1 must be detected as Short TV", com.duta.movie.util.VideoExtractor.isShortTv(shortTv1))
+        assertTrue("shortTv2 must be detected as Short TV", com.duta.movie.util.VideoExtractor.isShortTv(shortTv2))
+        assertFalse("normalMovie must NOT be detected as Short TV", com.duta.movie.util.VideoExtractor.isShortTv(normalMovie))
+        assertFalse("normalSeries must NOT be detected as Short TV", com.duta.movie.util.VideoExtractor.isShortTv(normalSeries))
+
+        // 3. Test filter isolation behavior
+        val allVideos = listOf(shortTv1, shortTv2, normalMovie, normalSeries)
+
+        val shortTvFiltered = allVideos.filter { com.duta.movie.util.VideoExtractor.isShortTv(it) }
+        assertEquals(listOf(shortTv1, shortTv2), shortTvFiltered)
+
+        val moviesFiltered = allVideos.filter {
+            !com.duta.movie.util.VideoExtractor.isShortTv(it) &&
+            it.isSeries != true && !it.videoUrl.contains("/series/") && !it.videoUrl.contains("/tv/")
+        }
+        assertEquals(listOf(normalMovie), moviesFiltered)
+
+        val seriesFiltered = allVideos.filter {
+            !com.duta.movie.util.VideoExtractor.isShortTv(it) &&
+            (it.isSeries == true || it.videoUrl.contains("/series/") || it.videoUrl.contains("/tv/"))
+        }
+        assertEquals(listOf(normalSeries), seriesFiltered)
     }
 }
 
