@@ -219,6 +219,53 @@ object SubtitleSyncEngine {
         return matchingLanguageSubs.maxByOrNull { scoreSubtitle(it, signature) }
     }
 
+    enum class FpsMode(val label: String, val ratio: Float) {
+        NORMAL("1.0x (Normal)", 1.0f),
+        PAL_TO_NTSC("25 -> 23.976 (PAL)", 1.04271f),
+        NTSC_TO_PAL("23.976 -> 25 (NTSC)", 0.95904f),
+        FILM_TO_PAL("24 -> 25 (Speedup)", 0.96000f),
+        PAL_TO_FILM("25 -> 24 (Slowdown)", 1.04167f);
+
+        val displayName: String get() = label
+
+        companion object {
+            fun fromRatio(ratio: Float): FpsMode {
+                return entries.minByOrNull { Math.abs(it.ratio - ratio) } ?: NORMAL
+            }
+        }
+    }
+
+    /**
+     * Detects if video FPS and subtitle release FPS mismatch and calculates time stretch ratio.
+     */
+    fun detectFpsRatio(videoFps: Float?, subtitleLabel: String?): Float {
+        if (videoFps == null || videoFps <= 0f || subtitleLabel.isNullOrBlank()) return 1.0f
+        val lowSub = subtitleLabel.lowercase()
+        val isSub25 = lowSub.contains("25fps") || lowSub.contains("25.000") || lowSub.contains(" pal ") || lowSub.contains(".pal.")
+        val isSub23976 = lowSub.contains("23.976") || lowSub.contains("23.98") || lowSub.contains(" ntsc ") || lowSub.contains(".ntsc.") || lowSub.contains("bluray") || lowSub.contains("web-dl")
+
+        return when {
+            // Video is 25 FPS (PAL broadcast/rip) but sub is 23.976/BluRay
+            videoFps in 24.8f..25.2f && isSub23976 && !isSub25 -> FpsMode.NTSC_TO_PAL.ratio
+            // Video is 23.976 FPS (NTSC/Retail) but sub is 25 FPS PAL
+            videoFps in 23.8f..24.2f && isSub25 -> FpsMode.PAL_TO_NTSC.ratio
+            else -> 1.0f
+        }
+    }
+
+    /**
+     * Generates a stable normalized media key for community offset consensus.
+     */
+    fun generateCommunityMediaKey(title: String, serverHost: String?): String {
+        val cleanTitle = title.lowercase()
+            .replace(Regex("""[^a-z0-9]"""), "_")
+            .replace(Regex("""_+"""), "_")
+            .trim('_')
+        val hostPart = (serverHost ?: "generic").lowercase()
+            .replace(Regex("""[^a-z0-9]"""), "_")
+        return "${cleanTitle}__${hostPart}"
+    }
+
     /**
      * Estimates pre-roll intro bumper offset for known web streaming distributors.
      */
@@ -229,6 +276,9 @@ object SubtitleSyncEngine {
             target.contains("lk21") || target.contains("layarkaca21") -> 9500L // LK21 9.5s betting bumper
             target.contains("indoxxi") -> 8000L     // Indoxxi 8s intro bumper
             target.contains("bioskopkeren") -> 6000L // Bioskopkeren 6s bumper
+            target.contains("juraganfilm") -> 7500L  // Juraganfilm 7.5s bumper
+            target.contains("melongmovie") -> 5000L  // Melongmovie 5s bumper
+            target.contains("kawanfilm") -> 8500L    // Kawanfilm 8.5s bumper
             else -> 0L
         }
         if (detected != 0L) {

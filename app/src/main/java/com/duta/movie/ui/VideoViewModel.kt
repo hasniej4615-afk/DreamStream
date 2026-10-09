@@ -532,6 +532,9 @@ class VideoViewModel @Inject constructor(
     private val _subtitleOffset = MutableStateFlow(0L)
     val subtitleOffset: StateFlow<Long> = _subtitleOffset.asStateFlow()
 
+    private val _subtitleFpsRatio = MutableStateFlow(1.0f)
+    val subtitleFpsRatio: StateFlow<Float> = _subtitleFpsRatio.asStateFlow()
+
     val metadataCache = ConcurrentHashMap<String, Video>()
     val episodeServersCache = ConcurrentHashMap<String, List<VideoServer>>()
     val filterResultCache = ConcurrentHashMap<String, Boolean>()
@@ -2806,13 +2809,20 @@ class VideoViewModel @Inject constructor(
                 try {
                     val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(videoId)
                     val saved = preferenceManager.getSeriesOrVideoSubtitleOffset(videoId, seriesBase).first()
-                    val offset = if (saved != 0L) saved else {
+                    val mediaKey = com.duta.movie.util.SubtitleSyncEngine.generateCommunityMediaKey(
+                        _videoMetadata.value?.title ?: videoId,
+                        serverUrl ?: _currentServerUrl.value
+                    )
+                    val commOffset = preferenceManager.getCommunitySubtitleOffset(mediaKey).first()
+                    val offset = if (saved != 0L) saved else if (commOffset != 0L) commOffset else {
                         com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper(serverUrl, null)
                     }
                     _subtitleOffset.value = offset
-                    Log.i("SubtitleSyncEngine", "Initialized subtitle offset: ${offset}ms for $videoId (seriesBase=$seriesBase, saved=$saved)")
+                    _subtitleFpsRatio.value = preferenceManager.getSubtitleFpsRatio(videoId).first()
+                    Log.i("SubtitleSyncEngine", "Initialized subtitle offset: ${offset}ms (saved=$saved, comm=$commOffset, fpsRatio=${_subtitleFpsRatio.value}) for $videoId")
                 } catch (_: Exception) {
                     _subtitleOffset.value = 0L
+                    _subtitleFpsRatio.value = 1.0f
                 }
             }
         }
@@ -2859,13 +2869,20 @@ class VideoViewModel @Inject constructor(
                 try {
                     val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(videoId)
                     val saved = preferenceManager.getSeriesOrVideoSubtitleOffset(videoId, seriesBase).first()
-                    val offset = if (saved != 0L) saved else {
+                    val mediaKey = com.duta.movie.util.SubtitleSyncEngine.generateCommunityMediaKey(
+                        _videoMetadata.value?.title ?: videoId,
+                        episodeUrl ?: _currentServerUrl.value
+                    )
+                    val commOffset = preferenceManager.getCommunitySubtitleOffset(mediaKey).first()
+                    val offset = if (saved != 0L) saved else if (commOffset != 0L) commOffset else {
                         com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper(episodeUrl ?: _currentServerUrl.value, null)
                     }
                     _subtitleOffset.value = offset
-                    Log.i("SubtitleSyncEngine", "Initialized TV subtitle offset: ${offset}ms for $videoId (seriesBase=$seriesBase, saved=$saved)")
+                    _subtitleFpsRatio.value = preferenceManager.getSubtitleFpsRatio(videoId).first()
+                    Log.i("SubtitleSyncEngine", "Initialized TV subtitle offset: ${offset}ms (saved=$saved, comm=$commOffset, fpsRatio=${_subtitleFpsRatio.value}) for $videoId")
                 } catch (_: Exception) {
                     _subtitleOffset.value = 0L
+                    _subtitleFpsRatio.value = 1.0f
                 }
             }
         }
@@ -4378,6 +4395,11 @@ class VideoViewModel @Inject constructor(
                     val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(vid)
                     preferenceManager.setSeriesSubtitleOffset(seriesBase, newOffset)
                 }
+                val mediaKey = com.duta.movie.util.SubtitleSyncEngine.generateCommunityMediaKey(
+                    _videoMetadata.value?.title ?: vid,
+                    _currentServerUrl.value
+                )
+                preferenceManager.setCommunitySubtitleOffset(mediaKey, newOffset)
             }
         }
     }
@@ -4392,22 +4414,59 @@ class VideoViewModel @Inject constructor(
                     val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(vid)
                     preferenceManager.setSeriesSubtitleOffset(seriesBase, offset)
                 }
+                val mediaKey = com.duta.movie.util.SubtitleSyncEngine.generateCommunityMediaKey(
+                    _videoMetadata.value?.title ?: vid,
+                    _currentServerUrl.value
+                )
+                preferenceManager.setCommunitySubtitleOffset(mediaKey, offset)
             }
         }
     }
 
     fun resetSubtitleOffset() {
         _subtitleOffset.value = 0L
+        _subtitleFpsRatio.value = 1.0f
         val vid = activeVideoId ?: _videoMetadata.value?.id
         if (!vid.isNullOrEmpty()) {
             viewModelScope.launch { 
                 preferenceManager.setSubtitleOffset(vid, 0L)
+                preferenceManager.setSubtitleFpsRatio(vid, 1.0f)
                 if (_videoMetadata.value?.isSeries == true || _currentEpisode.value != null) {
                     val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(vid)
                     preferenceManager.setSeriesSubtitleOffset(seriesBase, 0L)
                 }
             }
         }
+    }
+
+    fun setSubtitleFpsRatio(ratio: Float) {
+        _subtitleFpsRatio.value = ratio
+        val vid = activeVideoId ?: _videoMetadata.value?.id
+        if (!vid.isNullOrEmpty()) {
+            viewModelScope.launch { preferenceManager.setSubtitleFpsRatio(vid, ratio) }
+        }
+        Log.i("SubtitleSyncEngine", "Subtitle FPS ratio updated to $ratio for $vid")
+    }
+
+    fun cycleToNextBestSubtitle(): Subtitle? {
+        val currentSubs = _subtitles.value
+        if (currentSubs.isEmpty()) return null
+        val current = _selectedSubtitle.value
+        val targetLang = current?.language ?: defaultSubtitleLanguage.value
+        val normLang = com.duta.movie.util.SubtitleExtractor.normalizeLanguage(targetLang)
+
+        val candidates = currentSubs.filter {
+            com.duta.movie.util.SubtitleExtractor.normalizeLanguage(it.language).equals(normLang, ignoreCase = true)
+        }
+        if (candidates.isEmpty()) return null
+
+        val currentIndex = candidates.indexOfFirst { it.url == current?.url }
+        val nextIndex = if (currentIndex in 0 until candidates.size - 1) currentIndex + 1 else 0
+        val nextSub = candidates[nextIndex]
+
+        selectSubtitle(nextSub)
+        Log.i("SubtitleSyncEngine", "Cycled subtitle to candidate #${nextIndex + 1}/${candidates.size}: '${nextSub.label}'")
+        return nextSub
     }
 
     fun loadLocalSubtitle(uri: Uri, onResult: (Boolean, String) -> Unit) {

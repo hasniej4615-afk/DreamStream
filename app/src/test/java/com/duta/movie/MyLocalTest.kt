@@ -936,7 +936,32 @@ class MyLocalTest {
         // Test Server Bumper Detection
         assertEquals(10000L, com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper("https://rebahin21.vip/video", null))
         assertEquals(9500L, com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper("https://lk21.me/film", null))
+        assertEquals(8000L, com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper("https://indoxxi.cx/watch", null))
+        assertEquals(6000L, com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper("https://bioskopkeren.lat/movie", null))
+        assertEquals(7500L, com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper("https://juraganfilm.in/play", null))
+        assertEquals(5000L, com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper("https://melongmovie.com/v", null))
+        assertEquals(8500L, com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper("https://kawanfilm21.org/watch", null))
         assertEquals(0L, com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper("https://faststream.com/play", null))
+
+        // Test Framerate Drift Detection (FpsMode & detectFpsRatio)
+        val palToNtscRatio = com.duta.movie.util.SubtitleSyncEngine.detectFpsRatio(23.976f, "Movie.2024.25fps.PAL.srt")
+        assertEquals(com.duta.movie.util.SubtitleSyncEngine.FpsMode.PAL_TO_NTSC.ratio, palToNtscRatio, 0.0001f)
+
+        val ntscToPalRatio = com.duta.movie.util.SubtitleSyncEngine.detectFpsRatio(25.0f, "Movie.2024.1080p.BluRay.x264.srt")
+        assertEquals(com.duta.movie.util.SubtitleSyncEngine.FpsMode.NTSC_TO_PAL.ratio, ntscToPalRatio, 0.0001f)
+
+        assertEquals(1.0f, com.duta.movie.util.SubtitleSyncEngine.detectFpsRatio(24.0f, "Movie.2024.Normal.srt"), 0.0001f)
+        assertEquals(1.0f, com.duta.movie.util.SubtitleSyncEngine.detectFpsRatio(null, "Movie.2024.25fps.srt"), 0.0001f)
+
+        assertEquals(com.duta.movie.util.SubtitleSyncEngine.FpsMode.NORMAL, com.duta.movie.util.SubtitleSyncEngine.FpsMode.fromRatio(1.0f))
+        assertEquals(com.duta.movie.util.SubtitleSyncEngine.FpsMode.PAL_TO_NTSC, com.duta.movie.util.SubtitleSyncEngine.FpsMode.fromRatio(1.04271f))
+        assertEquals(com.duta.movie.util.SubtitleSyncEngine.FpsMode.NTSC_TO_PAL, com.duta.movie.util.SubtitleSyncEngine.FpsMode.fromRatio(0.95904f))
+
+        // Test Community Media Key Generation
+        val mediaKey1 = com.duta.movie.util.SubtitleSyncEngine.generateCommunityMediaKey("Dune: Part Two", "rebahin")
+        assertEquals("dune_part_two__rebahin", mediaKey1)
+        val mediaKey2 = com.duta.movie.util.SubtitleSyncEngine.generateCommunityMediaKey("Spider-Man: No Way Home (2021)", null)
+        assertEquals("spider_man_no_way_home_2021__generic", mediaKey2)
     }
 }
 

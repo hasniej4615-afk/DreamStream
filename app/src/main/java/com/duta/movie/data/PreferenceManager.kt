@@ -595,6 +595,37 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         }
     }
 
+    fun getCommunitySubtitleOffset(mediaKey: String): Flow<Long> = context.dataStore.data.map { prefs ->
+        prefs[longPreferencesKey("community_sub_offset_$mediaKey")] ?: 0L
+    }
+
+    suspend fun setCommunitySubtitleOffset(mediaKey: String, offsetMs: Long) {
+        if (mediaKey.isBlank()) return
+        context.dataStore.edit { prefs ->
+            val key = longPreferencesKey("community_sub_offset_$mediaKey")
+            if (offsetMs == 0L) {
+                prefs.remove(key)
+            } else {
+                prefs[key] = offsetMs
+            }
+        }
+    }
+
+    fun getSubtitleFpsRatio(videoId: String): Flow<Float> = context.dataStore.data.map { prefs ->
+        prefs[floatPreferencesKey("sub_fps_ratio_$videoId")] ?: 1.0f
+    }
+
+    suspend fun setSubtitleFpsRatio(videoId: String, ratio: Float) {
+        context.dataStore.edit { prefs ->
+            val key = floatPreferencesKey("sub_fps_ratio_$videoId")
+            if (ratio == 1.0f) {
+                prefs.remove(key)
+            } else {
+                prefs[key] = ratio
+            }
+        }
+    }
+
     suspend fun exportBackupData(): ProfileBackupData {
         val prefs = context.dataStore.data.first()
         val username = prefs[USER_NICKNAME_KEY] ?: ""

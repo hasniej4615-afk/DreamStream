@@ -93,6 +93,7 @@ import com.duta.movie.util.CastSubtitleServer
 import com.duta.movie.util.DutaCastMediaItemConverter
 import com.duta.movie.util.NetworkConfig
 import com.duta.movie.util.SubtitleParser
+import com.duta.movie.util.SubtitleSyncEngine
 import com.duta.movie.LocalPipMode
 import androidx.hilt.navigation.compose.hiltViewModel
 import kotlinx.coroutines.Dispatchers
@@ -353,6 +354,7 @@ fun VideoPlayerScreen(
     val defaultSubtitleLanguage by viewModel.defaultSubtitleLanguage.collectAsStateWithLifecycle()
     val subtitleError by viewModel.subtitleError.collectAsStateWithLifecycle()
     val subtitleOffset by viewModel.subtitleOffset.collectAsStateWithLifecycle()
+    val subtitleFpsRatio by viewModel.subtitleFpsRatio.collectAsStateWithLifecycle()
     val subtitleCues by viewModel.subtitleCues.collectAsStateWithLifecycle()
     val voiceEnhancerMode by viewModel.voiceEnhancerMode.collectAsStateWithLifecycle()
     val voiceEnhancerManager = remember { VoiceEnhancerManager() }
@@ -810,7 +812,7 @@ fun VideoPlayerScreen(
     }
 
     // Real-time subtitle synchronization for all playback engines (ExoPlayer, WebView, Cast)
-    LaunchedEffect(subtitleCues, subtitleOffset, isVideoReady, useWebView, isCasting, currentPlayer) {
+    LaunchedEffect(subtitleCues, subtitleOffset, subtitleFpsRatio, isVideoReady, useWebView, isCasting, currentPlayer) {
         if (subtitleCues.isNotEmpty()) {
             while (true) {
                 val basePos = if (useWebView && !isCasting) {
@@ -820,7 +822,12 @@ fun VideoPlayerScreen(
                 } else {
                     currentPlayer.currentPosition
                 }
-                val effectivePos = basePos + subtitleOffset
+                val rawShifted = basePos + subtitleOffset
+                val effectivePos = if (subtitleFpsRatio != 1.0f && subtitleFpsRatio > 0f) {
+                    (rawShifted * subtitleFpsRatio).toLong()
+                } else {
+                    rawShifted
+                }
                 val activeCues = subtitleCues.filter { cue ->
                     cue.startTimeMs <= effectivePos && effectivePos <= cue.endTimeMs
                 }
@@ -2695,12 +2702,34 @@ fun VideoPlayerScreen(
                         .fillMaxWidth()
                         .verticalScroll(syncScrollState)
                 ) {
-                    Text(
-                        text = "${if (subtitleOffset >= 0) "+" else ""}${subtitleOffset / 1000.0}s", 
-                        color = Color.White, 
-                        style = MaterialTheme.typography.headlineMedium,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "${if (subtitleOffset >= 0) "+" else ""}${subtitleOffset / 1000.0}s", 
+                            color = Color.White, 
+                            style = MaterialTheme.typography.headlineMedium,
+                            fontWeight = FontWeight.Bold
+                        )
+                        if (subtitleFpsRatio != 1.0f) {
+                            Spacer(Modifier.width(8.dp))
+                            Surface(
+                                color = Color(0xFFE50914).copy(alpha = 0.25f),
+                                shape = RoundedCornerShape(4.dp),
+                                border = BorderStroke(1.dp, Color(0xFFE50914))
+                            ) {
+                                Text(
+                                    text = SubtitleSyncEngine.FpsMode.fromRatio(subtitleFpsRatio).displayName,
+                                    color = Color(0xFFFF8A80),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
+                    }
                     Text(
                         text = stringResource(R.string.current_playback_time, SubtitleParser.formatVttTimestamp(currentPlaybackMs).substringBefore(".")), 
                         color = Color.Gray, 
@@ -2713,7 +2742,79 @@ fun VideoPlayerScreen(
                         fontSize = 11.sp,
                         textAlign = TextAlign.Center
                     )
-                    Spacer(Modifier.height(10.dp))
+                    Spacer(Modifier.height(8.dp))
+
+                    // TV D-Pad & Fluid Touch Scrubber Bar
+                    var isScrubberFocused by remember { mutableStateOf(false) }
+                    Surface(
+                        color = if (isScrubberFocused) Color(0xFF383838) else Color(0xFF262626),
+                        shape = RoundedCornerShape(10.dp),
+                        border = BorderStroke(
+                            if (isScrubberFocused) 2.dp else 1.dp,
+                            if (isScrubberFocused) Color.White else Color.White.copy(alpha = 0.15f)
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 8.dp)
+                            .then(if (nearestCue == null) Modifier.focusRequester(syncFirstButtonFocusRequester) else Modifier)
+                            .onFocusChanged { isScrubberFocused = it.isFocused }
+                            .onKeyEvent { keyEvent ->
+                                if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN) {
+                                    when (keyEvent.nativeKeyEvent.keyCode) {
+                                        android.view.KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                            viewModel.adjustSubtitleOffset(-250)
+                                            true
+                                        }
+                                        android.view.KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                            viewModel.adjustSubtitleOffset(250)
+                                            true
+                                        }
+                                        else -> false
+                                    }
+                                } else false
+                            }
+                            .focusable()
+                            .scale(if (isScrubberFocused) 1.02f else 1f)
+                    ) {
+                        Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = stringResource(R.string.scrubber_label),
+                                    color = if (isScrubberFocused) Color.White else Color.LightGray,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                Text(
+                                    text = "${if (subtitleOffset >= 0) "+" else ""}${subtitleOffset / 1000.0}s",
+                                    color = if (isScrubberFocused) Color(0xFF4FC3F7) else Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            }
+                            Slider(
+                                value = subtitleOffset.coerceIn(-10000L, 10000L).toFloat(),
+                                onValueChange = { viewModel.setSubtitleOffset(it.toLong()) },
+                                valueRange = -10000f..10000f,
+                                steps = 79,
+                                colors = SliderDefaults.colors(
+                                    thumbColor = Color.Red,
+                                    activeTrackColor = Color.Red,
+                                    inactiveTrackColor = Color.DarkGray
+                                ),
+                                modifier = Modifier.fillMaxWidth().height(26.dp)
+                            )
+                            Text(
+                                text = if (isTV || isScrubberFocused) stringResource(R.string.scrub_hint_tv) else "-10s ◀────────┼────────▶ +10s",
+                                color = if (isScrubberFocused) Color(0xFFFFD54F) else Color.Gray,
+                                fontSize = 10.sp,
+                                fontWeight = if (isScrubberFocused) FontWeight.Bold else FontWeight.Normal
+                            )
+                        }
+                    }
 
                     // 1-Click Auto Snap Section
                     if (nearestCue != null) {
@@ -2721,7 +2822,7 @@ fun VideoPlayerScreen(
                             color = Color(0xFF2A2A2A),
                             shape = RoundedCornerShape(10.dp),
                             border = BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
                         ) {
                             Column(modifier = Modifier.padding(10.dp)) {
                                 Text(
@@ -2785,6 +2886,134 @@ fun VideoPlayerScreen(
                                         fontSize = 13.sp
                                     )
                                 }
+                            }
+                        }
+                    }
+
+                    // 1-Tap "Next Match" & Framerate Drift Correction
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                    ) {
+                        var isNextMatchFocused by remember { mutableStateOf(false) }
+                        Button(
+                            onClick = {
+                                val next = viewModel.cycleToNextBestSubtitle()
+                                if (next != null) {
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.next_sub_switched, "${next.language} (${next.label.ifEmpty { "Release Cut" }})"),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                } else {
+                                    Toast.makeText(context, context.getString(R.string.no_alternative_subs), Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isNextMatchFocused) Color.White else Color(0xFF2C2C2C)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .onFocusChanged { isNextMatchFocused = it.isFocused }
+                                .onKeyEvent { keyEvent ->
+                                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                        val next = viewModel.cycleToNextBestSubtitle()
+                                        if (next != null) {
+                                            Toast.makeText(
+                                                context,
+                                                context.getString(R.string.next_sub_switched, "${next.language} (${next.label.ifEmpty { "Release Cut" }})"),
+                                                Toast.LENGTH_SHORT
+                                            ).show()
+                                        } else {
+                                            Toast.makeText(context, context.getString(R.string.no_alternative_subs), Toast.LENGTH_SHORT).show()
+                                        }
+                                        true
+                                    } else false
+                                }
+                                .focusable()
+                                .scale(if (isNextMatchFocused) 1.05f else 1f)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.SkipNext,
+                                    contentDescription = null,
+                                    tint = if (isNextMatchFocused) Color.Black else Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    stringResource(R.string.try_next_match),
+                                    color = if (isNextMatchFocused) Color.Black else Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1
+                                )
+                            }
+                        }
+
+                        var isFpsFocused by remember { mutableStateOf(false) }
+                        val currentFpsMode = SubtitleSyncEngine.FpsMode.fromRatio(subtitleFpsRatio)
+                        Button(
+                            onClick = {
+                                val modes = SubtitleSyncEngine.FpsMode.values()
+                                val nextIdx = (modes.indexOf(currentFpsMode) + 1) % modes.size
+                                val nextMode = modes[nextIdx]
+                                viewModel.setSubtitleFpsRatio(nextMode.ratio)
+                                Toast.makeText(
+                                    context,
+                                    "${context.getString(R.string.fps_mode_label)}: ${nextMode.displayName}",
+                                    Toast.LENGTH_SHORT
+                                ).show()
+                            },
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isFpsFocused) Color.White else if (subtitleFpsRatio != 1.0f) Color(0xFF8B1E1E) else Color(0xFF2C2C2C)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .weight(1f)
+                                .onFocusChanged { isFpsFocused = it.isFocused }
+                                .onKeyEvent { keyEvent ->
+                                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                        val modes = SubtitleSyncEngine.FpsMode.values()
+                                        val nextIdx = (modes.indexOf(currentFpsMode) + 1) % modes.size
+                                        val nextMode = modes[nextIdx]
+                                        viewModel.setSubtitleFpsRatio(nextMode.ratio)
+                                        Toast.makeText(
+                                            context,
+                                            "${context.getString(R.string.fps_mode_label)}: ${nextMode.displayName}",
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        true
+                                    } else false
+                                }
+                                .focusable()
+                                .scale(if (isFpsFocused) 1.05f else 1f)
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(
+                                    Icons.Default.Speed,
+                                    contentDescription = null,
+                                    tint = if (isFpsFocused) Color.Black else if (subtitleFpsRatio != 1.0f) Color.Yellow else Color.White,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    currentFpsMode.displayName,
+                                    color = if (isFpsFocused) Color.Black else Color.White,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
                             }
                         }
                     }

@@ -638,4 +638,17 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="last_synced_pin">PIN Awan Terkini: %s</string>
     <string name="backing_up_to_cloud">Memuat naik sandaran ke awan...</string>
     <string name="restoring_from_cloud">Memulihkan dari awan...</string>
+
+    <!-- Subtitle Sync Enhancements -->
+    <string name="try_next_match">Padanan Seterusnya</string>
+    <string name="fps_mode_label">Mod FPS</string>
+    <string name="fps_normal">Biasa (1.0x)</string>
+    <string name="fps_pal_to_ntsc">PAL → NTSC (1.04x)</string>
+    <string name="fps_ntsc_to_pal">NTSC → PAL (0.96x)</string>
+    <string name="fps_drift_hint">Pembetulan Hanyutan Kadar Bingkai</string>
+    <string name="scrub_hint_tv">D-Pad ◄ / ► untuk luncur (±250ms)</string>
+    <string name="scrubber_label">Peluncur Masa</string>
+    <string name="consensus_synced">Ofset komuniti diterapkan (%s)</string>
+    <string name="next_sub_switched">Ditukar ke sari kata: %s</string>
+    <string name="no_alternative_subs">Tiada sari kata alternatif tersedia</string>
 </resources>
