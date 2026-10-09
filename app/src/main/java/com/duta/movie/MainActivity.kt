@@ -224,6 +224,9 @@ class MainActivity : AppCompatActivity() {
                 val currentDestination = backStackEntry?.destination
                 
                 val videoViewModel: VideoViewModel = hiltViewModel()
+                LaunchedEffect(Unit) {
+                    videoViewModel.resetStartupState()
+                }
                 val isPlayerActive by videoViewModel.isPlayerActive.collectAsStateWithLifecycle()
                 val isMobileLandscapeEnabled by videoViewModel.isMobileLandscapeEnabled.collectAsStateWithLifecycle()
                 val showBroadcastDialog by videoViewModel.showBroadcastDialog.collectAsStateWithLifecycle()

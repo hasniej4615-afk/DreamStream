@@ -175,16 +175,20 @@ fun VideoListScreen(
     val searchFilter by viewModel.searchFilter.collectAsStateWithLifecycle()
     val searchSort by viewModel.searchSort.collectAsStateWithLifecycle()
     val recentSearches by viewModel.recentSearches.collectAsStateWithLifecycle()
+    val startupSessionId by viewModel.startupSessionId.collectAsStateWithLifecycle()
     val firstItemFocusRequester = remember { FocusRequester() }
     val firstCategoryFocusRequester = remember { FocusRequester() }
     val clickedItemFocusRequester = remember { FocusRequester() }
-    var lastClickedVideoId by rememberSaveable { mutableStateOf<String?>(null) }
-    var lastFocusedSearchVideoId by rememberSaveable { mutableStateOf<String?>(null) }
-    var previousCompletedSearchQuery by rememberSaveable { mutableStateOf<String?>(null) }
+    var lastClickedVideoId by rememberSaveable(startupSessionId) { mutableStateOf<String?>(null) }
+    var lastFocusedSearchVideoId by rememberSaveable(startupSessionId) { mutableStateOf<String?>(null) }
+    var previousCompletedSearchQuery by rememberSaveable(startupSessionId) { mutableStateOf<String?>(null) }
     val searchGridState = rememberLazyGridState()
-    val homeLazyListState = rememberLazyListState()
+    val homeLazyListState = androidx.compose.runtime.saveable.rememberSaveable(
+        startupSessionId,
+        saver = androidx.compose.foundation.lazy.LazyListState.Saver
+    ) { androidx.compose.foundation.lazy.LazyListState(0, 0) }
     val scope = rememberCoroutineScope()
-    var initialHomeFocusRequested by rememberSaveable { mutableStateOf(false) }
+    var initialHomeFocusRequested by rememberSaveable(startupSessionId) { mutableStateOf(false) }
     
     LaunchedEffect(isLoading, lastCompletedSearchQuery, selectedCategory, isSearchActive) {
         if (isImmersiveMode) {
@@ -615,6 +619,7 @@ fun VideoListScreen(
                                                  thumbnailScale = uiThumbnailScaleFactor,
                                                  firstItemFocusRequester = firstCategoryFocusRequester,
                                                  showProgress = true,
+                                                 startupSessionId = startupSessionId,
                                                  modifier = Modifier.graphicsLayer { alpha = rowAlpha }
                                              )
                                          }
@@ -651,6 +656,7 @@ fun VideoListScreen(
                                               },
                                               thumbnailScale = uiThumbnailScaleFactor,
                                               firstItemFocusRequester = if (recentlyWatchedVideos.isEmpty()) firstCategoryFocusRequester else null,
+                                              startupSessionId = startupSessionId,
                                               modifier = Modifier.graphicsLayer { alpha = rowAlpha }
                                           )
                                       }
@@ -718,6 +724,7 @@ fun VideoListScreen(
                                                  thumbnailScale = uiThumbnailScaleFactor,
                                                  categoryPath = path,
                                                  firstItemFocusRequester = if (isFirstRow) firstCategoryFocusRequester else null,
+                                                 startupSessionId = startupSessionId,
                                                  modifier = Modifier.graphicsLayer { alpha = rowAlpha }
                                              )
                                          }
@@ -756,6 +763,7 @@ fun VideoListScreen(
 
                         // 2. SCROLLABLE CATEGORIES
                         LazyColumn(
+                            state = homeLazyListState,
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(top = heroHeight - 40.dp) // Start LazyColumn 40dp higher to overlap gradient
@@ -776,9 +784,11 @@ fun VideoListScreen(
                                             isTV = false,
                                             isRealTV = false,
                                             viewModel = viewModel,
+                                            rowIndex = 0,
                                             onVideoFocus = { video -> focusedVideo = video },
                                             thumbnailScale = uiThumbnailScaleFactor,
-                                            showProgress = true
+                                            showProgress = true,
+                                            startupSessionId = startupSessionId
                                         )
                                     }
                                 }
@@ -797,9 +807,11 @@ fun VideoListScreen(
                                             isTV = false,
                                             isRealTV = false,
                                             viewModel = viewModel,
+                                            rowIndex = if (recentlyWatchedVideos.isNotEmpty()) 1 else 0,
                                             isPakcikRekomen = true,
                                             onVideoFocus = { video -> focusedVideo = video },
-                                            thumbnailScale = uiThumbnailScaleFactor
+                                            thumbnailScale = uiThumbnailScaleFactor,
+                                            startupSessionId = startupSessionId
                                         )
                                     }
                                 }
@@ -829,6 +841,8 @@ fun VideoListScreen(
 
                                     val hasLoadedAndEmpty = !isRowLoading && rowVideos.isEmpty() && categoryVideos.containsKey(path)
                                     if (!hasLoadedAndEmpty) {
+                                        val baseRowIndex = (if (recentlyWatchedVideos.isNotEmpty()) 1 else 0) + (if (pakcikRekomenVideos.isNotEmpty()) 1 else 0)
+                                        val actualRowIndex = baseRowIndex + index
                                         Column {
                                             ListSectionHeader(name, isLargeLayout = false, isRealTV = false)
                                             HorizontalVideoRow(
@@ -839,9 +853,11 @@ fun VideoListScreen(
                                                 isTV = false,
                                                 isRealTV = false,
                                                 viewModel = viewModel,
+                                                rowIndex = actualRowIndex,
                                                 onVideoFocus = { video -> focusedVideo = video },
                                                 thumbnailScale = uiThumbnailScaleFactor,
-                                                categoryPath = path
+                                                categoryPath = path,
+                                                startupSessionId = startupSessionId
                                             )
                                         }
                                     }
@@ -898,15 +914,53 @@ fun HorizontalVideoRow(
     firstItemFocusRequester: FocusRequester? = null,
     isPakcikRekomen: Boolean = false,
     showProgress: Boolean = false,
+    startupSessionId: Long = 0L,
     modifier: Modifier = Modifier
 ) {
+    val rowKey = when {
+        categoryPath != null -> categoryPath
+        isPakcikRekomen -> "pakcik_rekomen"
+        showProgress -> "continue_watching"
+        else -> "row_$rowIndex"
+    }
+    val effectiveSessionId = if (startupSessionId != 0L) startupSessionId else (viewModel?.startupSessionId?.value ?: 0L)
     val listState = androidx.compose.runtime.saveable.rememberSaveable(
-        categoryPath ?: rowIndex.toString(),
+        effectiveSessionId,
+        key = rowKey,
         saver = androidx.compose.foundation.lazy.LazyListState.Saver
-    ) { androidx.compose.foundation.lazy.LazyListState() }
+    ) { androidx.compose.foundation.lazy.LazyListState(0, 0) }
     var hasFocus by remember { mutableStateOf(false) }
     val rowFirstItemFocusRequester = remember { FocusRequester() }
     var shimmerHadFocus by remember { mutableStateOf(false) }
+
+    var hasUserScrolled by remember(effectiveSessionId) { mutableStateOf(false) }
+
+    LaunchedEffect(listState.isScrollInProgress) {
+        if (listState.isScrollInProgress) {
+            hasUserScrolled = true
+        }
+    }
+
+    val hasPendingTargetRestoration = isRealTV && viewModel != null && viewModel.pendingRestoreVideoId != null
+
+    val uniqueVideos = remember(videos) { videos.distinctBy { it.id } }
+
+    // Ensure category row always displays from index 0 on startup and when new items arrive at startup,
+    // preventing Compose from anchoring to old cached items and shifting the row into the middle.
+    LaunchedEffect(uniqueVideos.firstOrNull()?.id, uniqueVideos.size, effectiveSessionId) {
+        if (!hasUserScrolled && !hasPendingTargetRestoration && listState.firstVisibleItemIndex > 0) {
+            try {
+                listState.scrollToItem(0)
+            } catch (_: Exception) {}
+        }
+    }
+    LaunchedEffect(Unit) {
+        if (!hasUserScrolled && !hasPendingTargetRestoration && listState.firstVisibleItemIndex > 0) {
+            try {
+                listState.scrollToItem(0)
+            } catch (_: Exception) {}
+        }
+    }
 
     val allProgress by if (showProgress && viewModel != null) {
         viewModel.allVideoProgress.collectAsStateWithLifecycle()
@@ -918,8 +972,6 @@ fun HorizontalVideoRow(
     } else {
         remember { mutableStateOf(emptyMap()) }
     }
-
-    val uniqueVideos = remember(videos) { videos.distinctBy { it.id } }
 
     LaunchedEffect(videos.isNotEmpty()) {
         if (videos.isNotEmpty() && shimmerHadFocus) {
@@ -939,7 +991,7 @@ fun HorizontalVideoRow(
     }
 
     // GAPLESS INFINITE SCROLL: Proactively trigger next page as soon as user begins scrolling this row
-    val isRowInteracted = listState.isScrollInProgress || listState.firstVisibleItemIndex >= 4
+    val isRowInteracted = listState.isScrollInProgress || (hasUserScrolled && listState.firstVisibleItemIndex >= 4)
     if (categoryPath != null && isRowInteracted && uniqueVideos.size >= 15) {
         LaunchedEffect(categoryPath, isRowInteracted) {
             viewModel?.loadMoreForCategoryRow(categoryPath)

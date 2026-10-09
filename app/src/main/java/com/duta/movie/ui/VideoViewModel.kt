@@ -421,6 +421,16 @@ class VideoViewModel @Inject constructor(
     var lastFocusedHomeVideoId: String? = null
     var pendingRestoreVideoId: String? = null
 
+    private val _startupSessionId = MutableStateFlow(System.currentTimeMillis())
+    val startupSessionId: StateFlow<Long> = _startupSessionId.asStateFlow()
+
+    fun resetStartupState() {
+        _startupSessionId.value = System.currentTimeMillis()
+        lastFocusedCategoryRowIndex = 0
+        lastFocusedHomeVideoId = null
+        pendingRestoreVideoId = null
+    }
+
 
     fun setSearchFilter(filter: SearchFilter) { _searchFilter.value = filter }
     fun setSearchSort(sort: SearchSort) { _searchSort.value = sort }
