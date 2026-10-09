@@ -545,6 +545,7 @@ fun VideoPlayerScreen(
     LaunchedEffect(seekFeedback) { if (seekFeedback != null) { delay(700); seekFeedback = null } }
 
     val vadAudioProcessor = remember { com.duta.movie.audio.VadAudioProcessor() }
+    val vadCurrentPositionMs = remember { java.util.concurrent.atomic.AtomicLong(0L) }
     LaunchedEffect(vadAudioProcessor) {
         vadAudioProcessor.detectedVoiceOnsetMs.collect { onset ->
             if (onset > 0L) {
@@ -553,7 +554,9 @@ fun VideoPlayerScreen(
         }
     }
     LaunchedEffect(videoId, serverUrl) {
-        vadAudioProcessor.reset()
+        vadAudioProcessor.resetDetection()
+        vadAudioProcessor.setStreamStartPosition(0L)
+        vadCurrentPositionMs.set(0L)
     }
 
     val exoPlayer: ExoPlayer = remember {
@@ -605,7 +608,7 @@ fun VideoPlayerScreen(
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
         ExoPlayer.Builder(context, renderersFactory).setMediaSourceFactory(mediaSourceFactory).setLoadControl(loadControl).setSeekForwardIncrementMs(10_000).setSeekBackIncrementMs(10_000).build().apply {
-            vadAudioProcessor.playbackPositionProvider = { currentPosition }
+            vadAudioProcessor.playbackPositionProvider = { vadCurrentPositionMs.get() }
             videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
             val audioAttributes = androidx.media3.common.AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
@@ -699,6 +702,8 @@ fun VideoPlayerScreen(
             // Never apply resume to live streams to ensure playback stays at the live edge.
             if (!isLive && pendingRotationResumePosition > 0 && activeContentKey == pendingRotationContentKey) {
                 Log.i("VideoPlayer", "Auto-resuming to $pendingRotationResumePosition for $activeContentKey")
+                vadCurrentPositionMs.set(pendingRotationResumePosition)
+                vadAudioProcessor.setStreamStartPosition(pendingRotationResumePosition)
                 exoPlayer.seekTo(pendingRotationResumePosition)
                 pendingRotationResumePosition = -1L
                 pendingRotationContentKey = null
@@ -855,6 +860,7 @@ fun VideoPlayerScreen(
                 } else {
                     currentPlayer.currentPosition
                 }
+                vadCurrentPositionMs.set(basePos)
                 val rawShifted = basePos + subtitleOffset
                 val effectivePos = if (subtitleFpsRatio != 1.0f && subtitleFpsRatio > 0f) {
                     (rawShifted * subtitleFpsRatio).toLong()
@@ -1484,6 +1490,8 @@ fun VideoPlayerScreen(
                     isUserSeeking = true
                     lastSeekTimeMs = System.currentTimeMillis()
                 }
+                vadCurrentPositionMs.set(newPosition.positionMs)
+                vadAudioProcessor.setStreamStartPosition(newPosition.positionMs)
             }
 
             override fun onIsPlayingChanged(isPlaying: Boolean) {

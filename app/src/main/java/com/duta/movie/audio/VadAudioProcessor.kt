@@ -11,12 +11,17 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * On-Device Hardware-Level Voice Activity Detection (VAD) Audio Processor.
  * Seamlessly hooks into the ExoPlayer audio pipeline to inspect 16-bit PCM waveforms.
  * Calculates root-mean-square (RMS) energy to detect the exact millisecond when dialogue
  * begins in the video stream, enabling zero-click or 1-tap automated subtitle alignment.
+ *
+ * Thread-Safety Note: queueInput runs on the internal audio playback thread ('ExoPlayer:Playback').
+ * Timing is tracked via frame-accurate PCM sample counting from the stream onset,
+ * completely decoupled from the main looper to prevent wrong-thread exceptions.
  */
 @OptIn(UnstableApi::class)
 class VadAudioProcessor : BaseAudioProcessor() {
@@ -24,11 +29,25 @@ class VadAudioProcessor : BaseAudioProcessor() {
     private val _detectedVoiceOnsetMs = MutableStateFlow(-1L)
     val detectedVoiceOnsetMs: StateFlow<Long> = _detectedVoiceOnsetMs.asStateFlow()
 
+    @Volatile
     var isListening: Boolean = true
+
+    private val streamStartPositionMs = AtomicLong(0L)
+    private var sampleRate: Int = 48000
+    private var bytesPerFrame: Int = 4
+    private var framesProcessed: Long = 0L
+
     var playbackPositionProvider: (() -> Long)? = null
+
+    fun setStreamStartPosition(positionMs: Long) {
+        streamStartPositionMs.set(positionMs.coerceAtLeast(0L))
+        framesProcessed = 0L
+    }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
         return if (inputAudioFormat.encoding == C.ENCODING_PCM_16BIT) {
+            sampleRate = inputAudioFormat.sampleRate.coerceAtLeast(8000)
+            bytesPerFrame = (inputAudioFormat.channelCount * 2).coerceAtLeast(2)
             inputAudioFormat
         } else {
             AudioProcessor.AudioFormat.NOT_SET
@@ -38,6 +57,10 @@ class VadAudioProcessor : BaseAudioProcessor() {
     override fun queueInput(inputBuffer: ByteBuffer) {
         val remaining = inputBuffer.remaining()
         if (remaining == 0) return
+
+        val framesInThisBuffer = (remaining / bytesPerFrame).toLong()
+        val currentAudioPositionMs = streamStartPositionMs.get() + ((framesProcessed * 1000L) / sampleRate)
+        framesProcessed += framesInThisBuffer
 
         if (isListening && _detectedVoiceOnsetMs.value < 0L) {
             val dup = inputBuffer.asReadOnlyBuffer()
@@ -55,7 +78,17 @@ class VadAudioProcessor : BaseAudioProcessor() {
 
                 // Human dialogue speech onset threshold (distinguishes speech from silence/background hum)
                 if (rms >= 0.07) {
-                    val currentPos = playbackPositionProvider?.invoke() ?: -1L
+                    val providerPos = try {
+                        playbackPositionProvider?.invoke()?.takeIf { it >= 0L }
+                    } catch (_: Throwable) {
+                        null
+                    }
+                    val currentPos = if (providerPos != null && Math.abs(providerPos - currentAudioPositionMs) > 2000L) {
+                        providerPos
+                    } else {
+                        currentAudioPositionMs
+                    }
+
                     if (currentPos in 500L..90_000L) {
                         _detectedVoiceOnsetMs.value = currentPos
                         isListening = false
@@ -71,13 +104,21 @@ class VadAudioProcessor : BaseAudioProcessor() {
         outputBuffer.flip()
     }
 
+    override fun onFlush() {
+        super.onFlush()
+        framesProcessed = 0L
+    }
+
     override fun onReset() {
         super.onReset()
+        framesProcessed = 0L
         _detectedVoiceOnsetMs.value = -1L
         isListening = true
     }
 
     fun resetDetection() {
+        framesProcessed = 0L
+        streamStartPositionMs.set(0L)
         _detectedVoiceOnsetMs.value = -1L
         isListening = true
     }
