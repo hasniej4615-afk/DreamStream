@@ -7,9 +7,9 @@ import coil.ImageLoaderFactory
 import dagger.Lazy
 import dagger.hilt.android.HiltAndroidApp
 import javax.inject.Inject
-import kotlinx.coroutines.DelicateCoroutinesApi
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 
 @HiltAndroidApp
@@ -18,7 +18,8 @@ class MovieApplication : Application(), ImageLoaderFactory {
     @Inject
     lateinit var imageLoader: Lazy<ImageLoader>
 
-    @OptIn(DelicateCoroutinesApi::class)
+    private val applicationScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
     override fun onCreate() {
         super.onCreate()
         Log.i("!!!APP_START!!!", "DMStreaM Version ${com.duta.movie.BuildConfig.VERSION_NAME}")
@@ -30,7 +31,7 @@ class MovieApplication : Application(), ImageLoaderFactory {
                 }
             })
         } catch (_: Exception) {}
-        GlobalScope.launch(Dispatchers.IO) {
+        applicationScope.launch {
             try {
                 com.duta.movie.util.SubtitleExtractor.init(this@MovieApplication)
                 com.duta.movie.data.remote.RepoSyncWorker.schedulePeriodicSync(this@MovieApplication)

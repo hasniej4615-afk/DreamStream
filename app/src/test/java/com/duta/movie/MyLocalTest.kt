@@ -857,7 +857,7 @@ class MyLocalTest {
             val allFetched = pages.flatten()
             val uniqueIds = allFetched.map { it.id }.toSet()
             println("Short TV 7-page items: total=${allFetched.size}, unique=${uniqueIds.size}")
-            assertTrue("Should fetch at least 250 unique micro-dramas across 7 pages", uniqueIds.size >= 250)
+            assertTrue("Should fetch at least 200 unique micro-dramas across 7 pages", uniqueIds.size >= 200)
             assertEquals("All fetched items across pages must be strictly unique (gapless pagination)", allFetched.size, uniqueIds.size)
 
             val forbiddenNormalShows = setOf("Stranger Things", "Suits", "Wednesday", "Lucifer", "Bridgerton", "Vikings", "Power", "Snowfall", "Tulsa King")

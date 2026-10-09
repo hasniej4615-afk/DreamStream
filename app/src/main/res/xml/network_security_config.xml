@@ -1,10 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <network-security-config>
-    <!-- PRODUCTION CONFIG: Trust both system and user certificates for enterprise/office networks, allow cleartext for mirrors -->
+    <!-- PRODUCTION CONFIG: Trust system certificates, allow cleartext for mirrors -->
     <base-config cleartextTrafficPermitted="true">
         <trust-anchors>
             <certificates src="system" />
-            <certificates src="user" />
         </trust-anchors>
     </base-config>
 
@@ -18,7 +17,6 @@
         <domain includeSubdomains="true">amt4.pro</domain>
         <trust-anchors>
             <certificates src="system" />
-            <certificates src="user" />
         </trust-anchors>
     </domain-config>
 

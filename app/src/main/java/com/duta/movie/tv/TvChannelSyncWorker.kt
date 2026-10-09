@@ -7,7 +7,10 @@ import android.graphics.Canvas
 import android.net.Uri
 import android.util.Log
 import androidx.core.content.ContextCompat
-import androidx.room.Room
+import dagger.hilt.EntryPoint
+import dagger.hilt.InstallIn
+import dagger.hilt.android.EntryPointAccessors
+import dagger.hilt.components.SingletonComponent
 import androidx.tvprovider.media.tv.Channel
 import androidx.tvprovider.media.tv.ChannelLogoUtils
 import androidx.tvprovider.media.tv.PreviewProgram
@@ -22,6 +25,12 @@ import com.duta.movie.util.DeviceUtils
 import com.duta.movie.util.VideoExtractor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+@EntryPoint
+@InstallIn(SingletonComponent::class)
+interface TvSyncDatabaseEntryPoint {
+    fun movieDatabase(): MovieDatabase
+}
 
 class TvChannelSyncWorker(
     private val context: Context,
@@ -176,14 +185,12 @@ class TvChannelSyncWorker(
 
             // Step 1: Query recently watched videos from Room DB first
             try {
-                val db = Room.databaseBuilder(
+                val entryPoint = EntryPointAccessors.fromApplication(
                     context.applicationContext,
-                    MovieDatabase::class.java,
-                    "movie_database"
-                ).fallbackToDestructiveMigration(true).build()
-
+                    TvSyncDatabaseEntryPoint::class.java
+                )
+                val db = entryPoint.movieDatabase()
                 val recentlyWatchedEntities = db.videoDao().getRecentlyWatchedSync(10)
-                db.close()
 
                 val recentlyWatched = recentlyWatchedEntities.map { it.toDomain() }
                 recentlyWatched.forEach { video ->
@@ -215,17 +222,15 @@ class TvChannelSyncWorker(
             // Step 3: If still under 15, check Room database cache
             if (resultMovies.size < 15) {
                 try {
-                    val db = Room.databaseBuilder(
+                    val entryPoint = EntryPointAccessors.fromApplication(
                         context.applicationContext,
-                        MovieDatabase::class.java,
-                        "movie_database"
-                    ).fallbackToDestructiveMigration(true).build()
+                        TvSyncDatabaseEntryPoint::class.java
+                    )
+                    val db = entryPoint.movieDatabase()
 
                     val cached = db.videoDao().getCachedVideosByCategory("/movie/")
                         .ifEmpty { db.videoDao().getCachedVideosByCategory("/") }
                         .ifEmpty { db.videoDao().getLatestVideos(15) }
-
-                    db.close()
 
                     cached.map { it.toDomain() }.forEach { video ->
                         if (video.id.isNotBlank() && seenIds.add(video.id)) {

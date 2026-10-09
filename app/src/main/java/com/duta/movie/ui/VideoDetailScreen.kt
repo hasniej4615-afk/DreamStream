@@ -145,7 +145,6 @@ fun TrailerPlayer(
                         settings.allowContentAccess = false
                         settings.mediaPlaybackRequiresUserGesture = false
                         settings.domStorageEnabled = true
-                        settings.databaseEnabled = true
                         settings.setSupportZoom(false)
                         settings.loadWithOverviewMode = true
                         settings.useWideViewPort = true
