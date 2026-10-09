@@ -515,6 +515,24 @@ class VideoViewModel @Inject constructor(
     private val _subtitleError = MutableStateFlow<String?>(null)
     val subtitleError: StateFlow<String?> = _subtitleError.asStateFlow()
 
+    // Dual/Secondary Subtitle Support
+    private val _selectedSecondarySubtitle = MutableStateFlow<Subtitle?>(null)
+    val selectedSecondarySubtitle: StateFlow<Subtitle?> = _selectedSecondarySubtitle.asStateFlow()
+    private val _secondarySubtitleCues = MutableStateFlow<List<ParsedSubtitleCue>>(emptyList())
+    val secondarySubtitleCues: StateFlow<List<ParsedSubtitleCue>> = _secondarySubtitleCues.asStateFlow()
+    private val _isSecondarySubtitleLoading = MutableStateFlow(false)
+    val isSecondarySubtitleLoading: StateFlow<Boolean> = _isSecondarySubtitleLoading.asStateFlow()
+
+    // Subtitle AI Translation Progress
+    private val _isTranslatingSubtitle = MutableStateFlow(false)
+    val isTranslatingSubtitle: StateFlow<Boolean> = _isTranslatingSubtitle.asStateFlow()
+    private val _translationProgress = MutableStateFlow<Pair<Int, Int>?>(null)
+    val translationProgress: StateFlow<Pair<Int, Int>?> = _translationProgress.asStateFlow()
+
+    // Voice Activity Detection (VAD) Speech Onset Timestamp
+    private val _vadVoiceOnsetMs = MutableStateFlow(-1L)
+    val vadVoiceOnsetMs: StateFlow<Long> = _vadVoiceOnsetMs.asStateFlow()
+
     private val _currentServerUrl = MutableStateFlow<String?>(null)
     val currentServerUrl: StateFlow<String?> = _currentServerUrl.asStateFlow()
 
@@ -4580,6 +4598,124 @@ class VideoViewModel @Inject constructor(
 
     fun clearSubtitleError() { _subtitleError.value = null }
 
+    private var secondarySubResolveJob: Job? = null
+
+    fun selectSecondarySubtitle(subtitle: Subtitle?) {
+        secondarySubResolveJob?.cancel()
+        if (subtitle == null) {
+            _selectedSecondarySubtitle.value = null
+            _secondarySubtitleCues.value = emptyList()
+            return
+        }
+
+        _selectedSecondarySubtitle.value = subtitle
+        _isSecondarySubtitleLoading.value = true
+
+        secondarySubResolveJob = viewModelScope.launch(Dispatchers.IO) {
+            try {
+                val localUri = if (subtitle.url.startsWith("file://")) {
+                    subtitle.url
+                } else if (subtitle.localUri != null && subtitle.localUri.startsWith("file://") && File(subtitle.localUri.removePrefix("file://")).exists()) {
+                    subtitle.localUri
+                } else {
+                    SubtitleExtractor.resolveSubtitleUrl(subtitle.url, subtitle.language)
+                }
+
+                if (localUri != null && localUri.startsWith("file://")) {
+                    val filePath = localUri.removePrefix("file://")
+                    val file = File(filePath)
+                    if (file.exists()) {
+                        val cues = SubtitleParser.parse(file)
+                        _secondarySubtitleCues.value = cues
+                        _selectedSecondarySubtitle.value = subtitle.copy(localUri = localUri)
+                        Log.i("VideoViewModel", "Secondary subtitle resolved: ${cues.size} cues loaded from ${file.name}")
+                    } else {
+                        _secondarySubtitleCues.value = emptyList()
+                    }
+                } else {
+                    _secondarySubtitleCues.value = emptyList()
+                }
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    _secondarySubtitleCues.value = emptyList()
+                    Log.e("VideoViewModel", "Secondary subtitle resolution error", e)
+                }
+            } finally {
+                _isSecondarySubtitleLoading.value = false
+            }
+        }
+    }
+
+    fun translateSelectedSubtitle(targetLang: String = "id", onComplete: ((Boolean, String) -> Unit)? = null) {
+        val currentSub = _selectedSubtitle.value
+        val cues = _subtitleCues.value
+        if (cues.isEmpty()) {
+            onComplete?.invoke(false, "No subtitles loaded to translate")
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.IO) {
+            _isTranslatingSubtitle.value = true
+            _translationProgress.value = Pair(0, 100)
+            try {
+                val title = _videoMetadata.value?.title ?: activeVideoId ?: "movie"
+                val result = com.duta.movie.util.SubtitleTranslator.translateCues(
+                    context = context,
+                    cues = cues,
+                    title = title,
+                    targetLang = targetLang,
+                    onProgress = { cur, tot ->
+                        _translationProgress.value = Pair(cur, tot)
+                    }
+                )
+
+                if (result != null) {
+                    val (file, translatedCues) = result
+                    val targetLangName = if (targetLang == "id") "Indonesian" else if (targetLang == "ms") "Malay" else targetLang.uppercase()
+                    val translatedSub = Subtitle(
+                        label = "[AI Translated] $targetLangName",
+                        url = "file://${file.absolutePath}",
+                        language = targetLangName,
+                        localUri = "file://${file.absolutePath}"
+                    )
+                    withContext(Dispatchers.Main) {
+                        _subtitleCues.value = translatedCues
+                        _selectedSubtitle.value = translatedSub
+                        val updatedList = listOf(translatedSub) + _subtitles.value.filter { it.url != translatedSub.url }
+                        _subtitles.value = updatedList
+                        userExplicitlyDismissedSubtitles = false
+                        onComplete?.invoke(true, "Translated ${translatedCues.size} lines to $targetLangName")
+                    }
+                } else {
+                    withContext(Dispatchers.Main) {
+                        onComplete?.invoke(false, "Translation failed or network error")
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e("VideoViewModel", "Subtitle translation error", e)
+                withContext(Dispatchers.Main) {
+                    onComplete?.invoke(false, "Error: ${e.message}")
+                }
+            } finally {
+                _isTranslatingSubtitle.value = false
+                _translationProgress.value = null
+            }
+        }
+    }
+
+    fun setVadVoiceOnsetMs(onsetMs: Long) {
+        _vadVoiceOnsetMs.value = onsetMs
+    }
+
+    fun applyVadOffset(firstDialogueStartMs: Long) {
+        val onset = _vadVoiceOnsetMs.value
+        if (onset > 0L) {
+            val calculatedOffset = firstDialogueStartMs - onset
+            setSubtitleOffset(calculatedOffset)
+            Log.i("VideoViewModel", "Applied VAD auto offset: $calculatedOffset ms (Dialogue: $firstDialogueStartMs, Audio: $onset)")
+        }
+    }
+
     private val inFlightPrefetches = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     fun prefetchThumbnails(videos: List<Video>, limit: Int? = null) {
@@ -5668,8 +5804,14 @@ class VideoViewModel @Inject constructor(
             _subtitles.value = emptyList()
             _selectedSubtitle.value = null
             _subtitleCues.value = emptyList()
+            _selectedSecondarySubtitle.value = null
+            _secondarySubtitleCues.value = emptyList()
+            _vadVoiceOnsetMs.value = -1L
+            _isTranslatingSubtitle.value = false
             subResolveJob?.cancel()
             subResolveJob = null
+            secondarySubResolveJob?.cancel()
+            secondarySubResolveJob = null
             userExplicitlyDismissedSubtitles = false
             lastSubtitleSearchTitle = null
             activeVideoId = null

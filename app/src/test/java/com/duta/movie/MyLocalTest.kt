@@ -963,6 +963,52 @@ class MyLocalTest {
         val mediaKey2 = com.duta.movie.util.SubtitleSyncEngine.generateCommunityMediaKey("Spider-Man: No Way Home (2021)", null)
         assertEquals("spider_man_no_way_home_2021__generic", mediaKey2)
     }
+
+    @Test
+    fun testSubtitleEnhancements() {
+        // 1. Test Ad & Gambling Spam Stripper
+        assertTrue(com.duta.movie.util.SubtitleParser.isAdOrPromoLine("SLOT GACOR DEPOSIT PULSA TANPA POTONGAN"))
+        assertTrue(com.duta.movie.util.SubtitleParser.isAdOrPromoLine("Daftar di slot88 maxwin terpercaya"))
+        assertTrue(com.duta.movie.util.SubtitleParser.isAdOrPromoLine("Gabung Telegram kami di t.me/subscene_indo"))
+        assertTrue(com.duta.movie.util.SubtitleParser.isAdOrPromoLine("Subtitles downloaded from www.OpenSubtitles.org"))
+        assertTrue(com.duta.movie.util.SubtitleParser.isAdOrPromoLine("Resync & Corrected by HoneyBunny"))
+        assertTrue(com.duta.movie.util.SubtitleParser.isAdOrPromoLine("Diterjemahkan oleh Pein Akatsuki"))
+        
+        // Genuine dialogue lines must NOT be filtered
+        org.junit.Assert.assertFalse(com.duta.movie.util.SubtitleParser.isAdOrPromoLine("Hello, what are you doing here?"))
+        org.junit.Assert.assertFalse(com.duta.movie.util.SubtitleParser.isAdOrPromoLine("Aku sedang mencari jalan pulang."))
+        org.junit.Assert.assertFalse(com.duta.movie.util.SubtitleParser.isAdOrPromoLine("No way, that is impossible!"))
+
+        // 2. Test Mojibake Repair
+        val brokenApostrophe = "Donâ€™t worry, itâ€™s â€œfineâ€\u009dâ€¦"
+        val fixedApostrophe = com.duta.movie.util.SubtitleParser.fixMojibake(brokenApostrophe)
+        assertEquals("Don't worry, it's \"fine\"...", fixedApostrophe)
+
+        val brokenAccents = "cafÃ© and crÃ¨me brÃ»lÃ©e"
+        val fixedAccents = com.duta.movie.util.SubtitleParser.fixMojibake(brokenAccents)
+        assertEquals("café and crème brûlée", fixedAccents)
+
+        // 3. Test Universal Charset Sniffing & Decoding
+        val utf8BomBytes = byteArrayOf(0xEF.toByte(), 0xBB.toByte(), 0xBF.toByte(), 0x48, 0x65, 0x6C, 0x6C, 0x6F)
+        assertEquals("Hello", com.duta.movie.util.SubtitleParser.detectCharsetAndDecode(utf8BomBytes))
+
+        val utf16LeBomBytes = byteArrayOf(0xFF.toByte(), 0xFE.toByte(), 'H'.code.toByte(), 0, 'i'.code.toByte(), 0)
+        assertEquals("Hi", com.duta.movie.util.SubtitleParser.detectCharsetAndDecode(utf16LeBomBytes))
+
+        val normalUtf8Bytes = "Selamat Datang".toByteArray(Charsets.UTF_8)
+        assertEquals("Selamat Datang", com.duta.movie.util.SubtitleParser.detectCharsetAndDecode(normalUtf8Bytes))
+
+        // 4. Test Subtitle Translator Language Mapping
+        assertEquals("id", com.duta.movie.util.SubtitleTranslator.getLanguageCode("Indonesian"))
+        assertEquals("id", com.duta.movie.util.SubtitleTranslator.getLanguageCode("Bahasa Indonesia"))
+        assertEquals("ms", com.duta.movie.util.SubtitleTranslator.getLanguageCode("Malay"))
+        assertEquals("ms", com.duta.movie.util.SubtitleTranslator.getLanguageCode("Bahasa Melayu"))
+        assertEquals("en", com.duta.movie.util.SubtitleTranslator.getLanguageCode("English"))
+        assertEquals("ja", com.duta.movie.util.SubtitleTranslator.getLanguageCode("Japanese"))
+        assertEquals("ko", com.duta.movie.util.SubtitleTranslator.getLanguageCode("Korean"))
+        assertEquals("zh-CN", com.duta.movie.util.SubtitleTranslator.getLanguageCode("Chinese"))
+        assertEquals("es", com.duta.movie.util.SubtitleTranslator.getLanguageCode("Spanish"))
+    }
 }
 
 

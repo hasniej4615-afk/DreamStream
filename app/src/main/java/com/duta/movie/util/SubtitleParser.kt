@@ -28,19 +28,136 @@ object SubtitleParser {
 
     /**
      * Parses a local subtitle file into a sorted list of [ParsedSubtitleCue]s.
+     * Uses universal charset sniffing (UTF-8, UTF-16, Windows-1252) and automatic Mojibake repair.
      */
     fun parse(file: File): List<ParsedSubtitleCue> {
         if (!file.exists() || file.length() == 0L) return emptyList()
         val text = try {
-            file.readText(Charsets.UTF_8)
+            detectCharsetAndDecode(file.readBytes())
         } catch (_: Exception) {
-            try {
-                file.readText(java.nio.charset.Charset.forName("windows-1252"))
-            } catch (_: Exception) {
-                return emptyList()
-            }
+            return emptyList()
         }
         return parseContent(text)
+    }
+
+    /**
+     * Detects character encoding (UTF-8 with/without BOM, UTF-16LE, UTF-16BE, Windows-1252/ANSI)
+     * and decodes raw byte array into a clean Unicode string with Mojibake repair.
+     */
+    fun detectCharsetAndDecode(bytes: ByteArray): String {
+        if (bytes.isEmpty()) return ""
+
+        // 1. Check BOM (Byte Order Mark)
+        if (bytes.size >= 3 && bytes[0] == 0xEF.toByte() && bytes[1] == 0xBB.toByte() && bytes[2] == 0xBF.toByte()) {
+            return fixMojibake(String(bytes, 3, bytes.size - 3, Charsets.UTF_8))
+        }
+        if (bytes.size >= 2 && bytes[0] == 0xFF.toByte() && bytes[1] == 0xFE.toByte()) {
+            return fixMojibake(String(bytes, 2, bytes.size - 2, Charsets.UTF_16LE))
+        }
+        if (bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte()) {
+            return fixMojibake(String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE))
+        }
+
+        // 2. Strict UTF-8 validation
+        val utf8Decoder = Charsets.UTF_8.newDecoder()
+            .onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+            .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+        try {
+            val buffer = java.nio.ByteBuffer.wrap(bytes)
+            val charBuffer = utf8Decoder.decode(buffer)
+            return fixMojibake(charBuffer.toString())
+        } catch (_: java.nio.charset.CharacterCodingException) {
+            // Not valid UTF-8
+        }
+
+        // 3. Fallback to Windows-1252 / ANSI (predominant for older legacy subtitles)
+        return try {
+            val win1252 = java.nio.charset.Charset.forName("windows-1252")
+            fixMojibake(String(bytes, win1252))
+        } catch (_: Exception) {
+            fixMojibake(String(bytes, Charsets.ISO_8859_1))
+        }
+    }
+
+    /**
+     * Repairs common multi-byte Mojibake artifacts from mis-decoded subtitles.
+     */
+    fun fixMojibake(text: String): String {
+        return text
+            .replace("ï»¿", "")
+            .replace("â€™", "'")
+            .replace("â€˜", "'")
+            .replace("â€œ", "\"")
+            .replace("â€\u009d", "\"")
+            .replace("â€¦", "...")
+            .replace("ā¦", "...")
+            .replace("â€”", " — ")
+            .replace("â€“", " – ")
+            .replace("â€", "\"")
+            .replace("Ã©", "é")
+            .replace("Ã¨", "è")
+            .replace("Ã ", "à")
+            .replace("Ã¡", "á")
+            .replace("Ã³", "ó")
+            .replace("Ã²", "ò")
+            .replace("Ã±", "ñ")
+            .replace("Ã§", "ç")
+            .replace("Ã¼", "ü")
+            .replace("Ã¶", "ö")
+            .replace("Ã¤", "ä")
+            .replace("Ã»", "û")
+            .replace("Ã®", "î")
+            .replace("Ã´", "ô")
+            .replace("Ã¢", "â")
+            .replace("Â ", " ")
+            .replace("Â", "")
+    }
+
+    /**
+     * Determines whether a subtitle line is advertising, gambling spam, or unwanted credit.
+     */
+    fun isAdOrPromoLine(rawLine: String): Boolean {
+        val low = rawLine.lowercase().trim()
+        if (low.isEmpty()) return false
+
+        // 1. Gambling & Slot Keywords
+        val isGambling = low.contains("slot88") || low.contains("slot gacor") ||
+                low.contains("gacor") || low.contains("judol") ||
+                low.contains("judi online") || low.contains("deposit pulsa") ||
+                low.contains("link alternatif") || low.contains("maxwin") ||
+                low.contains("pragmatic play") || low.contains("zeus slot") ||
+                low.contains("daftar akun") || low.contains("bonus new member") ||
+                low.contains("agen bola") || low.contains("togel online")
+        if (isGambling) return true
+
+        // 2. URLs, Telegram, WhatsApp & Donation Links
+        val isUrlOrContact = low.contains("t.me/") || low.contains("telegram.me") ||
+                low.contains("bit.ly/") || low.contains("tinyurl.com") ||
+                low.contains("chat.whatsapp.com") || low.contains("wa:") ||
+                low.contains("whatsapp:") || low.contains("support us on") ||
+                low.contains("patreon.com") || low.contains("donasi:") ||
+                low.contains("saweria.co") || low.contains("trakteer.id")
+        if (isUrlOrContact) return true
+
+        // 3. Domain mentions if appearing without dialogue
+        val hasDomain = low.contains("www.") || low.contains(".com") || low.contains(".net") ||
+                low.contains(".org") || low.contains(".xyz") || low.contains(".vip") ||
+                low.contains(".top")
+        val isSubtitleSource = low.contains("subscene") || low.contains("opensubtitles") ||
+                low.contains("subdl") || low.contains("lebah ganteng") ||
+                low.contains("pein akatsuki") || low.contains("idfl") ||
+                low.contains("dutafilm") || low.contains("lk21") || low.contains("layarkaca21")
+        if (hasDomain && isSubtitleSource) return true
+
+        // 4. Standalone translator credits & ripper watermark promo (short line)
+        val isCredit = (low.contains("translated by") || low.contains("subbed by") ||
+                low.contains("resync") || low.contains("sync by") || low.contains("corrected by") ||
+                low.contains("diterjemahkan oleh") || low.contains("dialihbahasakan oleh") ||
+                low.contains("alih bahasa") || low.contains("penerjemah:")) &&
+                low.length < 80
+        if (isCredit) return true
+
+        return false
     }
 
     /**
@@ -48,7 +165,7 @@ object SubtitleParser {
      */
     fun parseContent(content: String): List<ParsedSubtitleCue> {
         if (content.isBlank()) return emptyList()
-        val normalized = content.removePrefix("\uFEFF").replace("\r\n", "\n").replace('\r', '\n')
+        val normalized = fixMojibake(content.removePrefix("\uFEFF")).replace("\r\n", "\n").replace('\r', '\n')
         return when {
             normalized.contains("[Events]") || normalized.contains("Dialogue:") -> parseAss(normalized)
             normalized.contains("-->") -> parseSrtOrVtt(normalized)
@@ -89,7 +206,7 @@ object SubtitleParser {
                                 continue
                             }
                             val cleaned = cleanSubtitleText(nextLine.trim())
-                            if (cleaned.isNotEmpty()) {
+                            if (cleaned.isNotEmpty() && !isAdOrPromoLine(cleaned)) {
                                 textLines.add(cleaned)
                             }
                             i++
@@ -123,7 +240,7 @@ object SubtitleParser {
                     rawText = rawText.replace(Regex("""\{.*?\}"""), "")
                     rawText = rawText.replace(Regex("""(?i)\\n"""), "\n")
                     rawText = cleanSubtitleText(rawText)
-                    if (startMs != null && endMs != null && endMs > startMs && rawText.isNotBlank()) {
+                    if (startMs != null && endMs != null && endMs > startMs && rawText.isNotBlank() && !isAdOrPromoLine(rawText)) {
                         results.add(ParsedSubtitleCue(startMs, endMs, rawText))
                     }
                 }
@@ -189,7 +306,7 @@ object SubtitleParser {
      * Sanitizes subtitle text by stripping HTML tags and decoding common entities.
      */
     fun cleanSubtitleText(text: String): String {
-        return text
+        val unHtml = text
             .replace(Regex("""<[^>]*>"""), "") // Strip HTML tags (<i>, <b>, <font>, etc.)
             .replace("&amp;", "&")
             .replace("&lt;", "<")
@@ -198,14 +315,7 @@ object SubtitleParser {
             .replace("&#39;", "'")
             .replace("&apos;", "'")
             .replace("&nbsp;", " ")
-            .replace("â€¦", "...")
-            .replace("ā¦", "...")
-            .replace("â€™", "'")
-            .replace("â€œ", "\"")
-            .replace("â€", "\"")
-            .replace("â€”", " - ")
-            .replace("â€“", " - ")
-            .trim()
+        return fixMojibake(unHtml).trim()
     }
 
     /**

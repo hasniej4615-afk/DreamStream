@@ -356,6 +356,12 @@ fun VideoPlayerScreen(
     val subtitleOffset by viewModel.subtitleOffset.collectAsStateWithLifecycle()
     val subtitleFpsRatio by viewModel.subtitleFpsRatio.collectAsStateWithLifecycle()
     val subtitleCues by viewModel.subtitleCues.collectAsStateWithLifecycle()
+    val selectedSecondarySubtitle by viewModel.selectedSecondarySubtitle.collectAsStateWithLifecycle()
+    val secondarySubtitleCues by viewModel.secondarySubtitleCues.collectAsStateWithLifecycle()
+    val isSecondarySubtitleLoading by viewModel.isSecondarySubtitleLoading.collectAsStateWithLifecycle()
+    val isTranslatingSubtitle by viewModel.isTranslatingSubtitle.collectAsStateWithLifecycle()
+    val translationProgress by viewModel.translationProgress.collectAsStateWithLifecycle()
+    val vadVoiceOnsetMs by viewModel.vadVoiceOnsetMs.collectAsStateWithLifecycle()
     val voiceEnhancerMode by viewModel.voiceEnhancerMode.collectAsStateWithLifecycle()
     val voiceEnhancerManager = remember { VoiceEnhancerManager() }
 
@@ -398,6 +404,7 @@ fun VideoPlayerScreen(
     var volume by remember { mutableFloatStateOf(0.5f) }
     var gestureType by remember { mutableStateOf<GestureType?>(null) }
     var currentCues by remember { mutableStateOf<List<Cue>>(emptyList()) }
+    var currentSecondaryCues by remember { mutableStateOf<List<Cue>>(emptyList()) }
 
     
     val isShortTvPlayback = remember(video, serverUrl, extractedUrl, videoId) {
@@ -537,6 +544,18 @@ fun VideoPlayerScreen(
 
     LaunchedEffect(seekFeedback) { if (seekFeedback != null) { delay(700); seekFeedback = null } }
 
+    val vadAudioProcessor = remember { com.duta.movie.audio.VadAudioProcessor() }
+    LaunchedEffect(vadAudioProcessor) {
+        vadAudioProcessor.detectedVoiceOnsetMs.collect { onset ->
+            if (onset > 0L) {
+                viewModel.setVadVoiceOnsetMs(onset)
+            }
+        }
+    }
+    LaunchedEffect(videoId, serverUrl) {
+        vadAudioProcessor.reset()
+    }
+
     val exoPlayer: ExoPlayer = remember {
         val okHttpDataSourceFactory = OkHttpDataSource.Factory(NetworkConfig.permissiveOkHttpClient).setUserAgent(NetworkConfig.SHARED_USER_AGENT)
         val cacheDataSourceFactory = com.duta.movie.util.PlayerCacheManager.getCacheDataSourceFactory(context, okHttpDataSourceFactory)
@@ -546,10 +565,22 @@ fun VideoPlayerScreen(
         val mediaSourceFactory = DefaultMediaSourceFactory(context)
             .setDataSourceFactory(dataSourceFactory)
 
-        val renderersFactory = DefaultRenderersFactory(context)
-            .setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
-            .setEnableDecoderFallback(true)
-            .setMediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
+        val renderersFactory = object : DefaultRenderersFactory(context) {
+            override fun buildAudioSink(
+                context: Context,
+                enableFloatOutput: Boolean,
+                enableAudioTrackPlaybackParams: Boolean
+            ): androidx.media3.exoplayer.audio.AudioSink? {
+                return androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+                    .setEnableFloatOutput(enableFloatOutput)
+                    .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
+                    .setAudioProcessors(arrayOf(vadAudioProcessor))
+                    .build()
+            }
+        }.apply {
+            setExtensionRendererMode(DefaultRenderersFactory.EXTENSION_RENDERER_MODE_ON)
+            setEnableDecoderFallback(true)
+            setMediaCodecSelector { mimeType, requiresSecureDecoder, requiresTunnelingDecoder ->
                 val selectors = androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType, requiresSecureDecoder, requiresTunnelingDecoder)
                 if (mimeType.contains("avc") || mimeType.contains("h264")) {
                     // Prioritize hardware decoders first for GPU-accelerated playback; setEnableDecoderFallback(true) handles device-specific crashes automatically
@@ -558,6 +589,7 @@ fun VideoPlayerScreen(
                     selectors
                 }
             }
+        }
         val isLowRam = com.duta.movie.util.VideoUtils.isLowRamDevice(context)
         val isTVDevice = isTV
         // TV boxes on WiFi need a larger, stable buffer with low-RAM OOM safeguards
@@ -573,6 +605,7 @@ fun VideoPlayerScreen(
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
         ExoPlayer.Builder(context, renderersFactory).setMediaSourceFactory(mediaSourceFactory).setLoadControl(loadControl).setSeekForwardIncrementMs(10_000).setSeekBackIncrementMs(10_000).build().apply {
+            vadAudioProcessor.playbackPositionProvider = { currentPosition }
             videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
             val audioAttributes = androidx.media3.common.AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
@@ -812,8 +845,8 @@ fun VideoPlayerScreen(
     }
 
     // Real-time subtitle synchronization for all playback engines (ExoPlayer, WebView, Cast)
-    LaunchedEffect(subtitleCues, subtitleOffset, subtitleFpsRatio, isVideoReady, useWebView, isCasting, currentPlayer) {
-        if (subtitleCues.isNotEmpty()) {
+    LaunchedEffect(subtitleCues, secondarySubtitleCues, subtitleOffset, subtitleFpsRatio, isVideoReady, useWebView, isCasting, currentPlayer) {
+        if (subtitleCues.isNotEmpty() || secondarySubtitleCues.isNotEmpty()) {
             while (true) {
                 val basePos = if (useWebView && !isCasting) {
                     webPlayerState.value.position
@@ -828,6 +861,8 @@ fun VideoPlayerScreen(
                 } else {
                     rawShifted
                 }
+
+                // Primary Subtitle Cues
                 val activeCues = subtitleCues.filter { cue ->
                     cue.startTimeMs <= effectivePos && effectivePos <= cue.endTimeMs
                 }
@@ -835,11 +870,24 @@ fun VideoPlayerScreen(
                 if (currentCues != newCues) {
                     currentCues = newCues
                 }
+
+                // Secondary / Dual Subtitle Cues
+                val activeSec = secondarySubtitleCues.filter { cue ->
+                    cue.startTimeMs <= effectivePos && effectivePos <= cue.endTimeMs
+                }
+                val newSecCues = activeSec.map { it.toMedia3Cue() }
+                if (currentSecondaryCues != newSecCues) {
+                    currentSecondaryCues = newSecCues
+                }
+
                 delay(100L)
             }
         } else {
             if (selectedSubtitle == null && currentCues.isNotEmpty()) {
                 currentCues = emptyList()
+            }
+            if (selectedSecondarySubtitle == null && currentSecondaryCues.isNotEmpty()) {
+                currentSecondaryCues = emptyList()
             }
         }
     }
@@ -1873,6 +1921,7 @@ fun VideoPlayerScreen(
         isCasting = isCasting,
         isVideoReady = isVideoReady,
         currentCues = currentCues,
+        currentSecondaryCues = currentSecondaryCues,
         showControls = showControls,
         isInPip = isInPip,
         isLandscape = isLandscape,
@@ -2177,9 +2226,71 @@ fun VideoPlayerScreen(
     }
     
     if (showSubtitleDialog) {
+        var isDualModeTab by remember { mutableStateOf(false) }
         AlertDialog(
             onDismissRequest = { showSubtitleDialog = false }, 
-            title = { Text(stringResource(R.string.subtitles), color = Color.White) }, 
+            title = {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(stringResource(R.string.subtitles), color = Color.White, fontWeight = FontWeight.Bold)
+                    
+                    // Mode Switcher: Primary vs Dual (Top)
+                    Row(
+                        modifier = Modifier
+                            .background(Color(0xFF262626), RoundedCornerShape(8.dp))
+                            .padding(2.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        var isPrimTabFocused by remember { mutableStateOf(false) }
+                        var isDualTabFocused by remember { mutableStateOf(false) }
+                        
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = when {
+                                isPrimTabFocused -> Color.White
+                                !isDualModeTab -> Color.Red
+                                else -> Color.Transparent
+                            },
+                            modifier = Modifier
+                                .clickable { isDualModeTab = false }
+                                .onFocusChanged { isPrimTabFocused = it.isFocused }
+                                .focusable()
+                        ) {
+                            Text(
+                                text = stringResource(R.string.primary_sub_tab),
+                                color = if (isPrimTabFocused) Color.Black else if (!isDualModeTab) Color.White else Color.Gray,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(6.dp),
+                            color = when {
+                                isDualTabFocused -> Color.White
+                                isDualModeTab -> Color(0xFFFFC107)
+                                else -> Color.Transparent
+                            },
+                            modifier = Modifier
+                                .clickable { isDualModeTab = true }
+                                .onFocusChanged { isDualTabFocused = it.isFocused }
+                                .focusable()
+                        ) {
+                            Text(
+                                text = stringResource(R.string.dual_sub_tab),
+                                color = if (isDualTabFocused) Color.Black else if (isDualModeTab) Color.Black else Color.Gray,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            )
+                        }
+                    }
+                }
+            }, 
             containerColor = Color(0xFF1A1A1A),
             text = {
                 var subSearchText by remember { mutableStateOf("") }
@@ -2187,6 +2298,9 @@ fun VideoPlayerScreen(
                 var isSearchBtnFocused by remember { mutableStateOf(false) }
                 var isOpenLocalFocused by remember { mutableStateOf(false) }
                 var selectedLanguageFilter by remember { mutableStateOf("All") }
+
+                val targetLangCode = if (defaultSubtitleLanguage.contains("malay", ignoreCase = true) || selectedLanguageFilter == "Malay") "ms" else "id"
+                val targetLangName = if (targetLangCode == "ms") "Malay" else "Indonesian"
 
                 fun getSubtitleCategory(sub: com.duta.movie.model.Subtitle): String {
                     val norm = com.duta.movie.util.SubtitleExtractor.normalizeLanguage(sub.language)
@@ -2253,6 +2367,62 @@ fun VideoPlayerScreen(
                 }
 
                 Column(modifier = Modifier.fillMaxWidth()) {
+                    // Dual mode explanatory banner
+                    if (isDualModeTab) {
+                        Surface(
+                            color = Color(0xFF332B00),
+                            shape = RoundedCornerShape(8.dp),
+                            border = BorderStroke(1.dp, Color(0xFFFFD54F).copy(alpha = 0.5f)),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFFFEB3B), modifier = Modifier.size(16.dp))
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = stringResource(R.string.dual_sub_hint),
+                                    color = Color(0xFFFFEB3B),
+                                    fontSize = 11.sp
+                                )
+                            }
+                        }
+                    }
+
+                    // AI Translating Progress banner
+                    if (isTranslatingSubtitle) {
+                        val progressPair = translationProgress ?: Pair(0, 100)
+                        Surface(
+                            color = Color(0xFF1A237E),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                CircularProgressIndicator(
+                                    progress = {
+                                        if (progressPair.second > 0) {
+                                            (progressPair.first.toFloat() / progressPair.second.toFloat()).coerceIn(0f, 1f)
+                                        } else 0f
+                                    },
+                                    modifier = Modifier.size(20.dp),
+                                    color = Color(0xFF8C9EFF),
+                                    strokeWidth = 2.5.dp
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Text(
+                                    text = stringResource(R.string.ai_translating, progressPair.first, progressPair.second),
+                                    color = Color.White,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+
                     // Search bar row with input and action button
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
@@ -2340,56 +2510,116 @@ fun VideoPlayerScreen(
                         }
                     }
 
-                    // Open Local Subtitle Button
-                    OutlinedButton(
-                        onClick = {
-                            try {
-                                localSubtitlePickerLauncher.launch(arrayOf("*/*"))
-                            } catch (e: Exception) {
-                                Toast.makeText(context, "Cannot open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
-                            }
-                        },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(42.dp)
-                            .padding(bottom = 8.dp)
-                            .onFocusChanged { isOpenLocalFocused = it.isFocused }
-                            .onKeyEvent { keyEvent ->
-                                if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
-                                    (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
-                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
-                                     keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
-                                    try {
-                                        localSubtitlePickerLauncher.launch(arrayOf("*/*"))
-                                    } catch (e: Exception) {
-                                        Toast.makeText(context, "Cannot open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
-                                    }
-                                    true
-                                } else false
-                            }
-                            .focusable()
-                            .border(if (isOpenLocalFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
-                        shape = RoundedCornerShape(8.dp),
-                        colors = ButtonDefaults.outlinedButtonColors(
-                            containerColor = if (isOpenLocalFocused) Color.White.copy(alpha = 0.25f) else Color(0xFF262626),
-                            contentColor = Color.White
-                        ),
-                        border = BorderStroke(1.dp, if (isOpenLocalFocused) Color.White else Color.White.copy(alpha = 0.2f)),
-                        contentPadding = PaddingValues(horizontal = 12.dp, vertical = 0.dp)
+                    // Subtitle Action Buttons Row: Open Local Subtitle & AI Translate
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Add,
-                            contentDescription = null,
-                            tint = if (isOpenLocalFocused) Color.White else Color(0xFFFF5252),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.open_local_subtitle),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = Color.White
-                        )
+                        // Open Local Subtitle Button
+                        OutlinedButton(
+                            onClick = {
+                                try {
+                                    localSubtitlePickerLauncher.launch(arrayOf("*/*"))
+                                } catch (e: Exception) {
+                                    Toast.makeText(context, "Cannot open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
+                                }
+                            },
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(42.dp)
+                                .onFocusChanged { isOpenLocalFocused = it.isFocused }
+                                .onKeyEvent { keyEvent ->
+                                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                        try {
+                                            localSubtitlePickerLauncher.launch(arrayOf("*/*"))
+                                        } catch (e: Exception) {
+                                            Toast.makeText(context, "Cannot open file picker: ${e.message}", Toast.LENGTH_SHORT).show()
+                                        }
+                                        true
+                                    } else false
+                                }
+                                .focusable()
+                                .border(if (isOpenLocalFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isOpenLocalFocused) Color.White.copy(alpha = 0.25f) else Color(0xFF262626),
+                                contentColor = Color.White
+                            ),
+                            border = BorderStroke(1.dp, if (isOpenLocalFocused) Color.White else Color.White.copy(alpha = 0.2f)),
+                            contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Add,
+                                contentDescription = null,
+                                tint = if (isOpenLocalFocused) Color.White else Color(0xFFFF5252),
+                                modifier = Modifier.size(16.dp)
+                            )
+                            Spacer(Modifier.width(6.dp))
+                            Text(
+                                text = stringResource(R.string.open_local_subtitle),
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                color = Color.White
+                            )
+                        }
+
+                        // AI Translate Button (Available when any subtitles cues exist)
+                        if (subtitleCues.isNotEmpty()) {
+                            var isAiTransFocused by remember { mutableStateOf(false) }
+                            OutlinedButton(
+                                onClick = {
+                                    viewModel.translateSelectedSubtitle(targetLangCode) { success, msg ->
+                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    }
+                                },
+                                enabled = !isTranslatingSubtitle,
+                                modifier = Modifier
+                                    .weight(1f)
+                                    .height(42.dp)
+                                    .onFocusChanged { isAiTransFocused = it.isFocused }
+                                    .onKeyEvent { keyEvent ->
+                                        if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                            (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                             keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                            viewModel.translateSelectedSubtitle(targetLangCode) { success, msg ->
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            }
+                                            true
+                                        } else false
+                                    }
+                                    .focusable()
+                                    .border(if (isAiTransFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.outlinedButtonColors(
+                                    containerColor = if (isAiTransFocused) Color.White.copy(alpha = 0.25f) else Color(0xFF1A237E).copy(alpha = 0.35f),
+                                    contentColor = Color.White
+                                ),
+                                border = BorderStroke(1.dp, if (isAiTransFocused) Color.White else Color(0xFF5C6BC0).copy(alpha = 0.6f)),
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Translate,
+                                    contentDescription = null,
+                                    tint = if (isAiTransFocused) Color.White else Color(0xFF8C9EFF),
+                                    modifier = Modifier.size(16.dp)
+                                )
+                                Spacer(Modifier.width(6.dp))
+                                Text(
+                                    text = stringResource(R.string.ai_translate_btn, targetLangName),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    color = Color.White
+                                )
+                            }
+                        }
                     }
 
                     // Language Filter Chips
@@ -2489,9 +2719,10 @@ fun VideoPlayerScreen(
                     ) {
                         item(key = "none") {
                             var isFocused by remember { mutableStateOf(false) }
+                            val isSelected = if (isDualModeTab) selectedSecondarySubtitle == null else selectedSubtitle == null
                             ListItem(
                                 headlineContent = { Text(stringResource(R.string.none_embedded), color = Color.White) },
-                                leadingContent = { RadioButton(selected = selectedSubtitle == null, onClick = null, modifier = Modifier.focusable(false)) },
+                                leadingContent = { RadioButton(selected = isSelected, onClick = null, modifier = Modifier.focusable(false)) },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .focusRequester(subFirstItemFocusRequester)
@@ -2501,12 +2732,23 @@ fun VideoPlayerScreen(
                                             (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
                                              keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
                                              keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
-                                            viewModel.selectSubtitle(null)
+                                            if (isDualModeTab) {
+                                                viewModel.selectSecondarySubtitle(null)
+                                            } else {
+                                                viewModel.selectSubtitle(null)
+                                            }
                                             showSubtitleDialog = false
                                             true
                                         } else false
                                     }
-                                    .clickable { viewModel.selectSubtitle(null); showSubtitleDialog = false }
+                                    .clickable {
+                                        if (isDualModeTab) {
+                                            viewModel.selectSecondarySubtitle(null)
+                                        } else {
+                                            viewModel.selectSubtitle(null)
+                                        }
+                                        showSubtitleDialog = false
+                                    }
                                     .focusable()
                                     .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
                                 colors = ListItemDefaults.colors(
@@ -2516,6 +2758,7 @@ fun VideoPlayerScreen(
                         }
                         items(filteredSubs, key = { it.url }) { sub ->
                             var isFocused by remember { mutableStateOf(false) }
+                            val isSelected = if (isDualModeTab) selectedSecondarySubtitle?.url == sub.url else selectedSubtitle?.url == sub.url
                             val isStreamSub = sub.url.startsWith("embedded://") || sub.label.startsWith("[Stream]")
                             val isMatchedSub = remember(sub.label) {
                                 val low = sub.label.lowercase()
@@ -2567,7 +2810,7 @@ fun VideoPlayerScreen(
                                     }
                                 },
                                 supportingContent = { Text(sub.language, color = Color.Gray, fontSize = 12.sp) },
-                                leadingContent = { RadioButton(selected = selectedSubtitle?.url == sub.url, onClick = null, modifier = Modifier.focusable(false)) },
+                                leadingContent = { RadioButton(selected = isSelected, onClick = null, modifier = Modifier.focusable(false)) },
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .onFocusChanged { isFocused = it.isFocused }
@@ -2576,12 +2819,23 @@ fun VideoPlayerScreen(
                                             (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
                                              keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
                                              keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
-                                            viewModel.selectSubtitle(sub)
+                                            if (isDualModeTab) {
+                                                viewModel.selectSecondarySubtitle(sub)
+                                            } else {
+                                                viewModel.selectSubtitle(sub)
+                                            }
                                             showSubtitleDialog = false
                                             true
                                         } else false
                                     }
-                                    .clickable { viewModel.selectSubtitle(sub); showSubtitleDialog = false }
+                                    .clickable {
+                                        if (isDualModeTab) {
+                                            viewModel.selectSecondarySubtitle(sub)
+                                        } else {
+                                            viewModel.selectSubtitle(sub)
+                                        }
+                                        showSubtitleDialog = false
+                                    }
                                     .focusable()
                                     .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
                                 colors = ListItemDefaults.colors(
@@ -2615,10 +2869,58 @@ fun VideoPlayerScreen(
                                     }
                                 } 
                             } 
-                        } else if (filteredSubs.isEmpty() && subtitles.isNotEmpty()) {
+                        } else if (filteredSubs.isEmpty()) {
                             item(key = "no_filter_matches") {
-                                Box(Modifier.fillMaxWidth().padding(16.dp), contentAlignment = Alignment.Center) {
-                                    Text("No matching subtitles found for this filter.\nPress Search to query online or load from device.", color = Color.Gray, fontSize = 12.sp, textAlign = TextAlign.Center)
+                                Column(
+                                    modifier = Modifier.fillMaxWidth().padding(16.dp),
+                                    horizontalAlignment = Alignment.CenterHorizontally
+                                ) {
+                                    val isTargetLangFiltered = selectedLanguageFilter == "Indonesian" || selectedLanguageFilter == "Malay"
+                                    if (subtitleCues.isNotEmpty() && isTargetLangFiltered) {
+                                        Text(
+                                            stringResource(R.string.ai_translate_prompt, targetLangName),
+                                            color = Color.LightGray,
+                                            fontSize = 12.sp,
+                                            textAlign = TextAlign.Center
+                                        )
+                                        Spacer(Modifier.height(10.dp))
+                                        var isAutoTransPromptFocused by remember { mutableStateOf(false) }
+                                        Button(
+                                            onClick = {
+                                                viewModel.translateSelectedSubtitle(targetLangCode) { success, msg ->
+                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                }
+                                            },
+                                            colors = ButtonDefaults.buttonColors(
+                                                containerColor = if (isAutoTransPromptFocused) Color.White else Color(0xFF1A237E)
+                                            ),
+                                            shape = RoundedCornerShape(8.dp),
+                                            modifier = Modifier
+                                                .onFocusChanged { isAutoTransPromptFocused = it.isFocused }
+                                                .focusable()
+                                        ) {
+                                            Icon(
+                                                Icons.Default.Translate,
+                                                contentDescription = null,
+                                                tint = if (isAutoTransPromptFocused) Color.Black else Color.White,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(
+                                                stringResource(R.string.ai_translate_btn, targetLangName),
+                                                color = if (isAutoTransPromptFocused) Color.Black else Color.White,
+                                                fontSize = 12.sp,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    } else {
+                                        Text(
+                                            "No matching subtitles found for this filter.\nPress Search to query online or load from device.",
+                                            color = Color.Gray,
+                                            fontSize = 12.sp,
+                                            textAlign = TextAlign.Center
+                                        )
+                                    }
                                 }
                             }
                         }
@@ -2813,6 +3115,75 @@ fun VideoPlayerScreen(
                                 fontSize = 10.sp,
                                 fontWeight = if (isScrubberFocused) FontWeight.Bold else FontWeight.Normal
                             )
+                        }
+                    }
+
+                    // Auto-VAD Alignment Section (Hardware PCM Speech Energy Detection)
+                    if (vadVoiceOnsetMs > 0L && firstDialogueCue != null) {
+                        val vadOffset = firstDialogueCue.startTimeMs - vadVoiceOnsetMs
+                        val formattedOnset = SubtitleParser.formatVttTimestamp(vadVoiceOnsetMs).substringBefore(".")
+                        val sign = if (vadOffset >= 0) "+" else ""
+                        val offsetStr = "$sign${vadOffset / 1000.0}s"
+                        var isVadFocused by remember { mutableStateOf(false) }
+
+                        Surface(
+                            color = if (isVadFocused) Color(0xFF1B5E20) else Color(0xFF14301A),
+                            shape = RoundedCornerShape(10.dp),
+                            border = BorderStroke(if (isVadFocused) 2.dp else 1.dp, if (isVadFocused) Color.White else Color(0xFF4CAF50).copy(alpha = 0.6f)),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 8.dp)
+                                .onFocusChanged { isVadFocused = it.isFocused }
+                                .onKeyEvent { keyEvent ->
+                                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                        viewModel.applyVadOffset(firstDialogueCue.startTimeMs)
+                                        Toast.makeText(
+                                            context,
+                                            context.getString(R.string.subtitle_synced_toast, offsetStr),
+                                            Toast.LENGTH_SHORT
+                                        ).show()
+                                        true
+                                    } else false
+                                }
+                                .clickable {
+                                    viewModel.applyVadOffset(firstDialogueCue.startTimeMs)
+                                    Toast.makeText(
+                                        context,
+                                        context.getString(R.string.subtitle_synced_toast, offsetStr),
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                                .focusable()
+                                .scale(if (isVadFocused) 1.03f else 1f)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    Icons.Default.GraphicEq,
+                                    contentDescription = null,
+                                    tint = if (isVadFocused) Color.White else Color(0xFF81C784),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                                Spacer(Modifier.width(10.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Text(
+                                        text = stringResource(R.string.vad_align_btn, offsetStr),
+                                        color = Color.White,
+                                        fontWeight = FontWeight.Bold,
+                                        fontSize = 12.sp
+                                    )
+                                    Text(
+                                        text = stringResource(R.string.vad_speech_detected, formattedOnset),
+                                        color = Color.LightGray,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
                         }
                     }
 
@@ -3364,6 +3735,7 @@ fun VideoPlayerContent(
     isCasting: Boolean,
     isVideoReady: Boolean,
     currentCues: List<Cue>,
+    currentSecondaryCues: List<Cue> = emptyList(),
     showControls: Boolean,
     isInPip: Boolean,
     isLandscape: Boolean,
@@ -3856,15 +4228,23 @@ fun VideoPlayerContent(
             }
         }
 
-        if (isVideoReady && !isInPip && !isCasting && currentCues.isNotEmpty()) {
-            val subtitleText = remember(currentCues) {
+        if (isVideoReady && !isInPip && !isCasting && (currentCues.isNotEmpty() || currentSecondaryCues.isNotEmpty())) {
+            val primarySubtitleText = remember(currentCues) {
                 currentCues.mapNotNull { it.text?.toString() }
                     .filter { it.isNotBlank() }
                     .joinToString("\n")
             }
-            if (subtitleText.isNotBlank()) {
+            val secondarySubtitleText = remember(currentSecondaryCues) {
+                currentSecondaryCues.mapNotNull { it.text?.toString() }
+                    .filter { it.isNotBlank() }
+                    .joinToString("\n")
+            }
+            if (primarySubtitleText.isNotBlank() || secondarySubtitleText.isNotBlank()) {
                 val bottomPadding = if (showControls) 110.dp else 48.dp
-                val subFontSize = if (isTV) 28.sp else if (isLandscape) 22.sp else 17.sp
+                val primaryFontSize = if (isTV) 28.sp else if (isLandscape) 22.sp else 17.sp
+                val secondaryFontSize = if (isTV) 23.sp else if (isLandscape) 18.sp else 14.sp
+                val strokeWidth = if (isTV) 5f else 3.5f
+
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
@@ -3872,45 +4252,85 @@ fun VideoPlayerContent(
                         .padding(bottom = bottomPadding, start = 24.dp, end = 24.dp),
                     contentAlignment = Alignment.BottomCenter
                 ) {
-                    Box(
-                        modifier = Modifier
-                            .clickable(
-                                interactionSource = remember { MutableInteractionSource() },
-                                indication = null
-                            ) { onVisibilityToggle() },
-                        contentAlignment = Alignment.Center
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier.clickable(
+                            interactionSource = remember { MutableInteractionSource() },
+                            indication = null
+                        ) { onVisibilityToggle() }
                     ) {
-                        // Background black stroke outline for high readability against bright scenes without any black background box
-                        Text(
-                            text = subtitleText,
-                            color = Color.Black,
-                            fontSize = subFontSize,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            style = TextStyle(
-                                drawStyle = Stroke(
-                                    width = if (isTV) 5f else 3.5f,
-                                    join = StrokeJoin.Round
+                        // Secondary Subtitle (Dual mode: warm yellow stacked directly on top of primary)
+                        if (secondarySubtitleText.isNotBlank()) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier.padding(bottom = if (primarySubtitleText.isNotBlank()) 4.dp else 0.dp)
+                            ) {
+                                Text(
+                                    text = secondarySubtitleText,
+                                    color = Color.Black,
+                                    fontSize = secondaryFontSize,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    style = TextStyle(
+                                        drawStyle = Stroke(
+                                            width = strokeWidth,
+                                            join = StrokeJoin.Round
+                                        )
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                                 )
-                            ),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
-                        // Foreground clean pure white subtitle text
-                        Text(
-                            text = subtitleText,
-                            color = Color.White,
-                            fontSize = subFontSize,
-                            fontWeight = FontWeight.Bold,
-                            textAlign = TextAlign.Center,
-                            style = TextStyle(
-                                shadow = Shadow(
-                                    color = Color.Black.copy(alpha = 0.8f),
-                                    offset = Offset(1.5f, 1.5f),
-                                    blurRadius = 3f
+                                Text(
+                                    text = secondarySubtitleText,
+                                    color = Color(0xFFFFEB3B), // Warm yellow for bilingual subtitle
+                                    fontSize = secondaryFontSize,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    style = TextStyle(
+                                        shadow = Shadow(
+                                            color = Color.Black.copy(alpha = 0.85f),
+                                            offset = Offset(1.5f, 1.5f),
+                                            blurRadius = 3f
+                                        )
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
                                 )
-                            ),
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                        )
+                            }
+                        }
+
+                        // Primary Subtitle (Pure crisp white)
+                        if (primarySubtitleText.isNotBlank()) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = primarySubtitleText,
+                                    color = Color.Black,
+                                    fontSize = primaryFontSize,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    style = TextStyle(
+                                        drawStyle = Stroke(
+                                            width = strokeWidth,
+                                            join = StrokeJoin.Round
+                                        )
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                                Text(
+                                    text = primarySubtitleText,
+                                    color = Color.White,
+                                    fontSize = primaryFontSize,
+                                    fontWeight = FontWeight.Bold,
+                                    textAlign = TextAlign.Center,
+                                    style = TextStyle(
+                                        shadow = Shadow(
+                                            color = Color.Black.copy(alpha = 0.8f),
+                                            offset = Offset(1.5f, 1.5f),
+                                            blurRadius = 3f
+                                        )
+                                    ),
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                                )
+                            }
+                        }
                     }
                 }
             }

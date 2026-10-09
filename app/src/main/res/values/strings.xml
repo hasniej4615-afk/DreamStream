@@ -652,4 +652,15 @@ Tap to re-scout and refresh content</string>
     <string name="consensus_synced">Community offset applied (%s)</string>
     <string name="next_sub_switched">Switched to subtitle: %s</string>
     <string name="no_alternative_subs">No alternative subtitles available</string>
+
+    <!-- Subtitle Enhancements (Dual Sub, AI Translate, VAD) -->
+    <string name="primary_sub_tab">Primary</string>
+    <string name="dual_sub_tab">Dual (Top)</string>
+    <string name="dual_sub_hint">Secondary subtitle appears at top in yellow</string>
+    <string name="ai_translate_prompt">No %s subtitles found. Auto-translate from English?</string>
+    <string name="ai_translate_btn">AI Translate to %s</string>
+    <string name="ai_translating">Translating subtitle (%1$d/%2$d)...</string>
+    <string name="vad_speech_detected">Speech detected at %s</string>
+    <string name="vad_align_btn">Auto VAD Align (%s)</string>
+    <string name="vad_speech_hint">Hardware Voice Activity Detection detected speech start</string>
 </resources>
