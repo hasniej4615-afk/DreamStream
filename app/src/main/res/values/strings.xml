@@ -667,4 +667,7 @@ Tap to re-scout and refresh content</string>
     <string name="vad_speech_detected">Speech detected at %s</string>
     <string name="vad_align_btn">Auto VAD Align (%s)</string>
     <string name="vad_speech_hint">Hardware Voice Activity Detection detected speech start</string>
+    <string name="ai_translate">AI Translate</string>
+    <string name="ai_translate_title">AI Subtitle Translator</string>
+    <string name="ai_translate_select_lang">Select target language to translate into:</string>
 </resources>

@@ -4672,7 +4672,7 @@ class VideoViewModel @Inject constructor(
 
         viewModelScope.launch(Dispatchers.IO) {
             _isTranslatingSubtitle.value = true
-            _translationProgress.value = Pair(0, 100)
+            _translationProgress.value = Pair(0, (cues.size + 59) / 60)
             try {
                 val title = _videoMetadata.value?.title ?: activeVideoId ?: "movie"
                 val result = com.duta.movie.util.SubtitleTranslator.translateCues(

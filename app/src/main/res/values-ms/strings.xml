@@ -666,4 +666,7 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="vad_speech_detected">Pertuturan dikesan pada %s</string>
     <string name="vad_align_btn">Jajarkan VAD Auto (%s)</string>
     <string name="vad_speech_hint">Pengecaman Aktiviti Suara Perkakasan mengesan permulaan dialog</string>
+    <string name="ai_translate">Terjemah AI</string>
+    <string name="ai_translate_title">Penterjemah Sari Kata AI</string>
+    <string name="ai_translate_select_lang">Pilih bahasa sasaran untuk diterjemahkan:</string>
 </resources>

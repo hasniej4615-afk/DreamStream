@@ -2306,12 +2306,13 @@ fun VideoPlayerScreen(
                 var isSearchBtnFocused by remember { mutableStateOf(false) }
                 var isOpenLocalFocused by remember { mutableStateOf(false) }
                 var selectedLanguageFilter by remember { mutableStateOf("All") }
+                var showAiTranslateLanguageDialog by remember { mutableStateOf(false) }
 
                 val targetLangCode = when {
                     selectedLanguageFilter == "Malay" -> "ms"
                     selectedLanguageFilter == "Indonesian" -> "id"
                     selectedLanguageFilter == "English" -> "en"
-                    defaultSubtitleLanguage.isNotBlank() -> com.duta.movie.util.SubtitleTranslator.getLanguageCode(defaultSubtitleLanguage)
+                    defaultSubtitleLanguage.isNotBlank() && !defaultSubtitleLanguage.contains("eng", ignoreCase = true) -> com.duta.movie.util.SubtitleTranslator.getLanguageCode(defaultSubtitleLanguage)
                     else -> "id"
                 }
                 val targetLangName = com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName(targetLangCode)
@@ -2587,9 +2588,7 @@ fun VideoPlayerScreen(
                             var isAiTransFocused by remember { mutableStateOf(false) }
                             OutlinedButton(
                                 onClick = {
-                                    viewModel.translateSelectedSubtitle(targetLangCode) { success, msg ->
-                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                    }
+                                    showAiTranslateLanguageDialog = true
                                 },
                                 enabled = !isTranslatingSubtitle,
                                 modifier = Modifier
@@ -2601,9 +2600,7 @@ fun VideoPlayerScreen(
                                             (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
                                              keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
                                              keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
-                                            viewModel.translateSelectedSubtitle(targetLangCode) { success, msg ->
-                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                            }
+                                            showAiTranslateLanguageDialog = true
                                             true
                                         } else false
                                     }
@@ -2625,7 +2622,7 @@ fun VideoPlayerScreen(
                                 )
                                 Spacer(Modifier.width(6.dp))
                                 Text(
-                                    text = stringResource(R.string.ai_translate_btn, targetLangName),
+                                    text = stringResource(R.string.ai_translate),
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
@@ -2634,6 +2631,78 @@ fun VideoPlayerScreen(
                                 )
                             }
                         }
+                    }
+
+                    if (showAiTranslateLanguageDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showAiTranslateLanguageDialog = false },
+                            containerColor = Color(0xFF212121),
+                            title = {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Translate, contentDescription = null, tint = Color(0xFF8C9EFF), modifier = Modifier.size(20.dp))
+                                    Spacer(Modifier.width(8.dp))
+                                    Text(stringResource(R.string.ai_translate_title), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                                }
+                            },
+                            text = {
+                                Column(modifier = Modifier.fillMaxWidth()) {
+                                    Text(stringResource(R.string.ai_translate_select_lang), color = Color.LightGray, fontSize = 13.sp)
+                                    Spacer(Modifier.height(14.dp))
+                                    
+                                    val targetOptions = listOf(
+                                        Pair("id", "🇮🇩 Indonesian (Bahasa Indonesia)"),
+                                        Pair("ms", "🇲🇾 Malay (Bahasa Melayu)"),
+                                        Pair("en", "🇬🇧 English")
+                                    )
+                                    
+                                    targetOptions.forEach { (code, label) ->
+                                        var isOptionFocused by remember { mutableStateOf(false) }
+                                        Surface(
+                                            shape = RoundedCornerShape(8.dp),
+                                            color = if (isOptionFocused) Color.White else Color(0xFF2C2C2C),
+                                            contentColor = if (isOptionFocused) Color.Black else Color.White,
+                                            modifier = Modifier
+                                                .fillMaxWidth()
+                                                .padding(vertical = 4.dp)
+                                                .onFocusChanged { isOptionFocused = it.isFocused }
+                                                .clickable {
+                                                    showAiTranslateLanguageDialog = false
+                                                    viewModel.translateSelectedSubtitle(code) { success, msg ->
+                                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                    }
+                                                }
+                                                .onKeyEvent { keyEvent ->
+                                                    if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                                        showAiTranslateLanguageDialog = false
+                                                        viewModel.translateSelectedSubtitle(code) { success, msg ->
+                                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                        }
+                                                        true
+                                                    } else false
+                                                }
+                                                .focusable()
+                                                .border(if (isOptionFocused) BorderStroke(2.dp, Color.White) else BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(8.dp))
+                                        ) {
+                                            Text(
+                                                text = label,
+                                                fontWeight = FontWeight.SemiBold,
+                                                fontSize = 14.sp,
+                                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            confirmButton = {},
+                            dismissButton = {
+                                TextButton(onClick = { showAiTranslateLanguageDialog = false }) {
+                                    Text(stringResource(R.string.cancel), color = Color.Gray)
+                                }
+                            }
+                        )
                     }
 
                     // Language Filter Chips
