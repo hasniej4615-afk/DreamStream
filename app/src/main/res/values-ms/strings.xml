@@ -373,8 +373,8 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="no_other_sources_found">Tiada sumber alternatif ditemui untuk tajuk ini</string>
     <string name="auto_healed_source">Swapulih %d pelayan cermin alternatif</string>
     <string name="added_multi_provider_alt_sources">Menambah carian silang berbilang penyedia &amp; swapulih automatik: pulih pelayan cermin baharu secara automatik apabila pautan mati atau tamat tempoh.</string>
-    <string name="changelog_v2_1_0">Log Perubahan v2.1.0 Cloud 7</string>
-    <string name="v2_1_0_updates">Kemaskini v2.1.0:</string>
+    <string name="changelog_v2_1_0">Log Perubahan v2.1.0b Cloud 7</string>
+    <string name="v2_1_0_updates">Kemaskini v2.1.0b (Versi Pembaikan):</string>
     <string name="v2_1_0_highlight_1">Sandaran &amp; Pemulihan Awan (PIN 6-Digit): Sandarkan profil pengguna, avatar foto pilihan, kegemaran dan sejarah tontonan ke storan awan dengan lancar; pulihkan pada mana-mana peranti dengan PIN 6-digit.</string>
     <string name="v2_1_0_highlight_2">Antara Muka Profil Padat &amp; Kemas: Avatar 64dp moden dengan pemilih foto dan ikon padam pantas, kawalan nama pengguna sejajar kemas, serta statistik profil ringkas (Kegemaran, Sejarah, Peningkat Suara).</string>
     <string name="v2_1_0_highlight_3">Panduan Lengkap Penyelarasan Sarikata: Panduan khusus di menu Bantuan &amp; Tetapan Sarikata meliputi snap dialog 1-klik (\"Snap Line Now\"), penjajaran intro (\"Align 1st Line\"), pelarasan mikro (±0.1s hingga ±10s), dan kawalan jauh TV.</string>
@@ -382,7 +382,7 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="v2_1_0_highlight_5">Kestabilan Penstriman TV Langsung Malaysia: Enjin main balik langsung dipertingkat dengan pintasan cache cakera, pemulihan sekatan 403 CloudFront, pemulihan PlaylistStuck berdaya tahan, dan visual kad TV yang kemas.</string>
     <string name="v2_1_0_highlight_6">Cip Penapis SHORT TV Dalam Carian: Penapis khusus baharu dalam carian untuk mengasingkan drama pendek dan siri Short TV dengan segera berserta sokongan navigasi alat kawalan jauh TV.</string>
     <string name="v2_1_0_highlight_7">Penterjemah Sarikata AI Universal: Menterjemah sarikata daripada sebarang bahasa asal (Cina, Korea, Jepun, Thai, Arab, Sepanyol, dll.) kepada Bahasa Melayu, Indonesia, atau Inggeris dengan pemprosesan kelompok pintar.</string>
-    <string name="v2_1_0_highlight_8">Penyelarasan Kedudukan Baris Kategori: Memastikan setiap baris kategori filem dan siri sentiasa bermula dari tajuk pertama setiap kali aplikasi dibuka.</string>
+    <string name="v2_1_0_highlight_8">Pengekalan Kedudukan Skrol Baris Kategori &amp; Pengoptimuman TV: Penjajaran tajuk pertama terjamin semasa pelancaran aplikasi, sambil mengekalkan kedudukan skrol apabila keluar daripada perincian video; pemulihan fokus D-Pad TV tepat pada kad video aktif.</string>
     <string name="v2_1_0_highlight_9">Pengukuhan Keselamatan &amp; Kestabilan: Konfigurasi keselamatan rangkaian pengeluaran diperkukuh, penyatuan kolam sambungan pangkalan data Room, dan penambahbaikan kitaran hayat coroutine latar belakang.</string>
     <string name="changelog_v2_0_9">Log Perubahan v2.0.9 Cloud 7</string>
     <string name="v2_0_9_updates">Kemaskini v2.0.9:</string>

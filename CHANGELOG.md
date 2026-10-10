@@ -2,7 +2,9 @@
 
 All notable changes to the Duta Movie application are documented in this file.
 
-## [2.1.0 Cloud 7] - 2026-10-10
+## [2.1.0b Cloud 7] - 2026-10-10
+
+> **Fix & Optimization Release**: Fixes category row browsing scroll position resets when exiting video details and provides seamless TV mode D-Pad focus restoration.
 
 ### Added
 - **SHORT TV Search Filter Chip**:

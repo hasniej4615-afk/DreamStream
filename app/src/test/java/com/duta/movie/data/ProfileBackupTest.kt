@@ -12,7 +12,7 @@ class ProfileBackupTest {
     fun testJsonSerializationAndDeserializationRoundtrip() {
         val originalData = ProfileBackupData(
             version = 1,
-            appVersion = "2.1.0 Cloud 7",
+            appVersion = "2.1.0b Cloud 7",
             exportedAt = 1728216000000L,
             username = "StreamMaster",
             avatarBase64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
@@ -70,7 +70,7 @@ class ProfileBackupTest {
         parsed!!
 
         assertEquals(1, parsed.version)
-        assertEquals("2.1.0 Cloud 7", parsed.appVersion)
+        assertEquals("2.1.0b Cloud 7", parsed.appVersion)
         assertEquals("", parsed.username)
         assertNull(parsed.avatarBase64)
         assertEquals("Indonesian", parsed.defaultSubtitleLanguage)

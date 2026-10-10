@@ -18,8 +18,8 @@ android {
         applicationId = "com.duta.movie"
         minSdk = 24
         targetSdk = 34
-        versionCode = 37
-        versionName = "2.1.0 Cloud 7"
+        versionCode = 38
+        versionName = "2.1.0b Cloud 7"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
