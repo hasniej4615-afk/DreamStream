@@ -381,6 +381,10 @@ Tap to re-scout and refresh content</string>
     <string name="v2_1_0_highlight_3">Comprehensive Subtitle Sync Manual: Dedicated manual in Help &amp; Subtitles settings covering 1-click dialogue snapping (\"Snap Line Now\"), first-line intro alignment (\"Align 1st Line\"), micro-stepping (±0.1s to ±10s), and TV remote navigation.</string>
     <string name="v2_1_0_highlight_4">Persistent Subtitle Calibration: Per-title timing memory automatically restores your customized sync offset when resuming movies or series; added in-player subtitle helper hints.</string>
     <string name="v2_1_0_highlight_5">Malaysian Live TV Stream Stability: Enhanced live playback engine bypassing disk caching, resolving CloudFront 403 authorization, resilient PlaylistStuck recovery, and clean TV card visuals.</string>
+    <string name="v2_1_0_highlight_6">Search SHORT TV Filter: Dedicated filter chip in search results to immediately isolate and browse micro-dramas and Short TV series with TV D-Pad focus.</string>
+    <string name="v2_1_0_highlight_7">Universal AI Subtitle Translator: Expanded subtitle translation engine to translate from any source language (Chinese, Korean, Japanese, Thai, Arabic, Spanish, etc.) into Malay, Indonesian, or English with intelligent batching and failover.</string>
+    <string name="v2_1_0_highlight_8">Category Row Startup Positioning: Guaranteed clean startup alignment ensuring every movie and series category row displays from the very first title on app launch.</string>
+    <string name="v2_1_0_highlight_9">Security &amp; Stability Hardening: Production network security config hardened, Room database connection pooling unified, and background coroutine lifecycle upgraded to structured concurrency.</string>
     <string name="changelog_v2_0_9">Changelog v2.0.9 Cloud 7</string>
     <string name="v2_0_9_updates">v2.0.9 Updates:</string>
     <string name="v2_0_9_highlight_1">Instant MovieBox Direct CDN Streaming: Zero-delay 0ms parallel background resolution for MovieBox high-speed 1080P/720P streams, eliminating detail screen loading lag.</string>

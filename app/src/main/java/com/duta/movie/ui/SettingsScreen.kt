@@ -2084,6 +2084,10 @@ fun SettingsScreen(
                     Text(stringResource(R.string.v2_1_0_highlight_3), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
                     Text(stringResource(R.string.v2_1_0_highlight_4), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
                     Text(stringResource(R.string.v2_1_0_highlight_5), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_0_highlight_6), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_0_highlight_7), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_0_highlight_8), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_0_highlight_9), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
 
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(stringResource(R.string.v2_0_9_updates), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
