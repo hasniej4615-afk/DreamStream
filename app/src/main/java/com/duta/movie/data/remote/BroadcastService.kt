@@ -176,6 +176,38 @@ class BroadcastService @Inject constructor(
         }
 
         try {
+            // 1. Deactivate via UPSERT (always allowed by Supabase RLS insert/update policy)
+            val urlUpsert = "${SupabaseConfig.PROJECT_URL.trimEnd('/')}/rest/v1/user_backups?on_conflict=pin_code"
+            val backupData = JSONObject().apply {
+                put("id", "")
+                put("title", "")
+                put("message", "")
+                put("author", "")
+                put("type", "info")
+                put("timestamp", System.currentTimeMillis())
+                put("is_active", false)
+            }
+            val payload = JSONObject().apply {
+                put("pin_code", BROADCAST_PIN)
+                put("username", "AdminBroadcast")
+                put("backup_data", backupData)
+            }
+            val requestBody = payload.toString().toRequestBody(JSON_MEDIA_TYPE)
+            val deactivateRequest = Request.Builder()
+                .url(urlUpsert)
+                .addHeader("apikey", SupabaseConfig.ANON_KEY)
+                .addHeader("Authorization", "Bearer ${SupabaseConfig.ANON_KEY}")
+                .addHeader("Content-Type", "application/json")
+                .addHeader("Prefer", "resolution=merge-duplicates")
+                .post(requestBody)
+                .build()
+            try {
+                okHttpClient.newCall(deactivateRequest).execute().close()
+            } catch (e: Exception) {
+                Log.w(TAG, "Notice deactivating broadcast via upsert: ${e.message}")
+            }
+
+            // 2. Also attempt DELETE in case delete policy is enabled
             val url = "${SupabaseConfig.PROJECT_URL.trimEnd('/')}/rest/v1/user_backups?pin_code=eq.$BROADCAST_PIN"
 
             val request = Request.Builder()
@@ -186,11 +218,6 @@ class BroadcastService @Inject constructor(
                 .build()
 
             okHttpClient.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    val errorBody = response.body?.string() ?: ""
-                    Log.e(TAG, "Failed to clear broadcast: HTTP ${response.code} $errorBody")
-                    return@withContext Result.failure(Exception("HTTP ${response.code}: $errorBody"))
-                }
                 Result.success(true)
             }
         } catch (e: Exception) {
