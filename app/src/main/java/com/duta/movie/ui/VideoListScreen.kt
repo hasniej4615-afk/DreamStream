@@ -232,9 +232,15 @@ fun VideoListScreen(
     }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    var resumeTrigger by remember { mutableIntStateOf(0) }
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME) {
+                if (viewModel.isNavigatingToDetail) {
+                    viewModel.isNavigatingToDetail = false
+                    viewModel.shouldRestoreFocusOnResume = true
+                }
+                resumeTrigger++
                 viewModel.fetchPakcikRekomenVideos(silent = true)
                 viewModel.startPakcikRekomenAutoSync()
             }
@@ -242,6 +248,17 @@ fun VideoListScreen(
         lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+        }
+    }
+
+    LaunchedEffect(resumeTrigger) {
+        if (resumeTrigger > 0 && isImmersiveMode && !isSearchActive && viewModel.shouldRestoreFocusOnResume) {
+            val targetRow = viewModel.lastFocusedCategoryRowIndex
+            if (targetRow > 0) {
+                try {
+                    homeLazyListState.scrollToItem(targetRow)
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -929,36 +946,47 @@ fun HorizontalVideoRow(
         key = rowKey,
         saver = androidx.compose.foundation.lazy.LazyListState.Saver
     ) { androidx.compose.foundation.lazy.LazyListState(0, 0) }
+    val isAnyTV = isRealTV || isTV
     var hasFocus by remember { mutableStateOf(false) }
     val rowFirstItemFocusRequester = remember { FocusRequester() }
     var shimmerHadFocus by remember { mutableStateOf(false) }
 
-    var hasUserScrolled by remember(effectiveSessionId) { mutableStateOf(false) }
+    var hasUserScrolled by androidx.compose.runtime.saveable.rememberSaveable(
+        effectiveSessionId,
+        key = "${rowKey}_scrolled"
+    ) { mutableStateOf(false) }
+
+    var isStartupAligned by androidx.compose.runtime.saveable.rememberSaveable(
+        effectiveSessionId,
+        key = "${rowKey}_aligned"
+    ) { mutableStateOf(false) }
 
     LaunchedEffect(listState.isScrollInProgress) {
         if (listState.isScrollInProgress) {
             hasUserScrolled = true
+            isStartupAligned = true
+            viewModel?.markRowStartupInitialized(rowKey)
         }
     }
-
-    val hasPendingTargetRestoration = isRealTV && viewModel != null && viewModel.pendingRestoreVideoId != null
 
     val uniqueVideos = remember(videos) { videos.distinctBy { it.id } }
 
-    // Ensure category row always displays from index 0 on startup and when new items arrive at startup,
-    // preventing Compose from anchoring to old cached items and shifting the row into the middle.
-    LaunchedEffect(uniqueVideos.firstOrNull()?.id, uniqueVideos.size, effectiveSessionId) {
-        if (!hasUserScrolled && !hasPendingTargetRestoration && listState.firstVisibleItemIndex > 0) {
-            try {
-                listState.scrollToItem(0)
-            } catch (_: Exception) {}
-        }
-    }
-    LaunchedEffect(Unit) {
-        if (!hasUserScrolled && !hasPendingTargetRestoration && listState.firstVisibleItemIndex > 0) {
-            try {
-                listState.scrollToItem(0)
-            } catch (_: Exception) {}
+    val isRowInitialized = isStartupAligned || (viewModel?.isRowStartupInitialized(rowKey) == true)
+
+    // ONE-TIME STARTUP ALIGNMENT:
+    // Only execute on cold app launch before the user has interacted with or browsed this row.
+    // Once initialized or browsed, this row NEVER resets to item 0 when returning from video detail or scrolling.
+    LaunchedEffect(uniqueVideos.firstOrNull()?.id, effectiveSessionId) {
+        if (!isRowInitialized && !hasUserScrolled) {
+            if (uniqueVideos.isNotEmpty()) {
+                if (listState.firstVisibleItemIndex > 0) {
+                    try {
+                        listState.scrollToItem(0)
+                    } catch (_: Exception) {}
+                }
+                isStartupAligned = true
+                viewModel?.markRowStartupInitialized(rowKey)
+            }
         }
     }
 
@@ -995,6 +1023,27 @@ fun HorizontalVideoRow(
     if (categoryPath != null && isRowInteracted && uniqueVideos.size >= 15) {
         LaunchedEffect(categoryPath, isRowInteracted) {
             viewModel?.loadMoreForCategoryRow(categoryPath)
+        }
+    }
+
+    // TV FOCUS RESTORATION: Proactively ensure target restored item is in view
+    val targetRestoreId = if (viewModel?.shouldRestoreFocusOnResume == true) {
+        viewModel.pendingRestoreVideoId ?: viewModel.lastFocusedHomeVideoId
+    } else null
+
+    if (isAnyTV && targetRestoreId != null) {
+        val targetIdx = remember(uniqueVideos, targetRestoreId) {
+            uniqueVideos.indexOfFirst { it.id == targetRestoreId }
+        }
+        LaunchedEffect(targetRestoreId, targetIdx) {
+            if (targetIdx >= 0) {
+                val isVisible = listState.layoutInfo.visibleItemsInfo.any { it.index == targetIdx }
+                if (!isVisible) {
+                    try {
+                        listState.scrollToItem(maxOf(0, targetIdx - 1))
+                    } catch (_: Exception) {}
+                }
+            }
         }
     }
 
@@ -1059,19 +1108,17 @@ fun HorizontalVideoRow(
                 val progress = if (showProgress) allProgress[video.id] ?: 0L else 0L
                 val duration = if (showProgress) allDuration[video.id] ?: 0L else 0L
 
-                val isTargetRestorationItem = isRealTV && viewModel != null && video.id == viewModel.pendingRestoreVideoId
-                val itemFocusRequester = if (isRealTV) remember { FocusRequester() } else null
+                val isTargetRestorationItem = isAnyTV && viewModel != null && viewModel.shouldRestoreFocusOnResume && video.id == targetRestoreId
+                val itemFocusRequester = if (isAnyTV) remember { FocusRequester() } else null
 
-                if (isRealTV && itemFocusRequester != null) {
+                if (isAnyTV && itemFocusRequester != null) {
                     LaunchedEffect(isTargetRestorationItem) {
                         if (isTargetRestorationItem) {
-                            try {
-                                listState.scrollToItem(index)
-                            } catch (_: Exception) {}
-                            delay(100)
+                            delay(120)
                             try {
                                 itemFocusRequester.requestFocus()
                             } catch (_: Exception) {}
+                            viewModel.shouldRestoreFocusOnResume = false
                             viewModel.pendingRestoreVideoId = null
                         }
                     }
@@ -1096,6 +1143,9 @@ fun HorizontalVideoRow(
                     isPakcikRekomen = isPakcikRekomen,
                     onPosterMissing = { viewModel?.healMissingPoster(video) },
                     onFocus = { 
+                        hasUserScrolled = true
+                        isStartupAligned = true
+                        viewModel?.markRowStartupInitialized(rowKey)
                         viewModel?.lastFocusedHomeVideoId = video.id
                         viewModel?.lastFocusedCategoryRowIndex = rowIndex
                         onVideoFocus(video)
@@ -1121,9 +1171,13 @@ fun HorizontalVideoRow(
                             }
                         }
                 ) {
+                    hasUserScrolled = true
+                    isStartupAligned = true
+                    viewModel?.markRowStartupInitialized(rowKey)
                     viewModel?.lastFocusedHomeVideoId = video.id
                     viewModel?.lastFocusedCategoryRowIndex = rowIndex
                     viewModel?.pendingRestoreVideoId = video.id
+                    viewModel?.isNavigatingToDetail = true
                     onVideoClick(video.id)
                 }
             }

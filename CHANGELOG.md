@@ -19,8 +19,9 @@ All notable changes to the Duta Movie application are documented in this file.
   - Per-title timing memory automatically saves and restores sync offsets when resuming movies or series.
 
 ### Improved
-- **Category Row Startup Positioning**:
-  - Guaranteed clean startup alignment ensuring every movie and series category row displays from the very first title on app launch.
+- **Category Row Browsing Scroll Preservation & TV Focus Optimization**:
+  - Guaranteed first-title alignment exclusively on cold app launch, while preserving scroll position seamlessly during browsing, vertical feed scrolling, and navigating back from `VideoDetailScreen`.
+  - Comprehensive TV mode optimization for both `isRealTV` and `isTV` environments: exact D-Pad focus restoration to the active video card upon returning from video details, with smooth in-view scrolling and zero focus jumping.
 - **Refined & Compact Profile UI**:
   - Modernized 64dp avatar with photo picker and quick delete icon, aligned username controls, and concise profile statistics (Bookmarks, History, Voice Boost).
 - **Malaysian Live TV Stream Stability**:

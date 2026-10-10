@@ -421,15 +421,28 @@ class VideoViewModel @Inject constructor(
     var lastFocusedCategoryRowIndex: Int = 0
     var lastFocusedHomeVideoId: String? = null
     var pendingRestoreVideoId: String? = null
+    var isNavigatingToDetail: Boolean = false
+    var shouldRestoreFocusOnResume: Boolean = false
+
+    private val initializedStartupRows = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+
+    fun isRowStartupInitialized(rowKey: String): Boolean = initializedStartupRows.contains(rowKey)
+
+    fun markRowStartupInitialized(rowKey: String) {
+        initializedStartupRows.add(rowKey)
+    }
 
     private val _startupSessionId = MutableStateFlow(System.currentTimeMillis())
     val startupSessionId: StateFlow<Long> = _startupSessionId.asStateFlow()
 
     fun resetStartupState() {
         _startupSessionId.value = System.currentTimeMillis()
+        initializedStartupRows.clear()
         lastFocusedCategoryRowIndex = 0
         lastFocusedHomeVideoId = null
         pendingRestoreVideoId = null
+        isNavigatingToDetail = false
+        shouldRestoreFocusOnResume = false
     }
 
 
