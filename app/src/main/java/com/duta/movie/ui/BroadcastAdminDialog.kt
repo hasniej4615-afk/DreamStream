@@ -8,31 +8,35 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.Campaign
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.Send
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.duta.movie.util.DeviceUtils
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -43,6 +47,7 @@ fun BroadcastAdminDialog(
     onDismissRequest: () -> Unit
 ) {
     val context = LocalContext.current
+    val isRealTV = remember { DeviceUtils.isTvDevice(context) }
     val activeBroadcast by viewModel.activeBroadcast.collectAsStateWithLifecycle()
     val isSending by viewModel.isSendingBroadcast.collectAsStateWithLifecycle()
     val isBroadcastLoading by viewModel.isBroadcastLoading.collectAsStateWithLifecycle()
@@ -67,336 +72,518 @@ fun BroadcastAdminDialog(
         viewModel.fetchActiveBroadcast(forceShow = false)
     }
 
-    AlertDialog(
+    // Strictly Netflix Theme: Red, White, and Black
+    val netflixRed = Color(0xFFE50914)
+    val focusedRed = Color(0xFFFF1744)
+
+    Dialog(
         onDismissRequest = onDismissRequest,
-        modifier = Modifier
-            .fillMaxWidth(0.95f)
-            .widthIn(max = 600.dp),
-        title = {
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(Color.Red.copy(alpha = 0.2f), RoundedCornerShape(8.dp)),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Campaign,
-                        contentDescription = null,
-                        tint = Color.Red,
-                        modifier = Modifier.size(24.dp)
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                Column(modifier = Modifier.weight(1f)) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        Text(
-                            text = "Broadcast Message to All Users",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                    Text(
-                        text = "DEBUG1 MODE • Admin Global Announcement Hub",
-                        fontSize = 11.sp,
-                        color = Color.Red,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                }
-
-                IconButton(
-                    onClick = { viewModel.fetchActiveBroadcast(forceShow = false) },
-                    enabled = !isBroadcastLoading
-                ) {
-                    if (isBroadcastLoading) {
-                        CircularProgressIndicator(modifier = Modifier.size(18.dp), strokeWidth = 2.dp)
-                    } else {
-                        Icon(Icons.Default.Refresh, contentDescription = "Refresh", tint = Color.Gray)
-                    }
-                }
-            }
-        },
-        text = {
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Surface(
+            modifier = Modifier
+                .fillMaxWidth(if (isRealTV) 0.70f else 0.92f)
+                .widthIn(max = if (isRealTV) 620.dp else 480.dp)
+                .clip(RoundedCornerShape(if (isRealTV) 16.dp else 14.dp))
+                .border(
+                    BorderStroke(if (isRealTV) 2.dp else 1.5.dp, netflixRed.copy(alpha = 0.55f)),
+                    RoundedCornerShape(if (isRealTV) 16.dp else 14.dp)
+                ),
+            color = Color(0xFF141414), // Netflix Pitch Black
+            shape = RoundedCornerShape(if (isRealTV) 16.dp else 14.dp),
+            tonalElevation = 8.dp
+        ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .verticalScroll(rememberScrollState()),
-                verticalArrangement = Arrangement.spacedBy(14.dp)
-            ) {
-                // Live Status Card
-                Card(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(10.dp),
-                    colors = CardDefaults.cardColors(
-                        containerColor = if (activeBroadcast != null && activeBroadcast!!.isActive) {
-                            Color(0xFF1B5E20).copy(alpha = 0.18f)
-                        } else {
-                            MaterialTheme.colorScheme.surfaceVariant
-                        }
-                    ),
-                    border = BorderStroke(
-                        width = 1.dp,
-                        color = if (activeBroadcast != null && activeBroadcast!!.isActive) {
-                            Color(0xFF4CAF50).copy(alpha = 0.4f)
-                        } else {
-                            Color.Gray.copy(alpha = 0.25f)
-                        }
+                    .padding(
+                        horizontal = if (isRealTV) 24.dp else 18.dp,
+                        vertical = if (isRealTV) 20.dp else 16.dp
                     )
+            ) {
+                // ── HEADER ───────────────────────────────────────────────────
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.fillMaxWidth()
                 ) {
-                    Column(modifier = Modifier.padding(12.dp)) {
+                    Box(
+                        modifier = Modifier
+                            .size(if (isRealTV) 40.dp else 34.dp)
+                            .background(netflixRed.copy(alpha = 0.18f), RoundedCornerShape(8.dp))
+                            .border(BorderStroke(1.dp, netflixRed.copy(alpha = 0.4f)), RoundedCornerShape(8.dp)),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Campaign,
+                            contentDescription = null,
+                            tint = netflixRed,
+                            modifier = Modifier.size(if (isRealTV) 24.dp else 20.dp)
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(if (isRealTV) 14.dp else 10.dp))
+
+                    Column(modifier = Modifier.weight(1f)) {
                         Row(
                             verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            Icon(
-                                imageVector = if (activeBroadcast != null && activeBroadcast!!.isActive) Icons.Default.CheckCircle else Icons.Default.Warning,
-                                contentDescription = null,
-                                tint = if (activeBroadcast != null && activeBroadcast!!.isActive) Color(0xFF4CAF50) else Color.Gray,
-                                modifier = Modifier.size(18.dp)
-                            )
-                            Text(
-                                text = if (activeBroadcast != null && activeBroadcast!!.isActive) {
-                                    "LIVE BROADCAST ACTIVE ACROSS ALL APPS"
-                                } else {
-                                    "NO ACTIVE BROADCAST CURRENTLY"
-                                },
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (activeBroadcast != null && activeBroadcast!!.isActive) Color(0xFF4CAF50) else Color.Gray
-                            )
-                        }
-
-                        if (activeBroadcast != null && activeBroadcast!!.isActive) {
-                            val b = activeBroadcast!!
-                            Spacer(modifier = Modifier.height(6.dp))
-                            Text(
-                                text = "Tajuk: ${b.title}",
-                                fontWeight = FontWeight.SemiBold,
-                                fontSize = 13.sp
-                            )
-                            Text(
-                                text = "Mesej: ${b.message}",
-                                fontSize = 12.sp,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                            if (b.timestamp > 0) {
-                                val sdf = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
+                            Surface(
+                                shape = RoundedCornerShape(3.dp),
+                                color = netflixRed
+                            ) {
                                 Text(
-                                    text = "Dihantar: ${sdf.format(Date(b.timestamp))} • Jenis: ${b.type.uppercase()}",
-                                    fontSize = 11.sp,
-                                    color = Color.Gray,
-                                    modifier = Modifier.padding(top = 4.dp)
+                                    text = "DEBUG ADMIN",
+                                    color = Color.White,
+                                    fontSize = if (isRealTV) 10.5.sp else 9.sp,
+                                    fontWeight = FontWeight.Black,
+                                    letterSpacing = 0.5.sp,
+                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
                                 )
                             }
+                        }
+
+                        Spacer(modifier = Modifier.height(2.dp))
+
+                        Text(
+                            text = "Siaran Mesej Global",
+                            fontSize = if (isRealTV) 17.sp else 15.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                    }
+
+                    var isRefreshFocused by remember { mutableStateOf(false) }
+                    IconButton(
+                        onClick = { viewModel.fetchActiveBroadcast(forceShow = false) },
+                        enabled = !isBroadcastLoading,
+                        modifier = Modifier
+                            .size(if (isRealTV) 38.dp else 32.dp)
+                            .onFocusChanged { isRefreshFocused = it.isFocused }
+                            .scale(if (isRefreshFocused) 1.1f else 1f)
+                            .border(
+                                width = if (isRefreshFocused) 2.dp else 0.dp,
+                                color = if (isRefreshFocused) Color.White else Color.Transparent,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .focusable()
+                    ) {
+                        if (isBroadcastLoading) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(if (isRealTV) 18.dp else 16.dp),
+                                strokeWidth = 2.dp,
+                                color = netflixRed
+                            )
+                        } else {
+                            Icon(
+                                Icons.Default.Refresh,
+                                contentDescription = "Muat Semula",
+                                tint = if (isRefreshFocused) Color.White else Color.White.copy(alpha = 0.6f),
+                                modifier = Modifier.size(if (isRealTV) 20.dp else 18.dp)
+                            )
+                        }
+                    }
+
+                    if (!isRealTV) {
+                        Spacer(modifier = Modifier.width(4.dp))
+
+                        IconButton(
+                            onClick = onDismissRequest,
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Close,
+                                contentDescription = "Tutup",
+                                tint = Color.White.copy(alpha = 0.6f),
+                                modifier = Modifier.size(18.dp)
+                            )
                         }
                     }
                 }
 
-                Text(
-                    text = "Cipta / Kemaskini Siaran Global:",
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp
-                )
+                Spacer(modifier = Modifier.height(if (isRealTV) 14.dp else 10.dp))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Title Input
-                OutlinedTextField(
-                    value = titleInput,
-                    onValueChange = { titleInput = it },
-                    label = { Text("Tajuk Siaran (Title)") },
-                    placeholder = { Text("Cth: Pengumuman Rasmi / Penyelenggaraan Pelayan") },
-                    modifier = Modifier.fillMaxWidth(),
-                    singleLine = true,
-                    shape = RoundedCornerShape(8.dp)
-                )
-
-                // Message Input
-                OutlinedTextField(
-                    value = messageInput,
-                    onValueChange = { messageInput = it },
-                    label = { Text("Mesej Siaran (Message for all users)") },
-                    placeholder = { Text("Tulis pengumuman di sini. Mesej ini akan dipaparkan kepada SEMUA pengguna...") },
+                // ── SCROLLABLE CONTENT ───────────────────────────────────────
+                Column(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .heightIn(min = 100.dp, max = 160.dp),
-                    shape = RoundedCornerShape(8.dp)
-                )
-
-                // Severity / Priority Type Selector
-                Column {
-                    Text(
-                        text = "Tahap / Kategori Siaran:",
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                    Spacer(modifier = Modifier.height(6.dp))
-                    Row(
+                        .weight(1f, fill = false)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(if (isRealTV) 12.dp else 10.dp)
+                ) {
+                    // 1. Live Status Card
+                    val isLive = activeBroadcast != null && activeBroadcast!!.isActive
+                    Surface(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        shape = RoundedCornerShape(8.dp),
+                        color = if (isLive) Color(0xFF1E1E1E) else Color(0xFF181818),
+                        border = BorderStroke(
+                            width = 1.dp,
+                            color = if (isLive) netflixRed.copy(alpha = 0.5f) else Color.White.copy(alpha = 0.1f)
+                        )
                     ) {
-                        listOf(
-                            Triple("info", "Info (Cyan)", Color(0xFF00BCD4)),
-                            Triple("warning", "Penting (Oren)", Color(0xFFFFA000)),
-                            Triple("alert", "Kecemasan (Merah)", Color(0xFFE53935))
-                        ).forEach { (typeKey, label, color) ->
-                            val isSelected = selectedType == typeKey
-                            var isChipFocused by remember { mutableStateOf(false) }
-
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = if (isSelected) color.copy(alpha = 0.25f) else MaterialTheme.colorScheme.surfaceVariant,
-                                border = BorderStroke(
-                                    width = if (isSelected || isChipFocused) 2.dp else 1.dp,
-                                    color = if (isSelected) color else if (isChipFocused) Color.White else Color.Transparent
-                                ),
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .onFocusChanged { isChipFocused = it.isFocused }
-                                    .clickable { selectedType = typeKey }
-                                    .focusable()
+                        Column(modifier = Modifier.padding(if (isRealTV) 14.dp else 10.dp)) {
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
                             ) {
                                 Box(
-                                    modifier = Modifier.padding(vertical = 8.dp, horizontal = 4.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
+                                    modifier = Modifier
+                                        .size(if (isRealTV) 8.dp else 7.dp)
+                                        .background(if (isLive) netflixRed else Color.Gray, CircleShape)
+                                )
+                                Text(
+                                    text = if (isLive) "SEDANG AKTIF PADA SEMUA PERANTI" else "TIADA SIARAN AKTIF KETIKA INI",
+                                    fontSize = if (isRealTV) 12.sp else 10.5.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isLive) netflixRed else Color.White.copy(alpha = 0.5f),
+                                    letterSpacing = 0.3.sp
+                                )
+                            }
+
+                            if (isLive) {
+                                val b = activeBroadcast!!
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Tajuk: ${b.title}",
+                                    fontWeight = FontWeight.SemiBold,
+                                    fontSize = if (isRealTV) 14.sp else 12.5.sp,
+                                    color = Color.White,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                Text(
+                                    text = "Mesej: ${b.message}",
+                                    fontSize = if (isRealTV) 13.sp else 11.5.sp,
+                                    color = Color.White.copy(alpha = 0.75f),
+                                    maxLines = 2,
+                                    overflow = TextOverflow.Ellipsis
+                                )
+                                if (b.timestamp > 0) {
+                                    val sdf = SimpleDateFormat("dd MMM yyyy, hh:mm a", Locale.getDefault())
                                     Text(
-                                        text = label,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (isSelected) color else MaterialTheme.colorScheme.onSurface
+                                        text = "${sdf.format(Date(b.timestamp))} • ${b.type.uppercase()}",
+                                        fontSize = if (isRealTV) 11.sp else 10.sp,
+                                        color = Color.White.copy(alpha = 0.35f),
+                                        modifier = Modifier.padding(top = 2.dp)
                                     )
                                 }
                             }
                         }
                     }
-                }
 
-                // If active message exists, allow quick copying
-                if (activeBroadcast != null && activeBroadcast!!.isActive &&
-                    (titleInput != activeBroadcast!!.title || messageInput != activeBroadcast!!.message)
-                ) {
-                    TextButton(
-                        onClick = {
-                            val b = activeBroadcast!!
-                            titleInput = b.title
-                            messageInput = b.message
-                            selectedType = b.type.lowercase().ifBlank { "info" }
-                        },
-                        modifier = Modifier.align(Alignment.End)
+                    // 2. Title & Copy Shortcut Row
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Salin Dari Siaran Semasa", fontSize = 12.sp)
-                    }
-                }
-            }
-        },
-        confirmButton = {
-            var isSendFocused by remember { mutableStateOf(false) }
-            Button(
-                onClick = {
-                    if (messageInput.isBlank()) {
-                        Toast.makeText(context, "Sila masukkan mesej siaran.", Toast.LENGTH_SHORT).show()
-                        return@Button
-                    }
-                    viewModel.sendBroadcastMessage(
-                        title = titleInput.ifBlank { "Pengumuman Rasmi" },
-                        message = messageInput,
-                        type = selectedType
-                    ) { success, msg ->
-                        Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
-                        if (success) {
-                            viewModel.fetchActiveBroadcast(forceShow = false)
+                        Text(
+                            text = "Borang Siaran:",
+                            fontWeight = FontWeight.Bold,
+                            fontSize = if (isRealTV) 13.5.sp else 12.sp,
+                            color = Color.White.copy(alpha = 0.85f)
+                        )
+
+                        if (isLive && (titleInput != activeBroadcast!!.title || messageInput != activeBroadcast!!.message)) {
+                            var isCopyFocused by remember { mutableStateOf(false) }
+                            Text(
+                                text = "Salin dari siaran semasa",
+                                fontSize = if (isRealTV) 12.sp else 11.sp,
+                                color = if (isCopyFocused) Color.White else netflixRed,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier
+                                    .onFocusChanged { isCopyFocused = it.isFocused }
+                                    .border(
+                                        width = if (isCopyFocused) 1.5.dp else 0.dp,
+                                        color = if (isCopyFocused) Color.White else Color.Transparent,
+                                        shape = RoundedCornerShape(4.dp)
+                                    )
+                                    .clickable {
+                                        val b = activeBroadcast!!
+                                        titleInput = b.title
+                                        messageInput = b.message
+                                        selectedType = b.type.lowercase().ifBlank { "info" }
+                                    }
+                                    .focusable()
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
                         }
                     }
-                },
-                enabled = !isSending && messageInput.isNotBlank(),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFF2E7D32),
-                    contentColor = Color.White
-                ),
-                shape = RoundedCornerShape(8.dp),
-                modifier = Modifier
-                    .onFocusChanged { isSendFocused = it.isFocused }
-                    .border(
-                        width = if (isSendFocused) 2.dp else 0.dp,
-                        color = if (isSendFocused) Color.White else Color.Transparent,
-                        shape = RoundedCornerShape(8.dp)
-                    )
-                    .focusable()
-            ) {
-                if (isSending) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(16.dp),
-                        strokeWidth = 2.dp,
-                        color = Color.White
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Menghantar...")
-                } else {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, modifier = Modifier.size(16.dp))
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text("Hantar ke Semua Pengguna", fontWeight = FontWeight.Bold)
-                }
-            }
-        },
-        dismissButton = {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // Delete / Clear button if active broadcast exists
-                if (activeBroadcast != null && activeBroadcast!!.isActive) {
-                    var isClearFocused by remember { mutableStateOf(false) }
-                    OutlinedButton(
-                        onClick = {
-                            viewModel.clearBroadcastMessage { success, msg ->
-                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                if (success) {
-                                    titleInput = ""
-                                    messageInput = ""
-                                }
-                            }
+
+                    // 3. Title Input
+                    OutlinedTextField(
+                        value = titleInput,
+                        onValueChange = { titleInput = it },
+                        placeholder = {
+                            Text(
+                                "Tajuk Siaran (cth: Kemaskini Pelayan)",
+                                color = Color.White.copy(alpha = 0.35f),
+                                fontSize = if (isRealTV) 13.sp else 12.sp
+                            )
                         },
-                        enabled = !isSending,
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.Red),
-                        border = BorderStroke(1.dp, Color.Red.copy(alpha = 0.6f)),
+                        singleLine = true,
+                        textStyle = TextStyle(color = Color.White, fontSize = if (isRealTV) 14.sp else 12.5.sp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color(0xFF1E1E1E),
+                            unfocusedContainerColor = Color(0xFF181818),
+                            focusedBorderColor = netflixRed,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                            cursorColor = netflixRed
+                        ),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    )
+
+                    // 4. Message Input
+                    OutlinedTextField(
+                        value = messageInput,
+                        onValueChange = { messageInput = it },
+                        placeholder = {
+                            Text(
+                                "Tulis mesej pengumuman untuk semua pengguna...",
+                                color = Color.White.copy(alpha = 0.35f),
+                                fontSize = if (isRealTV) 13.sp else 12.sp
+                            )
+                        },
+                        textStyle = TextStyle(color = Color.White, fontSize = if (isRealTV) 14.sp else 12.5.sp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedContainerColor = Color(0xFF1E1E1E),
+                            unfocusedContainerColor = Color(0xFF181818),
+                            focusedBorderColor = netflixRed,
+                            unfocusedBorderColor = Color.White.copy(alpha = 0.12f),
+                            cursorColor = netflixRed
+                        ),
                         shape = RoundedCornerShape(8.dp),
                         modifier = Modifier
-                            .onFocusChanged { isClearFocused = it.isFocused }
-                            .border(
-                                width = if (isClearFocused) 2.dp else 0.dp,
-                                color = if (isClearFocused) Color.White else Color.Transparent,
-                                shape = RoundedCornerShape(8.dp)
+                            .fillMaxWidth()
+                            .heightIn(
+                                min = if (isRealTV) 84.dp else 72.dp,
+                                max = if (isRealTV) 120.dp else 110.dp
                             )
-                            .focusable()
-                    ) {
-                        Icon(Icons.Default.Delete, contentDescription = null, modifier = Modifier.size(16.dp))
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text("Padam Siaran", fontSize = 12.sp)
+                    )
+
+                    // 5. Category / Type Selector (Strictly Red, White, Black)
+                    Column {
+                        Text(
+                            text = "Kategori:",
+                            fontSize = if (isRealTV) 12.sp else 11.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = Color.White.copy(alpha = 0.6f)
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            listOf(
+                                Pair("info", "PENGUMUMAN"),
+                                Pair("update", "KEMASKINI"),
+                                Pair("alert", "PENTING")
+                            ).forEach { (typeKey, label) ->
+                                val isSelected = selectedType == typeKey
+                                var isChipFocused by remember { mutableStateOf(false) }
+
+                                Surface(
+                                    shape = RoundedCornerShape(6.dp),
+                                    color = if (isSelected) netflixRed else Color(0xFF1C1C1C),
+                                    border = BorderStroke(
+                                        width = if (isChipFocused) (if (isRealTV) 2.5.dp else 2.dp) else 1.dp,
+                                        color = if (isChipFocused) Color.White else if (isSelected) netflixRed else Color.White.copy(alpha = 0.12f)
+                                    ),
+                                    modifier = Modifier
+                                        .weight(1f)
+                                        .onFocusChanged { isChipFocused = it.isFocused }
+                                        .scale(if (isChipFocused) (if (isRealTV) 1.05f else 1.03f) else 1f)
+                                        .clickable { selectedType = typeKey }
+                                        .focusable()
+                                    ) {
+                                    Box(
+                                        modifier = Modifier.padding(
+                                            vertical = if (isRealTV) 9.dp else 7.dp,
+                                            horizontal = 4.dp
+                                        ),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        Text(
+                                            text = label,
+                                            fontSize = if (isRealTV) 12.sp else 10.5.sp,
+                                            fontWeight = if (isSelected) FontWeight.Black else FontWeight.Medium,
+                                            color = if (isSelected) Color.White else Color.White.copy(alpha = 0.7f),
+                                            letterSpacing = 0.4.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
 
-                var isCloseFocused by remember { mutableStateOf(false) }
-                TextButton(
-                    onClick = onDismissRequest,
-                    modifier = Modifier
-                        .onFocusChanged { isCloseFocused = it.isFocused }
-                        .border(
-                            width = if (isCloseFocused) 2.dp else 0.dp,
-                            color = if (isCloseFocused) Color.White else Color.Transparent,
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        .focusable()
+                Spacer(modifier = Modifier.height(if (isRealTV) 14.dp else 12.dp))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.08f), thickness = 1.dp)
+                Spacer(modifier = Modifier.height(if (isRealTV) 14.dp else 12.dp))
+
+                // ── FOOTER ACTIONS ───────────────────────────────────────────
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Text("Tutup")
+                    if (activeBroadcast != null && activeBroadcast!!.isActive) {
+                        var isClearFocused by remember { mutableStateOf(false) }
+                        OutlinedButton(
+                            onClick = {
+                                viewModel.clearBroadcastMessage { success, msg ->
+                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                    if (success) {
+                                        titleInput = ""
+                                        messageInput = ""
+                                    }
+                                }
+                            },
+                            enabled = !isSending,
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isClearFocused) Color(0xFF2A1010) else Color.Transparent,
+                                contentColor = Color.White
+                            ),
+                            border = BorderStroke(
+                                width = if (isClearFocused) (if (isRealTV) 2.5.dp else 2.dp) else 1.dp,
+                                color = if (isClearFocused) Color.White else netflixRed.copy(alpha = 0.7f)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(
+                                horizontal = if (isRealTV) 16.dp else 12.dp,
+                                vertical = if (isRealTV) 9.dp else 6.dp
+                            ),
+                            modifier = Modifier
+                                .onFocusChanged { isClearFocused = it.isFocused }
+                                .scale(if (isClearFocused) (if (isRealTV) 1.08f else 1.05f) else 1f)
+                                .focusable()
+                        ) {
+                            Icon(
+                                Icons.Default.Delete,
+                                contentDescription = null,
+                                tint = netflixRed,
+                                modifier = Modifier.size(if (isRealTV) 17.dp else 15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = "Padam",
+                                fontSize = if (isRealTV) 13.sp else 11.5.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White
+                            )
+                        }
+                    } else {
+                        Spacer(modifier = Modifier.width(1.dp))
+                    }
+
+                    Row(
+                        horizontalArrangement = Arrangement.spacedBy(if (isRealTV) 10.dp else 8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        var isCloseFocused by remember { mutableStateOf(false) }
+                        OutlinedButton(
+                            onClick = onDismissRequest,
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = if (isCloseFocused) Color(0xFF282828) else Color.Transparent,
+                                contentColor = if (isCloseFocused) Color.White else Color.White.copy(alpha = 0.7f)
+                            ),
+                            border = BorderStroke(
+                                width = if (isCloseFocused) (if (isRealTV) 2.5.dp else 2.dp) else 1.dp,
+                                color = if (isCloseFocused) Color.White else Color.White.copy(alpha = 0.2f)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(
+                                horizontal = if (isRealTV) 18.dp else 12.dp,
+                                vertical = if (isRealTV) 9.dp else 6.dp
+                            ),
+                            modifier = Modifier
+                                .onFocusChanged { isCloseFocused = it.isFocused }
+                                .scale(if (isCloseFocused) (if (isRealTV) 1.08f else 1.05f) else 1f)
+                                .focusable()
+                        ) {
+                            Text(
+                                text = "Tutup",
+                                fontSize = if (isRealTV) 13.sp else 12.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = if (isCloseFocused) Color.White else Color.White.copy(alpha = 0.8f)
+                            )
+                        }
+
+                        var isSendFocused by remember { mutableStateOf(false) }
+                        Button(
+                            onClick = {
+                                if (messageInput.isBlank()) {
+                                    Toast.makeText(context, "Sila masukkan mesej siaran.", Toast.LENGTH_SHORT).show()
+                                    return@Button
+                                }
+                                viewModel.sendBroadcastMessage(
+                                    title = titleInput.ifBlank { "Pengumuman Rasmi" },
+                                    message = messageInput,
+                                    type = selectedType
+                                ) { success, msg ->
+                                    Toast.makeText(context, msg, Toast.LENGTH_LONG).show()
+                                    if (success) {
+                                        viewModel.fetchActiveBroadcast(forceShow = false)
+                                    }
+                                }
+                            },
+                            enabled = !isSending && messageInput.isNotBlank(),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isSendFocused) focusedRed else netflixRed,
+                                contentColor = Color.White,
+                                disabledContainerColor = netflixRed.copy(alpha = 0.3f),
+                                disabledContentColor = Color.White.copy(alpha = 0.4f)
+                            ),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(
+                                horizontal = if (isRealTV) 22.dp else 16.dp,
+                                vertical = if (isRealTV) 9.dp else 6.dp
+                            ),
+                            modifier = Modifier
+                                .onFocusChanged { isSendFocused = it.isFocused }
+                                .scale(if (isSendFocused) (if (isRealTV) 1.08f else 1.05f) else 1f)
+                                .border(
+                                    width = if (isSendFocused) (if (isRealTV) 2.5.dp else 2.dp) else 0.dp,
+                                    color = if (isSendFocused) Color.White else Color.Transparent,
+                                    shape = RoundedCornerShape(8.dp)
+                                )
+                                .focusable()
+                        ) {
+                            if (isSending) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(if (isRealTV) 16.dp else 14.dp),
+                                    strokeWidth = 2.dp,
+                                    color = Color.White
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Menghantar...",
+                                    fontSize = if (isRealTV) 13.sp else 12.sp,
+                                    color = Color.White
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = Icons.AutoMirrored.Filled.Send,
+                                    contentDescription = null,
+                                    tint = Color.White,
+                                    modifier = Modifier.size(if (isRealTV) 17.dp else 15.dp)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Text(
+                                    text = "Hantar Siaran",
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = if (isRealTV) 13.sp else 12.sp,
+                                    color = Color.White
+                                )
+                            }
+                        }
+                    }
                 }
             }
-        },
-        containerColor = MaterialTheme.colorScheme.surface,
-        shape = RoundedCornerShape(16.dp)
-    )
+        }
+    }
 }

@@ -2,6 +2,37 @@
 
 All notable changes to the Duta Movie application are documented in this file.
 
+## [2.1.1 Cloud 7] - 2026-10-14
+
+> **Feature & Hardening Release**: Introduces TV3 Malaysia Live streaming with official high-res branding and resilient YouTube Live fallback, hardware-level Voice Activity Detection (VAD) audio processing for real-time speech synchronization, Dual Subtitle display with customizable mask box, auto-pilot subtitle calibration, and interactive Supabase RLS broadcast management.
+
+### Added
+- **TV3 Malaysia Live Streaming & Resilient Fallback**:
+  - Integrated official high-resolution transparent TV3 Malaysia channel branding.
+  - Multi-server resilience pairing direct YouTube Live embedding alongside low-latency HLS streams with automated PlaybackStuck recovery.
+  - Live TV architecture isolation ensuring television channels bypass pirate media extractors and subtitle scrapers.
+- **Hardware-Level Voice Activity Detection (VAD) Audio Processor**:
+  - Integrated custom ExoPlayer audio processor capturing real-time PCM audio buffers to identify speech boundaries and vocal energy onset.
+  - Real-time millisecond dialogue synchronization linking speech detection to subtitle cues for automatic timing adjustment.
+- **Dual Subtitle Display & Subtitle Mask Box**:
+  - Stacked dual subtitle rendering (warm golden-yellow secondary subtitle stacked directly above crisp white primary subtitle).
+  - Configurable Subtitle Mask Box designed to cleanly obscure baked-in hardcoded subtitles when reading translated subtitles.
+- **Intelligent Subtitle Signature Matching & Auto-Pilot**:
+  - `SubtitleSyncEngine` extracts stream signatures (quality, platform, source release group) to automatically select and lock matching subtitles to 0ms native sync without timing drift.
+  - Auto-pilot timing calibration and per-title offset persistence across playback sessions.
+- **Interactive Broadcast Admin & Announcement System**:
+  - Broadcast management dialog featuring priority broadcast creation, multi-level styling, and active announcement displays.
+  - Supabase RLS compatibility fix ensuring announcements deactivate cleanly via upsert before deletion.
+
+### Improved & Hardened
+- **AI Subtitle Translator Rate-Limit Bypass**:
+  - Replaced throttled web endpoints with dedicated mobile client endpoints, eliminating HTTP 429 rate limits during large batch translations.
+  - Intelligent multi-tier fallback pipeline guaranteeing subtitle availability even during provider outages.
+- **Player Gesture & HUD Stability**:
+  - Refined single-tap HUD toggling, seek gesture responsiveness, and background state synchronization.
+
+---
+
 ## [2.1.0b Cloud 7] - 2026-10-10
 
 > **Fix & Optimization Release**: Fixes category row browsing scroll position resets when exiting video details and provides seamless TV mode D-Pad focus restoration.

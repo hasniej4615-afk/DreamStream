@@ -612,12 +612,12 @@ fun DetailNavigation(onBackClick: () -> Unit, onSettingsClick: () -> Unit, isAdd
         val backScale by animateFloatAsState(if (isBackFocused) 1.2f else 1f)
         Surface(
             shape = CircleShape,
-            color = if (isBackFocused) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.5f),
+            color = if (isBackFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.5f),
             modifier = Modifier
                 .size(40.dp)
                 .graphicsLayer(scaleX = backScale, scaleY = backScale)
                 .onFocusChanged { isBackFocused = it.isFocused }
-                .border(if (isBackFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                .border(if (isBackFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                 .clickable { onBackClick() }
                 .focusable()
                 .onKeyEvent { keyEvent ->
@@ -637,12 +637,12 @@ fun DetailNavigation(onBackClick: () -> Unit, onSettingsClick: () -> Unit, isAdd
             val myListScale by animateFloatAsState(if (isMyListFocused) 1.2f else 1f)
             Surface(
                 shape = CircleShape,
-                color = if (isMyListFocused) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.5f),
+                color = if (isMyListFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.5f),
                 modifier = Modifier
                     .size(40.dp)
                     .graphicsLayer(scaleX = myListScale, scaleY = myListScale)
-                    .onFocusChanged { isMyListFocused = it.isFocused }
-                    .border(if (isMyListFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                .onFocusChanged { isMyListFocused = it.isFocused }
+                .border(if (isMyListFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                     .clickable { onToggleMyList() }
                     .focusable()
                     .onKeyEvent { keyEvent ->
@@ -661,12 +661,12 @@ fun DetailNavigation(onBackClick: () -> Unit, onSettingsClick: () -> Unit, isAdd
             val settingsScale by animateFloatAsState(if (isSettingsFocused) 1.2f else 1f)
             Surface(
                 shape = CircleShape,
-                color = if (isSettingsFocused) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.5f),
+                color = if (isSettingsFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Black.copy(alpha = 0.5f),
                 modifier = Modifier
                     .size(40.dp)
                     .graphicsLayer(scaleX = settingsScale, scaleY = settingsScale)
                     .onFocusChanged { isSettingsFocused = it.isFocused }
-                    .border(if (isSettingsFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                    .border(if (isSettingsFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                     .clickable { onSettingsClick() }
                     .focusable()
                     .onKeyEvent { keyEvent ->
@@ -691,12 +691,12 @@ fun DetailNavigation(onBackClick: () -> Unit, onSettingsClick: () -> Unit, isAdd
                 Surface(
                     onClick = { mediaRouteButton?.performClick() },
                     shape = CircleShape,
-                    color = if (isCastFocused) Color.White.copy(alpha = 0.2f) else Color.Black.copy(alpha = 0.5f),
+                    color = if (isCastFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Black.copy(alpha = 0.5f),
                     modifier = Modifier
                         .size(40.dp)
                         .graphicsLayer(scaleX = castScale, scaleY = castScale)
                         .onFocusChanged { isCastFocused = it.isFocused }
-                        .border(if (isCastFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                        .border(if (isCastFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                         .focusable()
                 ) {
                     Box(contentAlignment = Alignment.Center) {
@@ -812,8 +812,8 @@ fun VideoDetailInfo(
                                 true
                             } else false
                         }
-                        .shadow(if (isPlayFocused) 8.dp else 0.dp, RoundedCornerShape(8.dp), spotColor = Color.White)
-                        .border(if (isPlayFocused) BorderStroke(3.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                        .shadow(if (isPlayFocused) 10.dp else 0.dp, RoundedCornerShape(8.dp), spotColor = Color(0xFFE50914))
+                        .border(if (isPlayFocused) BorderStroke(3.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
                     colors = ButtonDefaults.buttonColors(containerColor = Color.White, contentColor = Color.Black),
                     shape = RoundedCornerShape(8.dp)
                 ) {
@@ -843,10 +843,10 @@ fun VideoDetailInfo(
                                 true
                             } else false
                         }
-                        .shadow(if (isTrailerFocused && hasTrailer) 8.dp else 0.dp, RoundedCornerShape(8.dp), spotColor = Color.White)
+                        .shadow(if (isTrailerFocused && hasTrailer) 8.dp else 0.dp, RoundedCornerShape(8.dp), spotColor = Color(0xFFE50914))
                         .border(
                             if (isTrailerFocused && hasTrailer) {
-                                if (effectiveTV) BorderStroke(3.5.dp, Color.White) else BorderStroke(3.dp, Color.Red)
+                                BorderStroke(3.dp, Color(0xFFE50914))
                             }
                             else if (hasTrailer) BorderStroke(1.dp, Color.White)
                             else BorderStroke(1.dp, Color.DarkGray), 
@@ -894,7 +894,7 @@ fun VideoDetailInfo(
                         ambientColor = Color.White
                     )
                     .border(
-                        if (isRecommendFocused) BorderStroke(3.5.dp, Color.White)
+                        if (isRecommendFocused) BorderStroke(3.dp, Color(0xFFE50914))
                         else if (isRecommended) BorderStroke(1.5.dp, Color.Red)
                         else BorderStroke(1.dp, Color.White.copy(alpha = 0.25f)),
                         RoundedCornerShape(8.dp)
@@ -950,7 +950,8 @@ fun VideoDetailInfo(
             modifier = Modifier
                 .fillMaxWidth()
                 .onFocusChanged { isSynopsisFocused = it.isFocused }
-                .border(if (isSynopsisFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                .background(if (isSynopsisFocused) Color(0xFFE50914).copy(alpha = 0.15f) else Color.Transparent, RoundedCornerShape(8.dp))
+                .border(if (isSynopsisFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                 .clickable { isExpanded = !isExpanded }
                 .focusable()
                 .onKeyEvent { keyEvent ->
@@ -1157,8 +1158,8 @@ fun VideoDetailInfo(
                         } else false
                     }
                     .border(
-                        if (isAltFocused && effectiveTV) BorderStroke(3.5.dp, Color.White)
-                        else if (isAltFocused) BorderStroke(2.dp, Color.Red)
+                        if (isAltFocused && effectiveTV) BorderStroke(3.dp, Color(0xFFE50914))
+                        else if (isAltFocused) BorderStroke(2.dp, Color(0xFFE50914))
                         else BorderStroke(1.dp, Color.DarkGray), 
                         RoundedCornerShape(8.dp)
                     )
@@ -1208,11 +1209,11 @@ fun VideoDetailInfo(
                     Button(
                         onClick = { onPlayClick(video.id, server.url) },
                         colors = ButtonDefaults.buttonColors(
-                            containerColor = if (isServerFocused) Color.White 
+                            containerColor = if (isServerFocused) Color(0xFFE50914) 
                                             else if (isDead) Color(0xFF141414) 
                                             else if (isMovieBox) Color(0xFF222018)
                                             else Color(0xFF1E1E1E),
-                            contentColor = if (isServerFocused) Color.Black 
+                            contentColor = if (isServerFocused) Color.White 
                                            else if (isDead) Color.Gray 
                                            else if (isMovieBox) Color(0xFFFFF0A0)
                                            else Color.White
@@ -1232,12 +1233,12 @@ fun VideoDetailInfo(
                             .shadow(
                                 elevation = if (isServerFocused && effectiveTV) 8.dp else 0.dp,
                                 shape = RoundedCornerShape(8.dp),
-                                spotColor = if (isMovieBox) Color(0xFFFFD700) else Color.White,
+                                spotColor = if (isMovieBox) Color(0xFFFFD700) else Color(0xFFE50914),
                                 ambientColor = Color.White
                             )
                             .border(
-                                if (isServerFocused && effectiveTV) BorderStroke(3.5.dp, Color.White)
-                                else if (isServerFocused) BorderStroke(2.dp, Color.Red)
+                                if (isServerFocused && effectiveTV) BorderStroke(3.dp, Color(0xFFFF1744))
+                                else if (isServerFocused) BorderStroke(2.dp, Color(0xFFE50914))
                                 else if (isDead) BorderStroke(1.dp, Color.White.copy(alpha = 0.05f))
                                 else if (isMovieBox) BorderStroke(1.5.dp, Color(0xFFFFD700).copy(alpha = 0.6f))
                                 else if (effectiveTV) BorderStroke(1.dp, Color.White.copy(alpha = 0.2f))
@@ -1478,7 +1479,7 @@ fun VideoDetailInfo(
                                 scaleX = if (isCastFocused) 1.2f else 1f
                                 scaleY = if (isCastFocused) 1.2f else 1f
                             }
-                            .border(if (isCastFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                            .border(if (isCastFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                             .clickable { 
                                 if (path != null) onActressClick(path, actressName) 
                                 else onActressClick("/?s=${actressName.replace(" ", "+")}", actressName)
@@ -1489,7 +1490,7 @@ fun VideoDetailInfo(
                             modifier = Modifier
                                 .size(60.dp)
                                 .clip(CircleShape)
-                                .background(if (isCastFocused) Color.White.copy(alpha = 0.2f) else Color.DarkGray),
+                                .background(if (isCastFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.DarkGray),
                             contentAlignment = Alignment.Center
                         ) {
                             if (!imageUrl.isNullOrEmpty()) {
@@ -1625,7 +1626,7 @@ fun CommentSection(
                     .onFocusChanged { isNicknameFocused = it.isFocused }
                     .then(
                         if (isRealTV && isNicknameFocused) {
-                            Modifier.border(2.dp, Color.White, RoundedCornerShape(4.dp))
+                            Modifier.border(2.5.dp, Color(0xFFE50914), RoundedCornerShape(4.dp))
                         } else Modifier
                     )
                     .padding(bottom = 8.dp)
@@ -1664,7 +1665,7 @@ fun CommentSection(
                     .onFocusChanged { isCommentFocused = it.isFocused }
                     .then(
                         if (isRealTV && isCommentFocused) {
-                            Modifier.border(2.dp, Color.White, RoundedCornerShape(4.dp))
+                            Modifier.border(2.5.dp, Color(0xFFE50914), RoundedCornerShape(4.dp))
                         } else Modifier
                     )
                     .padding(bottom = 12.dp)
@@ -1714,7 +1715,7 @@ fun CommentSection(
                             scaleY = if (isPostBtnFocused) 1.05f else 1f
                         }
                         .border(
-                            border = if (isPostBtnFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent),
+                            border = if (isPostBtnFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent),
                             shape = RoundedCornerShape(8.dp)
                         )
                 ) {
@@ -1868,7 +1869,7 @@ fun CommentSection(
                             .onFocusChanged { isEditInputFocused = it.isFocused }
                             .then(
                                 if (isRealTV && isEditInputFocused) {
-                                    Modifier.border(2.dp, Color.White, RoundedCornerShape(4.dp))
+                                    Modifier.border(2.5.dp, Color(0xFFE50914), RoundedCornerShape(4.dp))
                                 } else Modifier
                             )
                     )
@@ -1907,7 +1908,7 @@ fun CommentSection(
                             scaleY = if (isEditSaveFocused) 1.05f else 1f
                         }
                         .border(
-                            border = if (isEditSaveFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent),
+                            border = if (isEditSaveFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent),
                             shape = RoundedCornerShape(8.dp)
                         )
                 ) {
@@ -1931,7 +1932,7 @@ fun CommentSection(
                             scaleY = if (isEditCancelFocused) 1.05f else 1f
                         }
                         .border(
-                            border = if (isEditCancelFocused) BorderStroke(1.5.dp, Color.White.copy(alpha = 0.8f)) else BorderStroke(0.dp, Color.Transparent),
+                            border = if (isEditCancelFocused) BorderStroke(2.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent),
                             shape = RoundedCornerShape(8.dp)
                         )
                 ) {
@@ -1991,7 +1992,7 @@ fun CommentSection(
                             scaleY = if (isDeleteConfirmFocused) 1.05f else 1f
                         }
                         .border(
-                            border = if (isDeleteConfirmFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent),
+                            border = if (isDeleteConfirmFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent),
                             shape = RoundedCornerShape(8.dp)
                         )
                 ) {
@@ -2015,7 +2016,7 @@ fun CommentSection(
                             scaleY = if (isDeleteCancelFocused) 1.05f else 1f
                         }
                         .border(
-                            border = if (isDeleteCancelFocused) BorderStroke(1.5.dp, Color.White.copy(alpha = 0.8f)) else BorderStroke(0.dp, Color.Transparent),
+                            border = if (isDeleteCancelFocused) BorderStroke(2.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent),
                             shape = RoundedCornerShape(8.dp)
                         )
                 ) {
@@ -2146,14 +2147,14 @@ fun CommentItem(
                                     .size(28.dp)
                                     .onFocusChanged { isEditFocused = it.isFocused }
                                     .border(
-                                        border = if (isEditFocused) BorderStroke(1.5.dp, Color.White) else BorderStroke(0.dp, Color.Transparent),
+                                        border = if (isEditFocused) BorderStroke(2.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent),
                                         shape = CircleShape
                                     )
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Edit,
                                     contentDescription = "Edit Comment",
-                                    tint = if (isEditFocused) Color.White else Color.Gray,
+                                    tint = if (isEditFocused) Color(0xFFE50914) else Color.Gray,
                                     modifier = Modifier.size(15.dp)
                                 )
                             }
@@ -2251,17 +2252,16 @@ fun EpisodeRow(
     onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (isFocused) 1.03f else 1f)
+    val scale by animateFloatAsState(if (isFocused) (if (isTV) 1.05f else 1.03f) else 1f)
     Surface(
-        color = if (isFocused) (if (isTV) Color(0xFF2A2A2A) else Color(0xFF222222)) else Color(0xFF111111),
+        color = if (isFocused) (if (isTV) Color(0xFFE50914).copy(alpha = 0.25f) else Color(0xFF222222)) else Color(0xFF111111),
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer(scaleX = scale, scaleY = scale)
             .onFocusChanged { isFocused = it.isFocused }
             .border(
-                border = if (isFocused && isTV) BorderStroke(3.5.dp, Color.White) 
-                         else if (isFocused) BorderStroke(3.dp, Color.Red) 
+                border = if (isFocused) BorderStroke(if (isTV) 3.dp else 2.5.dp, Color(0xFFE50914)) 
                          else BorderStroke(1.dp, Color.White.copy(alpha = 0.05f)), 
                 shape = RoundedCornerShape(12.dp)
             )

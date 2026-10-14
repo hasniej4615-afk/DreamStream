@@ -57,6 +57,15 @@ object SubtitleParser {
         if (bytes.size >= 2 && bytes[0] == 0xFE.toByte() && bytes[1] == 0xFF.toByte()) {
             return fixMojibake(String(bytes, 2, bytes.size - 2, Charsets.UTF_16BE))
         }
+        // Heuristic UTF-16 without BOM (null bytes interleaved with ASCII)
+        if (bytes.size >= 8) {
+            if (bytes[0] != 0.toByte() && bytes[1] == 0.toByte() && bytes[2] != 0.toByte() && bytes[3] == 0.toByte()) {
+                return fixMojibake(String(bytes, Charsets.UTF_16LE))
+            }
+            if (bytes[0] == 0.toByte() && bytes[1] != 0.toByte() && bytes[2] == 0.toByte() && bytes[3] != 0.toByte()) {
+                return fixMojibake(String(bytes, Charsets.UTF_16BE))
+            }
+        }
 
         // 2. Strict UTF-8 validation
         val utf8Decoder = Charsets.UTF_8.newDecoder()
@@ -144,7 +153,7 @@ object SubtitleParser {
                 low.contains(".org") || low.contains(".xyz") || low.contains(".vip") ||
                 low.contains(".top")
         val isSubtitleSource = low.contains("subscene") || low.contains("opensubtitles") ||
-                low.contains("subdl") || low.contains("lebah ganteng") ||
+                low.contains("subdl") || low.contains("subsource") || low.contains("lebah ganteng") ||
                 low.contains("pein akatsuki") || low.contains("idfl") ||
                 low.contains("dutafilm") || low.contains("lk21") || low.contains("layarkaca21")
         if (hasDomain && isSubtitleSource) return true
@@ -320,14 +329,16 @@ object SubtitleParser {
 
     /**
      * Serializes a list of [ParsedSubtitleCue]s into standard WebVTT format,
-     * optionally applying a time offset in milliseconds.
+     * optionally applying a time offset in milliseconds and framerate stretch ratio.
      */
-    fun toWebVtt(cues: List<ParsedSubtitleCue>, offsetMs: Long = 0L): String {
+    fun toWebVtt(cues: List<ParsedSubtitleCue>, offsetMs: Long = 0L, fpsRatio: Float = 1.0f): String {
         val sb = StringBuilder("WEBVTT\n\n")
         var validIndex = 1
         for (cue in cues) {
-            val start = (cue.startTimeMs + offsetMs).coerceAtLeast(0L)
-            val end = (cue.endTimeMs + offsetMs).coerceAtLeast(start + 100L)
+            val shiftedStart = (cue.startTimeMs + offsetMs).coerceAtLeast(0L)
+            val shiftedEnd = (cue.endTimeMs + offsetMs).coerceAtLeast(shiftedStart + 100L)
+            val start = if (fpsRatio != 1.0f && fpsRatio > 0f) (shiftedStart * fpsRatio).toLong() else shiftedStart
+            val end = if (fpsRatio != 1.0f && fpsRatio > 0f) (shiftedEnd * fpsRatio).toLong() else shiftedEnd
             if (cue.text.isNotBlank()) {
                 sb.append(validIndex).append("\n")
                 sb.append(formatVttTimestamp(start)).append(" --> ").append(formatVttTimestamp(end)).append("\n")

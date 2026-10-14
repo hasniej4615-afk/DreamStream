@@ -23,6 +23,7 @@ import com.duta.movie.R
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.layout.ContentScale
@@ -205,8 +206,9 @@ fun ActressProfileScreen(
                                     },
                                     modifier = Modifier
                                         .onFocusChanged { isMicFocused = it.isFocused }
-                                        .background(if (isMicFocused) Color.White.copy(alpha = 0.15f) else Color.Transparent, CircleShape)
-                                        .border(if (isMicFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                        .scale(if (isMicFocused) 1.05f else 1f)
+                                        .background(if (isMicFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                                        .border(if (isMicFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                                 ) { Icon(Icons.Default.Mic, contentDescription = stringResource(R.string.voice_search), tint = Color.White) }
                             }
                         )
@@ -226,7 +228,9 @@ fun ActressProfileScreen(
                         },
                         modifier = Modifier
                             .onFocusChanged { isBackFocused = it.isFocused }
-                            .border(if (isBackFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                            .scale(if (isBackFocused) 1.05f else 1f)
+                            .background(if (isBackFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                            .border(if (isBackFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                             .focusable()
                     ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
@@ -239,7 +243,9 @@ fun ActressProfileScreen(
                             onClick = { viewModel.setSearchActive(true) },
                             modifier = Modifier
                                 .onFocusChanged { isSearchFocused = it.isFocused }
-                                .border(if (isSearchFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                .scale(if (isSearchFocused) 1.05f else 1f)
+                                .background(if (isSearchFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                                .border(if (isSearchFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                                 .focusable()
                         ) {
                             Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search), tint = Color.White)
@@ -332,12 +338,13 @@ fun ActressProfileScreen(
                                         label = { Text(tag, fontSize = 12.sp) },
                                         modifier = Modifier
                                             .padding(horizontal = 4.dp)
-                                            .onFocusChanged { isTagFocused = it.isFocused },
+                                            .onFocusChanged { isTagFocused = it.isFocused }
+                                            .scale(if (isTagFocused) 1.05f else 1f),
                                         colors = SuggestionChipDefaults.suggestionChipColors(
-                                            containerColor = if (isTagFocused) Color.Gray else Color.DarkGray,
+                                            containerColor = if (isTagFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.DarkGray,
                                             labelColor = Color.White
                                         ),
-                                        border = if (isTagFocused) BorderStroke(2.dp, Color.White) else null
+                                        border = if (isTagFocused) BorderStroke(2.dp, Color(0xFFE50914)) else null
                                     )
                                 }
                             }
@@ -383,14 +390,15 @@ fun ActressProfileScreen(
                             Button(
                                 onClick = { viewModel.selectCategory(actressPath) },
                                 colors = ButtonDefaults.buttonColors(
-                                    containerColor = if (isRetryFocused) Color.LightGray else Color.Red
+                                    containerColor = if (isRetryFocused) Color(0xFFE50914) else Color(0xFFB00020)
                                 ),
                                 modifier = Modifier
                                     .onFocusChanged { isRetryFocused = it.isFocused }
-                                    .border(if (isRetryFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                                    .scale(if (isRetryFocused) 1.05f else 1f)
+                                    .border(if (isRetryFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                                     .focusable()
                             ) {
-                                Text(stringResource(R.string.retry), color = if (isRetryFocused) Color.Black else Color.White)
+                                Text(stringResource(R.string.retry), color = Color.White)
                             }
                         }
                     }

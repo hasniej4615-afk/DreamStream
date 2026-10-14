@@ -2935,7 +2935,7 @@ object VideoExtractor {
      */
     suspend fun findAlternativeSources(video: Video): List<VideoServer> = withContext(Dispatchers.IO) {
         val targetNorm = normalizeForDedup(video)
-        if (targetNorm.isEmpty() || isLikelySeries(video)) return@withContext emptyList()
+        if (targetNorm.isEmpty() || isLikelySeries(video) || com.duta.movie.model.LiveTvCatalog.isLiveVideo(video.id) || video.duration == "LIVE") return@withContext emptyList()
 
         val isPm = isPencuriMovie(videoId = video.id, videoUrl = video.videoUrl)
         val isKb = isKepalaBergetar(videoId = video.id, videoUrl = video.videoUrl)
@@ -3894,7 +3894,7 @@ object VideoExtractor {
         if (!isYouTube) {
             return if (clean.length in 10..12 && !clean.contains("/") && !clean.contains("?") && !clean.contains("&") && !clean.contains("#")) clean else null
         }
-        return when {
+        val rawId = when {
             clean.contains("v=") -> clean.substringAfter("v=").substringBefore("&").substringBefore("?")
             clean.contains("youtu.be/") -> clean.substringAfter("youtu.be/").substringBefore("?").substringBefore("&")
             clean.contains("/embed/") -> clean.substringAfter("/embed/").substringBefore("?").substringBefore("&")
@@ -3904,6 +3904,7 @@ object VideoExtractor {
             clean.length in 10..12 && !clean.contains("/") -> clean
             else -> null
         }
+        return rawId?.takeIf { it.length in 10..12 && !it.contains("/") && !it.contains("?") && !it.contains("&") && !it.contains("#") && !it.contains(" ") }
     }
 
     /**

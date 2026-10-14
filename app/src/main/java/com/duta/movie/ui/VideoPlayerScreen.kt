@@ -362,6 +362,7 @@ fun VideoPlayerScreen(
     val isTranslatingSubtitle by viewModel.isTranslatingSubtitle.collectAsStateWithLifecycle()
     val translationProgress by viewModel.translationProgress.collectAsStateWithLifecycle()
     val vadVoiceOnsetMs by viewModel.vadVoiceOnsetMs.collectAsStateWithLifecycle()
+    val autoSyncNotice by viewModel.autoSyncNotice.collectAsStateWithLifecycle()
     val voiceEnhancerMode by viewModel.voiceEnhancerMode.collectAsStateWithLifecycle()
     val voiceEnhancerManager = remember { VoiceEnhancerManager() }
 
@@ -522,7 +523,11 @@ fun VideoPlayerScreen(
 
     var isFinishing by remember { mutableStateOf(false) }
 
-    LaunchedEffect(videoId, video?.title, currentEpisode?.url) { video?.title?.let { viewModel.fetchSubtitles(it, isTV = (video?.isSeries == true && video?.episodes?.isNotEmpty() == true) || currentEpisode != null) } }
+    LaunchedEffect(videoId, video?.title, currentEpisode?.url) {
+        if (!com.duta.movie.model.LiveTvCatalog.isLiveVideo(videoId)) {
+            video?.title?.let { viewModel.fetchSubtitles(it, isTV = (video?.isSeries == true && video?.episodes?.isNotEmpty() == true) || currentEpisode != null, videoId = videoId) }
+        }
+    }
 
     val isAnyDialogOpen = showServerDialog || showSubtitleDialog || showSyncDialog || showEpisodeDialog || showResumeDialog
     LaunchedEffect(showControls, isVideoReady, isAnyDialogOpen, lastInteractionTime) { 
@@ -547,16 +552,47 @@ fun VideoPlayerScreen(
     val vadAudioProcessor = remember { com.duta.movie.audio.VadAudioProcessor() }
     val vadCurrentPositionMs = remember { java.util.concurrent.atomic.AtomicLong(0L) }
     LaunchedEffect(vadAudioProcessor) {
-        vadAudioProcessor.detectedVoiceOnsetMs.collect { onset ->
-            if (onset > 0L) {
-                viewModel.setVadVoiceOnsetMs(onset)
+        vadAudioProcessor.detectedVoiceOnsets.collect { onsets ->
+            if (onsets.isNotEmpty()) {
+                viewModel.setVadVoiceOnsets(onsets, isWindowElapsed = false)
             }
+        }
+    }
+    LaunchedEffect(vadAudioProcessor) {
+        vadAudioProcessor.isWindowElapsed.collect { elapsed ->
+            if (elapsed) {
+                val onsets = vadAudioProcessor.detectedVoiceOnsets.value
+                viewModel.setVadVoiceOnsets(onsets, isWindowElapsed = true)
+            }
+        }
+    }
+    LaunchedEffect(vadAudioProcessor) {
+        viewModel.vadSearchWindow.collect { (startMs, endMs) ->
+            vadAudioProcessor.setTargetSearchWindow(startMs, endMs)
+        }
+    }
+    LaunchedEffect(autoSyncNotice) {
+        val notice = autoSyncNotice
+        if (notice != null) {
+            if (notice.method.contains("Cadence")) {
+                vadAudioProcessor.stopListening()
+            }
+            delay(3200)
+            viewModel.dismissAutoSyncNotice()
+        }
+    }
+    LaunchedEffect(selectedSubtitle) {
+        if (viewModel.isCurrentSubtitleMatched(selectedSubtitle)) {
+            vadAudioProcessor.stopListening()
+            vadAudioProcessor.resetDetection()
         }
     }
     LaunchedEffect(videoId, serverUrl) {
         vadAudioProcessor.resetDetection()
         vadAudioProcessor.setStreamStartPosition(0L)
         vadCurrentPositionMs.set(0L)
+        val (startMs, endMs) = viewModel.vadSearchWindow.value
+        vadAudioProcessor.setTargetSearchWindow(startMs, endMs)
     }
 
     val exoPlayer: ExoPlayer = remember {
@@ -608,7 +644,16 @@ fun VideoPlayerScreen(
             .setPrioritizeTimeOverSizeThresholds(true)
             .build()
         ExoPlayer.Builder(context, renderersFactory).setMediaSourceFactory(mediaSourceFactory).setLoadControl(loadControl).setSeekForwardIncrementMs(10_000).setSeekBackIncrementMs(10_000).build().apply {
-            vadAudioProcessor.playbackPositionProvider = { vadCurrentPositionMs.get() }
+            vadAudioProcessor.playbackPositionProvider = {
+                val pos = vadCurrentPositionMs.get()
+                if (pos > 0L) pos else {
+                    try {
+                        this.currentPosition
+                    } catch (_: Throwable) {
+                        0L
+                    }
+                }
+            }
             videoScalingMode = C.VIDEO_SCALING_MODE_SCALE_TO_FIT
             val audioAttributes = androidx.media3.common.AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
@@ -900,6 +945,20 @@ fun VideoPlayerScreen(
 
     var userInitiatedPause by remember { mutableStateOf(false) }
     var lastSeekTimeMs by remember { mutableLongStateOf(0L) }
+
+    // Continuous position updater for hardware VAD audio processor
+    LaunchedEffect(isVideoReady, useWebView, isCasting) {
+        if (isVideoReady) {
+            while (true) {
+                val activePlayer = if (isCasting && castPlayer != null) castPlayer else exoPlayer
+                val pos = if (useWebView && !isCasting) webPlayerState.value.position else activePlayer.currentPosition
+                if (pos > 0L) {
+                    vadCurrentPositionMs.set(pos)
+                }
+                delay(250L)
+            }
+        }
+    }
 
     // OWL'S EYE: Stall Guard & Progress Saver
     LaunchedEffect(isVideoReady, useWebView, isCasting) {
@@ -1254,7 +1313,7 @@ fun VideoPlayerScreen(
 
     var lastCastSubUrl by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(extractedUrl, selectedSubtitle, currentPlayer, subtitleCues, subtitleOffset, isCasting) {
+    LaunchedEffect(extractedUrl, selectedSubtitle, currentPlayer, subtitleCues, subtitleOffset, subtitleFpsRatio, isCasting) {
         val url = extractedUrl ?: return@LaunchedEffect
         val sub = selectedSubtitle
         if (!useWebView || isCasting) {
@@ -1268,7 +1327,7 @@ fun VideoPlayerScreen(
             
             // For Google Cast: serve WebVTT subtitles via local LAN CastSubtitleServer
             val castSubUrl = if (isCasting && sub != null && subtitleCues.isNotEmpty()) {
-                val vtt = SubtitleParser.toWebVtt(subtitleCues, -subtitleOffset)
+                val vtt = SubtitleParser.toWebVtt(subtitleCues, -subtitleOffset, subtitleFpsRatio)
                 CastSubtitleServer.setSubtitle(vtt)
             } else {
                 if (isCasting && sub == null) CastSubtitleServer.clear()
@@ -1943,6 +2002,7 @@ fun VideoPlayerScreen(
         qualityTracks = qualityTracks,
         selectedQualityGroupIndex = selectedQualityGroupIndex,
         seekFeedback = seekFeedback,
+        autoSyncNotice = autoSyncNotice,
         currentEpisode = currentEpisode,
         playPauseFocusRequester = playPauseFocusRequester,
         controlsFocusRequester = controlsFocusRequester,
@@ -2184,7 +2244,8 @@ fun VideoPlayerScreen(
                         }
                         showResumeDialog = false 
                     },
-                    colors = ButtonDefaults.buttonColors(containerColor = if (isResumeFocused) Color.White else Color.Red),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isResumeFocused) Color(0xFFFF1744) else Color(0xFFE50914)),
+                    shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
                         .focusRequester(resumeFocusRequester)
                         .onFocusChanged { 
@@ -2192,9 +2253,10 @@ fun VideoPlayerScreen(
                             if (it.isFocused) interactionKey++ 
                         }
                         .focusable()
-                        .scale(if (isResumeFocused) 1.1f else 1f)
+                        .scale(if (isResumeFocused) 1.08f else 1f)
+                        .border(if (isResumeFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                 ) { 
-                    Text(stringResource(R.string.resume), color = if (isResumeFocused) Color.Black else Color.White, fontWeight = FontWeight.Bold) 
+                    Text(stringResource(R.string.resume), color = Color.White, fontWeight = FontWeight.Bold) 
                 }
             },
             dismissButton = {
@@ -2207,7 +2269,9 @@ fun VideoPlayerScreen(
                             if (it.isFocused) interactionKey++ 
                         }
                         .focusable()
-                        .scale(if (isStartFocused) 1.1f else 1f)
+                        .scale(if (isStartFocused) 1.05f else 1f)
+                        .background(if (isStartFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent, RoundedCornerShape(8.dp))
+                        .border(if (isStartFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                 ) { 
                     Text(stringResource(R.string.start_over), color = if (isStartFocused) Color.White else Color.Gray) 
                 }
@@ -2258,18 +2322,20 @@ fun VideoPlayerScreen(
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = when {
-                                isPrimTabFocused -> Color.White
-                                !isDualModeTab -> Color.Red
+                                isPrimTabFocused -> Color(0xFFFF1744)
+                                !isDualModeTab -> Color(0xFFE50914)
                                 else -> Color.Transparent
                             },
                             modifier = Modifier
                                 .clickable { isDualModeTab = false }
                                 .onFocusChanged { isPrimTabFocused = it.isFocused }
+                                .scale(if (isPrimTabFocused) 1.05f else 1f)
+                                .border(if (isPrimTabFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(6.dp))
                                 .focusable()
                         ) {
                             Text(
                                 text = stringResource(R.string.primary_sub_tab),
-                                color = if (isPrimTabFocused) Color.Black else if (!isDualModeTab) Color.White else Color.Gray,
+                                color = if (isPrimTabFocused || !isDualModeTab) Color.White else Color.Gray,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -2279,18 +2345,20 @@ fun VideoPlayerScreen(
                         Surface(
                             shape = RoundedCornerShape(6.dp),
                             color = when {
-                                isDualTabFocused -> Color.White
+                                isDualTabFocused -> Color(0xFFFF1744)
                                 isDualModeTab -> Color(0xFFFFC107)
                                 else -> Color.Transparent
                             },
                             modifier = Modifier
                                 .clickable { isDualModeTab = true }
                                 .onFocusChanged { isDualTabFocused = it.isFocused }
+                                .scale(if (isDualTabFocused) 1.05f else 1f)
+                                .border(if (isDualTabFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(6.dp))
                                 .focusable()
                         ) {
                             Text(
                                 text = stringResource(R.string.dual_sub_tab),
-                                color = if (isDualTabFocused) Color.Black else if (isDualModeTab) Color.Black else Color.Gray,
+                                color = if (isDualTabFocused) Color.White else if (isDualModeTab) Color.Black else Color.Gray,
                                 fontSize = 11.sp,
                                 fontWeight = FontWeight.Bold,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
@@ -2487,24 +2555,25 @@ fun VideoPlayerScreen(
                                 .weight(1f)
                                 .height(50.dp)
                                 .onFocusChanged { isSearchFocused = it.isFocused }
-                                .border(if (isSearchFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                                .border(if (isSearchFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                         )
                         Spacer(Modifier.width(8.dp))
                         Button(
                             onClick = { if (!isSubtitleLoading) performSearch() },
                             enabled = !isSubtitleLoading,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isSearchBtnFocused) Color.White else Color.Red,
-                                contentColor = if (isSearchBtnFocused) Color.Black else Color.White,
-                                disabledContainerColor = if (isSearchBtnFocused) Color.White.copy(alpha = 0.8f) else Color.Red.copy(alpha = 0.6f),
-                                disabledContentColor = if (isSearchBtnFocused) Color.Black else Color.White
+                                containerColor = if (isSearchBtnFocused) Color(0xFFFF1744) else Color(0xFFE50914),
+                                contentColor = Color.White,
+                                disabledContainerColor = if (isSearchBtnFocused) Color(0xFFFF1744).copy(alpha = 0.8f) else Color(0xFFE50914).copy(alpha = 0.6f),
+                                disabledContentColor = Color.White
                             ),
                             shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .height(50.dp)
                                 .onFocusChanged { isSearchBtnFocused = it.isFocused }
                                 .focusable()
-                                .border(if (isSearchBtnFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                                .scale(if (isSearchBtnFocused) 1.05f else 1f)
+                                .border(if (isSearchBtnFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                         ) {
                             if (isSubtitleLoading) {
                                 Row(
@@ -2513,7 +2582,7 @@ fun VideoPlayerScreen(
                                 ) {
                                     CircularProgressIndicator(
                                         modifier = Modifier.size(14.dp),
-                                        color = if (isSearchBtnFocused) Color.Black else Color.White,
+                                        color = Color.White,
                                         strokeWidth = 2.dp
                                     )
                                     Spacer(Modifier.width(6.dp))
@@ -2556,20 +2625,21 @@ fun VideoPlayerScreen(
                                         true
                                     } else false
                                 }
+                                .scale(if (isOpenLocalFocused) 1.04f else 1f)
                                 .focusable()
-                                .border(if (isOpenLocalFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                                .border(if (isOpenLocalFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
                             shape = RoundedCornerShape(8.dp),
                             colors = ButtonDefaults.outlinedButtonColors(
-                                containerColor = if (isOpenLocalFocused) Color.White.copy(alpha = 0.25f) else Color(0xFF262626),
+                                containerColor = if (isOpenLocalFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color(0xFF262626),
                                 contentColor = Color.White
                             ),
-                            border = BorderStroke(1.dp, if (isOpenLocalFocused) Color.White else Color.White.copy(alpha = 0.2f)),
+                            border = BorderStroke(if (isOpenLocalFocused) 2.5.dp else 1.dp, if (isOpenLocalFocused) Color(0xFFE50914) else Color.White.copy(alpha = 0.2f)),
                             contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Add,
                                 contentDescription = null,
-                                tint = if (isOpenLocalFocused) Color.White else Color(0xFFFF5252),
+                                tint = if (isOpenLocalFocused) Color(0xFFFF5252) else Color(0xFFFF5252),
                                 modifier = Modifier.size(16.dp)
                             )
                             Spacer(Modifier.width(6.dp))
@@ -2604,20 +2674,21 @@ fun VideoPlayerScreen(
                                             true
                                         } else false
                                     }
+                                    .scale(if (isAiTransFocused) 1.04f else 1f)
                                     .focusable()
-                                    .border(if (isAiTransFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                                    .border(if (isAiTransFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
                                 shape = RoundedCornerShape(8.dp),
                                 colors = ButtonDefaults.outlinedButtonColors(
-                                    containerColor = if (isAiTransFocused) Color.White.copy(alpha = 0.25f) else Color(0xFF1A237E).copy(alpha = 0.35f),
+                                    containerColor = if (isAiTransFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color(0xFF1A237E).copy(alpha = 0.35f),
                                     contentColor = Color.White
                                 ),
-                                border = BorderStroke(1.dp, if (isAiTransFocused) Color.White else Color(0xFF5C6BC0).copy(alpha = 0.6f)),
+                                border = BorderStroke(if (isAiTransFocused) 2.5.dp else 1.dp, if (isAiTransFocused) Color(0xFFE50914) else Color(0xFF5C6BC0).copy(alpha = 0.6f)),
                                 contentPadding = PaddingValues(horizontal = 8.dp, vertical = 0.dp)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Translate,
                                     contentDescription = null,
-                                    tint = if (isAiTransFocused) Color.White else Color(0xFF8C9EFF),
+                                    tint = if (isAiTransFocused) Color(0xFFFF5252) else Color(0xFF8C9EFF),
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(Modifier.width(6.dp))
@@ -2632,6 +2703,8 @@ fun VideoPlayerScreen(
                             }
                         }
                     }
+
+
 
                     if (showAiTranslateLanguageDialog) {
                         AlertDialog(
@@ -2659,8 +2732,8 @@ fun VideoPlayerScreen(
                                         var isOptionFocused by remember { mutableStateOf(false) }
                                         Surface(
                                             shape = RoundedCornerShape(8.dp),
-                                            color = if (isOptionFocused) Color.White else Color(0xFF2C2C2C),
-                                            contentColor = if (isOptionFocused) Color.Black else Color.White,
+                                            color = if (isOptionFocused) Color(0xFFE50914) else Color(0xFF2C2C2C),
+                                            contentColor = Color.White,
                                             modifier = Modifier
                                                 .fillMaxWidth()
                                                 .padding(vertical = 4.dp)
@@ -2684,7 +2757,8 @@ fun VideoPlayerScreen(
                                                     } else false
                                                 }
                                                 .focusable()
-                                                .border(if (isOptionFocused) BorderStroke(2.dp, Color.White) else BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(8.dp))
+                                                .scale(if (isOptionFocused) 1.05f else 1f)
+                                                .border(if (isOptionFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)), RoundedCornerShape(8.dp))
                                         ) {
                                             Text(
                                                 text = label,
@@ -2719,21 +2793,18 @@ fun VideoPlayerScreen(
                             Surface(
                                 shape = RoundedCornerShape(16.dp),
                                 color = when {
-                                    isChipFocused -> Color.White
-                                    isSelected -> Color.Red
+                                    isChipFocused -> Color(0xFFE50914)
+                                    isSelected -> Color(0xFFE50914)
                                     else -> Color(0xFF262626)
                                 },
-                                contentColor = when {
-                                    isChipFocused -> Color.Black
-                                    isSelected -> Color.White
-                                    else -> Color.LightGray
-                                },
+                                contentColor = Color.White,
                                 border = BorderStroke(
-                                    width = if (isChipFocused) 2.dp else if (isSelected) 1.dp else 0.5.dp,
-                                    color = if (isChipFocused) Color.White else if (isSelected) Color.Red else Color.White.copy(alpha = 0.2f)
+                                    width = if (isChipFocused) 2.5.dp else if (isSelected) 1.5.dp else 0.5.dp,
+                                    color = if (isChipFocused) Color(0xFFFF1744) else if (isSelected) Color(0xFFE50914) else Color.White.copy(alpha = 0.2f)
                                 ),
                                 modifier = Modifier
                                     .onFocusChanged { isChipFocused = it.isFocused }
+                                    .scale(if (isChipFocused) 1.08f else 1f)
                                     .onKeyEvent { keyEvent ->
                                         if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
                                             (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
@@ -2833,9 +2904,10 @@ fun VideoPlayerScreen(
                                         showSubtitleDialog = false
                                     }
                                     .focusable()
-                                    .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                                    .scale(if (isFocused) 1.02f else 1f)
+                                    .border(if (isFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
                                 colors = ListItemDefaults.colors(
-                                    containerColor = if (isFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent
+                                    containerColor = if (isFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent
                                 )
                             )
                         }
@@ -2843,10 +2915,9 @@ fun VideoPlayerScreen(
                             var isFocused by remember { mutableStateOf(false) }
                             val isSelected = if (isDualModeTab) selectedSecondarySubtitle?.url == sub.url else selectedSubtitle?.url == sub.url
                             val isStreamSub = sub.url.startsWith("embedded://") || sub.label.startsWith("[Stream]")
-                            val isMatchedSub = remember(sub.label) {
-                                val low = sub.label.lowercase()
-                                low.contains("web-dl") || low.contains("webdl") || low.contains("bluray") || 
-                                low.contains("rarbg") || low.contains("yts") || low.contains("flux") || low.contains("psa")
+                            val isAiSub = sub.label.startsWith("[AI Translated]") || sub.url.contains("translated_subtitles")
+                            val isMatchedSub = remember(sub.label, sub.url) {
+                                viewModel.isCurrentSubtitleMatched(sub)
                             }
                             ListItem(
                                 headlineContent = { 
@@ -2861,7 +2932,21 @@ fun VideoPlayerScreen(
                                             overflow = TextOverflow.Ellipsis,
                                             modifier = Modifier.weight(1f, fill = false)
                                         )
-                                        if (isStreamSub) {
+                                        if (isAiSub) {
+                                            Spacer(Modifier.width(6.dp))
+                                            Surface(
+                                                color = Color(0xFF7B1FA2),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "AI TRANSLATED",
+                                                    color = Color.White,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        } else if (isStreamSub) {
                                             Spacer(Modifier.width(6.dp))
                                             Surface(
                                                 color = Color(0xFF2E7D32),
@@ -2894,6 +2979,23 @@ fun VideoPlayerScreen(
                                 },
                                 supportingContent = { Text(sub.language, color = Color.Gray, fontSize = 12.sp) },
                                 leadingContent = { RadioButton(selected = isSelected, onClick = null, modifier = Modifier.focusable(false)) },
+                                trailingContent = if (isAiSub) {
+                                    {
+                                        IconButton(
+                                            onClick = {
+                                                viewModel.deleteTranslatedSubtitle(sub)
+                                            },
+                                            modifier = Modifier.size(36.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = Icons.Default.Delete,
+                                                contentDescription = "Delete translated subtitle",
+                                                tint = Color(0xFFFF5252),
+                                                modifier = Modifier.size(20.dp)
+                                            )
+                                        }
+                                    }
+                                } else null,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .onFocusChanged { isFocused = it.isFocused }
@@ -2920,9 +3022,10 @@ fun VideoPlayerScreen(
                                         showSubtitleDialog = false
                                     }
                                     .focusable()
-                                    .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                                    .scale(if (isFocused) 1.02f else 1f)
+                                    .border(if (isFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
                                 colors = ListItemDefaults.colors(
-                                    containerColor = if (isFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent
+                                    containerColor = if (isFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent
                                 )
                             )
                         }
@@ -2975,34 +3078,91 @@ fun VideoPlayerScreen(
                                                 }
                                             },
                                             colors = ButtonDefaults.buttonColors(
-                                                containerColor = if (isAutoTransPromptFocused) Color.White else Color(0xFF1A237E)
+                                                containerColor = if (isAutoTransPromptFocused) Color(0xFFE50914) else Color(0xFF1A237E)
                                             ),
                                             shape = RoundedCornerShape(8.dp),
                                             modifier = Modifier
                                                 .onFocusChanged { isAutoTransPromptFocused = it.isFocused }
+                                                .scale(if (isAutoTransPromptFocused) 1.05f else 1f)
+                                                .border(if (isAutoTransPromptFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                                                 .focusable()
                                         ) {
                                             Icon(
                                                 Icons.Default.Translate,
                                                 contentDescription = null,
-                                                tint = if (isAutoTransPromptFocused) Color.Black else Color.White,
+                                                tint = Color.White,
                                                 modifier = Modifier.size(16.dp)
                                             )
                                             Spacer(Modifier.width(6.dp))
                                             Text(
                                                 stringResource(R.string.ai_translate_btn, targetLangName),
-                                                color = if (isAutoTransPromptFocused) Color.Black else Color.White,
+                                                color = Color.White,
                                                 fontSize = 12.sp,
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }
-                                    } else {
+                                    } else if (subtitles.isNotEmpty()) {
                                         Text(
-                                            "No matching subtitles found for this filter.\nPress Search to query online or load from device.",
-                                            color = Color.Gray,
+                                            stringResource(R.string.no_subs_in_filter),
+                                            color = Color.LightGray,
                                             fontSize = 12.sp,
                                             textAlign = TextAlign.Center
                                         )
+                                        Spacer(Modifier.height(8.dp))
+                                        var isShowAllFocused by remember { mutableStateOf(false) }
+                                        OutlinedButton(
+                                            onClick = { selectedLanguageFilter = "all" },
+                                            modifier = Modifier
+                                                .onFocusChanged { isShowAllFocused = it.isFocused }
+                                                .focusable()
+                                                .scale(if (isShowAllFocused) 1.05f else 1f)
+                                                .border(if (isShowAllFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                                            shape = RoundedCornerShape(8.dp),
+                                            colors = ButtonDefaults.outlinedButtonColors(
+                                                containerColor = if (isShowAllFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color(0xFF262626),
+                                                contentColor = Color.White
+                                            )
+                                        ) {
+                                            Text(
+                                                stringResource(R.string.switch_to_all_subs, subtitles.size),
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold
+                                            )
+                                        }
+                                    } else {
+                                        Surface(
+                                            color = Color(0xFF262626),
+                                            shape = RoundedCornerShape(12.dp),
+                                            border = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f)),
+                                            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp)
+                                        ) {
+                                            Column(
+                                                modifier = Modifier.padding(14.dp),
+                                                horizontalAlignment = Alignment.CenterHorizontally
+                                            ) {
+                                                Icon(
+                                                    imageVector = Icons.Default.ClosedCaption,
+                                                    contentDescription = null,
+                                                    tint = Color.Gray,
+                                                    modifier = Modifier.size(28.dp)
+                                                )
+                                                Spacer(Modifier.height(6.dp))
+                                                Text(
+                                                    stringResource(R.string.no_subs_found_auto),
+                                                    color = Color.White,
+                                                    fontWeight = FontWeight.Bold,
+                                                    fontSize = 13.sp,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                                Spacer(Modifier.height(4.dp))
+                                                Text(
+                                                    stringResource(R.string.search_custom_title_hint),
+                                                    color = Color.Gray,
+                                                    fontSize = 11.sp,
+                                                    textAlign = TextAlign.Center
+                                                )
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -3026,9 +3186,10 @@ fun VideoPlayerScreen(
                             } else false
                         }
                         .focusable()
-                        .background(if (isCloseFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
-                        .border(if (isCloseFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
-                ) { Text(stringResource(R.string.close), color = if (isCloseFocused) Color.White else Color.Red) } 
+                        .scale(if (isCloseFocused) 1.05f else 1f)
+                        .background(if (isCloseFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent, RoundedCornerShape(8.dp))
+                        .border(if (isCloseFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                ) { Text(stringResource(R.string.close), color = if (isCloseFocused) Color.White else Color(0xFFE50914)) } 
             }
         )
     }
@@ -3129,14 +3290,59 @@ fun VideoPlayerScreen(
                     )
                     Spacer(Modifier.height(8.dp))
 
+                    // Auto-Pilot Status Badge
+                    val isAutoSubSyncEnabled by viewModel.isAutoSubSyncEnabled.collectAsStateWithLifecycle()
+                    val isMatchedSub = viewModel.isCurrentSubtitleMatched()
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.Center,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 6.dp)
+                    ) {
+                        val badgeColor = when {
+                            isMatchedSub -> Color(0xFF29B6F6)
+                            isAutoSubSyncEnabled -> Color(0xFF00E676)
+                            else -> Color.Gray
+                        }
+                        Surface(
+                            color = badgeColor.copy(alpha = 0.15f),
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.6f))
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Icon(
+                                    imageVector = if (isMatchedSub) Icons.Default.Lock else Icons.Default.Bolt,
+                                    contentDescription = null,
+                                    tint = badgeColor,
+                                    modifier = Modifier.size(13.dp)
+                                )
+                                Spacer(Modifier.width(4.dp))
+                                Text(
+                                    text = when {
+                                        isMatchedSub -> "Auto-Pilot: Matched Release (Locked 0.0s)"
+                                        isAutoSubSyncEnabled -> "Auto-Pilot: Active"
+                                        else -> "Auto-Pilot: Disabled"
+                                    },
+                                    color = badgeColor,
+                                    fontSize = 10.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                            }
+                        }
+                    }
+
                     // TV D-Pad & Fluid Touch Scrubber Bar
                     var isScrubberFocused by remember { mutableStateOf(false) }
                     Surface(
-                        color = if (isScrubberFocused) Color(0xFF383838) else Color(0xFF262626),
+                        color = if (isScrubberFocused) Color(0xFFE50914).copy(alpha = 0.15f) else Color(0xFF262626),
                         shape = RoundedCornerShape(10.dp),
                         border = BorderStroke(
-                            if (isScrubberFocused) 2.dp else 1.dp,
-                            if (isScrubberFocused) Color.White else Color.White.copy(alpha = 0.15f)
+                            if (isScrubberFocused) 2.5.dp else 1.dp,
+                            if (isScrubberFocused) Color(0xFFE50914) else Color.White.copy(alpha = 0.15f)
                         ),
                         modifier = Modifier
                             .fillMaxWidth()
@@ -3159,7 +3365,7 @@ fun VideoPlayerScreen(
                                 } else false
                             }
                             .focusable()
-                            .scale(if (isScrubberFocused) 1.02f else 1f)
+                            .scale(if (isScrubberFocused) 1.04f else 1f)
                     ) {
                         Column(modifier = Modifier.padding(8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                             Row(
@@ -3175,16 +3381,16 @@ fun VideoPlayerScreen(
                                 )
                                 Text(
                                     text = "${if (subtitleOffset >= 0) "+" else ""}${subtitleOffset / 1000.0}s",
-                                    color = if (isScrubberFocused) Color(0xFF4FC3F7) else Color.White,
+                                    color = if (isScrubberFocused) Color(0xFFFF1744) else Color.White,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.Bold
                                 )
                             }
                             Slider(
-                                value = subtitleOffset.coerceIn(-10000L, 10000L).toFloat(),
+                                value = subtitleOffset.coerceIn(-40000L, 40000L).toFloat(),
                                 onValueChange = { viewModel.setSubtitleOffset(it.toLong()) },
-                                valueRange = -10000f..10000f,
-                                steps = 79,
+                                valueRange = -40000f..40000f,
+                                steps = 319,
                                 colors = SliderDefaults.colors(
                                     thumbColor = Color.Red,
                                     activeTrackColor = Color.Red,
@@ -3193,7 +3399,7 @@ fun VideoPlayerScreen(
                                 modifier = Modifier.fillMaxWidth().height(26.dp)
                             )
                             Text(
-                                text = if (isTV || isScrubberFocused) stringResource(R.string.scrub_hint_tv) else "-10s ◀────────┼────────▶ +10s",
+                                text = if (isTV || isScrubberFocused) stringResource(R.string.scrub_hint_tv) else "-40s ◀────────┼────────▶ +40s",
                                 color = if (isScrubberFocused) Color(0xFFFFD54F) else Color.Gray,
                                 fontSize = 10.sp,
                                 fontWeight = if (isScrubberFocused) FontWeight.Bold else FontWeight.Normal
@@ -3202,7 +3408,9 @@ fun VideoPlayerScreen(
                     }
 
                     // Auto-VAD Alignment Section (Hardware PCM Speech Energy Detection)
-                    if (vadVoiceOnsetMs > 0L && firstDialogueCue != null) {
+                    val isVadCandidateValid = !isMatchedSub && vadVoiceOnsetMs > 0L && firstDialogueCue != null &&
+                        Math.abs(firstDialogueCue.startTimeMs - vadVoiceOnsetMs) <= 40_000L
+                    if (isVadCandidateValid && firstDialogueCue != null) {
                         val vadOffset = firstDialogueCue.startTimeMs - vadVoiceOnsetMs
                         val formattedOnset = SubtitleParser.formatVttTimestamp(vadVoiceOnsetMs).substringBefore(".")
                         val sign = if (vadOffset >= 0) "+" else ""
@@ -3212,7 +3420,7 @@ fun VideoPlayerScreen(
                         Surface(
                             color = if (isVadFocused) Color(0xFF1B5E20) else Color(0xFF14301A),
                             shape = RoundedCornerShape(10.dp),
-                            border = BorderStroke(if (isVadFocused) 2.dp else 1.dp, if (isVadFocused) Color.White else Color(0xFF4CAF50).copy(alpha = 0.6f)),
+                            border = BorderStroke(if (isVadFocused) 2.5.dp else 1.dp, if (isVadFocused) Color(0xFFFF1744) else Color(0xFF4CAF50).copy(alpha = 0.6f)),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(bottom = 8.dp)
@@ -3240,7 +3448,7 @@ fun VideoPlayerScreen(
                                     ).show()
                                 }
                                 .focusable()
-                                .scale(if (isVadFocused) 1.03f else 1f)
+                                .scale(if (isVadFocused) 1.04f else 1f)
                         ) {
                             Row(
                                 modifier = Modifier.padding(10.dp),
@@ -3307,7 +3515,7 @@ fun VideoPlayerScreen(
                                         ).show()
                                     },
                                     colors = ButtonDefaults.buttonColors(
-                                        containerColor = if (isSnapFocused) Color.White else Color(0xFFE50914)
+                                        containerColor = if (isSnapFocused) Color(0xFFFF1744) else Color(0xFFE50914)
                                     ),
                                     shape = RoundedCornerShape(8.dp),
                                     modifier = Modifier
@@ -3331,11 +3539,12 @@ fun VideoPlayerScreen(
                                             } else false
                                         }
                                         .focusable()
-                                        .scale(if (isSnapFocused) 1.04f else 1f)
+                                        .scale(if (isSnapFocused) 1.05f else 1f)
+                                        .border(if (isSnapFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                                 ) {
                                     Text(
                                         stringResource(R.string.snap_line_now),
-                                        color = if (isSnapFocused) Color.Black else Color.White,
+                                        color = Color.White,
                                         fontWeight = FontWeight.Bold,
                                         fontSize = 13.sp
                                     )
@@ -3364,7 +3573,7 @@ fun VideoPlayerScreen(
                                 }
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isNextMatchFocused) Color.White else Color(0xFF2C2C2C)
+                                containerColor = if (isNextMatchFocused) Color(0xFFE50914) else Color(0xFF2C2C2C)
                             ),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
@@ -3391,18 +3600,19 @@ fun VideoPlayerScreen(
                                 }
                                 .focusable()
                                 .scale(if (isNextMatchFocused) 1.05f else 1f)
+                                .border(if (isNextMatchFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     Icons.Default.SkipNext,
                                     contentDescription = null,
-                                    tint = if (isNextMatchFocused) Color.Black else Color.White,
+                                    tint = Color.White,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(Modifier.width(4.dp))
                                 Text(
                                     stringResource(R.string.try_next_match),
-                                    color = if (isNextMatchFocused) Color.Black else Color.White,
+                                    color = Color.White,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1
@@ -3425,7 +3635,7 @@ fun VideoPlayerScreen(
                                 ).show()
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isFpsFocused) Color.White else if (subtitleFpsRatio != 1.0f) Color(0xFF8B1E1E) else Color(0xFF2C2C2C)
+                                containerColor = if (isFpsFocused) Color(0xFFE50914) else if (subtitleFpsRatio != 1.0f) Color(0xFF8B1E1E) else Color(0xFF2C2C2C)
                             ),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 6.dp, vertical = 6.dp),
@@ -3451,18 +3661,19 @@ fun VideoPlayerScreen(
                                 }
                                 .focusable()
                                 .scale(if (isFpsFocused) 1.05f else 1f)
+                                .border(if (isFpsFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                         ) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     Icons.Default.Speed,
                                     contentDescription = null,
-                                    tint = if (isFpsFocused) Color.Black else if (subtitleFpsRatio != 1.0f) Color.Yellow else Color.White,
+                                    tint = if (isFpsFocused) Color.White else if (subtitleFpsRatio != 1.0f) Color.Yellow else Color.White,
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(Modifier.width(4.dp))
                                 Text(
                                     currentFpsMode.displayName,
-                                    color = if (isFpsFocused) Color.Black else Color.White,
+                                    color = Color.White,
                                     fontSize = 11.sp,
                                     fontWeight = FontWeight.SemiBold,
                                     maxLines = 1,
@@ -3486,7 +3697,7 @@ fun VideoPlayerScreen(
                             var isStepFocused by remember { mutableStateOf(false) }
                             Button(
                                 onClick = { viewModel.adjustSubtitleOffset(delta) },
-                                colors = ButtonDefaults.buttonColors(containerColor = if (isStepFocused) Color.White else Color(0xFF333333)),
+                                colors = ButtonDefaults.buttonColors(containerColor = if (isStepFocused) Color(0xFFE50914) else Color(0xFF333333)),
                                 shape = RoundedCornerShape(8.dp),
                                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                                 modifier = Modifier
@@ -3503,8 +3714,9 @@ fun VideoPlayerScreen(
                                     }
                                     .focusable()
                                     .scale(if (isStepFocused) 1.08f else 1f)
+                                    .border(if (isStepFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                             ) {
-                                Text(stringResource(strRes), color = if (isStepFocused) Color.Black else Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                Text(stringResource(strRes), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
                             }
                         }
                     }
@@ -3517,7 +3729,7 @@ fun VideoPlayerScreen(
                         var isMinusFineFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = { viewModel.adjustSubtitleOffset(-100) },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isMinusFineFocused) Color.White else Color(0xFF2C2C2C)),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isMinusFineFocused) Color(0xFFE50914) else Color(0xFF2C2C2C)),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                             modifier = Modifier
@@ -3534,14 +3746,15 @@ fun VideoPlayerScreen(
                                 }
                                 .focusable()
                                 .scale(if (isMinusFineFocused) 1.08f else 1f)
+                                .border(if (isMinusFineFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                         ) {
-                            Text(stringResource(R.string.minus_0_1s), color = if (isMinusFineFocused) Color.Black else Color.White, fontSize = 12.sp)
+                            Text(stringResource(R.string.minus_0_1s), color = Color.White, fontSize = 12.sp)
                         }
 
                         var isResetFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = { viewModel.resetSubtitleOffset() },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isResetFocused) Color.White else Color(0xFF444444)),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isResetFocused) Color(0xFFE50914) else Color(0xFF444444)),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                             modifier = Modifier
@@ -3558,14 +3771,15 @@ fun VideoPlayerScreen(
                                 }
                                 .focusable()
                                 .scale(if (isResetFocused) 1.08f else 1f)
+                                .border(if (isResetFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                         ) {
-                            Text(stringResource(R.string.reset_sync), color = if (isResetFocused) Color.Black else Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                            Text(stringResource(R.string.reset_sync), color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                         }
 
                         var isPlusFineFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = { viewModel.adjustSubtitleOffset(100) },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isPlusFineFocused) Color.White else Color(0xFF2C2C2C)),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isPlusFineFocused) Color(0xFFE50914) else Color(0xFF2C2C2C)),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                             modifier = Modifier
@@ -3582,8 +3796,9 @@ fun VideoPlayerScreen(
                                 }
                                 .focusable()
                                 .scale(if (isPlusFineFocused) 1.08f else 1f)
+                                .border(if (isPlusFineFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                         ) {
-                            Text(stringResource(R.string.plus_0_1s), color = if (isPlusFineFocused) Color.Black else Color.White, fontSize = 12.sp)
+                            Text(stringResource(R.string.plus_0_1s), color = Color.White, fontSize = 12.sp)
                         }
                     }
 
@@ -3595,7 +3810,7 @@ fun VideoPlayerScreen(
                         var isIntroMinusFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = { viewModel.adjustSubtitleOffset(-10000) },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isIntroMinusFocused) Color.White else Color(0xFF252525)),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isIntroMinusFocused) Color(0xFFE50914) else Color(0xFF252525)),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                             modifier = Modifier
@@ -3612,8 +3827,9 @@ fun VideoPlayerScreen(
                                 }
                                 .focusable()
                                 .scale(if (isIntroMinusFocused) 1.08f else 1f)
+                                .border(if (isIntroMinusFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                         ) {
-                            Text(stringResource(R.string.minus_10s), color = if (isIntroMinusFocused) Color.Black else Color.LightGray, fontSize = 11.sp)
+                            Text(stringResource(R.string.minus_10s), color = Color.White, fontSize = 11.sp)
                         }
 
                         if (firstDialogueCue != null) {
@@ -3629,7 +3845,7 @@ fun VideoPlayerScreen(
                                         Toast.LENGTH_SHORT
                                     ).show()
                                 },
-                                colors = ButtonDefaults.buttonColors(containerColor = if (isFirstDiagFocused) Color.White else Color(0xFF333333)),
+                                colors = ButtonDefaults.buttonColors(containerColor = if (isFirstDiagFocused) Color(0xFFE50914) else Color(0xFF333333)),
                                 shape = RoundedCornerShape(8.dp),
                                 contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                                 modifier = Modifier
@@ -3653,15 +3869,16 @@ fun VideoPlayerScreen(
                                     }
                                     .focusable()
                                     .scale(if (isFirstDiagFocused) 1.08f else 1f)
+                                    .border(if (isFirstDiagFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                             ) {
-                                Text(stringResource(R.string.align_first_dialogue), color = if (isFirstDiagFocused) Color.Black else Color.White, fontSize = 11.sp, maxLines = 1)
+                                Text(stringResource(R.string.align_first_dialogue), color = Color.White, fontSize = 11.sp, maxLines = 1)
                             }
                         }
 
                         var isIntroPlusFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = { viewModel.adjustSubtitleOffset(10000) },
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isIntroPlusFocused) Color.White else Color(0xFF252525)),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isIntroPlusFocused) Color(0xFFE50914) else Color(0xFF252525)),
                             shape = RoundedCornerShape(8.dp),
                             contentPadding = PaddingValues(horizontal = 4.dp, vertical = 6.dp),
                             modifier = Modifier
@@ -3678,8 +3895,9 @@ fun VideoPlayerScreen(
                                 }
                                 .focusable()
                                 .scale(if (isIntroPlusFocused) 1.08f else 1f)
+                                .border(if (isIntroPlusFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                         ) {
-                            Text(stringResource(R.string.plus_10s), color = if (isIntroPlusFocused) Color.Black else Color.LightGray, fontSize = 11.sp)
+                            Text(stringResource(R.string.plus_10s), color = Color.White, fontSize = 11.sp)
                         }
                     }
                 }
@@ -3700,10 +3918,11 @@ fun VideoPlayerScreen(
                             } else false
                         }
                         .focusable()
-                        .background(if (isDoneFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
-                        .border(if (isDoneFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                        .scale(if (isDoneFocused) 1.05f else 1f)
+                        .background(if (isDoneFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent, RoundedCornerShape(8.dp))
+                        .border(if (isDoneFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                 ) {
-                    Text(stringResource(R.string.done), color = if (isDoneFocused) Color.White else Color.Red, fontWeight = FontWeight.Bold) 
+                    Text(stringResource(R.string.done), color = if (isDoneFocused) Color.White else Color(0xFFE50914), fontWeight = FontWeight.Bold) 
                 } 
             }
         )
@@ -3773,9 +3992,10 @@ fun VideoPlayerScreen(
                                     showEpisodeDialog = false 
                                 }
                                 .focusable()
-                                .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                                .scale(if (isFocused) 1.02f else 1f)
+                                .border(if (isFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
                             colors = ListItemDefaults.colors(
-                                containerColor = if (isFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent
+                                containerColor = if (isFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent
                             )
                         )
                     }
@@ -3797,9 +4017,10 @@ fun VideoPlayerScreen(
                             } else false
                         }
                         .focusable()
-                        .background(if (isCloseFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
-                        .border(if (isCloseFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
-                ) { Text(stringResource(R.string.close), color = if (isCloseFocused) Color.White else Color.Red) }
+                        .scale(if (isCloseFocused) 1.05f else 1f)
+                        .background(if (isCloseFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent, RoundedCornerShape(8.dp))
+                        .border(if (isCloseFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                ) { Text(stringResource(R.string.close), color = if (isCloseFocused) Color.White else Color(0xFFE50914)) }
             }
         )
     }
@@ -3832,6 +4053,7 @@ fun VideoPlayerContent(
     qualityTracks: List<VideoQualityTrack>,
     selectedQualityGroupIndex: Int,
     seekFeedback: String?,
+    autoSyncNotice: com.duta.movie.util.SubtitleSyncEngine.AutoSyncNotice? = null,
     currentEpisode: Episode?,
     playPauseFocusRequester: FocusRequester,
     controlsFocusRequester: FocusRequester,
@@ -4332,7 +4554,11 @@ fun VideoPlayerContent(
                     modifier = Modifier
                         .fillMaxSize()
                         .navigationBarsPadding()
-                        .padding(bottom = bottomPadding, start = 24.dp, end = 24.dp),
+                        .padding(
+                            bottom = bottomPadding,
+                            start = 24.dp,
+                            end = 24.dp
+                        ),
                     contentAlignment = Alignment.BottomCenter
                 ) {
                     Column(
@@ -4346,7 +4572,8 @@ fun VideoPlayerContent(
                         if (secondarySubtitleText.isNotBlank()) {
                             Box(
                                 contentAlignment = Alignment.Center,
-                                modifier = Modifier.padding(bottom = if (primarySubtitleText.isNotBlank()) 4.dp else 0.dp)
+                                modifier = Modifier
+                                    .padding(bottom = if (primarySubtitleText.isNotBlank()) 4.dp else 0.dp)
                             ) {
                                 Text(
                                     text = secondarySubtitleText,
@@ -4382,7 +4609,9 @@ fun VideoPlayerContent(
 
                         // Primary Subtitle (Pure crisp white)
                         if (primarySubtitleText.isNotBlank()) {
-                            Box(contentAlignment = Alignment.Center) {
+                            Box(
+                                contentAlignment = Alignment.Center
+                            ) {
                                 Text(
                                     text = primarySubtitleText,
                                     color = Color.Black,
@@ -4569,16 +4798,18 @@ fun VideoPlayerContent(
                         Button(
                             onClick = onNextServerClick,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isMirrorFocused) Color.White else Color(0xFF333333) // Solid Dark Gray
+                                containerColor = if (isMirrorFocused) Color(0xFFE50914) else Color(0xFF333333)
                             ),
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .onFocusChanged { isMirrorFocused = it.isFocused }
-                                .scale(if (isMirrorFocused) 1.2f else 1f)
+                                .scale(if (isMirrorFocused) 1.1f else 1f)
+                                .border(if (isMirrorFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                         ) {
                             Text(
                                 "Try Another Mirror", 
                                 fontSize = if (isTV) 14.sp else 10.sp, 
-                                color = if (isMirrorFocused) Color.Black else Color.White
+                                color = Color.White
                             )
                         }
                     }
@@ -4597,47 +4828,57 @@ fun VideoPlayerContent(
                         var isBackFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = onBackClick, 
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isBackFocused) Color.White else Color(0xFF444444)),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isBackFocused) Color(0xFFE50914) else Color(0xFF444444)),
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .onFocusChanged { isBackFocused = it.isFocused }
                                 .scale(if (isBackFocused) 1.1f else 1f)
-                        ) { Text(stringResource(R.string.back), color = if (isBackFocused) Color.Black else Color.White) }
+                                .border(if (isBackFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                        ) { Text(stringResource(R.string.back), color = Color.White) }
 
                         var isAltFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = onFindAlternativesClick,
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isAltFocused) Color.White else Color.Red),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isAltFocused) Color(0xFFFF1744) else Color(0xFFE50914)),
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .onFocusChanged { isAltFocused = it.isFocused }
                                 .scale(if (isAltFocused) 1.1f else 1f)
-                        ) { Text(stringResource(R.string.find_other_sources), color = if (isAltFocused) Color.Black else Color.White) }
+                                .border(if (isAltFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                        ) { Text(stringResource(R.string.find_other_sources), color = Color.White) }
 
                         var isRetryFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = onRetryClick, 
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isRetryFocused) Color.White else Color(0xFF333333)),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isRetryFocused) Color(0xFFE50914) else Color(0xFF333333)),
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .onFocusChanged { isRetryFocused = it.isFocused }
                                 .scale(if (isRetryFocused) 1.1f else 1f)
-                        ) { Text(stringResource(R.string.retry), color = if (isRetryFocused) Color.Black else Color.White) }
+                                .border(if (isRetryFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                        ) { Text(stringResource(R.string.retry), color = Color.White) }
                         
                         var isWvFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = onForceWebViewClick, 
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isWvFocused) Color.White else Color.DarkGray),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isWvFocused) Color(0xFFE50914) else Color.DarkGray),
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .onFocusChanged { isWvFocused = it.isFocused }
                                 .scale(if (isWvFocused) 1.1f else 1f)
-                        ) { Text(stringResource(R.string.force_webview), color = if (isWvFocused) Color.Black else Color.White) }
+                                .border(if (isWvFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                        ) { Text(stringResource(R.string.force_webview), color = Color.White) }
                         
                         var isLogFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = onLogClick, 
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isLogFocused) Color.White else Color.Gray),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isLogFocused) Color(0xFFE50914) else Color.Gray),
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .onFocusChanged { isLogFocused = it.isFocused }
                                 .scale(if (isLogFocused) 1.1f else 1f)
-                        ) { Text(stringResource(R.string.view_log), color = if (isLogFocused) Color.Black else Color.White) }
+                                .border(if (isLogFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                        ) { Text(stringResource(R.string.view_log), color = Color.White) }
                     }
                 }
             }
@@ -4652,47 +4893,57 @@ fun VideoPlayerContent(
                         var isAltFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = onFindAlternativesClick,
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isAltFocused) Color.White else Color.Red),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isAltFocused) Color(0xFFFF1744) else Color(0xFFE50914)),
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .onFocusChanged { isAltFocused = it.isFocused }
                                 .scale(if (isAltFocused) 1.1f else 1f)
-                        ) { Text(stringResource(R.string.find_other_sources), color = if (isAltFocused) Color.Black else Color.White) }
+                                .border(if (isAltFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                        ) { Text(stringResource(R.string.find_other_sources), color = Color.White) }
 
                         var isRetryFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = onRetryClick, 
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isRetryFocused) Color.White else Color.Gray),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isRetryFocused) Color(0xFFE50914) else Color.Gray),
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .onFocusChanged { isRetryFocused = it.isFocused }
                                 .scale(if (isRetryFocused) 1.1f else 1f)
-                        ) { Text(stringResource(R.string.retry), color = if (isRetryFocused) Color.Black else Color.White) }
+                                .border(if (isRetryFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                        ) { Text(stringResource(R.string.retry), color = Color.White) }
 
                         var isWvFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = onForceWebViewClick, 
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isWvFocused) Color.White else Color.DarkGray),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isWvFocused) Color(0xFFE50914) else Color.DarkGray),
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .onFocusChanged { isWvFocused = it.isFocused }
                                 .scale(if (isWvFocused) 1.1f else 1f)
-                        ) { Text(stringResource(R.string.use_webview), color = if (isWvFocused) Color.Black else Color.White) }
+                                .border(if (isWvFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                        ) { Text(stringResource(R.string.use_webview), color = Color.White) }
 
                         var isSwitchFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = onServerListClick, 
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isSwitchFocused) Color.White else Color(0xFF333333)),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isSwitchFocused) Color(0xFFE50914) else Color(0xFF333333)),
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .onFocusChanged { isSwitchFocused = it.isFocused }
                                 .scale(if (isSwitchFocused) 1.1f else 1f)
-                        ) { Text(stringResource(R.string.switch_server), color = if (isSwitchFocused) Color.Black else Color.White) }
+                                .border(if (isSwitchFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                        ) { Text(stringResource(R.string.switch_server), color = Color.White) }
 
                         var isLogFocused by remember { mutableStateOf(false) }
                         Button(
                             onClick = onLogClick, 
-                            colors = ButtonDefaults.buttonColors(containerColor = if (isLogFocused) Color.White else Color.Black),
+                            colors = ButtonDefaults.buttonColors(containerColor = if (isLogFocused) Color(0xFFE50914) else Color.Black),
+                            shape = RoundedCornerShape(8.dp),
                             modifier = Modifier
                                 .onFocusChanged { isLogFocused = it.isFocused }
                                 .scale(if (isLogFocused) 1.1f else 1f)
-                        ) { Text(stringResource(R.string.log), color = if (isLogFocused) Color.Black else Color.White) }
+                                .border(if (isLogFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                        ) { Text(stringResource(R.string.log), color = Color.White) }
                     }
                 }
             }
@@ -4710,6 +4961,44 @@ fun VideoPlayerContent(
                         )
                         Spacer(Modifier.height(16.dp))
                         Text(seekFeedback, color = Color.White, fontSize = if (isTV) 32.sp else 20.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // 10-foot TV HUD Banner for Hybrid Auto-Pilot Subtitle Sync
+        AnimatedVisibility(
+            visible = autoSyncNotice != null,
+            enter = fadeIn() + slideInVertically { -40 },
+            exit = fadeOut() + slideOutVertically { -40 },
+            modifier = Modifier
+                .align(Alignment.TopCenter)
+                .padding(top = if (isTV) 28.dp else 16.dp)
+        ) {
+            autoSyncNotice?.let { notice ->
+                Surface(
+                    color = Color(0xEE141414),
+                    shape = RoundedCornerShape(24.dp),
+                    border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.8f)),
+                    shadowElevation = 8.dp
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = if (isTV) 20.dp else 14.dp, vertical = if (isTV) 10.dp else 7.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Bolt,
+                            contentDescription = null,
+                            tint = Color(0xFF00E676),
+                            modifier = Modifier.size(if (isTV) 24.dp else 18.dp)
+                        )
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            text = stringResource(R.string.auto_synced_hud, notice.formattedOffset),
+                            color = Color.White,
+                            fontSize = if (isTV) 16.sp else 13.sp,
+                            fontWeight = FontWeight.Bold
+                        )
                     }
                 }
             }
@@ -5620,7 +5909,7 @@ fun VideoPlayerWebView(
               val ytId = com.duta.movie.util.VideoExtractor.extractYouTubeId(url)
               val bvid = com.duta.movie.util.VideoExtractor.extractBilibiliBvid(url)
               val dmId = com.duta.movie.util.VideoExtractor.extractDailymotionId(url)
-              if (ytId != null) {
+              if (!ytId.isNullOrBlank()) {
                   if (view.getTag(R.id.active_url) != url || isNewEpisode) {
                       view.setTag(R.id.active_content_key, activeContentKey)
                       view.setTag(R.id.active_url, url)
@@ -6023,9 +6312,10 @@ fun ServerSelectionDialog(
                     verticalAlignment = Alignment.CenterVertically,
                     modifier = Modifier
                         .onFocusChanged { isSwitchFocused = it.isFocused }
+                        .scale(if (isSwitchFocused) 1.05f else 1f)
                         .clickable { forceWebView = !forceWebView }
                         .focusable()
-                        .border(if (isSwitchFocused) BorderStroke(if (isTV) 2.dp else 1.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(4.dp))
+                        .border(if (isSwitchFocused) BorderStroke(if (isTV) 2.5.dp else 1.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(4.dp))
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                 ) {
                     Text(stringResource(R.string.force_webview), color = Color.Gray, fontSize = if (isTV) 14.sp else 12.sp)
@@ -6136,10 +6426,11 @@ fun ServerSelectionDialog(
                             }
                             .clickable { onServerSelect(server.url, forceWebView) }
                             .focusable()
-                            .border(if (isFocused) BorderStroke(if (isTV) 3.dp else 2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                            .scale(if (isFocused) 1.02f else 1f)
+                            .border(if (isFocused) BorderStroke(if (isTV) 3.dp else 2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
                         colors = ListItemDefaults.colors(
-                            containerColor = if (isSelected) Color.Red.copy(alpha = 0.25f) 
-                                            else if (isFocused) Color.White.copy(alpha = 0.2f) 
+                            containerColor = if (isSelected) Color(0xFFE50914).copy(alpha = 0.25f) 
+                                            else if (isFocused) Color(0xFFE50914).copy(alpha = 0.35f) 
                                             else Color.Transparent
                         )
                     )
@@ -6162,12 +6453,13 @@ fun ServerSelectionDialog(
                         } else false
                     }
                     .focusable()
-                    .background(if (isCloseFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
-                    .border(if (isCloseFocused) BorderStroke(if (isTV) 2.5.dp else 2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                    .scale(if (isCloseFocused) 1.05f else 1f)
+                    .background(if (isCloseFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent, RoundedCornerShape(8.dp))
+                    .border(if (isCloseFocused) BorderStroke(if (isTV) 3.dp else 2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
             ) {
                 Text(
                     text = stringResource(R.string.close), 
-                    color = if (isCloseFocused) Color.White else Color.Red,
+                    color = if (isCloseFocused) Color.White else Color(0xFFE50914),
                     fontSize = if (isTV) 16.sp else 14.sp
                 )
             }

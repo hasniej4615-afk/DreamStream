@@ -137,8 +137,8 @@ fun PlayerControls(
                                 .scale(fullscreenScale)
                                 .onFocusChanged { isFullscreenFocused = it.isFocused }
                                 .focusable()
-                                .background(if (isFullscreenFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
-                                .border(if (isFullscreenFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                .background(if (isFullscreenFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                                .border(if (isFullscreenFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                         ) {
                             Icon(
                                 imageVector = if (isFullscreen) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
@@ -196,8 +196,8 @@ fun PlayerControls(
                                 .scale(speedScale)
                                 .onFocusChanged { isSpeedFocused = it.isFocused }
                                 .focusable()
-                                .background(if (isSpeedFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
-                                .border(if (isSpeedFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                .background(if (isSpeedFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                                .border(if (isSpeedFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                         ) {
                             Icon(
                                 Icons.Default.Speed,
@@ -237,8 +237,8 @@ fun PlayerControls(
                                     } else false
                                 }
                                 .focusable()
-                                .background(if (isAudioFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
-                                .border(if (isAudioFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                .background(if (isAudioFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                                .border(if (isAudioFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
@@ -279,8 +279,8 @@ fun PlayerControls(
                                 .scale(aspectScale)
                                 .onFocusChanged { isAspectFocused = it.isFocused }
                                 .focusable()
-                                .background(if (isAspectFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
-                                .border(if (isAspectFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                .background(if (isAspectFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                                .border(if (isAspectFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                         ) {
                             Icon(
                                 Icons.Default.AspectRatio,
@@ -300,8 +300,8 @@ fun PlayerControls(
                                 .scale(qualScale)
                                 .onFocusChanged { isQualFocused = it.isFocused }
                                 .focusable()
-                                .background(if (isQualFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
-                                .border(if (isQualFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                .background(if (isQualFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                                .border(if (isQualFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                         ) {
                             Icon(Icons.Default.Hd, contentDescription = stringResource(R.string.quality), tint = Color.White)
                         }
@@ -316,8 +316,8 @@ fun PlayerControls(
                                 .scale(serverScale)
                                 .onFocusChanged { isServerFocused = it.isFocused }
                                 .focusable()
-                                .background(if (isServerFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
-                                .border(if (isServerFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                .background(if (isServerFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                                .border(if (isServerFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                         ) {
                             Icon(Icons.Default.Dns, contentDescription = stringResource(R.string.select_server), tint = Color.White)
                         }
@@ -332,8 +332,8 @@ fun PlayerControls(
                                 .scale(subScale)
                                 .onFocusChanged { isSubFocused = it.isFocused }
                                 .focusable()
-                                .background(if (isSubFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
-                                .border(if (isSubFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                .background(if (isSubFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                                .border(if (isSubFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                         ) {
                             Icon(Icons.Default.ClosedCaption, contentDescription = stringResource(R.string.subtitles), tint = Color.White)
                         }
@@ -348,8 +348,8 @@ fun PlayerControls(
                                 .scale(syncScale)
                                 .onFocusChanged { isSyncFocused = it.isFocused }
                                 .focusable()
-                                .background(if (isSyncFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
-                                .border(if (isSyncFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                .background(if (isSyncFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                                .border(if (isSyncFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                         ) {
                             Icon(Icons.Default.Timer, contentDescription = stringResource(R.string.subtitle_sync), tint = Color.White)
                         }
@@ -364,8 +364,8 @@ fun PlayerControls(
                                 .scale(epScale)
                                 .onFocusChanged { isEpFocused = it.isFocused }
                                 .focusable()
-                                .background(if (isEpFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
-                                .border(if (isEpFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                .background(if (isEpFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                                .border(if (isEpFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                         ) {
                             Icon(Icons.Default.VideoLibrary, contentDescription = stringResource(R.string.episodes), tint = Color.White)
                         }
@@ -380,8 +380,8 @@ fun PlayerControls(
                                 .scale(pipScale)
                                 .onFocusChanged { isPipFocused = it.isFocused }
                                 .focusable()
-                                .background(if (isPipFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
-                                .border(if (isPipFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                .background(if (isPipFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                                .border(if (isPipFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                         ) {
                             Icon(Icons.Default.PictureInPicture, contentDescription = stringResource(R.string.picture_in_picture), tint = Color.White)
                         }
@@ -399,8 +399,8 @@ fun PlayerControls(
                         Button(
                             onClick = onOpenExternalClick,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isExtFocused) Color.White else badgeColor,
-                                contentColor = if (isExtFocused) Color.Black else Color.White
+                                containerColor = if (isExtFocused) Color(0xFFE50914) else badgeColor,
+                                contentColor = Color.White
                             ),
                             shape = RoundedCornerShape(20.dp),
                             contentPadding = PaddingValues(horizontal = if (isTV) 14.dp else 10.dp, vertical = if (isTV) 8.dp else 4.dp),
@@ -409,7 +409,7 @@ fun PlayerControls(
                                 .onFocusChanged { isExtFocused = it.isFocused }
                                 .focusable()
                                 .border(
-                                    if (isExtFocused) BorderStroke(2.5.dp, Color.White) else BorderStroke(0.dp, Color.Transparent),
+                                    if (isExtFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent),
                                     RoundedCornerShape(20.dp)
                                 )
                         ) {
@@ -462,8 +462,8 @@ fun PlayerControls(
                             .onFocusChanged { isPlayFocused = it.isFocused }
                             .focusable()
                             .scale(if (isPlayFocused) 1.2f else 1f)
-                            .background(if (isPlayFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
-                            .border(if (isPlayFocused) BorderStroke(3.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                            .background(if (isPlayFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                            .border(if (isPlayFocused) BorderStroke(3.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                     ) {
                         Icon(
                             imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
@@ -489,15 +489,15 @@ fun PlayerControls(
                         Button(
                             onClick = onNextEpisodeClick,
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isNextFocused) Color.White else Color.White.copy(alpha = 0.1f),
-                                contentColor = if (isNextFocused) Color.Black else Color.White
+                                containerColor = if (isNextFocused) Color(0xFFE50914) else Color.White.copy(alpha = 0.1f),
+                                contentColor = Color.White
                             ),
                             modifier = Modifier
                                 .height(if (isTV) 64.dp else 56.dp)
                                 .onFocusChanged { isNextFocused = it.isFocused }
                                 .scale(nextScale)
                                 .focusable()
-                                .border(if (isNextFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(28.dp)),
+                                .border(if (isNextFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(28.dp)),
                             shape = RoundedCornerShape(28.dp),
                             contentPadding = PaddingValues(horizontal = if (isTV) 28.dp else 24.dp)
                         ) {
@@ -711,8 +711,8 @@ fun PlayerControls(
                                             ?.build() ?: return@clickable
                                         showQualityMenu = false
                                     }
-                                    .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
-                                colors = ListItemDefaults.colors(containerColor = if (isFocused) Color.White.copy(alpha = 0.1f) else Color.Transparent)
+                                    .border(if (isFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                                colors = ListItemDefaults.colors(containerColor = if (isFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent)
                             )
                         }
                         items(qualityTracks) { track ->
@@ -738,8 +738,8 @@ fun PlayerControls(
                                         onQualitySelect(track)
                                         showQualityMenu = false
                                     }
-                                    .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
-                                colors = ListItemDefaults.colors(containerColor = if (isFocused) Color.White.copy(alpha = 0.1f) else Color.Transparent)
+                                    .border(if (isFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                                colors = ListItemDefaults.colors(containerColor = if (isFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent)
                             )
                         }
                     }
@@ -760,9 +760,9 @@ fun PlayerControls(
                                 } else false
                             }
                             .focusable()
-                            .background(if (isCloseFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
-                            .border(if (isCloseFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
-                    ) { Text(stringResource(R.string.close), color = if (isCloseFocused) Color.White else Color.Red) } 
+                            .background(if (isCloseFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent, RoundedCornerShape(8.dp))
+                            .border(if (isCloseFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                    ) { Text(stringResource(R.string.close), color = if (isCloseFocused) Color(0xFFFF5252) else Color.Red) } 
                 },
                 containerColor = Color(0xFF1A1A1A)
             )
@@ -804,8 +804,8 @@ fun PlayerControls(
                                         onSpeedSelect(speed)
                                         showSpeedMenu = false
                                     }
-                                    .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
-                                colors = ListItemDefaults.colors(containerColor = if (isFocused) Color.White.copy(alpha = 0.1f) else Color.Transparent)
+                                    .border(if (isFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp)),
+                                colors = ListItemDefaults.colors(containerColor = if (isFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent)
                             )
                         }
                     }
@@ -826,9 +826,9 @@ fun PlayerControls(
                                 } else false
                             }
                             .focusable()
-                            .background(if (isCloseSpeedFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
-                            .border(if (isCloseSpeedFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
-                    ) { Text(stringResource(R.string.close), color = if (isCloseSpeedFocused) Color.White else Color.Red) }
+                            .background(if (isCloseSpeedFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent, RoundedCornerShape(8.dp))
+                            .border(if (isCloseSpeedFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                    ) { Text(stringResource(R.string.close), color = if (isCloseSpeedFocused) Color(0xFFFF5252) else Color.Red) }
                 },
                 containerColor = Color(0xFF1A1A1A)
             )
@@ -912,11 +912,11 @@ fun PlayerControls(
                                         showVoiceEnhancerMenu = false
                                     }
                                     .border(
-                                        if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent),
+                                        if (isFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent),
                                         RoundedCornerShape(8.dp)
                                     ),
                                 colors = ListItemDefaults.colors(
-                                    containerColor = if (isFocused) Color.White.copy(alpha = 0.15f) else Color.Transparent
+                                    containerColor = if (isFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent
                                 )
                             )
                         }
@@ -938,10 +938,10 @@ fun PlayerControls(
                                 } else false
                             }
                             .focusable()
-                            .background(if (isCloseVoiceFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, RoundedCornerShape(8.dp))
-                            .border(if (isCloseVoiceFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                            .background(if (isCloseVoiceFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent, RoundedCornerShape(8.dp))
+                            .border(if (isCloseVoiceFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                     ) {
-                        Text(stringResource(R.string.close), color = if (isCloseVoiceFocused) Color.White else Color(0xFFFF5252))
+                        Text(stringResource(R.string.close), color = if (isCloseVoiceFocused) Color(0xFFFF5252) else Color(0xFFFF5252))
                     }
                 },
                 containerColor = Color(0xFF1E1E1E)
@@ -966,8 +966,8 @@ fun ControlIcon(
             .onFocusChanged { isFocused = it.isFocused }
             .scale(scale)
             .focusable()
-            .background(if (isFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
-            .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+            .background(if (isFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+            .border(if (isFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
     ) {
         Icon(
             imageVector = icon,
@@ -1092,8 +1092,8 @@ fun CastButton(modifier: Modifier = Modifier) {
             .onFocusChanged { isFocused = it.isFocused }
             .focusable()
             .clickable { mediaRouteButton?.performClick() }
-            .background(if (isFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent, CircleShape)
-            .border(if (isFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape),
+            .background(if (isFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+            .border(if (isFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape),
         contentAlignment = Alignment.Center
     ) {
         AndroidView(

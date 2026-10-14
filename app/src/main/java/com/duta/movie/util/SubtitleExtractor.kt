@@ -96,7 +96,18 @@ object SubtitleExtractor {
             (l.contains("malay") || l == "ms" || l == "msa" || l.contains("melayu")) -> "Malay"
             (l.contains("indonesia") || l == "id" || l == "ind" || l.contains("indo") || l.contains("bahasa")) -> "Indonesian"
             (l.contains("english") || l == "en" || l == "eng") -> "English"
-            (l.contains("arabic") || l == "ar") -> "Arabic"
+            (l.contains("arabic") || l == "ar" || l == "ara") -> "Arabic"
+            (l.contains("spanish") || l == "es" || l == "spa" || l.contains("español")) -> "Spanish"
+            (l.contains("korean") || l == "ko" || l == "kor") -> "Korean"
+            (l.contains("japan") || l == "ja" || l == "jpn") -> "Japanese"
+            (l.contains("chinese") || l == "zh" || l == "chi" || l == "zho") -> "Chinese"
+            (l.contains("french") || l == "fr" || l == "fre" || l == "fra") -> "French"
+            (l.contains("german") || l == "de" || l == "ger" || l == "deu") -> "German"
+            (l.contains("thai") || l == "th" || l == "tha") -> "Thai"
+            (l.contains("vietnam") || l == "vi" || l == "vie") -> "Vietnamese"
+            (l.contains("portuguese") || l == "pt" || l == "por") -> "Portuguese"
+            (l.contains("russian") || l == "ru" || l == "rus") -> "Russian"
+            (l.contains("italian") || l == "it" || l == "ita") -> "Italian"
             else -> l.replaceFirstChar { if (it.isLowerCase()) it.titlecase() else it.toString() }
         }
     }
@@ -220,6 +231,11 @@ object SubtitleExtractor {
                 val cleanNoYear = cleanBase.replace(Regex("""\b(19|20)\d{2}\b"""), "").trim()
                 queries.add(2, "$cleanNoYear $epTag")
                 queries.add(3, "$cleanNoYear Episode $epNum")
+            } else {
+                val cleanNoYear = cleanBase.replace(Regex("""\b(19|20)\d{2}\b"""), "").trim()
+                if (cleanNoYear.length >= 2 && cleanNoYear != cleanBase) {
+                    queries.add(cleanNoYear)
+                }
             }
             val uniqueQueries = queries.asSequence().distinct().filter { it.length > 2 }.toList()
             
@@ -933,15 +949,17 @@ object SubtitleExtractor {
                                     val bytes = resp.body?.bytes()
                                     if (bytes != null && bytes.isNotEmpty()) {
                                         val path = processToInternalFile(bytes, lang)
-                                        if (path != null) {
-                                            withContext(Dispatchers.Main) {
-                                                if (!done) {
+                                        withContext(Dispatchers.Main) {
+                                            if (!done) {
+                                                if (path != null) {
                                                     Log.i(TAG, "Subtitle Resolved via DownloadListener: $path")
-                                                    done = true
-                                                    handler.removeCallbacks(timer)
-                                                    cont.resume(path)
-                                                    safeDestroyWebView(webView)
+                                                } else {
+                                                    Log.w(TAG, "Subtitle rejected via DownloadListener for $dUrl")
                                                 }
+                                                done = true
+                                                handler.removeCallbacks(timer)
+                                                cont.resume(path)
+                                                safeDestroyWebView(webView)
                                             }
                                         }
                                     }
@@ -982,42 +1000,61 @@ object SubtitleExtractor {
             try { 
                 data = GZIPInputStream(ByteArrayInputStream(data)).use { it.readBytes() }
                 return processToInternalFile(data, lang) 
-            } catch (e: Exception) {}
+            } catch (e: Exception) {
+                Log.w(TAG, "GZIP decompression failed: ${e.message}")
+                return null
+            }
         }
         if (data.size > 4 && data[0] == 0x50.toByte() && data[1] == 0x4B.toByte()) {
             try {
+                var bestEntryData: ByteArray? = null
                 ZipInputStream(ByteArrayInputStream(data)).use { zis ->
-                    var entry = zis.nextEntry
-                    var bestEntryData: ByteArray? = null
-                    while (entry != null) {
-                        if (!entry.isDirectory && (entry.name.lowercase().let { it.endsWith(".srt") || it.endsWith(".vtt") || it.endsWith(".ass") })) {
+                    while (true) {
+                        val entry = try { zis.nextEntry } catch (e: Exception) {
+                            Log.w(TAG, "Zip nextEntry error: ${e.message}")
+                            null
+                        } ?: break
+                        try {
                             val entryName = entry.name.lowercase()
-                            val isLangMatch = lang != null && (entryName.contains(lang.lowercase()) || (lang.lowercase() == "indonesian" && entryName.contains("indo")))
-                            
-                            if (isLangMatch || bestEntryData == null) {
-                                val entryData = zis.readBytes()
-                                
-                                // Check if this specific entry actually contains subtitle patterns
-                                val entryText = String(entryData, Charsets.UTF_8).lowercase()
-                                if (entryText.contains("-->") || entryText.contains("dialogue:")) {
-                                    bestEntryData = entryData
-                                    if (isLangMatch) break 
+                            if (!entry.isDirectory && (entryName.endsWith(".srt") || entryName.endsWith(".vtt") || entryName.endsWith(".ass") || entryName.endsWith(".ssa") || entryName.endsWith(".sub") || entryName.endsWith(".txt"))) {
+                                val isLangMatch = lang != null && (
+                                    entryName.contains(lang.lowercase()) ||
+                                    (lang.lowercase() == "indonesian" && (entryName.contains("indo") || entryName.contains(".id."))) ||
+                                    (lang.lowercase() == "malay" && (entryName.contains("malay") || entryName.contains(".ms."))) ||
+                                    (lang.lowercase() == "english" && (entryName.contains("eng") || entryName.contains(".en.")))
+                                )
+
+                                if (isLangMatch || bestEntryData == null) {
+                                    val entryData = zis.readBytes()
+                                    if (entryData.isNotEmpty()) {
+                                        // Use universal charset detection (supports UTF-16LE, UTF-16BE, UTF-8 BOM, Windows-1252)
+                                        val entryText = SubtitleParser.detectCharsetAndDecode(entryData).lowercase()
+                                        if (entryText.contains("-->") || entryText.contains("dialogue:") || entryText.contains("webvtt")) {
+                                            bestEntryData = entryData
+                                            if (isLangMatch) break
+                                        }
+                                    }
                                 }
                             }
+                        } catch (e: Exception) {
+                            Log.w(TAG, "Zip entry read error for ${entry.name}: ${e.message}")
                         }
-                        entry = zis.nextEntry
                     }
-                    bestEntryData?.let { return processToInternalFile(it, lang) }
                 }
-            } catch (_: Exception) {}
+                bestEntryData?.let { return processToInternalFile(it, lang) }
+            } catch (e: Exception) {
+                Log.w(TAG, "ZIP extraction error: ${e.message}")
+            }
+            Log.w(TAG, "processToInternalFile: ZIP archive contained no valid subtitle entries, rejecting.")
+            return null
         }
 
         var content = try {
-            val u = String(data, Charsets.UTF_8)
-            if (u.contains("\uFFFD") && data.any { it < 0 }) throw Exception() else u
+            SubtitleParser.detectCharsetAndDecode(data)
         } catch (e: Exception) {
-            try { String(data, java.nio.charset.Charset.forName("windows-1252")) } catch(_: Exception) { return null }
+            return null
         }
+        if (content.isBlank()) return null
 
         // Decode HTML entities (e.g., &quot; &nbsp;)
         if (content.contains("&")) {
@@ -1435,6 +1472,7 @@ object SubtitleExtractor {
                                         ?: Regex("""https?://(?:api\.)?subsource\.net/(?:api/)?v1/subtitle/download/[a-zA-Z0-9_-]+""").find(html)?.value
                                         ?: Regex("""https?://api\.subsource\.net/v1/subtitle/download/[a-zA-Z0-9_-]+""").find(html)?.value
                                         ?: Regex("""/subtitle/download/[a-zA-Z0-9_-]+""").find(html)?.value?.let { if (it.startsWith("http")) it else "https://api.subsource.net$it" }
+                                        ?: Regex("""\\?"download_token\\?"\s*:\s*\\?"([a-zA-Z0-9_-]{20,})\\?"""").find(html)?.groupValues?.get(1)?.let { "https://api.subsource.net/v1/subtitle/download/$it" }
                                     if (!link.isNullOrEmpty()) {
                                         Log.i("SubtitleExtractor", "SubSource resolved direct download link: $link")
                                     }

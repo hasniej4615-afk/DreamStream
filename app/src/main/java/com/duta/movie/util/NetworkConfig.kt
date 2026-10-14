@@ -573,6 +573,13 @@ object NetworkConfig {
                 } else if (host.contains("hakunaymatata") || host.contains("aoneroom")) {
                     requestBuilder.header("Referer", "https://movieboxonline.net/")
                     requestBuilder.header("Origin", "https://movieboxonline.net")
+                } else if (host.contains("tenbytecdn.com") || host.contains("mana2.my")) {
+                    requestBuilder.header("Referer", currentReferer ?: "https://mana2.my/")
+                    requestBuilder.header("Origin", originFromReferer ?: "https://mana2.my")
+                    if (urlString.contains(".m3u8")) {
+                        requestBuilder.header("Cache-Control", "no-cache, no-store, must-revalidate")
+                        requestBuilder.header("Pragma", "no-cache")
+                    }
                 } else if (host.contains("cloudfront.net") || host.contains("rtm") || host.contains("glueapi")) {
                     requestBuilder.header("Referer", currentReferer ?: "https://rtmklik.rtm.gov.my/")
                     requestBuilder.header("Origin", originFromReferer ?: "https://rtmklik.rtm.gov.my")

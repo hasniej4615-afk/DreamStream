@@ -40,6 +40,7 @@ class VideoRepository @Inject constructor(
     val searchHistory: Flow<List<String>> = preferenceManager.searchHistory
     val defaultSubtitleLanguage: Flow<String> = preferenceManager.defaultSubtitleLanguage
     val isAutoSubtitleEnabled: Flow<Boolean> = preferenceManager.isAutoSubtitleEnabled
+    val isAutoSubSyncEnabled: Flow<Boolean> = preferenceManager.isAutoSubSyncEnabled
 
     fun clearAllCaches() {
         videoCache.clear()
@@ -80,6 +81,10 @@ class VideoRepository @Inject constructor(
 
     suspend fun setAutoSubtitleEnabled(enabled: Boolean) {
         preferenceManager.setAutoSubtitleEnabled(enabled)
+    }
+
+    suspend fun setAutoSubSyncEnabled(enabled: Boolean) {
+        preferenceManager.setAutoSubSyncEnabled(enabled)
     }
 
     suspend fun toggleMyList(videoId: String) {

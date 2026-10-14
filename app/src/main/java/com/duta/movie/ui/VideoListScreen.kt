@@ -189,7 +189,20 @@ fun VideoListScreen(
     ) { androidx.compose.foundation.lazy.LazyListState(0, 0) }
     val scope = rememberCoroutineScope()
     var initialHomeFocusRequested by rememberSaveable(startupSessionId) { mutableStateOf(false) }
-    
+
+    val topRowKey = remember(
+        recentlyWatchedVideos.isNotEmpty(),
+        pakcikRekomenVideos.isNotEmpty(),
+        distinctCategories.firstOrNull()?.get("path")
+    ) {
+        when {
+            recentlyWatchedVideos.isNotEmpty() -> "continue_watching"
+            pakcikRekomenVideos.isNotEmpty() -> "pakcik_rekomen"
+            distinctCategories.isNotEmpty() -> distinctCategories.firstOrNull()?.get("path") ?: "cat_0"
+            else -> null
+        }
+    }
+
     LaunchedEffect(isLoading, lastCompletedSearchQuery, selectedCategory, isSearchActive) {
         if (isImmersiveMode) {
             try {
@@ -202,17 +215,31 @@ fun VideoListScreen(
                     } else {
                         firstItemFocusRequester.requestFocus()
                     }
-                } else if (!isSearchActive && !initialHomeFocusRequested && viewModel.lastFocusedHomeVideoId == null && !isLoading) {
-                    for (attempt in 1..5) {
-                        delay(150L * attempt)
-                        try {
-                            firstCategoryFocusRequester.requestFocus()
-                            initialHomeFocusRequested = true
-                            break
-                        } catch (_: Exception) {}
-                    }
                 }
             } catch(_: Exception) {}
+        }
+    }
+
+    LaunchedEffect(topRowKey, isSearchActive, viewModel.shouldRestoreFocusOnResume) {
+        if (isImmersiveMode && !isSearchActive && !viewModel.shouldRestoreFocusOnResume && !viewModel.hasUserBrowsed) {
+            if (topRowKey != null) {
+                for (attempt in 1..8) {
+                    delay(60L * attempt)
+                    try {
+                        firstCategoryFocusRequester.requestFocus()
+                        initialHomeFocusRequested = true
+                        break
+                    } catch (_: Exception) {}
+                }
+            }
+        }
+    }
+
+    LaunchedEffect(topRowKey) {
+        if (isImmersiveMode && !isSearchActive && !viewModel.shouldRestoreFocusOnResume && !viewModel.hasUserBrowsed) {
+            try {
+                homeLazyListState.scrollToItem(0)
+            } catch (_: Exception) {}
         }
     }
 
@@ -268,11 +295,17 @@ fun VideoListScreen(
         if (!isSearchActive && searchQuery.isBlank() && selectedCategory != null) {
             viewModel.selectCategory(null) 
         }
-        if (isImmersiveMode && !isSearchActive && (viewModel.pendingRestoreVideoId != null || viewModel.lastFocusedHomeVideoId != null)) {
-            val targetRow = viewModel.lastFocusedCategoryRowIndex
-            if (targetRow > 0) {
+        if (isImmersiveMode && !isSearchActive) {
+            if (viewModel.shouldRestoreFocusOnResume && (viewModel.pendingRestoreVideoId != null || viewModel.lastFocusedHomeVideoId != null)) {
+                val targetRow = viewModel.lastFocusedCategoryRowIndex
+                if (targetRow > 0) {
+                    try {
+                        homeLazyListState.scrollToItem(targetRow)
+                    } catch (_: Exception) {}
+                }
+            } else if (!viewModel.shouldRestoreFocusOnResume) {
                 try {
-                    homeLazyListState.scrollToItem(targetRow)
+                    homeLazyListState.scrollToItem(0)
                 } catch (_: Exception) {}
             }
         }
@@ -311,23 +344,28 @@ fun VideoListScreen(
                 var isExitFocused by remember { mutableStateOf(false) }
                 Button(
                     onClick = { (context as? android.app.Activity)?.finish() },
-                    colors = ButtonDefaults.buttonColors(containerColor = if (isExitFocused) Color.White else Color.Red),
+                    colors = ButtonDefaults.buttonColors(containerColor = if (isExitFocused) Color(0xFFFF1744) else Color(0xFFE50914)),
+                    shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
                         .onFocusChanged { isExitFocused = it.isFocused }
-                        .scale(if (isExitFocused) 1.1f else 1f)
+                        .scale(if (isExitFocused) 1.08f else 1f)
+                        .border(if (isExitFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                         .focusable()
                 ) {
-                    Text(stringResource(R.string.exit), color = if (isExitFocused) Color.Black else Color.White, fontWeight = FontWeight.Bold)
+                    Text(stringResource(R.string.exit), color = Color.White, fontWeight = FontWeight.Bold)
                 }
             },
             dismissButton = {
                 var isCancelFocused by remember { mutableStateOf(false) }
                 TextButton(
                     onClick = { showExitDialog = false },
+                    shape = RoundedCornerShape(8.dp),
                     modifier = Modifier
                         .focusRequester(cancelFocusRequester)
                         .onFocusChanged { isCancelFocused = it.isFocused }
-                        .scale(if (isCancelFocused) 1.1f else 1f)
+                        .scale(if (isCancelFocused) 1.05f else 1f)
+                        .background(if (isCancelFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.Transparent, RoundedCornerShape(8.dp))
+                        .border(if (isCancelFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                         .focusable()
                 ) {
                     Text(stringResource(R.string.cancel), color = if (isCancelFocused) Color.White else Color.Gray)
@@ -422,10 +460,15 @@ fun VideoListScreen(
                             var isRetryFocused by remember { mutableStateOf(false) }
                             Button(
                                 onClick = { viewModel.refresh() },
-                                colors = ButtonDefaults.buttonColors(containerColor = if (isRetryFocused) Color.White else Color.Red),
-                                modifier = Modifier.onFocusChanged { isRetryFocused = it.isFocused }.focusable()
+                                colors = ButtonDefaults.buttonColors(containerColor = if (isRetryFocused) Color(0xFFFF1744) else Color(0xFFE50914)),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .onFocusChanged { isRetryFocused = it.isFocused }
+                                    .scale(if (isRetryFocused) 1.08f else 1f)
+                                    .border(if (isRetryFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
+                                    .focusable()
                             ) {
-                                Text(stringResource(R.string.retry), color = if (isRetryFocused) Color.Black else Color.White)
+                                Text(stringResource(R.string.retry), color = Color.White, fontWeight = FontWeight.Bold)
                             }
                         }
                     }
@@ -634,7 +677,7 @@ fun VideoListScreen(
                                                      focusedVideo = video 
                                                  },
                                                  thumbnailScale = uiThumbnailScaleFactor,
-                                                 firstItemFocusRequester = firstCategoryFocusRequester,
+                                                 firstItemFocusRequester = if (topRowKey == "continue_watching") firstCategoryFocusRequester else null,
                                                  showProgress = true,
                                                  startupSessionId = startupSessionId,
                                                  modifier = Modifier.graphicsLayer { alpha = rowAlpha }
@@ -672,7 +715,7 @@ fun VideoListScreen(
                                                   focusedVideo = video 
                                               },
                                               thumbnailScale = uiThumbnailScaleFactor,
-                                              firstItemFocusRequester = if (recentlyWatchedVideos.isEmpty()) firstCategoryFocusRequester else null,
+                                              firstItemFocusRequester = if (topRowKey == "pakcik_rekomen") firstCategoryFocusRequester else null,
                                               startupSessionId = startupSessionId,
                                               modifier = Modifier.graphicsLayer { alpha = rowAlpha }
                                           )
@@ -700,7 +743,8 @@ fun VideoListScreen(
                                           val rowAlpha by animateFloatAsState(if (isRowFocused) 1f else 0.65f)
                                           val baseRowIndex = (if (recentlyWatchedVideos.isNotEmpty()) 1 else 0) + (if (pakcikRekomenVideos.isNotEmpty()) 1 else 0)
                                           val actualRowIndex = baseRowIndex + index
-                                          val isFirstRow = actualRowIndex == 0
+                                          val catKey = category["path"] ?: "cat_$index"
+                                          val isTopCategoryRow = topRowKey == catKey
 
                                           Column(modifier = Modifier
                                               .onFocusChanged { 
@@ -740,7 +784,7 @@ fun VideoListScreen(
                                                  },
                                                  thumbnailScale = uiThumbnailScaleFactor,
                                                  categoryPath = path,
-                                                 firstItemFocusRequester = if (isFirstRow) firstCategoryFocusRequester else null,
+                                                 firstItemFocusRequester = if (isTopCategoryRow) firstCategoryFocusRequester else null,
                                                  startupSessionId = startupSessionId,
                                                  modifier = Modifier.graphicsLayer { alpha = rowAlpha }
                                              )
@@ -1002,12 +1046,19 @@ fun HorizontalVideoRow(
     }
 
     LaunchedEffect(videos.isNotEmpty()) {
-        if (videos.isNotEmpty() && shimmerHadFocus) {
-            shimmerHadFocus = false
-            delay(50)
-            try {
-                rowFirstItemFocusRequester.requestFocus()
-            } catch (_: Exception) {}
+        if (videos.isNotEmpty()) {
+            if (firstItemFocusRequester != null && !hasUserScrolled && viewModel?.shouldRestoreFocusOnResume != true) {
+                delay(50)
+                try {
+                    (firstItemFocusRequester ?: rowFirstItemFocusRequester).requestFocus()
+                } catch (_: Exception) {}
+            } else if (shimmerHadFocus) {
+                shimmerHadFocus = false
+                delay(50)
+                try {
+                    (firstItemFocusRequester ?: rowFirstItemFocusRequester).requestFocus()
+                } catch (_: Exception) {}
+            }
         }
     }
 
@@ -1053,6 +1104,17 @@ fun HorizontalVideoRow(
         horizontalArrangement = Arrangement.spacedBy(16.dp),
         modifier = modifier
             .focusGroup()
+            .focusProperties {
+                enter = {
+                    if (viewModel?.shouldRestoreFocusOnResume == true && targetRestoreId != null) {
+                        FocusRequester.Default
+                    } else if (hasUserScrolled) {
+                        FocusRequester.Default
+                    } else {
+                        firstItemFocusRequester ?: rowFirstItemFocusRequester
+                    }
+                }
+            }
             .fillMaxWidth()
             .height(((if (isRealTV) 240 else if (isTV) 260 else 340) * thumbnailScale).dp)
             .onFocusChanged { hasFocus = it.hasFocus }
@@ -1060,7 +1122,7 @@ fun HorizontalVideoRow(
         if (isLoading && videos.isEmpty()) {
             items(5, contentType = { "shimmer" }) { shimmerIndex ->
                 var isShimmerFocused by remember { mutableStateOf(false) }
-                val shimmerRequester = if (shimmerIndex == 0) rowFirstItemFocusRequester else null
+                val shimmerRequester = if (shimmerIndex == 0) (firstItemFocusRequester ?: rowFirstItemFocusRequester) else null
                 Box(
                     modifier = Modifier
                         .width((if (isRealTV) 140 * thumbnailScale else if (isTV) 130 * thumbnailScale else 165f).dp)
@@ -1077,12 +1139,12 @@ fun HorizontalVideoRow(
                         }
                         .then(
                             if (isShimmerFocused && (isRealTV || isTV))
-                                Modifier.border(2.dp, Color.White, RoundedCornerShape(12.dp)).scale(1.05f)
+                                Modifier.border(2.5.dp, Color(0xFFE50914), RoundedCornerShape(12.dp)).scale(1.05f)
                             else Modifier
                         )
                         .clip(RoundedCornerShape(12.dp))
                         .shimmerEffect()
-                        .focusable()
+                        .focusable(enabled = (shimmerIndex == 0))
                 )
             }
         } else {
@@ -1114,12 +1176,19 @@ fun HorizontalVideoRow(
                 if (isAnyTV && itemFocusRequester != null) {
                     LaunchedEffect(isTargetRestorationItem) {
                         if (isTargetRestorationItem) {
-                            delay(120)
-                            try {
-                                itemFocusRequester.requestFocus()
-                            } catch (_: Exception) {}
-                            viewModel.shouldRestoreFocusOnResume = false
-                            viewModel.pendingRestoreVideoId = null
+                            var focused = false
+                            for (attempt in 1..5) {
+                                delay(60L * attempt)
+                                try {
+                                    itemFocusRequester.requestFocus()
+                                    focused = true
+                                    break
+                                } catch (_: Exception) {}
+                            }
+                            if (focused) {
+                                viewModel.shouldRestoreFocusOnResume = false
+                                viewModel.pendingRestoreVideoId = null
+                            }
                         }
                     }
                 }
@@ -1143,11 +1212,16 @@ fun HorizontalVideoRow(
                     isPakcikRekomen = isPakcikRekomen,
                     onPosterMissing = { viewModel?.healMissingPoster(video) },
                     onFocus = { 
-                        hasUserScrolled = true
+                        if (index > 0 || listState.firstVisibleItemIndex > 0) {
+                            hasUserScrolled = true
+                        }
                         isStartupAligned = true
                         viewModel?.markRowStartupInitialized(rowKey)
                         viewModel?.lastFocusedHomeVideoId = video.id
                         viewModel?.lastFocusedCategoryRowIndex = rowIndex
+                        if (index > 0 || rowIndex > 0 || hasUserScrolled) {
+                            viewModel?.hasUserBrowsed = true
+                        }
                         onVideoFocus(video)
                         if (isRealTV || isTV) {
                             // PROACTIVE TV PAGINATION: Trigger next page immediately via D-Pad if user moves past card 3 or near row end
@@ -1178,6 +1252,7 @@ fun HorizontalVideoRow(
                     viewModel?.lastFocusedCategoryRowIndex = rowIndex
                     viewModel?.pendingRestoreVideoId = video.id
                     viewModel?.isNavigatingToDetail = true
+                    viewModel?.hasUserBrowsed = true
                     onVideoClick(video.id)
                 }
             }
@@ -1206,8 +1281,8 @@ fun HorizontalVideoRow(
 private val CARD_SHAPE_TV = RoundedCornerShape(16.dp)
 private val CARD_SHAPE_MOBILE = RoundedCornerShape(12.dp)
 private val CARD_BORDER_MOBILE = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
-private val CARD_BORDER_TV_FOCUSED_REAL = BorderStroke(3.5.dp, Color.White)
-private val CARD_BORDER_TV_FOCUSED = BorderStroke(2.5.dp, Color.White)
+private val CARD_BORDER_TV_FOCUSED_REAL = BorderStroke(3.dp, Color(0xFFE50914))
+private val CARD_BORDER_TV_FOCUSED = BorderStroke(2.5.dp, Color(0xFFE50914))
 private val CARD_BORDER_TV_UNFOCUSED = BorderStroke(1.dp, Color.White.copy(alpha = 0.1f))
 private val CARD_CONTAINER_COLOR = Color(0xFF1A1A1A)
 private val CARD_PLACEHOLDER_PAINTER = androidx.compose.ui.graphics.painter.ColorPainter(Color(0xFF222222))
@@ -1887,7 +1962,7 @@ fun FeaturedHero(
                             contentPadding = PaddingValues(horizontal = 24.dp, vertical = if (isRealTV) 10.dp else 10.dp),
                             modifier = Modifier
                                 .onFocusChanged { isPlayFocused = it.isFocused }
-                                .border(if (isPlayFocused) BorderStroke(3.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(10.dp))
+                                .border(if (isPlayFocused) BorderStroke(3.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(10.dp))
                                 .scale(if (isPlayFocused) 1.15f else 1f)
                                 .then(if (downFocusRequester != null) Modifier.focusProperties { down = downFocusRequester } else Modifier)
                         ) {
@@ -1900,8 +1975,8 @@ fun FeaturedHero(
                             onClick = onMyListClick,
                             modifier = Modifier
                                 .onFocusChanged { isMyListFocused = it.isFocused }
-                                .background(if (isMyListFocused) Color.White else Color.White.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
-                                .border(if (isMyListFocused) BorderStroke(3.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(10.dp))
+                                .background(if (isMyListFocused) Color(0xFFE50914) else Color.White.copy(alpha = 0.2f), RoundedCornerShape(10.dp))
+                                .border(if (isMyListFocused) BorderStroke(3.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(10.dp))
                                 .size(if (isRealTV) 46.dp else 46.dp)
                                 .scale(if (isMyListFocused) 1.15f else 1f)
                                 .then(if (downFocusRequester != null) Modifier.focusProperties { down = downFocusRequester } else Modifier)
@@ -1909,7 +1984,7 @@ fun FeaturedHero(
                             Icon(
                                 if (isAddedToMyList) Icons.Default.Check else Icons.Default.Add, 
                                 contentDescription = stringResource(R.string.add_to_list), 
-                                tint = if (isMyListFocused) Color.Black else if (isAddedToMyList) Color.Red else Color.White
+                                tint = if (isMyListFocused) Color.White else if (isAddedToMyList) Color.Red else Color.White
                             )
                         }
                     }
@@ -2009,8 +2084,9 @@ fun NetflixTopBar(
                         onClick = { onSearchActiveChange(false) },
                         modifier = Modifier
                             .onFocusChanged { isBackFocused = it.isFocused }
-                            .background(if (isBackFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, CircleShape)
-                            .border(if (isBackFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                            .background(if (isBackFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                            .border(if (isBackFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                            .scale(if (isBackFocused) 1.05f else 1f)
                     ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, null, tint = Color.White)
                     }
@@ -2038,8 +2114,9 @@ fun NetflixTopBar(
                             onClick = onClearSearch,
                             modifier = Modifier
                                 .onFocusChanged { isClearFocused = it.isFocused }
-                                .background(if (isClearFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, CircleShape)
-                                .border(if (isClearFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                .background(if (isClearFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                                .border(if (isClearFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                .scale(if (isClearFocused) 1.05f else 1f)
                         ) {
                             Icon(Icons.Default.Close, contentDescription = "Clear search", tint = Color.LightGray)
                         }
@@ -2049,8 +2126,9 @@ fun NetflixTopBar(
                         onClick = performSearch,
                         modifier = Modifier
                             .onFocusChanged { isSearchActionFocused = it.isFocused }
-                            .background(if (isSearchActionFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent, CircleShape)
-                            .border(if (isSearchActionFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                            .background(if (isSearchActionFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                            .border(if (isSearchActionFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                            .scale(if (isSearchActionFocused) 1.05f else 1f)
                     ) {
                         Icon(Icons.Default.Search, null, tint = Color.White)
                     }
@@ -2096,8 +2174,9 @@ fun NetflixTopBar(
                     onClick = { onSearchActiveChange(true) },
                     modifier = Modifier
                         .onFocusChanged { isSearchFocused = it.isFocused }
-                        .background(if (isSearchFocused) Color.White.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.1f), CircleShape)
-                        .border(if (isSearchFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                        .scale(if (isSearchFocused) 1.1f else 1f)
+                        .background(if (isSearchFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.White.copy(alpha = 0.1f), CircleShape)
+                        .border(if (isSearchFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                 ) { Icon(Icons.Default.Search, null, tint = Color.White, modifier = Modifier.size(22.dp)) }
                 Spacer(Modifier.width(8.dp))
                 var isSettingsFocused by remember { mutableStateOf(false) }
@@ -2105,8 +2184,9 @@ fun NetflixTopBar(
                     onClick = onSettingsClick,
                     modifier = Modifier
                         .onFocusChanged { isSettingsFocused = it.isFocused }
-                        .background(if (isSettingsFocused) Color.White.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.1f), CircleShape)
-                        .border(if (isSettingsFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                        .scale(if (isSettingsFocused) 1.1f else 1f)
+                        .background(if (isSettingsFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.White.copy(alpha = 0.1f), CircleShape)
+                        .border(if (isSettingsFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                 ) { Icon(Icons.Default.Settings, null, tint = Color.White, modifier = Modifier.size(22.dp)) }
             }
         }
@@ -2214,12 +2294,13 @@ fun SearchFilterChip(
     Box(
         modifier = Modifier
             .onFocusChanged { isFocused = it.isFocused }
+            .scale(if (isFocused) 1.05f else 1f)
             .clip(RoundedCornerShape(16.dp))
-            .background(if (isFocused) Color.White.copy(alpha = 0.25f) else baseBgColor)
+            .background(if (isFocused) Color(0xFFE50914).copy(alpha = 0.35f) else baseBgColor)
             .border(
                 BorderStroke(
-                    width = if (isFocused) 2.dp else if (isSelected) 1.dp else 0.dp,
-                    color = if (isFocused) Color.White else if (isSelected && isSortChip) Color.Gray else Color.Transparent
+                    width = if (isFocused) 2.5.dp else if (isSelected) 1.dp else 0.dp,
+                    color = if (isFocused) Color(0xFFE50914) else if (isSelected && isSortChip) Color.Gray else Color.Transparent
                 ),
                 RoundedCornerShape(16.dp)
             )
@@ -2306,17 +2387,18 @@ fun SearchSuggestionChip(
     Surface(
         modifier = Modifier
             .onFocusChanged { isFocused = it.isFocused }
+            .scale(if (isFocused) 1.05f else 1f)
             .clip(RoundedCornerShape(20.dp))
             .border(
                 BorderStroke(
-                    width = if (isFocused) 2.dp else 1.dp,
-                    color = if (isFocused) Color.White else Color.White.copy(alpha = 0.15f)
+                    width = if (isFocused) 2.5.dp else 1.dp,
+                    color = if (isFocused) Color(0xFFE50914) else Color.White.copy(alpha = 0.15f)
                 ),
                 RoundedCornerShape(20.dp)
             )
             .clickable(onClick = onClick)
             .focusable(),
-        color = if (isFocused) Color.White.copy(alpha = 0.25f) else Color.White.copy(alpha = 0.06f),
+        color = if (isFocused) Color(0xFFE50914).copy(alpha = 0.25f) else Color.White.copy(alpha = 0.06f),
         shape = RoundedCornerShape(20.dp)
     ) {
         Row(
@@ -2378,15 +2460,18 @@ fun SearchEmptyState(
         Button(
             onClick = onClearClick,
             colors = ButtonDefaults.buttonColors(
-                containerColor = if (isClearFocused) Color.White else Color.Red
+                containerColor = if (isClearFocused) Color(0xFFFF1744) else Color(0xFFE50914)
             ),
+            shape = RoundedCornerShape(8.dp),
             modifier = Modifier
                 .onFocusChanged { isClearFocused = it.isFocused }
+                .scale(if (isClearFocused) 1.08f else 1f)
+                .border(if (isClearFocused) BorderStroke(2.5.dp, Color(0xFFFF1744)) else BorderStroke(0.dp, Color.Transparent), RoundedCornerShape(8.dp))
                 .focusable()
         ) {
             Text(
                 text = "Clear Search",
-                color = if (isClearFocused) Color.Black else Color.White,
+                color = Color.White,
                 fontWeight = FontWeight.SemiBold
             )
         }

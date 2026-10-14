@@ -105,6 +105,9 @@
     <string name="current_playback_time">Current Playback: %s</string>
     <string name="subtitle_sync_helper_hint">Snap dialogue or adjust timing • Automatically saved for this title</string>
     <string name="subtitle_synced_toast">Subtitle synced! Offset set to %s</string>
+    <string name="auto_sub_sync_title">Auto Subtitle Sync (Auto-Pilot)</string>
+    <string name="auto_sub_sync_desc">Automatically aligns subtitle timing using voice energy detection &amp; cloud consensus.</string>
+    <string name="auto_synced_hud">⚡ Subtitles Auto-Synced (%s)</string>
     <string name="done">Done</string>
 
     <string name="select_episode">Select Episode</string>
@@ -374,6 +377,14 @@ Tap to re-scout and refresh content</string>
     <string name="no_other_sources_found">No alternative sources found for this title</string>
     <string name="auto_healed_source">Auto-recovered %d alternative mirror(s)</string>
     <string name="added_multi_provider_alt_sources">Added multi-provider cross-search &amp; auto-healing: discover fresh mirrors from partner providers when mirrors expire or fail.</string>
+    <string name="changelog_v2_1_1">Changelog v2.1.1 Cloud 7</string>
+    <string name="v2_1_1_updates">v2.1.1 Updates:</string>
+    <string name="v2_1_1_highlight_1">TV3 Malaysia Live Streaming &amp; Resilient Fallback: Added official TV3 Malaysia Live streaming with direct YouTube Live embed, HLS recovery, transparent branding, and isolated scraper routing.</string>
+    <string name="v2_1_1_highlight_2">Hardware-Level Voice Activity Detection (VAD) Audio Processor: Integrated ExoPlayer audio processor with real-time speech energy detection for accurate dialogue synchronization.</string>
+    <string name="v2_1_1_highlight_3">Dual Subtitle Display &amp; Custom Mask Box: Stacked secondary subtitle (warm yellow on top, crisp white on bottom) and configurable subtitle mask box for translating hardsubbed content.</string>
+    <string name="v2_1_1_highlight_4">Intelligent Subtitle Stream Matching &amp; Auto-Pilot: SubtitleSyncEngine extracts stream signatures (quality, source release group, platform) to automatically lock 0ms natural sync and calibrate timing offsets.</string>
+    <string name="v2_1_1_highlight_5">Interactive Broadcast Admin &amp; Announcement System: Full announcement management dialog with priority broadcasting, Supabase RLS upsert compatibility, and real-time banner display.</string>
+    <string name="v2_1_1_highlight_6">Universal AI Subtitle Translator Rate-Limit Hardening: Bypassed 429 translation throttling via dedicated mobile client endpoints with intelligent multi-tier failover.</string>
     <string name="changelog_v2_1_0">Changelog v2.1.0b Cloud 7</string>
     <string name="v2_1_0_updates">v2.1.0b Updates (Fix Release):</string>
     <string name="v2_1_0_highlight_1">Cloud Backup &amp; Restore (6-Digit PIN): Seamlessly backup user profile, custom photo avatar, favorites, and watch history to cloud storage; easily restore across devices with a 6-digit PIN.</string>
@@ -670,4 +681,8 @@ Tap to re-scout and refresh content</string>
     <string name="ai_translate">AI Translate</string>
     <string name="ai_translate_title">AI Subtitle Translator</string>
     <string name="ai_translate_select_lang">Select target language to translate into:</string>
+    <string name="no_subs_found_auto">No subtitles found automatically</string>
+    <string name="search_custom_title_hint">Try searching with a custom title or open a local subtitle</string>
+    <string name="no_subs_in_filter">No subtitles found in this language</string>
+    <string name="switch_to_all_subs">Show All Languages (%d)</string>
 </resources>

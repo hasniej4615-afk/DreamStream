@@ -14,12 +14,13 @@ import java.util.Locale
 
 data class ProfileBackupData(
     val version: Int = 1,
-    val appVersion: String = "2.1.0b Cloud 7",
+    val appVersion: String = "2.1.1 Cloud 7",
     val exportedAt: Long = System.currentTimeMillis(),
     val username: String = "",
     val avatarBase64: String? = null,
     val defaultSubtitleLanguage: String = "Indonesian",
     val autoSubtitleEnabled: Boolean = false,
+    val autoSubSyncEnabled: Boolean = true,
     val voiceEnhancerMode: Int = 0,
     val mobileLandscapeEnabled: Boolean = false,
     val debugModeEnabled: Boolean = false,
@@ -55,6 +56,7 @@ object ProfileBackupManager {
         val settings = JSONObject()
         settings.put("default_subtitle_language", data.defaultSubtitleLanguage)
         settings.put("auto_subtitle_enabled", data.autoSubtitleEnabled)
+        settings.put("auto_sub_sync_enabled", data.autoSubSyncEnabled)
         settings.put("voice_enhancer_mode", data.voiceEnhancerMode)
         settings.put("mobile_landscape_enabled", data.mobileLandscapeEnabled)
         settings.put("debug_mode_enabled", data.debugModeEnabled)
@@ -98,7 +100,7 @@ object ProfileBackupManager {
         return try {
             val root = JSONObject(jsonStr)
             val version = root.optInt("version", 1)
-            val appVersion = root.optString("app_version", "2.1.0b Cloud 7")
+            val appVersion = root.optString("app_version", "2.1.1 Cloud 7")
             val exportedAt = root.optLong("exported_at", System.currentTimeMillis())
 
             val profile = root.optJSONObject("profile") ?: JSONObject()
@@ -108,6 +110,7 @@ object ProfileBackupManager {
             val settings = root.optJSONObject("settings") ?: JSONObject()
             val defaultSubtitleLang = settings.optString("default_subtitle_language", "Indonesian")
             val autoSubtitle = settings.optBoolean("auto_subtitle_enabled", false)
+            val autoSubSync = settings.optBoolean("auto_sub_sync_enabled", true)
             val voiceEnhancer = settings.optInt("voice_enhancer_mode", 0)
             val mobileLandscape = settings.optBoolean("mobile_landscape_enabled", false)
             val debugMode = settings.optBoolean("debug_mode_enabled", false)
@@ -179,6 +182,7 @@ object ProfileBackupManager {
                 avatarBase64 = avatarBase64,
                 defaultSubtitleLanguage = defaultSubtitleLang,
                 autoSubtitleEnabled = autoSubtitle,
+                autoSubSyncEnabled = autoSubSync,
                 voiceEnhancerMode = voiceEnhancer,
                 mobileLandscapeEnabled = mobileLandscape,
                 debugModeEnabled = debugMode,

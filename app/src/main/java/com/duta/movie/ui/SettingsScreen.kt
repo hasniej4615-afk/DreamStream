@@ -1332,6 +1332,15 @@ fun SettingsScreen(
                                     )
                                 }
                                 item {
+                                    val isAutoSubSyncEnabled by viewModel.isAutoSubSyncEnabled.collectAsStateWithLifecycle()
+                                    SettingsToggleCard(
+                                        title = stringResource(R.string.auto_sub_sync_title),
+                                        description = stringResource(R.string.auto_sub_sync_desc),
+                                        checked = isAutoSubSyncEnabled,
+                                        onCheckedChange = { viewModel.setAutoSubSyncEnabled(it) }
+                                    )
+                                }
+                                item {
                                     SettingsActionCard(
                                         title = stringResource(R.string.help_topic_subtitle_sync_title),
                                         description = stringResource(R.string.subtitle_sync_manual_shortcut_desc),
@@ -1990,7 +1999,7 @@ fun SettingsScreen(
 
         AlertDialog(
             onDismissRequest = { showChangelogDialog = false },
-            title = { Text(stringResource(R.string.changelog_v2_1_0), color = Color.White) },
+            title = { Text(stringResource(R.string.changelog_v2_1_1), color = Color.White) },
             text = {
                 Column(
                     modifier = Modifier
@@ -2078,6 +2087,15 @@ fun SettingsScreen(
                         .verticalScroll(changelogScrollState)
                         .padding(end = 8.dp)
                 ) {
+                    Text(stringResource(R.string.v2_1_1_updates), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_1_highlight_1), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_1_highlight_2), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_1_highlight_3), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_1_highlight_4), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_1_highlight_5), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_1_highlight_6), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(stringResource(R.string.v2_1_0_updates), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
                     Text(stringResource(R.string.v2_1_0_highlight_1), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
                     Text(stringResource(R.string.v2_1_0_highlight_2), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
@@ -2793,8 +2811,9 @@ fun DisplayAdjustmentSlider(
                 modifier = Modifier
                     .size(40.dp)
                     .onFocusChanged { isMinusFocused = it.isFocused }
-                    .border(if (isMinusFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
-                    .background(Color.DarkGray, CircleShape)
+                    .scale(if (isMinusFocused) 1.1f else 1f)
+                    .border(if (isMinusFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                    .background(if (isMinusFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.DarkGray, CircleShape)
                     .clickable { onValueChange((value - step).coerceIn(range.start, range.endInclusive)) },
                 contentAlignment = Alignment.Center
             ) {
@@ -2821,8 +2840,9 @@ fun DisplayAdjustmentSlider(
                 modifier = Modifier
                     .size(40.dp)
                     .onFocusChanged { isPlusFocused = it.isFocused }
-                    .border(if (isPlusFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
-                    .background(Color.DarkGray, CircleShape)
+                    .scale(if (isPlusFocused) 1.1f else 1f)
+                    .border(if (isPlusFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                    .background(if (isPlusFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.DarkGray, CircleShape)
                     .clickable { onValueChange((value + step).coerceIn(range.start, range.endInclusive)) },
                 contentAlignment = Alignment.Center
             ) {

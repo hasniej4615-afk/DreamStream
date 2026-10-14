@@ -219,8 +219,8 @@ fun CategoryResultsScreen(
                                     },
                                     modifier = Modifier
                                         .onFocusChanged { isMicFocused = it.isFocused }
-                                        .background(if (isMicFocused) Color.White.copy(alpha = 0.15f) else Color.Transparent, CircleShape)
-                                        .border(if (isMicFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                        .background(if (isMicFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                                        .border(if (isMicFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                                 ) { Icon(Icons.Default.Mic, contentDescription = stringResource(R.string.voice_search), tint = Color.White) }
                             }
                         )
@@ -240,7 +240,8 @@ fun CategoryResultsScreen(
                         },
                         modifier = Modifier
                             .onFocusChanged { isBackFocused = it.isFocused }
-                            .border(if (isBackFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                            .background(if (isBackFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                            .border(if (isBackFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                             .focusable()
                     ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back), tint = Color.White)
@@ -253,7 +254,8 @@ fun CategoryResultsScreen(
                             onClick = { viewModel.setSearchActive(true) },
                             modifier = Modifier
                                 .onFocusChanged { isSearchFocused = it.isFocused }
-                                .border(if (isSearchFocused) BorderStroke(2.dp, Color.White) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                                .background(if (isSearchFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.Transparent, CircleShape)
+                                .border(if (isSearchFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
                                 .focusable()
                         ) {
                             Icon(Icons.Default.Search, contentDescription = stringResource(R.string.search), tint = Color.White)

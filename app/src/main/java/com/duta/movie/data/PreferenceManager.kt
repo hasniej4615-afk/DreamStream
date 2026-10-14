@@ -22,6 +22,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         private val RECENTLY_WATCHED_KEY = stringPreferencesKey("recently_watched")
         private val DEFAULT_SUBTITLE_LANGUAGE_KEY = stringPreferencesKey("default_subtitle_lang")
         private val AUTO_SUBTITLE_ENABLED_KEY = booleanPreferencesKey("auto_subtitle_enabled")
+        private val AUTO_SUB_SYNC_ENABLED_KEY = booleanPreferencesKey("auto_sub_sync_enabled")
         private val SEARCH_HISTORY_KEY = stringPreferencesKey("search_history")
         private val BASE_URL_KEY = stringPreferencesKey("base_url")
         private val PENCURI_BASE_URL_KEY = stringPreferencesKey("pencuri_base_url")
@@ -284,11 +285,19 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         context.dataStore.edit { it[AUTO_SUBTITLE_ENABLED_KEY] = enabled }
     }
 
+    val isAutoSubSyncEnabled: Flow<Boolean> = context.dataStore.data.map { it[AUTO_SUB_SYNC_ENABLED_KEY] ?: true }
+
+    suspend fun setAutoSubSyncEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[AUTO_SUB_SYNC_ENABLED_KEY] = enabled }
+    }
+
     val defaultSubtitleLanguage: Flow<String> = context.dataStore.data.map { it[DEFAULT_SUBTITLE_LANGUAGE_KEY] ?: "Indonesian" }
 
     suspend fun setDefaultSubtitleLanguage(language: String) {
         context.dataStore.edit { it[DEFAULT_SUBTITLE_LANGUAGE_KEY] = language }
     }
+
+
 
     val myList: Flow<Set<String>> = context.dataStore.data.map { it[MY_LIST_KEY] ?: emptySet() }
 
@@ -559,26 +568,46 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
     }
 
     fun getSubtitleOffset(videoId: String): Flow<Long> = context.dataStore.data.map {
-        it[longPreferencesKey("sub_offset_$videoId")] ?: 0L
+        val off = it[longPreferencesKey("sub_offset_$videoId")] ?: 0L
+        if (Math.abs(off) <= 40_000L) off else 0L
     }
 
     fun getSeriesOrVideoSubtitleOffset(videoId: String, seriesBaseId: String? = null): Flow<Long> = context.dataStore.data.map { prefs ->
         val direct = prefs[longPreferencesKey("sub_offset_$videoId")]
-        if (direct != null && direct != 0L) return@map direct
+        if (direct != null && direct != 0L && Math.abs(direct) <= 40_000L) return@map direct
         if (!seriesBaseId.isNullOrEmpty()) {
             val seriesOffset = prefs[longPreferencesKey("sub_offset_series_$seriesBaseId")]
-            if (seriesOffset != null) return@map seriesOffset
+            if (seriesOffset != null && seriesOffset != 0L && Math.abs(seriesOffset) <= 40_000L) return@map seriesOffset
         }
-        direct ?: 0L
+        0L
     }
 
     suspend fun setSubtitleOffset(videoId: String, offsetMs: Long) {
         context.dataStore.edit { prefs ->
             val key = longPreferencesKey("sub_offset_$videoId")
-            if (offsetMs == 0L) {
+            if (offsetMs == 0L || Math.abs(offsetMs) > 40_000L) {
                 prefs.remove(key)
             } else {
                 prefs[key] = offsetMs
+            }
+        }
+    }
+
+    suspend fun clearSubtitleOffset(videoId: String) {
+        context.dataStore.edit { prefs ->
+            prefs.remove(longPreferencesKey("sub_offset_$videoId"))
+        }
+    }
+
+    suspend fun clearAllSubtitleOffsets() {
+        context.dataStore.edit { prefs ->
+            val keysToRemove = prefs.asMap().keys.filter { key ->
+                key.name.startsWith("sub_offset_") ||
+                key.name.startsWith("community_sub_offset_") ||
+                key.name.startsWith("sub_fps_ratio_")
+            }
+            keysToRemove.forEach { key ->
+                prefs.remove(key)
             }
         }
     }
@@ -587,7 +616,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         if (seriesBaseId.isBlank()) return
         context.dataStore.edit { prefs ->
             val key = longPreferencesKey("sub_offset_series_$seriesBaseId")
-            if (offsetMs == 0L) {
+            if (offsetMs == 0L || Math.abs(offsetMs) > 40_000L) {
                 prefs.remove(key)
             } else {
                 prefs[key] = offsetMs
@@ -595,15 +624,22 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         }
     }
 
+    fun getSeriesSubtitleOffset(seriesBaseId: String): Flow<Long> = context.dataStore.data.map { prefs ->
+        if (seriesBaseId.isBlank()) return@map 0L
+        val off = prefs[longPreferencesKey("sub_offset_series_$seriesBaseId")] ?: 0L
+        if (Math.abs(off) <= 40_000L) off else 0L
+    }
+
     fun getCommunitySubtitleOffset(mediaKey: String): Flow<Long> = context.dataStore.data.map { prefs ->
-        prefs[longPreferencesKey("community_sub_offset_$mediaKey")] ?: 0L
+        val off = prefs[longPreferencesKey("community_sub_offset_$mediaKey")] ?: 0L
+        if (Math.abs(off) <= 40_000L) off else 0L
     }
 
     suspend fun setCommunitySubtitleOffset(mediaKey: String, offsetMs: Long) {
         if (mediaKey.isBlank()) return
         context.dataStore.edit { prefs ->
             val key = longPreferencesKey("community_sub_offset_$mediaKey")
-            if (offsetMs == 0L) {
+            if (offsetMs == 0L || Math.abs(offsetMs) > 40_000L) {
                 prefs.remove(key)
             } else {
                 prefs[key] = offsetMs
@@ -626,12 +662,31 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         }
     }
 
+    fun getSavedSubtitleUrl(videoId: String): Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[stringPreferencesKey("saved_sub_url_$videoId")]
+    }
+
+    suspend fun setSavedSubtitleUrl(videoId: String, url: String) {
+        if (videoId.isBlank() || url.isBlank()) return
+        context.dataStore.edit { prefs ->
+            prefs[stringPreferencesKey("saved_sub_url_$videoId")] = url
+        }
+    }
+
+    suspend fun clearSavedSubtitleUrl(videoId: String) {
+        if (videoId.isBlank()) return
+        context.dataStore.edit { prefs ->
+            prefs.remove(stringPreferencesKey("saved_sub_url_$videoId"))
+        }
+    }
+
     suspend fun exportBackupData(): ProfileBackupData {
         val prefs = context.dataStore.data.first()
         val username = prefs[USER_NICKNAME_KEY] ?: ""
         val avatarBase64 = com.duta.movie.util.AvatarManager.getAvatarBase64(context)
         val defaultSubtitleLang = prefs[DEFAULT_SUBTITLE_LANGUAGE_KEY] ?: "Indonesian"
         val autoSubtitle = prefs[AUTO_SUBTITLE_ENABLED_KEY] ?: false
+        val autoSubSync = prefs[AUTO_SUB_SYNC_ENABLED_KEY] ?: true
         val voiceEnhancer = prefs[VOICE_ENHANCER_MODE_KEY] ?: 0
         val mobileLandscape = prefs[MOBILE_LANDSCAPE_ENABLED_KEY] ?: false
         val debugMode = prefs[DEBUG_MODE_ENABLED_KEY] ?: false
@@ -666,6 +721,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
             avatarBase64 = avatarBase64,
             defaultSubtitleLanguage = defaultSubtitleLang,
             autoSubtitleEnabled = autoSubtitle,
+            autoSubSyncEnabled = autoSubSync,
             voiceEnhancerMode = voiceEnhancer,
             mobileLandscapeEnabled = mobileLandscape,
             debugModeEnabled = debugMode,
@@ -697,6 +753,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
                 }
                 prefs[DEFAULT_SUBTITLE_LANGUAGE_KEY] = data.defaultSubtitleLanguage
                 prefs[AUTO_SUBTITLE_ENABLED_KEY] = data.autoSubtitleEnabled
+                prefs[AUTO_SUB_SYNC_ENABLED_KEY] = data.autoSubSyncEnabled
                 prefs[VOICE_ENHANCER_MODE_KEY] = data.voiceEnhancerMode
                 prefs[MOBILE_LANDSCAPE_ENABLED_KEY] = data.mobileLandscapeEnabled
                 prefs[DEBUG_MODE_ENABLED_KEY] = data.debugModeEnabled

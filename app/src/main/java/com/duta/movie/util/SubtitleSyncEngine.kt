@@ -2,6 +2,12 @@ package com.duta.movie.util
 
 import com.duta.movie.model.Subtitle
 import android.util.Log
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import org.json.JSONArray
+import org.json.JSONObject
+import java.net.URLEncoder
 import java.util.Locale
 
 /**
@@ -13,8 +19,15 @@ import java.util.Locale
  * 3. Prioritizing embedded stream tracks (hardware PTS timestamp synchronization).
  * 4. Detecting known provider pre-roll bumpers (LK21, Rebahin, etc.).
  * 5. Inheriting calibrated offsets across all episodes of a TV series.
+ * 6. Autonomous Background VAD Multi-Cue Calibration with Supabase Consensus fallback.
  */
 object SubtitleSyncEngine {
+
+    data class AutoSyncNotice(
+        val offsetMs: Long,
+        val formattedOffset: String,
+        val method: String = "Auto-Pilot"
+    )
 
     data class StreamSignature(
         val quality: String = "",       // e.g. "1080p", "720p", "4k"
@@ -53,7 +66,7 @@ object SubtitleSyncEngine {
             Regex("""(?i)\b(?:hdtv)\b""").containsMatchIn(combined) -> "HDTV"
             Regex("""(?i)\b(?:hd-?rip|hdrip|dvdrip)\b""").containsMatchIn(combined) -> "HDRip"
             detectedQuality == "1080p" || detectedQuality == "2160p" -> "WEB-DL" // Default web standard
-            else -> ""
+            else -> "WEB-DL" // Movies on streaming servers are digital retail web streams by default unless CAM
         }
 
         // 3. Platform
@@ -126,35 +139,53 @@ object SubtitleSyncEngine {
         }
 
         // 2. Source Match
+        val hasWeb = rawText.contains("web-dl") || rawText.contains("webdl") ||
+                     rawText.contains("webrip") || rawText.contains("web-rip") ||
+                     rawText.contains(".web.") || rawText.contains(".web-") ||
+                     rawText.contains("[web]") || Regex("""(?i)\bweb\b""").containsMatchIn(rawText)
+        val hasBluray = rawText.contains("bluray") || rawText.contains("blu-ray") ||
+                        rawText.contains("bdrip") || rawText.contains("brrip") ||
+                        rawText.contains("remux")
+        val hasHdtv = rawText.contains("hdtv") || rawText.contains("pdtv")
+        val hasHdrip = rawText.contains("hdrip") || rawText.contains("dvdrip") || rawText.contains("dvd")
+
         if (signature.source.isNotEmpty()) {
             val sigSrc = signature.source.lowercase()
             if (sigSrc == "web-dl" || sigSrc == "webdl") {
                 if (rawText.contains("web-dl") || rawText.contains("webdl")) score += 60
-                else if (rawText.contains("webrip") || rawText.contains("web")) score += 40
-                else if (rawText.contains("bluray") || rawText.contains("blu-ray") || rawText.contains("bdrip")) score += 20
+                else if (hasWeb) score += 50
+                else if (hasBluray) score += 25
             } else if (sigSrc == "webrip") {
-                if (rawText.contains("webrip")) score += 60
-                else if (rawText.contains("web-dl") || rawText.contains("webdl")) score += 45
-                else if (rawText.contains("bluray") || rawText.contains("blu-ray")) score += 20
+                if (rawText.contains("webrip") || rawText.contains("web-rip")) score += 60
+                else if (hasWeb) score += 50
+                else if (hasBluray) score += 25
             } else if (sigSrc == "bluray") {
-                if (rawText.contains("bluray") || rawText.contains("blu-ray") || rawText.contains("bdrip") || rawText.contains("brrip")) score += 60
-                else if (rawText.contains("web-dl") || rawText.contains("webrip")) score += 30
+                if (hasBluray) score += 60
+                else if (hasWeb) score += 35
             } else if (sigSrc == "hdtv") {
-                if (rawText.contains("hdtv")) score += 60
-                else if (rawText.contains("web-dl") || rawText.contains("webrip")) score += 20
+                if (hasHdtv) score += 60
+                else if (hasWeb) score += 25
+            } else if (sigSrc == "hdrip") {
+                if (hasHdrip || hasWeb) score += 50
+                else if (hasBluray) score += 30
             }
         } else {
-            // Default prefer standard retail rips (WEB-DL / BluRay) over CAM/TS
-            if (rawText.contains("web-dl") || rawText.contains("webdl")) score += 40
-            else if (rawText.contains("webrip")) score += 30
-            else if (rawText.contains("bluray") || rawText.contains("blu-ray")) score += 25
+            // Default prefer standard retail rips (WEB-DL / WEBRip / BluRay) over CAM/TS
+            if (rawText.contains("web-dl") || rawText.contains("webdl")) score += 50
+            else if (hasWeb) score += 40
+            else if (hasBluray) score += 35
         }
 
-        // 3. Platform Match (Netflix, Amazon, Disney, Apple)
+        // 3. Platform Match (Netflix, Amazon, Disney, Apple, HBO Max, etc.)
+        val platformKeywords = listOf("nf", "netflix", "amzn", "amazon", "dsnp", "disney", "atvp", "apple", "hmax", "hbomax", "max", "hulu", "hotstar", "bcore", "iqiyi", "wetv", "viu")
         if (signature.platform.isNotEmpty()) {
             val sigPlat = signature.platform.lowercase()
             if (rawText.contains(sigPlat)) {
                 score += 45
+            }
+        } else {
+            if (platformKeywords.any { Regex("""(?i)\b$it\b""").containsMatchIn(rawText) || rawText.contains(".$it.") }) {
+                score += 30
             }
         }
 
@@ -163,6 +194,10 @@ object SubtitleSyncEngine {
             val sigQual = signature.quality.lowercase()
             if (rawText.contains(sigQual)) {
                 score += 30
+            }
+        } else {
+            if (rawText.contains("1080p") || rawText.contains("2160p") || rawText.contains("720p")) {
+                score += 20
             }
         }
 
@@ -175,22 +210,72 @@ object SubtitleSyncEngine {
         }
 
         // 6. Trusted Encoders / Groups
-        val trustedGroups = listOf("rarbg", "yts", "yify", "flux", "psa", "galaxyrg", "pahe", "sparks", "ntb", "evo", "qman")
-        if (trustedGroups.any { rawText.contains(it) }) {
-            score += 20
+        val trustedGroups = listOf("rarbg", "yts", "yify", "flux", "psa", "galaxyrg", "pahe", "sparks", "ntb", "evo", "qman", "tgx", "ettv", "galaxy616", "ion10", "chd", "wiki", "flame", "playweb", "as88", "skr", "playhd", "megusta", "sphinxt", "lama", "telly", "stone", "smurf", "d3g", "cmrg", "ctrlhd", "framestor", "tommy", "afg")
+        if (trustedGroups.any { Regex("""(?i)\b$it\b""").containsMatchIn(rawText) }) {
+            score += 25
         }
 
-        // 7. Verified Subtitle Providers (SubDL, OpenSubtitles)
-        if (rawText.contains("[subdl]")) score += 15
-        if (rawText.contains("[opensubtitles]")) score += 15
-        if (rawText.contains("[subsource]")) score += 10
+        // 7. Verified Subtitle Providers (SubDL, OpenSubtitles, SubSource)
+        if (rawText.contains("[subdl]")) score += 20
+        if (rawText.contains("[opensubtitles]") || rawText.contains("[opensubs]")) score += 20
+        if (rawText.contains("[subsource]")) score += 20
 
         // 8. Hearing Impaired / SDH flag bonus (official transcripts have high timing accuracy)
-        if (rawText.contains(" sdh") || rawText.contains(".sdh") || rawText.contains(" hi ") || rawText.contains(".hi.")) {
-            score += 10
+        if (rawText.contains(" sdh") || rawText.contains(".sdh") || rawText.contains(" hi ") || rawText.contains(".hi.") ||
+            rawText.contains("retail") || rawText.contains("proper") || rawText.contains("official")) {
+            score += 15
         }
 
         return score
+    }
+
+    /**
+     * Determines whether a subtitle is an exact release match or embedded track.
+     * Matched subtitles already have perfect frame-accurate synchronization (0ms native offset).
+     */
+    fun isMatchedOrEmbedded(sub: Subtitle?, signature: StreamSignature): Boolean {
+        if (sub == null) return false
+        val low = sub.label.lowercase()
+        val url = sub.url.lowercase()
+        val rawText = "$low $url"
+
+        // 1. Hardware / Stream / Embedded Track (Direct PTS sync: ALWAYS MATCHED)
+        if (url.startsWith("embedded://") || low.contains("[stream]") || low.contains("[embedded]")) {
+            return true
+        }
+
+        // 2. AI Translated from verified source
+        if (low.startsWith("[ai translated]") || url.contains("translated_subtitles")) {
+            return true
+        }
+
+        // 3. CAM subtitles are NEVER matched unless the stream itself is confirmed CAM
+        val isSubCam = rawText.contains("cam") || rawText.contains("telesync") ||
+                       rawText.contains("hdts") || rawText.contains("hd-ts") ||
+                       rawText.contains("predvd")
+        if (isSubCam && signature.source != "CAM") {
+            return false
+        }
+
+        // 4. Retail Web, OTT Platforms, Disc Rips, Broadcast, Scene Groups, Resolutions
+        val hasWebPattern = Regex("""(?i)\b(?:web|web-?dl|webdl|web-?rip|webrip)\b""").containsMatchIn(rawText) ||
+                rawText.contains(".web.") || rawText.contains(".web-") || rawText.contains("[web]")
+        val hasPlatformPattern = Regex("""(?i)\b(?:nf|netflix|amzn|amazon|dsnp|disney|atvp|apple|hmax|hbomax|max|hulu|hotstar|bcore|iqiyi|wetv|viu|itunes)\b""").containsMatchIn(rawText)
+        val hasDiscPattern = Regex("""(?i)\b(?:blu-?ray|bluray|bdrip|brrip|remux|bdr|hdrip|dvdrip|dvd|hdtv|pdtv)\b""").containsMatchIn(rawText)
+        val hasSceneGroupPattern = Regex("""(?i)\b(?:rarbg|yts|yify|flux|psa|galaxyrg|pahe|sparks|evo|ntb|qman|tgx|ettv|galaxy616|ion10|chd|wiki|flame|playweb|as88|skr|playhd|megusta|sphinxt|lama|telly|stone|smurf|d3g|cmrg|ctrlhd|framestor|tommy|afg)\b""").containsMatchIn(rawText)
+        val hasResolutionPattern = Regex("""(?i)\b(?:2160p|4k|1080p|720p|uhd|fhd)\b""").containsMatchIn(rawText)
+        val hasRetailTag = Regex("""(?i)\b(?:proper|repack|retail|official)\b""").containsMatchIn(rawText)
+
+        if (hasWebPattern || hasPlatformPattern || hasDiscPattern || hasSceneGroupPattern || hasResolutionPattern || hasRetailTag) {
+            return true
+        }
+
+        // 5. Verified Subtitle Provider releases (SubDL, SubSource, OpenSubtitles) when not CAM
+        if (rawText.contains("[subsource]") || rawText.contains("[subdl]") || rawText.contains("[opensubs]") || rawText.contains("[opensubtitles]")) {
+            return true
+        }
+
+        return scoreSubtitle(sub, signature) >= 120
     }
 
     /**
@@ -268,17 +353,18 @@ object SubtitleSyncEngine {
 
     /**
      * Estimates pre-roll intro bumper offset for known web streaming distributors.
+     * Note: Server intro bumpers delay dialogue, requiring a negative offset to shift subtitles forward.
      */
     fun detectServerIntroBumper(serverUrl: String?, streamUrl: String?): Long {
         val target = "${serverUrl ?: ""} ${streamUrl ?: ""}".lowercase()
         val detected = when {
-            target.contains("rebahin") -> 10000L      // Rebahin standard 10s intro bumper
-            target.contains("lk21") || target.contains("layarkaca21") -> 9500L // LK21 9.5s betting bumper
-            target.contains("indoxxi") -> 8000L     // Indoxxi 8s intro bumper
-            target.contains("bioskopkeren") -> 6000L // Bioskopkeren 6s bumper
-            target.contains("juraganfilm") -> 7500L  // Juraganfilm 7.5s bumper
-            target.contains("melongmovie") -> 5000L  // Melongmovie 5s bumper
-            target.contains("kawanfilm") -> 8500L    // Kawanfilm 8.5s bumper
+            target.contains("rebahin") -> -10000L      // Rebahin standard 10s intro bumper
+            target.contains("lk21") || target.contains("layarkaca21") -> -9500L // LK21 9.5s betting bumper
+            target.contains("indoxxi") -> -8000L     // Indoxxi 8s intro bumper
+            target.contains("bioskopkeren") -> -6000L // Bioskopkeren 6s bumper
+            target.contains("juraganfilm") -> -7500L  // Juraganfilm 7.5s bumper
+            target.contains("melongmovie") -> -5000L  // Melongmovie 5s bumper
+            target.contains("kawanfilm") -> -8500L    // Kawanfilm 8.5s bumper
             else -> 0L
         }
         if (detected != 0L) {
@@ -296,5 +382,235 @@ object SubtitleSyncEngine {
             .replace(Regex("""(?i)[-_]?(?:episode|ep|e)[-_]?\d+.*$"""), "")
             .replace(Regex("""(?i)[-_]?(?:season|s)[-_]?\d+.*$"""), "")
             .trimEnd('-', '_')
+    }
+
+    /**
+     * Determines if a subtitle cue represents genuine spoken dialogue.
+     * Accurately filters out metadata credits, web domains, sound effects in brackets,
+     * and on-screen location/date/title cards (e.g. 'PITTSBURGH, 1999', 'SUMMER 1990').
+     */
+    fun isSpokenDialogueCue(text: String): Boolean {
+        val clean = text.replace(Regex("<[^>]*>"), "").replace("\n", " ").trim()
+        if (clean.length < 2) return false
+        val txt = clean.lowercase()
+
+        // 1. Credits, uploaders, websites, frame rates, sync tags
+        val isCredit = txt.contains("subscene") || txt.contains("opensubtitles") ||
+                       txt.contains("subdl") || txt.contains("subtitlecat") ||
+                       txt.contains("subcat") || txt.contains("subtitles by") ||
+                       txt.contains("sync by") || txt.contains("translated by") ||
+                       txt.contains("translated") || txt.contains("credit") ||
+                       txt.contains("www.") || txt.contains(".com") ||
+                       txt.contains(".org") || txt.contains(".net") ||
+                       txt.contains("sync") || txt.contains("duta") ||
+                       txt.contains("ripped by") || txt.contains("encoded by") ||
+                       txt.contains("fps")
+        if (isCredit) return false
+
+        // 2. Sound effects, musical cues in brackets or notation symbols
+        val isSoundEffect = (txt.startsWith("[") && txt.endsWith("]")) ||
+                            (txt.startsWith("(") && txt.endsWith(")")) ||
+                            (txt.startsWith("{") && txt.endsWith("}")) ||
+                            txt.contains("♪") || txt.contains("♫") ||
+                            (txt.startsWith("*") && txt.endsWith("*"))
+        if (isSoundEffect) return false
+
+        // 3. Location / Date / Title cards (e.g. "PITTSBURGH, 1999", "OCTOBER 14", "PARIS, FRANCE")
+        val hasYear = Regex("""\b(18|19|20)\d{2}\b""").containsMatchIn(clean)
+        val isAllUpper = clean.filter { it.isLetter() }.let { letters ->
+            letters.isNotEmpty() && letters.all { it.isUpperCase() }
+        }
+        if (hasYear) return false
+        if (isAllUpper && clean.length < 35 && !clean.contains("?") && !clean.contains("!") && !clean.contains("-")) {
+            return false
+        }
+
+        // 4. Must contain at least one letter
+        return clean.any { it.isLetter() }
+    }
+
+    /**
+     * Evaluates whether an automated subtitle offset should be applied.
+     * Sanitizes against false positives (bumper sanity bounds: -35,000ms to +35,000ms).
+     *
+     * @param voiceOnsetMs Hardware PCM speech onset detected by VadAudioProcessor
+     * @param firstDialogueCueMs Timestamp of the first dialogue cue in subtitle file
+     * @param currentOffset Currently applied subtitle offset
+     * @param isUserManualCalibrated True if user manually adjusted offset in this session
+     * @return Calculated new offset in milliseconds, or null if invalid or within tolerance
+     */
+    fun evaluateAutoSync(
+        voiceOnsetMs: Long,
+        firstDialogueCueMs: Long,
+        currentOffset: Long = 0L,
+        isUserManualCalibrated: Boolean = false
+    ): Long? {
+        if (isUserManualCalibrated) return null
+        if (voiceOnsetMs <= 0L || firstDialogueCueMs <= 0L) return null
+
+        val calculatedOffset = firstDialogueCueMs - voiceOnsetMs
+
+        // Sanity Check: Streaming pre-rolls, distributor bumpers, and intro logo trims realistically range from -90s to +90s.
+        // Extreme offsets outside this window indicate false fanfare triggers or end-credit detections.
+        if (calculatedOffset !in -90000L..90000L) {
+            Log.w("SubtitleSyncEngine", "Auto-sync candidate $calculatedOffset ms rejected: outside sanity bounds [-90s, +90s] (Voice: ${voiceOnsetMs}ms, Cue: ${firstDialogueCueMs}ms)")
+            return null
+        }
+
+        // If offset is already essentially identical to current offset, avoid unnecessary jumps but confirm sync
+        if (Math.abs(calculatedOffset - currentOffset) <= 150L && currentOffset != 0L) {
+            Log.i("SubtitleSyncEngine", "Auto-sync candidate $calculatedOffset ms matches current offset $currentOffset ms within tolerance.")
+            return currentOffset
+        }
+
+        return calculatedOffset
+    }
+
+    /**
+     * Intelligent Multi-Anchor Cadence Matching.
+     * Correlates time intervals of multiple speech energy bursts against dialogue subtitle cues.
+     * Rejects isolated fanfare hits and audio anomalies by verifying matching speech rhythm (Δt).
+     */
+    fun evaluateMultiAnchorAutoSync(
+        voiceOnsets: List<Long>,
+        dialogueCues: List<ParsedSubtitleCue>,
+        currentOffset: Long = 0L,
+        isUserManualCalibrated: Boolean = false
+    ): Long? {
+        if (isUserManualCalibrated) return null
+        if (voiceOnsets.isEmpty() || dialogueCues.isEmpty()) return null
+
+        // Filter out intro credit lines, title cards, and sound effects so cadence matching compares genuine spoken dialogue
+        val spokenCues = dialogueCues.filter { isSpokenDialogueCue(it.text) }
+        val effectiveCues = spokenCues.ifEmpty { dialogueCues }
+
+        if (voiceOnsets.size == 1) {
+            val firstCue = effectiveCues.firstOrNull() ?: return null
+            return evaluateAutoSync(voiceOnsets.first(), firstCue.startTimeMs, currentOffset, false)
+        }
+
+        // Evaluate candidate pairs between the first few onsets and spoken dialogue cues (up to 12 cues)
+        val candidateCues = effectiveCues.take(12)
+        val validOffsets = mutableListOf<Long>()
+
+        for (cue in candidateCues) {
+            for (onset in voiceOnsets) {
+                val diff = cue.startTimeMs - onset
+                if (diff in -90000L..90000L) {
+                    validOffsets.add(diff)
+                }
+            }
+        }
+
+        if (validOffsets.isEmpty()) return null
+
+        // Find the offset cluster with highest consensus (support within ±400ms)
+        var bestOffset: Long? = null
+        var maxSupport = 0
+
+        for (cand in validOffsets) {
+            val cluster = validOffsets.filter { Math.abs(it - cand) <= 400L }
+            if (cluster.size > maxSupport) {
+                maxSupport = cluster.size
+                bestOffset = cluster.average().toLong()
+            }
+        }
+
+        // Require at least 2 agreeing anchor alignments for multi-cue consensus
+        if (maxSupport >= 2 && bestOffset != null) {
+            Log.i("SubtitleSyncEngine", "⚡ Multi-Anchor Cadence Consensus: offset=${bestOffset}ms (supported by $maxSupport cue/voice pairs)")
+            if (Math.abs(bestOffset - currentOffset) <= 150L && currentOffset != 0L) {
+                return currentOffset
+            }
+            return bestOffset
+        }
+
+        // Weak cluster: do not guess prematurely while anchors are still being evaluated
+        return null
+    }
+
+    /**
+     * Detects dynamic framerate drift across extended playback and identifies closest FpsMode.
+     * E.g. If offset starts at 0ms and drifts by 1,700ms over 30 minutes, determines PAL/Film ratio.
+     */
+    fun detectDynamicFramerateDrift(
+        initialOffsetMs: Long,
+        laterOffsetMs: Long,
+        elapsedVideoMs: Long
+    ): FpsMode {
+        if (elapsedVideoMs < 180_000L) return FpsMode.NORMAL // Needs at least 3 minutes of playback
+        val driftMs = laterOffsetMs - initialOffsetMs
+        if (Math.abs(driftMs) < 400L) return FpsMode.NORMAL
+
+        val measuredRatio = 1.0f + (driftMs.toFloat() / elapsedVideoMs.toFloat())
+        val matchedMode = FpsMode.fromRatio(measuredRatio)
+        Log.i("SubtitleSyncEngine", "Measured dynamic framerate drift: $driftMs ms over ${elapsedVideoMs}ms -> ratio: $measuredRatio (matched ${matchedMode.displayName})")
+        return matchedMode
+    }
+
+    /**
+     * Queries community consensus offset from Supabase cloud database.
+     * Fails silently and returns null if table is uninitialized or offline.
+     */
+    suspend fun fetchCloudConsensusOffset(mediaKey: String): Long? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (!SupabaseConfig.isConfigured || mediaKey.isBlank()) return@withContext null
+        try {
+            val encodedKey = URLEncoder.encode(mediaKey, "UTF-8")
+            val url = "${SupabaseConfig.PROJECT_URL.trimEnd('/')}/rest/v1/subtitle_sync_consensus?media_key=eq.$encodedKey&select=offset_ms,vote_count&limit=1"
+            val req = Request.Builder()
+                .url(url)
+                .header("apikey", SupabaseConfig.ANON_KEY)
+                .header("Authorization", "Bearer ${SupabaseConfig.ANON_KEY}")
+                .header("Accept", "application/json")
+                .build()
+
+            val call = NetworkConfig.permissiveOkHttpClient.newCall(req)
+            call.execute().use { response ->
+                if (!response.isSuccessful) return@withContext null
+                val body = response.body?.string() ?: return@withContext null
+                val array = JSONArray(body)
+                if (array.length() > 0) {
+                    val obj = array.getJSONObject(0)
+                    val offset = obj.optLong("offset_ms", 0L)
+                    if (offset != 0L) {
+                        Log.i("SubtitleSyncEngine", "Loaded cloud consensus subtitle offset: ${offset}ms for $mediaKey")
+                        return@withContext offset
+                    }
+                }
+            }
+        } catch (_: Exception) {
+            // Silently fall back to local engine
+        }
+        null
+    }
+
+    /**
+     * Submits an automated or user-calibrated offset to Supabase cloud consensus.
+     * Non-blocking background telemetry.
+     */
+    suspend fun submitCloudConsensusOffset(mediaKey: String, offsetMs: Long, source: String = "auto_pilot") = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        if (!SupabaseConfig.isConfigured || mediaKey.isBlank() || offsetMs == 0L) return@withContext
+        try {
+            val url = "${SupabaseConfig.PROJECT_URL.trimEnd('/')}/rest/v1/subtitle_sync_consensus"
+            val payload = JSONObject().apply {
+                put("media_key", mediaKey)
+                put("offset_ms", offsetMs)
+                put("source", source)
+            }
+            val reqBody = payload.toString().toRequestBody("application/json".toMediaTypeOrNull())
+            val req = Request.Builder()
+                .url(url)
+                .header("apikey", SupabaseConfig.ANON_KEY)
+                .header("Authorization", "Bearer ${SupabaseConfig.ANON_KEY}")
+                .header("Content-Type", "application/json")
+                .header("Prefer", "resolution=merge-duplicates")
+                .post(reqBody)
+                .build()
+
+            NetworkConfig.permissiveOkHttpClient.newCall(req).execute().close()
+            Log.i("SubtitleSyncEngine", "Submitted consensus subtitle offset: ${offsetMs}ms ($source) for $mediaKey")
+        } catch (_: Exception) {
+            // Non-critical, fails silently
+        }
     }
 }

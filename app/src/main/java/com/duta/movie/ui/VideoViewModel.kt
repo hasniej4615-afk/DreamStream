@@ -4,6 +4,7 @@ import com.duta.movie.R
 import android.content.Context
 import android.net.Uri
 import android.util.Log
+import android.widget.Toast
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import coil.ImageLoader
@@ -423,6 +424,7 @@ class VideoViewModel @Inject constructor(
     var pendingRestoreVideoId: String? = null
     var isNavigatingToDetail: Boolean = false
     var shouldRestoreFocusOnResume: Boolean = false
+    var hasUserBrowsed: Boolean = false
 
     private val initializedStartupRows = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
@@ -443,6 +445,7 @@ class VideoViewModel @Inject constructor(
         pendingRestoreVideoId = null
         isNavigatingToDetail = false
         shouldRestoreFocusOnResume = false
+        hasUserBrowsed = false
     }
 
 
@@ -557,6 +560,32 @@ class VideoViewModel @Inject constructor(
     private val _vadVoiceOnsetMs = MutableStateFlow(-1L)
     val vadVoiceOnsetMs: StateFlow<Long> = _vadVoiceOnsetMs.asStateFlow()
 
+    private val _vadVoiceOnsets = MutableStateFlow<List<Long>>(emptyList())
+    val vadVoiceOnsets: StateFlow<List<Long>> = _vadVoiceOnsets.asStateFlow()
+
+    val firstDialogueCue: StateFlow<ParsedSubtitleCue?> = _subtitleCues.map { cues ->
+        cues.firstOrNull { com.duta.movie.util.SubtitleSyncEngine.isSpokenDialogueCue(it.text) }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, null)
+
+    val vadSearchWindow: StateFlow<Pair<Long, Long>> = combine(_subtitleCues, _selectedSubtitle) { cues, sub ->
+        if (cues.isNotEmpty() && sub != null && !isCurrentSubtitleMatched(sub)) {
+            val spokenCues = cues.filter { com.duta.movie.util.SubtitleSyncEngine.isSpokenDialogueCue(it.text) }
+            val firstCue = spokenCues.firstOrNull() ?: cues.firstOrNull()
+            if (firstCue != null) {
+                val candidateCues = spokenCues.take(8)
+                val lastCue = candidateCues.lastOrNull() ?: firstCue
+                // If first dialogue cue is in the first 4 minutes of the video, start listening immediately from 1.5s
+                val start = if (firstCue.startTimeMs <= 240_000L) 1500L else maxOf(1500L, firstCue.startTimeMs - 90_000L)
+                val end = maxOf(240_000L, firstCue.startTimeMs + 90_000L, lastCue.startTimeMs + 60_000L)
+                start to end
+            } else {
+                Long.MAX_VALUE to Long.MAX_VALUE
+            }
+        } else {
+            Long.MAX_VALUE to Long.MAX_VALUE
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, Long.MAX_VALUE to Long.MAX_VALUE)
+
     private val _currentServerUrl = MutableStateFlow<String?>(null)
     val currentServerUrl: StateFlow<String?> = _currentServerUrl.asStateFlow()
 
@@ -576,6 +605,15 @@ class VideoViewModel @Inject constructor(
 
     private val _subtitleFpsRatio = MutableStateFlow(1.0f)
     val subtitleFpsRatio: StateFlow<Float> = _subtitleFpsRatio.asStateFlow()
+
+    // Autonomous Hybrid Auto-Pilot Subtitle Synchronization State
+    private val _autoSyncNotice = MutableStateFlow<com.duta.movie.util.SubtitleSyncEngine.AutoSyncNotice?>(null)
+    val autoSyncNotice: StateFlow<com.duta.movie.util.SubtitleSyncEngine.AutoSyncNotice?> = _autoSyncNotice.asStateFlow()
+    private var userManuallyCalibratedSubtitleOffset: Boolean = false
+
+    fun dismissAutoSyncNotice() {
+        _autoSyncNotice.value = null
+    }
 
     val metadataCache = ConcurrentHashMap<String, Video>()
     val episodeServersCache = ConcurrentHashMap<String, List<VideoServer>>()
@@ -917,6 +955,7 @@ class VideoViewModel @Inject constructor(
     val myList: StateFlow<Set<String>> = videoRepository.myList.stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
     val defaultSubtitleLanguage: StateFlow<String> = videoRepository.defaultSubtitleLanguage.stateIn(viewModelScope, SharingStarted.Eagerly, "Indonesian")
     val isAutoSubtitleEnabled: StateFlow<Boolean> = videoRepository.isAutoSubtitleEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val isAutoSubSyncEnabled: StateFlow<Boolean> = videoRepository.isAutoSubSyncEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     val isDebugModeEnabled: StateFlow<Boolean> = preferenceManager.isDebugModeEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val isMobileLandscapeEnabled: StateFlow<Boolean> = preferenceManager.isMobileLandscapeEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val voiceEnhancerMode: StateFlow<Int> = preferenceManager.voiceEnhancerMode.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
@@ -949,6 +988,10 @@ class VideoViewModel @Inject constructor(
     val isBroadcastLoading: StateFlow<Boolean> = _isBroadcastLoading.asStateFlow()
 
     init {
+        viewModelScope.launch(Dispatchers.IO) {
+            preferenceManager.clearAllSubtitleOffsets()
+            Log.i("SubtitleSyncEngine", "Reset all saved subtitle offsets: clean 0ms baseline for Khadam and all videos")
+        }
         cleanDeadMirrors()
         fetchActiveBroadcast(forceShow = false)
         com.duta.movie.util.SubtitleExtractor.init(context)
@@ -1230,6 +1273,7 @@ class VideoViewModel @Inject constructor(
 
     fun setDefaultSubtitleLanguage(lang: String) { viewModelScope.launch { preferenceManager.setDefaultSubtitleLanguage(lang) } }
     fun setAutoSubtitleEnabled(enabled: Boolean) { viewModelScope.launch { preferenceManager.setAutoSubtitleEnabled(enabled) } }
+    fun setAutoSubSyncEnabled(enabled: Boolean) { viewModelScope.launch { preferenceManager.setAutoSubSyncEnabled(enabled) } }
     fun setDebugModeEnabled(enabled: Boolean) { viewModelScope.launch { preferenceManager.setDebugModeEnabled(enabled) } }
     fun setMobileLandscapeEnabled(enabled: Boolean) { viewModelScope.launch { preferenceManager.setMobileLandscapeEnabled(enabled) } }
     fun setVoiceEnhancerMode(mode: Int) { viewModelScope.launch { preferenceManager.setVoiceEnhancerMode(mode) } }
@@ -2848,6 +2892,10 @@ class VideoViewModel @Inject constructor(
                 subResolveJob?.cancel()
                 subResolveJob = null
                 userExplicitlyDismissedSubtitles = false
+                userManuallyCalibratedSubtitleOffset = false
+                _autoSyncNotice.value = null
+                _vadVoiceOnsetMs.value = -1L
+                _vadVoiceOnsets.value = emptyList()
             }
             _resolvedUrl.value = null
         }
@@ -2855,18 +2903,52 @@ class VideoViewModel @Inject constructor(
             viewModelScope.launch {
                 try {
                     val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(videoId)
-                    val saved = preferenceManager.getSeriesOrVideoSubtitleOffset(videoId, seriesBase).first()
+                    val rawSaved = preferenceManager.getSeriesOrVideoSubtitleOffset(videoId, seriesBase).first()
+                    val saved = if (rawSaved in -10000L..10000L) rawSaved else 0L
+                    if (rawSaved !in -10000L..10000L && rawSaved != 0L) {
+                        Log.w("SubtitleSyncEngine", "Purging corrupted saved subtitle offset: ${rawSaved}ms for $videoId")
+                        preferenceManager.clearSubtitleOffset(videoId)
+                    }
                     val mediaKey = com.duta.movie.util.SubtitleSyncEngine.generateCommunityMediaKey(
                         _videoMetadata.value?.title ?: videoId,
                         serverUrl ?: _currentServerUrl.value
                     )
-                    val commOffset = preferenceManager.getCommunitySubtitleOffset(mediaKey).first()
-                    val offset = if (saved != 0L) saved else if (commOffset != 0L) commOffset else {
-                        com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper(serverUrl, null)
+                    val rawCommOffset = preferenceManager.getCommunitySubtitleOffset(mediaKey).first()
+                    val commOffset = if (rawCommOffset in -10000L..10000L) rawCommOffset else 0L
+                    if (rawCommOffset !in -10000L..10000L && rawCommOffset != 0L) {
+                        preferenceManager.setCommunitySubtitleOffset(mediaKey, 0L)
+                    }
+                    val cloudOffset = if (saved == 0L && commOffset == 0L) {
+                        com.duta.movie.util.SubtitleSyncEngine.fetchCloudConsensusOffset(mediaKey)?.takeIf { it in -10000L..10000L }
+                    } else null
+                    val isMatched = isCurrentSubtitleMatched()
+                    val offset = when {
+                        isMatched && !userManuallyCalibratedSubtitleOffset -> 0L
+                        saved != 0L -> saved
+                        commOffset != 0L -> commOffset
+                        cloudOffset != null && cloudOffset != 0L -> cloudOffset
+                        isMatched -> 0L
+                        else -> com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper(serverUrl, null)
                     }
                     _subtitleOffset.value = offset
                     _subtitleFpsRatio.value = preferenceManager.getSubtitleFpsRatio(videoId).first()
-                    Log.i("SubtitleSyncEngine", "Initialized subtitle offset: ${offset}ms (saved=$saved, comm=$commOffset, fpsRatio=${_subtitleFpsRatio.value}) for $videoId")
+                    if (offset != 0L) {
+                        val sign = if (offset >= 0) "+" else ""
+                        val method = when {
+                            saved != 0L -> "Saved Memory"
+                            commOffset != 0L -> "Community"
+                            cloudOffset != null -> "Cloud Consensus"
+                            else -> "Bumper AI"
+                        }
+                        _autoSyncNotice.value = com.duta.movie.util.SubtitleSyncEngine.AutoSyncNotice(
+                            offsetMs = offset,
+                            formattedOffset = "$sign${offset / 1000.0}s",
+                            method = method
+                        )
+                    } else {
+                        _autoSyncNotice.value = null
+                    }
+                    Log.i("SubtitleSyncEngine", "Initialized subtitle offset: ${offset}ms (matched=$isMatched, saved=$saved, comm=$commOffset, cloud=$cloudOffset, fpsRatio=${_subtitleFpsRatio.value}) for $videoId")
                 } catch (_: Exception) {
                     _subtitleOffset.value = 0L
                     _subtitleFpsRatio.value = 1.0f
@@ -2908,6 +2990,10 @@ class VideoViewModel @Inject constructor(
                 subResolveJob?.cancel()
                 subResolveJob = null
                 userExplicitlyDismissedSubtitles = false
+                userManuallyCalibratedSubtitleOffset = false
+                _autoSyncNotice.value = null
+                _vadVoiceOnsetMs.value = -1L
+                _vadVoiceOnsets.value = emptyList()
             }
             _resolvedUrl.value = null // Immediate clear for TV UI to show loading
         }
@@ -2915,18 +3001,52 @@ class VideoViewModel @Inject constructor(
             viewModelScope.launch {
                 try {
                     val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(videoId)
-                    val saved = preferenceManager.getSeriesOrVideoSubtitleOffset(videoId, seriesBase).first()
+                    val rawSaved = preferenceManager.getSeriesOrVideoSubtitleOffset(videoId, seriesBase).first()
+                    val saved = if (rawSaved in -10000L..10000L) rawSaved else 0L
+                    if (rawSaved !in -10000L..10000L && rawSaved != 0L) {
+                        Log.w("SubtitleSyncEngine", "Purging corrupted saved TV subtitle offset: ${rawSaved}ms for $videoId")
+                        preferenceManager.clearSubtitleOffset(videoId)
+                    }
                     val mediaKey = com.duta.movie.util.SubtitleSyncEngine.generateCommunityMediaKey(
                         _videoMetadata.value?.title ?: videoId,
                         episodeUrl ?: _currentServerUrl.value
                     )
-                    val commOffset = preferenceManager.getCommunitySubtitleOffset(mediaKey).first()
-                    val offset = if (saved != 0L) saved else if (commOffset != 0L) commOffset else {
-                        com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper(episodeUrl ?: _currentServerUrl.value, null)
+                    val rawCommOffset = preferenceManager.getCommunitySubtitleOffset(mediaKey).first()
+                    val commOffset = if (rawCommOffset in -10000L..10000L) rawCommOffset else 0L
+                    if (rawCommOffset !in -10000L..10000L && rawCommOffset != 0L) {
+                        preferenceManager.setCommunitySubtitleOffset(mediaKey, 0L)
+                    }
+                    val cloudOffset = if (saved == 0L && commOffset == 0L) {
+                        com.duta.movie.util.SubtitleSyncEngine.fetchCloudConsensusOffset(mediaKey)?.takeIf { it in -10000L..10000L }
+                    } else null
+                    val isMatched = isCurrentSubtitleMatched()
+                    val offset = when {
+                        isMatched && !userManuallyCalibratedSubtitleOffset -> 0L
+                        saved != 0L -> saved
+                        commOffset != 0L -> commOffset
+                        cloudOffset != null && cloudOffset != 0L -> cloudOffset
+                        isMatched -> 0L
+                        else -> com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper(episodeUrl ?: _currentServerUrl.value, null)
                     }
                     _subtitleOffset.value = offset
                     _subtitleFpsRatio.value = preferenceManager.getSubtitleFpsRatio(videoId).first()
-                    Log.i("SubtitleSyncEngine", "Initialized TV subtitle offset: ${offset}ms (saved=$saved, comm=$commOffset, fpsRatio=${_subtitleFpsRatio.value}) for $videoId")
+                    if (offset != 0L) {
+                        val sign = if (offset >= 0) "+" else ""
+                        val method = when {
+                            saved != 0L -> "Saved Memory"
+                            commOffset != 0L -> "Community"
+                            cloudOffset != null -> "Cloud Consensus"
+                            else -> "Bumper AI"
+                        }
+                        _autoSyncNotice.value = com.duta.movie.util.SubtitleSyncEngine.AutoSyncNotice(
+                            offsetMs = offset,
+                            formattedOffset = "$sign${offset / 1000.0}s",
+                            method = method
+                        )
+                    } else {
+                        _autoSyncNotice.value = null
+                    }
+                    Log.i("SubtitleSyncEngine", "Initialized TV subtitle offset: ${offset}ms (matched=$isMatched, saved=$saved, comm=$commOffset, cloud=$cloudOffset, fpsRatio=${_subtitleFpsRatio.value}) for $videoId")
                 } catch (_: Exception) {
                     _subtitleOffset.value = 0L
                     _subtitleFpsRatio.value = 1.0f
@@ -3172,7 +3292,15 @@ class VideoViewModel @Inject constructor(
         try {
             if (com.duta.movie.model.LiveTvCatalog.isLiveVideo(videoId)) {
                 val liveCh = com.duta.movie.model.LiveTvCatalog.getChannelById(videoId)
-                val streamUrl = serverUrl?.takeIf { it.isNotBlank() } ?: liveCh?.videoUrl ?: ""
+                val isExplicitAlternateServer = !serverUrl.isNullOrBlank() && 
+                    serverUrl != liveCh?.videoUrl && 
+                    !serverUrl.contains("@BuletinTV3") &&
+                    liveCh?.servers?.none { it.url == serverUrl && it == liveCh.servers.firstOrNull() } ?: false
+                var streamUrl = if (isExplicitAlternateServer) serverUrl!! else ""
+                if (streamUrl.isBlank()) {
+                    val dynamicUrl = com.duta.movie.model.LiveTvCatalog.resolveDynamicStream(videoId)
+                    streamUrl = dynamicUrl ?: serverUrl?.takeIf { it.isNotBlank() } ?: liveCh?.videoUrl ?: ""
+                }
                 if (streamUrl.isNotBlank() && liveCh != null) {
                     withContext(Dispatchers.Main) {
                         _videoMetadata.value = liveCh
@@ -3909,11 +4037,17 @@ class VideoViewModel @Inject constructor(
                         _resolutionProgress.value = null
                         _isResolving.value = false 
 
-                        // Auto-calibrate bumper if offset is still 0
-                        if (_subtitleOffset.value == 0L) {
+                        // Auto-calibrate bumper only if offset is 0 and subtitle is not matched/calibrated
+                        if (_subtitleOffset.value == 0L && !isCurrentSubtitleMatched() && !userManuallyCalibratedSubtitleOffset) {
                             val detectedBumper = com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper(_currentServerUrl.value, winner.videoUrl)
                             if (detectedBumper != 0L) {
                                 _subtitleOffset.value = detectedBumper
+                                val sign = if (detectedBumper >= 0) "+" else ""
+                                _autoSyncNotice.value = com.duta.movie.util.SubtitleSyncEngine.AutoSyncNotice(
+                                    offsetMs = detectedBumper,
+                                    formattedOffset = "$sign${detectedBumper / 1000.0}s",
+                                    method = "Bumper AI"
+                                )
                                 Log.i("SubtitleSyncEngine", "Auto-calibrated bumper offset to ${detectedBumper}ms for server: ${_currentServerUrl.value}")
                             }
                         } 
@@ -4294,9 +4428,146 @@ class VideoViewModel @Inject constructor(
         }
     }
 
-    fun fetchSubtitles(title: String, isTV: Boolean = false) {
-        val currentId = _videoMetadata.value?.id ?: ""
-        if (com.duta.movie.model.LiveTvCatalog.isLiveVideo(currentId)) return
+    fun getEffectiveSubtitleVideoId(): String {
+        val vid = activeVideoId ?: _videoMetadata.value?.id ?: ""
+        val curEp = _currentEpisode.value
+        return if (curEp != null && curEp.url.isNotBlank()) {
+            getEpisodeProgressId(vid, curEp.url)
+        } else {
+            vid
+        }
+    }
+
+    fun deleteTranslatedSubtitle(subtitle: Subtitle) {
+        viewModelScope.launch(Dispatchers.IO) {
+            com.duta.movie.util.SubtitleTranslator.deleteTranslatedSubtitleByUrl(subtitle.url)
+            val effectiveVid = getEffectiveSubtitleVideoId()
+            val savedUrl = if (effectiveVid.isNotBlank()) preferenceManager.getSavedSubtitleUrl(effectiveVid).firstOrNull() else null
+            if (savedUrl == subtitle.url) {
+                preferenceManager.clearSavedSubtitleUrl(effectiveVid)
+            }
+            withContext(Dispatchers.Main) {
+                _subtitles.value = _subtitles.value.filter { it.url != subtitle.url }
+                if (_selectedSubtitle.value?.url == subtitle.url) {
+                    _selectedSubtitle.value = null
+                    _subtitleCues.value = emptyList()
+                }
+                if (_selectedSecondarySubtitle.value?.url == subtitle.url) {
+                    _selectedSecondarySubtitle.value = null
+                    _secondarySubtitleCues.value = emptyList()
+                }
+            }
+        }
+    }
+
+    fun getCurrentStreamSignature(): com.duta.movie.util.SubtitleSyncEngine.StreamSignature {
+        return com.duta.movie.util.SubtitleSyncEngine.extractSignature(
+            title = _videoMetadata.value?.title ?: activeVideoId ?: "",
+            quality = _videoMetadata.value?.quality,
+            serverUrl = _currentServerUrl.value,
+            streamUrl = _resolvedUrl.value
+        )
+    }
+
+    fun isCurrentSubtitleMatched(sub: Subtitle? = _selectedSubtitle.value): Boolean {
+        if (sub == null) return false
+        return com.duta.movie.util.SubtitleSyncEngine.isMatchedOrEmbedded(sub, getCurrentStreamSignature())
+    }
+
+    private var translationJob: Job? = null
+    private var autoTranslateFallbackJob: Job? = null
+
+    fun triggerAutoTranslateFallback(candidate: Subtitle, targetLang: String) {
+        if (userExplicitlyDismissedSubtitles) return
+        autoTranslateFallbackJob?.cancel()
+        autoTranslateFallbackJob = viewModelScope.launch(Dispatchers.IO) {
+            val candCode = com.duta.movie.util.SubtitleTranslator.getLanguageCode(candidate.language)
+            val targetCode = com.duta.movie.util.SubtitleTranslator.getLanguageCode(targetLang)
+            val targetLangName = com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName(targetLang)
+
+            // If candidate is already in target language, directly select it!
+            if (candCode == targetCode) {
+                withContext(Dispatchers.Main) {
+                    if (!userExplicitlyDismissedSubtitles) {
+                        selectSubtitle(candidate)
+                    }
+                }
+                return@launch
+            }
+
+            // Check if persistent translated subtitle already exists on disk (0ms instant restore)
+            val effectiveVid = getEffectiveSubtitleVideoId()
+            val existingTrans = com.duta.movie.util.SubtitleTranslator.getTranslatedSubtitleFile(context, effectiveVid, targetCode)
+            if (existingTrans.exists() && existingTrans.length() > 0L) {
+                val parsed = SubtitleParser.parse(existingTrans)
+                if (parsed.isNotEmpty()) {
+                    val translatedSub = Subtitle(
+                        label = "[AI Translated] $targetLangName",
+                        url = "file://${existingTrans.absolutePath}",
+                        language = targetLangName,
+                        isAutoGenerated = true,
+                        localUri = "file://${existingTrans.absolutePath}"
+                    )
+                    withContext(Dispatchers.Main) {
+                        if (!userExplicitlyDismissedSubtitles) {
+                            _subtitleCues.value = parsed
+                            _selectedSubtitle.value = translatedSub
+                            _subtitles.value = listOf(translatedSub) + _subtitles.value.filter { it.url != translatedSub.url }
+                            checkAndTriggerAutoPilotSync()
+                        }
+                    }
+                    if (effectiveVid.isNotBlank()) {
+                        preferenceManager.setSavedSubtitleUrl(effectiveVid, translatedSub.url)
+                    }
+                    return@launch
+                }
+            }
+
+            try {
+                // 1. Resolve candidate cues
+                val localUri = if (candidate.url.startsWith("file://")) {
+                    candidate.url
+                } else if (candidate.localUri != null && candidate.localUri.startsWith("file://") && File(candidate.localUri.removePrefix("file://")).exists()) {
+                    candidate.localUri
+                } else {
+                    SubtitleExtractor.resolveSubtitleUrl(candidate.url, candidate.language)
+                } ?: return@launch
+
+                if (userExplicitlyDismissedSubtitles || !isActive) return@launch
+
+                val filePath = localUri.removePrefix("file://")
+                val file = File(filePath)
+                if (!file.exists()) return@launch
+                val cues = SubtitleParser.parse(file)
+                if (cues.isEmpty()) return@launch
+
+                if (userExplicitlyDismissedSubtitles || !isActive) return@launch
+
+                withContext(Dispatchers.Main) {
+                    if (!userExplicitlyDismissedSubtitles) {
+                        _subtitleCues.value = cues
+                        _selectedSubtitle.value = candidate.copy(localUri = localUri)
+                        Toast.makeText(context, "Auto-translating subtitles (${candidate.language} ➔ $targetLangName)...", Toast.LENGTH_SHORT).show()
+                    }
+                }
+
+                // 2. Translate cues progressively
+                translateSelectedSubtitle(targetLang) { success, msg ->
+                    if (success) {
+                        Toast.makeText(context, "Subtitles auto-translated to $targetLangName", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            } catch (e: Exception) {
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    Log.e("VideoViewModel", "Auto-translate fallback failed", e)
+                }
+            }
+        }
+    }
+
+    fun fetchSubtitles(title: String, isTV: Boolean = false, videoId: String? = null) {
+        val currentId = videoId ?: _videoMetadata.value?.id ?: ""
+        if (com.duta.movie.model.LiveTvCatalog.isLiveVideo(currentId) || _videoMetadata.value?.duration == "LIVE") return
         val curEp = _currentEpisode.value
         val effectiveTitle = if (curEp != null && (isTV || _videoMetadata.value?.isSeries == true)) {
             val epName = curEp.name.trim()
@@ -4317,7 +4588,34 @@ class VideoViewModel @Inject constructor(
         subSearchJob?.cancel()
         subSearchJob = viewModelScope.launch(Dispatchers.IO) { 
             _isSubtitleLoading.value = true
-            _subtitles.value = emptyList()
+            val effectiveVid = getEffectiveSubtitleVideoId()
+            val persistentSubs = if (effectiveVid.isNotBlank()) {
+                com.duta.movie.util.SubtitleTranslator.getTranslatedSubtitlesForVideo(context, effectiveVid)
+            } else emptyList()
+            val savedSubUrl = if (effectiveVid.isNotBlank()) {
+                preferenceManager.getSavedSubtitleUrl(effectiveVid).firstOrNull()
+            } else null
+
+            withContext(Dispatchers.Main) {
+                _subtitles.value = persistentSubs
+                // Immediately auto-restore saved subtitle if matching persistent AI subtitle
+                if (!userExplicitlyDismissedSubtitles && _selectedSubtitle.value == null) {
+                    val matchingSaved = if (savedSubUrl != null) {
+                        persistentSubs.firstOrNull { it.url == savedSubUrl }
+                    } else if (isAutoSubtitleEnabled.value) {
+                        val defLang = defaultSubtitleLanguage.value
+                        val targetCode = com.duta.movie.util.SubtitleTranslator.getLanguageCode(defLang)
+                        val targetLangName = com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName(targetCode)
+                        persistentSubs.firstOrNull { it.language.equals(targetLangName, ignoreCase = true) }
+                    } else null
+
+                    if (matchingSaved != null) {
+                        Log.i("SubtitleSyncEngine", "Auto-restored persistent translated subtitle immediately: ${matchingSaved.label}")
+                        selectSubtitle(matchingSaved)
+                    }
+                }
+            }
+
             try { 
                 val streamSignature = com.duta.movie.util.SubtitleSyncEngine.extractSignature(
                     title = effectiveTitle,
@@ -4326,21 +4624,31 @@ class VideoViewModel @Inject constructor(
                     streamUrl = _resolvedUrl.value
                 )
 
-                SubtitleExtractor.searchAndGetSubtitles(effectiveTitle, null, this, { subs -> 
+                val imdb = _videoMetadata.value?.imdbId
+                SubtitleExtractor.searchAndGetSubtitles(effectiveTitle, imdb, this, { subs -> 
                     val currentSignature = com.duta.movie.util.SubtitleSyncEngine.extractSignature(
                         title = effectiveTitle,
                         quality = _videoMetadata.value?.quality,
                         serverUrl = _currentServerUrl.value,
                         streamUrl = _resolvedUrl.value
                     )
-                    val combined = com.duta.movie.util.SubtitleSyncEngine.sortAndRankSubtitles(
-                        (_subtitles.value + subs).distinctBy { it.url },
-                        currentSignature
-                    )
+                    val persistentAi = _subtitles.value.filter { it.label.startsWith("[AI Translated]") || it.url.contains("translated_subtitles") }
+                    val regularSubs = (subs + _subtitles.value.filterNot { it.label.startsWith("[AI Translated]") || it.url.contains("translated_subtitles") }).distinctBy { it.url }
+                    val ranked = com.duta.movie.util.SubtitleSyncEngine.sortAndRankSubtitles(regularSubs, currentSignature)
+                    val combined = persistentAi + ranked
                     _subtitles.value = combined
-                    Log.i("SubtitleSyncEngine", "Evaluated ${combined.size} subtitle candidates with stream signature: $currentSignature (stream: ${_resolvedUrl.value})")
+                    Log.i("SubtitleSyncEngine", "Evaluated ${combined.size} subtitle candidates (${persistentAi.size} AI persistent) with stream signature: $currentSignature (stream: ${_resolvedUrl.value})")
                     
-                    // Auto-select subtitle if enabled, and not explicitly dismissed
+                    // Auto-restore saved online subtitle if user selected an online one previously
+                    if (!userExplicitlyDismissedSubtitles && savedSubUrl != null && _selectedSubtitle.value == null) {
+                        val matchingOnline = combined.firstOrNull { it.url == savedSubUrl }
+                        if (matchingOnline != null) {
+                            Log.i("SubtitleSyncEngine", "Auto-restored saved online subtitle: ${matchingOnline.label}")
+                            selectSubtitle(matchingOnline)
+                        }
+                    }
+
+                    // Auto-select subtitle if enabled and not explicitly dismissed
                     if (!userExplicitlyDismissedSubtitles && isAutoSubtitleEnabled.value) {
                         val defLang = defaultSubtitleLanguage.value
                         if (defLang != "Off" && defLang != "None") {
@@ -4355,10 +4663,17 @@ class VideoViewModel @Inject constructor(
                                 if (current == null) {
                                     Log.i("SubtitleSyncEngine", "Auto-selected best-match subtitle: '${bestMatch.label}' [${bestMatch.language}] (score: $newScore)")
                                     selectSubtitle(bestMatch)
+                                } else if (current.label.startsWith("[AI Translated]")) {
+                                    Log.i("SubtitleSyncEngine", "Upgraded from AI translated to native subtitle: '${bestMatch.label}' [${bestMatch.language}]")
+                                    autoTranslateFallbackJob?.cancel()
+                                    autoTranslateFallbackJob = null
+                                    translationJob?.cancel()
+                                    translationJob = null
+                                    selectSubtitle(bestMatch)
                                 } else if (current != bestMatch) {
                                     val currentScore = com.duta.movie.util.SubtitleSyncEngine.scoreSubtitle(current, currentSignature)
-                                    // Upgrade to an exact-matched subtitle if incoming score is significantly higher
-                                    if (newScore > currentScore + 25) {
+                                    // Upgrade to an exact-matched subtitle if incoming score is higher
+                                    if (newScore > currentScore + 10) {
                                         Log.i("SubtitleSyncEngine", "Upgraded subtitle from '${current.label}' ($currentScore) to '${bestMatch.label}' ($newScore)")
                                         selectSubtitle(bestMatch)
                                     }
@@ -4366,7 +4681,27 @@ class VideoViewModel @Inject constructor(
                             }
                         }
                     }
-                }, { _isSubtitleLoading.value = false }) 
+                }, { 
+                    _isSubtitleLoading.value = false 
+                    // When all providers have finished, if no native subtitle matched, auto-translate top candidate!
+                    if (!userExplicitlyDismissedSubtitles && isAutoSubtitleEnabled.value && _selectedSubtitle.value == null) {
+                        val defLang = defaultSubtitleLanguage.value
+                        if (defLang != "Off" && defLang != "None") {
+                            val currentSubs = _subtitles.value
+                            if (currentSubs.isNotEmpty()) {
+                                val topCandidate = currentSubs.firstOrNull { 
+                                    !it.label.startsWith("[AI Translated]") && 
+                                    com.duta.movie.util.SubtitleExtractor.normalizeLanguage(it.language).equals("English", ignoreCase = true) 
+                                } ?: currentSubs.firstOrNull { !it.label.startsWith("[AI Translated]") }
+
+                                if (topCandidate != null) {
+                                    Log.i("SubtitleSyncEngine", "⚡ Auto-Translate Fallback: No native '$defLang' sub across all providers. Auto-translating top candidate '${topCandidate.label}' (${topCandidate.language}) to $defLang")
+                                    triggerAutoTranslateFallback(topCandidate, defLang)
+                                }
+                            }
+                        }
+                    }
+                }) 
             } catch (e: Exception) { 
                 withContext(Dispatchers.Main) { _subtitleError.value = e.message } 
             } finally { 
@@ -4400,7 +4735,11 @@ class VideoViewModel @Inject constructor(
         subSearchJob?.cancel()
         subSearchJob = viewModelScope.launch(Dispatchers.IO) {
             _isSubtitleLoading.value = true
-            _subtitles.value = emptyList()
+            val effectiveVid = getEffectiveSubtitleVideoId()
+            val persistentAi = if (effectiveVid.isNotBlank()) {
+                com.duta.movie.util.SubtitleTranslator.getTranslatedSubtitlesForVideo(context, effectiveVid)
+            } else emptyList()
+            _subtitles.value = persistentAi
             _subtitleError.value = null
             try {
                 val streamSignature = com.duta.movie.util.SubtitleSyncEngine.extractSignature(
@@ -4416,8 +4755,9 @@ class VideoViewModel @Inject constructor(
                         serverUrl = _currentServerUrl.value,
                         streamUrl = _resolvedUrl.value
                     )
-                    val combined = com.duta.movie.util.SubtitleSyncEngine.sortAndRankSubtitles(
-                        (_subtitles.value + subs).distinctBy { it.url },
+                    val regularSubs = (subs + _subtitles.value.filterNot { it.label.startsWith("[AI Translated]") || it.url.contains("translated_subtitles") }).distinctBy { it.url }
+                    val combined = persistentAi + com.duta.movie.util.SubtitleSyncEngine.sortAndRankSubtitles(
+                        regularSubs,
                         currentSignature
                     )
                     _subtitles.value = combined
@@ -4431,7 +4771,32 @@ class VideoViewModel @Inject constructor(
         }
     }
 
+    private var pendingConsensusJob: Job? = null
+
+    private fun scheduleConsensusSubmission(mediaKey: String, offsetMs: Long, source: String = "manual_user") {
+        pendingConsensusJob?.cancel()
+        if (offsetMs == 0L) {
+            viewModelScope.launch {
+                com.duta.movie.util.SubtitleSyncEngine.submitCloudConsensusOffset(mediaKey, 0L, "manual_reset")
+            }
+            return
+        }
+        pendingConsensusJob = viewModelScope.launch {
+            try {
+                // Retention validation: Wait for 90s of uninterrupted playback to confirm satisfaction
+                delay(90_000L)
+                if (isActive && isPlaybackActive && _subtitleOffset.value == offsetMs) {
+                    com.duta.movie.util.SubtitleSyncEngine.submitCloudConsensusOffset(mediaKey, offsetMs, "${source}_verified")
+                    Log.i("SubtitleSyncEngine", "⚡ High-Confidence Cloud Consensus Submitted: ${offsetMs}ms after 90s verified watch time for $mediaKey")
+                }
+            } catch (_: CancellationException) {
+                // User re-adjusted offset before 90s elapsed -> discard intermediate jitter
+            }
+        }
+    }
+
     fun adjustSubtitleOffset(delta: Long) {
+        userManuallyCalibratedSubtitleOffset = true
         val newOffset = _subtitleOffset.value + delta
         _subtitleOffset.value = newOffset
         val vid = activeVideoId ?: _videoMetadata.value?.id
@@ -4447,11 +4812,13 @@ class VideoViewModel @Inject constructor(
                     _currentServerUrl.value
                 )
                 preferenceManager.setCommunitySubtitleOffset(mediaKey, newOffset)
+                scheduleConsensusSubmission(mediaKey, newOffset, "manual_user")
             }
         }
     }
 
     fun setSubtitleOffset(offset: Long) {
+        userManuallyCalibratedSubtitleOffset = true
         _subtitleOffset.value = offset
         val vid = activeVideoId ?: _videoMetadata.value?.id
         if (!vid.isNullOrEmpty()) {
@@ -4466,18 +4833,27 @@ class VideoViewModel @Inject constructor(
                     _currentServerUrl.value
                 )
                 preferenceManager.setCommunitySubtitleOffset(mediaKey, offset)
+                scheduleConsensusSubmission(mediaKey, offset, "manual_user")
             }
         }
     }
 
     fun resetSubtitleOffset() {
+        userManuallyCalibratedSubtitleOffset = true
         _subtitleOffset.value = 0L
         _subtitleFpsRatio.value = 1.0f
+        _autoSyncNotice.value = null
         val vid = activeVideoId ?: _videoMetadata.value?.id
         if (!vid.isNullOrEmpty()) {
             viewModelScope.launch { 
                 preferenceManager.setSubtitleOffset(vid, 0L)
                 preferenceManager.setSubtitleFpsRatio(vid, 1.0f)
+                val mediaKey = com.duta.movie.util.SubtitleSyncEngine.generateCommunityMediaKey(
+                    _videoMetadata.value?.title ?: vid,
+                    _currentServerUrl.value
+                )
+                preferenceManager.setCommunitySubtitleOffset(mediaKey, 0L)
+                scheduleConsensusSubmission(mediaKey, 0L, "manual_reset")
                 if (_videoMetadata.value?.isSeries == true || _currentEpisode.value != null) {
                     val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(vid)
                     preferenceManager.setSeriesSubtitleOffset(seriesBase, 0L)
@@ -4564,6 +4940,7 @@ class VideoViewModel @Inject constructor(
                     val currentList = _subtitles.value.filter { it.url != localUriStr }
                     _subtitles.value = listOf(localSub) + currentList
                     userExplicitlyDismissedSubtitles = false
+                    checkAndTriggerAutoPilotSync()
                     onResult(true, "Loaded ${cues.size} cues from $displayName")
                 }
             } catch (e: Exception) {
@@ -4574,27 +4951,74 @@ class VideoViewModel @Inject constructor(
 
     fun selectSubtitle(subtitle: Subtitle?) {
         subResolveJob?.cancel()
+        autoTranslateFallbackJob?.cancel()
+        autoTranslateFallbackJob = null
+        translationJob?.cancel()
+        translationJob = null
+        val effectiveVid = getEffectiveSubtitleVideoId()
         if (subtitle == null) {
             _selectedSubtitle.value = null
             _subtitleCues.value = emptyList()
             _subtitleError.value = null
             userExplicitlyDismissedSubtitles = true
+            if (effectiveVid.isNotBlank()) {
+                viewModelScope.launch(Dispatchers.IO) {
+                    preferenceManager.clearSavedSubtitleUrl(effectiveVid)
+                }
+            }
             return
         }
 
         userExplicitlyDismissedSubtitles = false
+        val isMatched = isCurrentSubtitleMatched(subtitle)
+        if (isMatched) {
+            userManuallyCalibratedSubtitleOffset = false
+            _subtitleOffset.value = 0L
+            _autoSyncNotice.value = null
+            Log.i("SubtitleSyncEngine", "Selected MATCHED subtitle '${subtitle.label}': locked offset to 0ms (natural sync)")
+        }
+        if (effectiveVid.isNotBlank()) {
+            viewModelScope.launch(Dispatchers.IO) {
+                preferenceManager.setSavedSubtitleUrl(effectiveVid, subtitle.url)
+            }
+        }
         _selectedSubtitle.value = subtitle
         _isSubtitleLoading.value = true
         _subtitleError.value = null
 
         subResolveJob = viewModelScope.launch(Dispatchers.IO) {
             try {
-                val localUri = if (subtitle.url.startsWith("file://")) {
-                    subtitle.url
-                } else if (subtitle.localUri != null && subtitle.localUri.startsWith("file://") && File(subtitle.localUri.removePrefix("file://")).exists()) {
-                    subtitle.localUri
+                var activeSub: Subtitle = subtitle
+                var localUri = if (activeSub.url.startsWith("file://")) {
+                    activeSub.url
+                } else if (activeSub.localUri != null && activeSub.localUri.startsWith("file://") && File(activeSub.localUri.removePrefix("file://")).exists()) {
+                    activeSub.localUri
                 } else {
-                    SubtitleExtractor.resolveSubtitleUrl(subtitle.url, subtitle.language)
+                    SubtitleExtractor.resolveSubtitleUrl(activeSub.url, activeSub.language)
+                }
+
+                // If primary candidate failed, automatically try up to 2 fallback candidates in the same language
+                if (localUri == null || !localUri.startsWith("file://") || !File(localUri.removePrefix("file://")).exists()) {
+                    val targetLang = SubtitleExtractor.normalizeLanguage(subtitle.language)
+                    val fallbacks = _subtitles.value.filter {
+                        it.url != subtitle.url &&
+                        SubtitleExtractor.normalizeLanguage(it.language).equals(targetLang, ignoreCase = true)
+                    }.take(2)
+
+                    for (fb in fallbacks) {
+                        if (!isActive) break
+                        Log.i("VideoViewModel", "Primary subtitle failed, trying same-language fallback: ${fb.label}")
+                        val fbUri = if (fb.url.startsWith("file://")) fb.url
+                        else SubtitleExtractor.resolveSubtitleUrl(fb.url, fb.language)
+                        if (fbUri != null && fbUri.startsWith("file://") && File(fbUri.removePrefix("file://")).exists()) {
+                            activeSub = fb
+                            localUri = fbUri
+                            if (effectiveVid.isNotBlank()) {
+                                preferenceManager.setSavedSubtitleUrl(effectiveVid, fb.url)
+                            }
+                            break
+                        }
+                    }
                 }
 
                 if (localUri != null && localUri.startsWith("file://")) {
@@ -4603,8 +5027,17 @@ class VideoViewModel @Inject constructor(
                     if (file.exists()) {
                         val cues = SubtitleParser.parse(file)
                         _subtitleCues.value = cues
-                        _selectedSubtitle.value = subtitle.copy(localUri = localUri)
+                        _selectedSubtitle.value = activeSub.copy(localUri = localUri)
                         Log.i("VideoViewModel", "Subtitle resolved & parsed: ${cues.size} cues loaded from ${file.name}")
+                        val activeMatched = isCurrentSubtitleMatched(activeSub)
+                        if (activeMatched) {
+                            userManuallyCalibratedSubtitleOffset = false
+                            _subtitleOffset.value = 0L
+                            _autoSyncNotice.value = null
+                            Log.i("SubtitleSyncEngine", "Auto-Pilot bypassed: subtitle '${activeSub.label}' is MATCHED (0ms native timing preserved)")
+                        } else {
+                            checkAndTriggerAutoPilotSync()
+                        }
                     } else {
                         _subtitleCues.value = emptyList()
                         withContext(Dispatchers.Main) { _subtitleError.value = "Subtitle file not found" }
@@ -4683,37 +5116,95 @@ class VideoViewModel @Inject constructor(
             return
         }
 
-        viewModelScope.launch(Dispatchers.IO) {
+        val currentLangCode = com.duta.movie.util.SubtitleTranslator.getLanguageCode(currentSub?.language ?: "")
+        val targetCode = com.duta.movie.util.SubtitleTranslator.getLanguageCode(targetLang)
+        val targetLangName = com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName(targetCode)
+
+        if (currentLangCode == targetCode && currentSub?.label?.startsWith("[AI Translated]") == false) {
+            onComplete?.invoke(false, "Subtitles are already in $targetLangName")
+            return
+        }
+
+        val sourceOffset = _subtitleOffset.value
+        val sourceMatched = isCurrentSubtitleMatched(currentSub)
+
+        translationJob?.cancel()
+        translationJob = viewModelScope.launch(Dispatchers.IO) {
             _isTranslatingSubtitle.value = true
-            _translationProgress.value = Pair(0, (cues.size + 59) / 60)
+            _translationProgress.value = Pair(0, (cues.size + 29) / 30)
             try {
-                val title = _videoMetadata.value?.title ?: activeVideoId ?: "movie"
+                val effectiveVid = getEffectiveSubtitleVideoId()
+                val title = _videoMetadata.value?.title ?: effectiveVid.ifBlank { "movie" }
+                val progressiveList = java.util.concurrent.CopyOnWriteArrayList(cues)
+                val targetLangName = com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName(targetLang)
+
                 val result = com.duta.movie.util.SubtitleTranslator.translateCues(
                     context = context,
                     cues = cues,
                     title = title,
                     targetLang = targetLang,
+                    videoId = effectiveVid,
                     onProgress = { cur, tot ->
                         _translationProgress.value = Pair(cur, tot)
+                    },
+                    onBatchCompleted = { batchIndex, translatedBatch ->
+                        val startIdx = batchIndex * 30
+                        for (i in translatedBatch.indices) {
+                            val targetIdx = startIdx + i
+                            if (targetIdx < progressiveList.size) {
+                                progressiveList[targetIdx] = translatedBatch[i]
+                            }
+                        }
+                        viewModelScope.launch(Dispatchers.Main) {
+                            if (!userExplicitlyDismissedSubtitles && isActive) {
+                                val currentSnapshot = progressiveList.toList()
+                                _subtitleCues.value = currentSnapshot
+                                if (batchIndex == 0) {
+                                    val tempStreamingSub = Subtitle(
+                                        label = "[AI Translated] $targetLangName (Streaming...)",
+                                        url = "file://${com.duta.movie.util.SubtitleTranslator.getTranslatedSubtitleFile(context, effectiveVid, targetLang).absolutePath}",
+                                        language = targetLangName,
+                                        isAutoGenerated = true,
+                                        localUri = "file://${com.duta.movie.util.SubtitleTranslator.getTranslatedSubtitleFile(context, effectiveVid, targetLang).absolutePath}"
+                                    )
+                                    _selectedSubtitle.value = tempStreamingSub
+                                    if (_subtitles.value.none { it.url == tempStreamingSub.url }) {
+                                        _subtitles.value = listOf(tempStreamingSub) + _subtitles.value
+                                    }
+                                    Log.i("VideoViewModel", "⚡ JIT Zero-Latency Translation: Initial batch displayed (${translatedBatch.size} cues)")
+                                }
+                            }
+                        }
                     }
                 )
 
                 if (result != null) {
                     val (file, translatedCues) = result
-                    val targetLangName = com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName(targetLang)
                     val translatedSub = Subtitle(
                         label = "[AI Translated] $targetLangName",
                         url = "file://${file.absolutePath}",
                         language = targetLangName,
+                        isAutoGenerated = true,
                         localUri = "file://${file.absolutePath}"
                     )
                     withContext(Dispatchers.Main) {
-                        _subtitleCues.value = translatedCues
-                        _selectedSubtitle.value = translatedSub
-                        val updatedList = listOf(translatedSub) + _subtitles.value.filter { it.url != translatedSub.url }
-                        _subtitles.value = updatedList
-                        userExplicitlyDismissedSubtitles = false
-                        onComplete?.invoke(true, "Translated ${translatedCues.size} lines to $targetLangName")
+                        if (!userExplicitlyDismissedSubtitles && isActive) {
+                            _subtitleCues.value = translatedCues
+                            _selectedSubtitle.value = translatedSub
+                            val updatedList = listOf(translatedSub) + _subtitles.value.filter { it.url != translatedSub.url && !it.label.contains("(Streaming...)") }
+                            _subtitles.value = updatedList
+                            if (sourceMatched) {
+                                userManuallyCalibratedSubtitleOffset = false
+                                _subtitleOffset.value = 0L
+                                _autoSyncNotice.value = null
+                            } else {
+                                _subtitleOffset.value = sourceOffset
+                            }
+                            onComplete?.invoke(true, "Translated ${translatedCues.size} lines to $targetLangName")
+                        }
+                    }
+                    if (effectiveVid.isNotBlank()) {
+                        preferenceManager.setSavedSubtitleUrl(effectiveVid, translatedSub.url)
                     }
                 } else {
                     withContext(Dispatchers.Main) {
@@ -4721,9 +5212,11 @@ class VideoViewModel @Inject constructor(
                     }
                 }
             } catch (e: Exception) {
-                Log.e("VideoViewModel", "Subtitle translation error", e)
-                withContext(Dispatchers.Main) {
-                    onComplete?.invoke(false, "Error: ${e.message}")
+                if (e !is kotlinx.coroutines.CancellationException) {
+                    Log.e("VideoViewModel", "Subtitle translation error", e)
+                    withContext(Dispatchers.Main) {
+                        onComplete?.invoke(false, "Error: ${e.message}")
+                    }
                 }
             } finally {
                 _isTranslatingSubtitle.value = false
@@ -4732,17 +5225,149 @@ class VideoViewModel @Inject constructor(
         }
     }
 
-    fun setVadVoiceOnsetMs(onsetMs: Long) {
+    fun setVadVoiceOnsetMs(onsetMs: Long): Boolean {
         _vadVoiceOnsetMs.value = onsetMs
+        if (onsetMs > 0L) {
+            val current = _vadVoiceOnsets.value
+            if (!current.contains(onsetMs)) {
+                _vadVoiceOnsets.value = current + onsetMs
+            }
+        }
+        if (isCurrentSubtitleMatched()) {
+            Log.i("SubtitleSyncEngine", "Auto-Pilot VAD ignored: subtitle is MATCHED (0ms native timing preserved)")
+            return true
+        }
+        if (isAutoSubSyncEnabled.value && !userManuallyCalibratedSubtitleOffset) {
+            val succeeded = checkAndTriggerAutoPilotSync()
+            if (!succeeded) {
+                _vadVoiceOnsetMs.value = -1L
+                return false
+            }
+            return true
+        }
+        return false
+    }
+
+    fun setVadVoiceOnsets(onsets: List<Long>, isWindowElapsed: Boolean = false): Boolean {
+        _vadVoiceOnsets.value = onsets
+        if (onsets.isNotEmpty()) {
+            _vadVoiceOnsetMs.value = onsets.first()
+        }
+        if (isCurrentSubtitleMatched()) {
+            Log.i("SubtitleSyncEngine", "Auto-Pilot VAD ignored: subtitle is MATCHED (0ms native timing preserved)")
+            return true
+        }
+        if (isAutoSubSyncEnabled.value && !userManuallyCalibratedSubtitleOffset) {
+            return checkAndTriggerAutoPilotSync(forceSingleAnchor = isWindowElapsed)
+        }
+        return false
     }
 
     fun applyVadOffset(firstDialogueStartMs: Long) {
         val onset = _vadVoiceOnsetMs.value
         if (onset > 0L) {
-            val calculatedOffset = firstDialogueStartMs - onset
-            setSubtitleOffset(calculatedOffset)
+            val calculatedOffset = com.duta.movie.util.SubtitleSyncEngine.evaluateAutoSync(
+                voiceOnsetMs = onset,
+                firstDialogueCueMs = firstDialogueStartMs,
+                currentOffset = _subtitleOffset.value,
+                isUserManualCalibrated = false
+            ) ?: (firstDialogueStartMs - onset).takeIf { Math.abs(it) <= 10_000L } ?: return
+
+            userManuallyCalibratedSubtitleOffset = true
+            _subtitleOffset.value = calculatedOffset
+            val currentVid = activeVideoId ?: _videoMetadata.value?.id ?: return
+            viewModelScope.launch {
+                preferenceManager.setSubtitleOffset(currentVid, calculatedOffset)
+                val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(currentVid)
+                if (seriesBase.isNotEmpty()) {
+                    preferenceManager.setSeriesSubtitleOffset(seriesBase, calculatedOffset)
+                }
+                val mediaKey = com.duta.movie.util.SubtitleSyncEngine.generateCommunityMediaKey(
+                    _videoMetadata.value?.title ?: currentVid,
+                    _currentServerUrl.value
+                )
+                preferenceManager.setCommunitySubtitleOffset(mediaKey, calculatedOffset)
+                scheduleConsensusSubmission(mediaKey, calculatedOffset, "manual_vad")
+            }
             Log.i("VideoViewModel", "Applied VAD auto offset: $calculatedOffset ms (Dialogue: $firstDialogueStartMs, Audio: $onset)")
         }
+    }
+
+    /**
+     * Autonomous Background VAD Multi-Cue Calibration (Hybrid Auto-Pilot).
+     * Employs multi-anchor cadence matching to eliminate false alarms from intro logos or fanfare.
+     */
+    fun checkAndTriggerAutoPilotSync(forceSingleAnchor: Boolean = false): Boolean {
+        if (!isAutoSubSyncEnabled.value || userManuallyCalibratedSubtitleOffset) return false
+        if (isCurrentSubtitleMatched()) {
+            Log.i("SubtitleSyncEngine", "⚡ Auto-Pilot bypassed: Subtitle is already MATCHED/Embedded with perfect native sync (0ms)")
+            return false
+        }
+        val onsets = _vadVoiceOnsets.value
+        val cues = _subtitleCues.value
+        if (onsets.isEmpty() && _vadVoiceOnsetMs.value <= 0L) return false
+        if (cues.isEmpty()) return false
+
+        val hasMultiAnchors = onsets.size >= 2
+        val calculatedOffset: Long? = if (hasMultiAnchors) {
+            com.duta.movie.util.SubtitleSyncEngine.evaluateMultiAnchorAutoSync(
+                voiceOnsets = onsets,
+                dialogueCues = cues,
+                currentOffset = _subtitleOffset.value,
+                isUserManualCalibrated = userManuallyCalibratedSubtitleOffset
+            )
+        } else {
+            // While actively listening, wait for Anchor 2 so cadence matching verifies the rhythm and prevents
+            // false triggers from intro logos, screams, or fanfare sound effects!
+            if (!forceSingleAnchor) return false
+            val onset = onsets.firstOrNull() ?: _vadVoiceOnsetMs.value
+            if (onset <= 0L) return false
+            val firstCue = firstDialogueCue.value ?: return false
+            val singleCand = com.duta.movie.util.SubtitleSyncEngine.evaluateAutoSync(
+                voiceOnsetMs = onset,
+                firstDialogueCueMs = firstCue.startTimeMs,
+                currentOffset = _subtitleOffset.value,
+                isUserManualCalibrated = userManuallyCalibratedSubtitleOffset
+            )
+            // Conservative bounds [-20s..20s] for single anchor fallback to avoid wild misalignments
+            if (singleCand != null && singleCand in -20000L..20000L) singleCand else null
+        }
+
+        val evaluatedOffset: Long = calculatedOffset ?: return false
+
+        val currentVid = activeVideoId ?: _videoMetadata.value?.id ?: return false
+        viewModelScope.launch {
+            try {
+                if (evaluatedOffset != _subtitleOffset.value) {
+                    _subtitleOffset.value = evaluatedOffset
+
+                    preferenceManager.setSubtitleOffset(currentVid, evaluatedOffset)
+                    val seriesBase = com.duta.movie.util.SubtitleSyncEngine.extractSeriesBaseId(currentVid)
+                    if (seriesBase.isNotEmpty()) {
+                        preferenceManager.setSeriesSubtitleOffset(seriesBase, evaluatedOffset)
+                    }
+
+                    val mediaKey = com.duta.movie.util.SubtitleSyncEngine.generateCommunityMediaKey(
+                        _videoMetadata.value?.title ?: currentVid,
+                        _currentServerUrl.value
+                    )
+                    preferenceManager.setCommunitySubtitleOffset(mediaKey, evaluatedOffset)
+                }
+
+                val sign = if (evaluatedOffset >= 0) "+" else ""
+                val formatted = "$sign${evaluatedOffset / 1000.0}s"
+                val syncMethod = if (hasMultiAnchors) "Auto-Pilot (Cadence)" else "Auto-Pilot"
+                _autoSyncNotice.value = com.duta.movie.util.SubtitleSyncEngine.AutoSyncNotice(
+                    offsetMs = evaluatedOffset,
+                    formattedOffset = formatted,
+                    method = syncMethod
+                )
+                Log.i("VideoViewModel", "⚡ $syncMethod: Auto-synced subtitles to ${evaluatedOffset}ms (Anchors: ${onsets.size}, Cues: ${cues.size})")
+            } catch (e: Exception) {
+                Log.w("VideoViewModel", "Failed to persist auto-pilot offset", e)
+            }
+        }
+        return true
     }
 
     private val inFlightPrefetches = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -4981,11 +5606,16 @@ class VideoViewModel @Inject constructor(
             rotationCount = 0
             val liveVideo = com.duta.movie.model.LiveTvCatalog.channels.find { it.id == effectiveVideoId }
             if (liveVideo != null) {
-                _videoMetadata.value = liveVideo
-                _resolvedUrl.value = liveVideo.videoUrl
-                _currentServerUrl.value = liveVideo.videoUrl
-                _isResolving.value = false
-                _error.value = null
+                viewModelScope.launch(Dispatchers.IO) {
+                    val freshUrl = com.duta.movie.model.LiveTvCatalog.resolveDynamicStream(effectiveVideoId) ?: liveVideo.videoUrl
+                    withContext(Dispatchers.Main) {
+                        _videoMetadata.value = liveVideo
+                        _resolvedUrl.value = freshUrl
+                        _currentServerUrl.value = freshUrl
+                        _isResolving.value = false
+                        _error.value = null
+                    }
+                }
             }
             return
         }
@@ -5718,10 +6348,16 @@ class VideoViewModel @Inject constructor(
         exhaustedServerUrls.clear()
         consecutiveAllBlacklistedCount = 0
         
-        if (_subtitleOffset.value == 0L) {
+        if (_subtitleOffset.value == 0L && !isCurrentSubtitleMatched() && !userManuallyCalibratedSubtitleOffset) {
             val detectedBumper = com.duta.movie.util.SubtitleSyncEngine.detectServerIntroBumper(_currentServerUrl.value, url)
             if (detectedBumper != 0L) {
                 _subtitleOffset.value = detectedBumper
+                val sign = if (detectedBumper >= 0) "+" else ""
+                _autoSyncNotice.value = com.duta.movie.util.SubtitleSyncEngine.AutoSyncNotice(
+                    offsetMs = detectedBumper,
+                    formattedOffset = "$sign${detectedBumper / 1000.0}s",
+                    method = "Bumper AI"
+                )
                 Log.i("SubtitleSyncEngine", "Auto-calibrated bumper offset to ${detectedBumper}ms on playback success")
             }
         }
@@ -5836,11 +6472,16 @@ class VideoViewModel @Inject constructor(
             _selectedSecondarySubtitle.value = null
             _secondarySubtitleCues.value = emptyList()
             _vadVoiceOnsetMs.value = -1L
+            _vadVoiceOnsets.value = emptyList()
             _isTranslatingSubtitle.value = false
             subResolveJob?.cancel()
             subResolveJob = null
             secondarySubResolveJob?.cancel()
             secondarySubResolveJob = null
+            autoTranslateFallbackJob?.cancel()
+            autoTranslateFallbackJob = null
+            translationJob?.cancel()
+            translationJob = null
             userExplicitlyDismissedSubtitles = false
             lastSubtitleSearchTitle = null
             activeVideoId = null

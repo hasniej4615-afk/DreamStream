@@ -104,6 +104,9 @@
     <string name="current_playback_time">Masa Main Balik: %s</string>
     <string name="subtitle_sync_helper_hint">Snap dialog atau laraskan masa • Disimpan secara automatik bagi judul ini</string>
     <string name="subtitle_synced_toast">Sari kata diselaras! Ofset ditetapkan ke %s</string>
+    <string name="auto_sub_sync_title">Auto-Selaras Sari Kata (Auto-Pilot)</string>
+    <string name="auto_sub_sync_desc">Menyelaraskan masa sari kata secara automatik menggunakan pengesanan suara audio &amp; konsensus cloud.</string>
+    <string name="auto_synced_hud">⚡ Sari Kata Diselaras Automatik (%s)</string>
     <string name="done">Selesai</string>
 
     <string name="select_episode">Pilih Episod</string>
@@ -373,6 +376,14 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="no_other_sources_found">Tiada sumber alternatif ditemui untuk tajuk ini</string>
     <string name="auto_healed_source">Swapulih %d pelayan cermin alternatif</string>
     <string name="added_multi_provider_alt_sources">Menambah carian silang berbilang penyedia &amp; swapulih automatik: pulih pelayan cermin baharu secara automatik apabila pautan mati atau tamat tempoh.</string>
+    <string name="changelog_v2_1_1">Log Perubahan v2.1.1 Cloud 7</string>
+    <string name="v2_1_1_updates">Kemaskini v2.1.1:</string>
+    <string name="v2_1_1_highlight_1">Penstriman Langsung TV3 Malaysia &amp; Pelayan Sandaran: Menambah penstriman langsung rasmi TV3 Malaysia dengan integrasi YouTube Live, pemulihan HLS, penjenamaan logo telus berkualiti tinggi, dan pengasingan pengikis video.</string>
+    <string name="v2_1_1_highlight_2">Pemproses Audio Pengesanan Aktiviti Suara (VAD) Perkakasan: Pemproses audio ExoPlayer dengan pengesanan tenaga pertuturan masa nyata untuk penentukuran sarikata sub-milisaat yang tepat.</string>
+    <string name="v2_1_1_highlight_3">Paparan Dwi-Sarikata &amp; Kotak Topeng Khas: Sokongan dwi-sarikata bertingkat (kuning lembut di atas, putih tajam di bawah) berserta kotak topeng sarikata untuk menterjemah video bersarikata kekal.</string>
+    <string name="v2_1_1_highlight_4">Pemadanan Pintar Aliran Sarikata &amp; Auto-Pilot: SubtitleSyncEngine mengekstrak tandatangan aliran (kualiti, kumpulan pelepasan, platform) untuk mengunci masa asal 0ms dan menentukur ofset secara automatik.</string>
+    <string name="v2_1_1_highlight_5">Sistem Pengumuman &amp; Pentadbir Siaran Interaktif: Dialog pengurusan pengumuman lengkap dengan penyiaran keutamaan tinggi, keserasian Supabase RLS upsert, dan paparan sepanduk masa nyata.</string>
+    <string name="v2_1_1_highlight_6">Penterjemah Sarikata AI Universal Diperkukuh: Menyelesaikan sekatan had kadar 429 melalui titik akhir klien mudah alih khas dengan pelan sandaran berbilang tahap pintar.</string>
     <string name="changelog_v2_1_0">Log Perubahan v2.1.0b Cloud 7</string>
     <string name="v2_1_0_updates">Kemaskini v2.1.0b (Versi Pembaikan):</string>
     <string name="v2_1_0_highlight_1">Sandaran &amp; Pemulihan Awan (PIN 6-Digit): Sandarkan profil pengguna, avatar foto pilihan, kegemaran dan sejarah tontonan ke storan awan dengan lancar; pulihkan pada mana-mana peranti dengan PIN 6-digit.</string>
@@ -669,4 +680,8 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="ai_translate">Terjemah AI</string>
     <string name="ai_translate_title">Penterjemah Sari Kata AI</string>
     <string name="ai_translate_select_lang">Pilih bahasa sasaran untuk diterjemahkan:</string>
+    <string name="no_subs_found_auto">Tiada sari kata ditemui secara automatik</string>
+    <string name="search_custom_title_hint">Cuba cari dengan tajuk tersuai atau buka sari kata tempatan</string>
+    <string name="no_subs_in_filter">Tiada sari kata ditemui dalam bahasa ini</string>
+    <string name="switch_to_all_subs">Papar Semua Bahasa (%d)</string>
 </resources>
