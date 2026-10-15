@@ -107,4 +107,25 @@ class LiveTvTest {
         assertTrue("TV3 dynamic URL should be valid stream URL (HLS or backup)", 
             resolved!!.contains(".m3u8") || resolved.contains("tonton") || resolved.contains("youtube.com/watch?v="))
     }
+
+    @Test
+    fun testRefinedChannelThumbnails() {
+        val alhijrah = LiveTvCatalog.getChannelById("live_tv_alhijrah")
+        assertNotNull(alhijrah)
+        assertEquals("https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/tv-alhijrah-my.png", alhijrah!!.thumbnailUrl)
+        assertEquals(alhijrah.thumbnailUrl, alhijrah.backdropUrl)
+        assertTrue(com.duta.movie.util.VideoExtractor.isValidImageUrl(alhijrah.thumbnailUrl))
+
+        val bernama = LiveTvCatalog.getChannelById("live_bernamatv")
+        assertNotNull(bernama)
+        assertEquals("https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/bernama-tv-my.png", bernama!!.thumbnailUrl)
+        assertEquals(bernama.thumbnailUrl, bernama.backdropUrl)
+        assertTrue(com.duta.movie.util.VideoExtractor.isValidImageUrl(bernama.thumbnailUrl))
+
+        val cna = LiveTvCatalog.getChannelById("live_cna")
+        assertNotNull(cna)
+        assertEquals("https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/singapore/cna-sg.png", cna!!.thumbnailUrl)
+        assertEquals(cna.thumbnailUrl, cna.backdropUrl)
+        assertTrue(com.duta.movie.util.VideoExtractor.isValidImageUrl(cna.thumbnailUrl))
+    }
 }

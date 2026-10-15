@@ -53,8 +53,8 @@ object LiveTvCatalog {
         Video(
             id = "live_tv_alhijrah",
             title = "TV Alhijrah",
-            thumbnailUrl = "https://7d8zpfv0fh.tenbytecdn.com/web-assets/images/channels/e725be7c-615d-42bd-9399-fef5cf386ecb/logo.png",
-            backdropUrl = "https://7d8zpfv0fh.tenbytecdn.com/web-assets/images/channels/e725be7c-615d-42bd-9399-fef5cf386ecb/banner.png",
+            thumbnailUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/tv-alhijrah-my.png",
+            backdropUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/tv-alhijrah-my.png",
             videoUrl = "https://cuwf8jayq1.tenbytecdn.com/live/tvalhijrah/playlist.m3u8",
             duration = "LIVE",
             quality = "1080p FHD",
@@ -65,8 +65,8 @@ object LiveTvCatalog {
         Video(
             id = "live_bernamatv",
             title = "Bernama TV",
-            thumbnailUrl = "https://7d8zpfv0fh.tenbytecdn.com/web-assets/images/channels/1a41a91b-64c1-4feb-a119-76ebd88fed4a/logo.png",
-            backdropUrl = "https://7d8zpfv0fh.tenbytecdn.com/web-assets/images/channels/1a41a91b-64c1-4feb-a119-76ebd88fed4a/banner.png",
+            thumbnailUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/bernama-tv-my.png",
+            backdropUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/bernama-tv-my.png",
             videoUrl = "https://cuwf8jayq1.tenbytecdn.com/live/bernama/playlist.m3u8",
             duration = "LIVE",
             quality = "1080p FHD",
@@ -77,8 +77,8 @@ object LiveTvCatalog {
         Video(
             id = "live_cna",
             title = "CNA (Channel NewsAsia)",
-            thumbnailUrl = "https://7d8zpfv0fh.tenbytecdn.com/web-assets/images/channels/10792dcd-a26e-441f-95ec-c9c5ba965205/logo.png",
-            backdropUrl = "https://7d8zpfv0fh.tenbytecdn.com/web-assets/images/channels/10792dcd-a26e-441f-95ec-c9c5ba965205/banner.png",
+            thumbnailUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/singapore/cna-sg.png",
+            backdropUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/singapore/cna-sg.png",
             videoUrl = "https://cuwf8jayq1.tenbytecdn.com/live/cna/playlist.m3u8",
             duration = "LIVE",
             quality = "1080p FHD",
