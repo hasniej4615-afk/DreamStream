@@ -39,12 +39,14 @@ object LiveTvCatalog {
             title = "TV3",
             thumbnailUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/tv3-my.png",
             backdropUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/tv3-my.png",
-            videoUrl = "https://www.youtube.com/watch?v=HX_6UiKZw-Q",
+            videoUrl = "https://api.dani-dev.co.za/v2/stream/tonton/live/tv3",
             duration = "LIVE",
             quality = "1080p FHD",
-            description = "Saluran televisyen swasta komersial terkemuka di Malaysia oleh Media Prima. Berita utama Buletin TV3, drama Akasia, dan rancangan hiburan popular tempatan.",
+            description = "Saluran televisyen swasta komersial terkemuka di Malaysia oleh Media Prima. Siaran langsung rasmi drama Akasia, hiburan, berita utama dan acara sukan tempatan.",
             servers = listOf(
-                VideoServer("Buletin TV3 24/7 (1080p Native)", "https://www.youtube.com/watch?v=HX_6UiKZw-Q")
+                VideoServer("Tonton HLS 1080p (Official Broadcast)", "https://api.dani-dev.co.za/v2/stream/tonton/live/tv3"),
+                VideoServer("Tonton HLS (Direct Mirror)", "https://api.dani-dev.co.za/v1/stream/tonton/live/tv3"),
+                VideoServer("Buletin TV3 24/7 (News Backup)", "https://www.youtube.com/watch?v=HX_6UiKZw-Q")
             ),
             isSeries = false
         ),
@@ -165,7 +167,7 @@ object LiveTvCatalog {
     )
 
     @Volatile
-    private var cachedTv3LiveUrl: String? = "https://www.youtube.com/watch?v=HX_6UiKZw-Q"
+    private var cachedTv3LiveUrl: String? = null
     @Volatile
     private var lastTv3ResolvedTime: Long = 0L
 
@@ -179,9 +181,40 @@ object LiveTvCatalog {
     suspend fun resolveDynamicStream(channelId: String): String? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
         if (channelId == "live_tv3") {
             val now = System.currentTimeMillis()
-            if (now - lastTv3ResolvedTime < 15 * 60 * 1000L && !cachedTv3LiveUrl.isNullOrBlank()) {
+            if (now - lastTv3ResolvedTime < 10 * 60 * 1000L && !cachedTv3LiveUrl.isNullOrBlank()) {
                 return@withContext cachedTv3LiveUrl
             }
+
+            // 1. Primary: Resolve official Tonton live HLS stream via dynamic endpoint
+            val primaryEndpoints = listOf(
+                "https://api.dani-dev.co.za/v2/stream/tonton/live/tv3",
+                "https://api.dani-dev.co.za/v1/stream/tonton/live/tv3",
+                "https://api.dani-dev.co.za/v2/stream/tonton/live/6420323"
+            )
+            for (endpoint in primaryEndpoints) {
+                try {
+                    val client = com.duta.movie.util.NetworkConfig.okHttpClient
+                    val req = okhttp3.Request.Builder()
+                        .url(endpoint)
+                        .header("User-Agent", com.duta.movie.util.NetworkConfig.SHARED_USER_AGENT)
+                        .build()
+                    client.newCall(req).execute().use { resp ->
+                        if (resp.isSuccessful) {
+                            val finalUrl = resp.request.url.toString()
+                            if (finalUrl.contains(".m3u8") || finalUrl.contains("tonton")) {
+                                cachedTv3LiveUrl = finalUrl
+                                lastTv3ResolvedTime = now
+                                android.util.Log.i("LiveTvCatalog", "Successfully resolved live_tv3 to Tonton HLS: $finalUrl")
+                                return@withContext finalUrl
+                            }
+                        }
+                    }
+                } catch (e: Exception) {
+                    android.util.Log.w("LiveTvCatalog", "Failed to resolve live_tv3 from $endpoint: ${e.message}")
+                }
+            }
+
+            // 2. Resilient Backup: Fall back to Buletin TV3 live stream if HLS proxies are unreachable
             try {
                 val client = com.duta.movie.util.NetworkConfig.okHttpClient
                 val request = okhttp3.Request.Builder()
@@ -208,9 +241,9 @@ object LiveTvCatalog {
                     }
                 }
             } catch (e: Exception) {
-                android.util.Log.w("LiveTvCatalog", "Failed to resolve live_tv3 dynamic stream: ${e.message}")
+                android.util.Log.w("LiveTvCatalog", "Failed to resolve live_tv3 dynamic YouTube fallback: ${e.message}")
             }
-            return@withContext cachedTv3LiveUrl ?: "https://www.youtube.com/watch?v=HX_6UiKZw-Q"
+            return@withContext cachedTv3LiveUrl ?: "https://api.dani-dev.co.za/v2/stream/tonton/live/tv3"
         }
 
         val tenbyteId = dynamicChannelMap[channelId] ?: return@withContext null

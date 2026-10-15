@@ -3301,10 +3301,28 @@ class VideoViewModel @Inject constructor(
                     val dynamicUrl = com.duta.movie.model.LiveTvCatalog.resolveDynamicStream(videoId)
                     streamUrl = dynamicUrl ?: serverUrl?.takeIf { it.isNotBlank() } ?: liveCh?.videoUrl ?: ""
                 }
+                if (streamUrl.contains("api.dani-dev.co.za")) {
+                    try {
+                        val client = com.duta.movie.util.NetworkConfig.okHttpClient
+                        val req = okhttp3.Request.Builder()
+                            .url(streamUrl)
+                            .header("User-Agent", com.duta.movie.util.NetworkConfig.SHARED_USER_AGENT)
+                            .build()
+                        client.newCall(req).execute().use { resp ->
+                            if (resp.isSuccessful) {
+                                val target = resp.request.url.toString()
+                                if (target.contains(".m3u8") || target.contains("tonton")) {
+                                    streamUrl = target
+                                }
+                            }
+                        }
+                    } catch (_: Exception) {}
+                }
                 if (streamUrl.isNotBlank() && liveCh != null) {
+                    val activeServer = serverUrl ?: liveCh.servers.firstOrNull()?.url ?: streamUrl
                     withContext(Dispatchers.Main) {
                         _videoMetadata.value = liveCh
-                        _currentServerUrl.value = streamUrl
+                        _currentServerUrl.value = activeServer
                         _resolvedUrl.value = streamUrl
                         _isResolving.value = false
                         _error.value = null

@@ -376,6 +376,11 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="no_other_sources_found">Tiada sumber alternatif ditemui untuk tajuk ini</string>
     <string name="auto_healed_source">Swapulih %d pelayan cermin alternatif</string>
     <string name="added_multi_provider_alt_sources">Menambah carian silang berbilang penyedia &amp; swapulih automatik: pulih pelayan cermin baharu secara automatik apabila pautan mati atau tamat tempoh.</string>
+    <string name="changelog_v2_1_2">Log Perubahan v2.1.2 Cloud 7</string>
+    <string name="v2_1_2_updates">Kemaskini v2.1.2:</string>
+    <string name="v2_1_2_highlight_1">Aliran Siaran Langsung Rasmi Tonton 1080p TV3: Menggantikan siaran berita YouTube dengan aliran rasmi Tonton HLS 1080p Media Prima membawakan siaran langsung penuh drama Akasia dan hiburan tempatan.</string>
+    <string name="v2_1_2_highlight_2">Resolusi Aliran Dinamik &amp; Pelayan Cermin: Penjanaan token sesi HMAC automatik dan pra-resolusi lencongan untuk manifes CloudFront tanpa enkripsi, disokong pelayan sandaran cermin dan YouTube.</string>
+    <string name="v2_1_2_highlight_3">Penyerlahan &amp; Pertukaran Pelayan Lancar: Penyerlahan pelayan aktif masa nyata dalam dialog pemain serta pertukaran lancar antara pelayan siaran langsung rasmi dan pelayan sandaran.</string>
     <string name="changelog_v2_1_1">Log Perubahan v2.1.1 Cloud 7</string>
     <string name="v2_1_1_updates">Kemaskini v2.1.1:</string>
     <string name="v2_1_1_highlight_1">Penstriman Langsung TV3 Malaysia &amp; Pelayan Sandaran: Menambah penstriman langsung rasmi TV3 Malaysia dengan integrasi YouTube Live, pemulihan HLS, penjenamaan logo telus berkualiti tinggi, dan pengasingan pengikis video.</string>

@@ -2282,7 +2282,7 @@ fun VideoPlayerScreen(
     if (showServerDialog) {
         ServerSelectionDialog(
             servers = video?.servers ?: emptyList(), 
-            currentServerUrl = serverUrl ?: "", 
+            currentServerUrl = currentServerUrlFromVm ?: serverUrl ?: "", 
             isTV = isTV,
             onServerSelect = { url, force -> 
                 showServerDialog = false

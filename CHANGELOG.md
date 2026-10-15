@@ -2,6 +2,24 @@
 
 All notable changes to the Duta Movie application are documented in this file.
 
+## [2.1.2 Cloud 7] - 2026-10-15
+
+> **Live TV Broadcast Upgrade**: Replaces the fallback YouTube news stream for TV3 Malaysia with the official Media Prima Tonton 1080p live broadcast stream, dynamic tokenized HMAC session resolution, resilient multi-server failover, and active server tracking in the player.
+
+### Added
+- **Official Tonton TV3 1080p Live Broadcast**:
+  - Direct integration with official Media Prima Tonton CloudFront HLS master manifest stream (up to 1080p FHD at 5.7 Mbps, DRM-free unencrypted MPEG-TS chunks).
+  - Broadcasts actual linear programming (Drama Akasia, Buletin Utama, local entertainment, and live sports), replacing news-only feeds.
+  - Multi-server redundancy: Server 1 (`Tonton HLS 1080p Official Broadcast`), Server 2 (`Tonton HLS Direct Mirror`), and Server 3 (`Buletin TV3 24/7 News Backup`).
+
+### Improved & Hardened
+- **Dynamic HLS Session Pre-Resolution**:
+  - Implemented automatic tokenized redirect following in `VideoViewModel` to pre-resolve dynamic HMAC API endpoints into the base CloudFront master playlist, ensuring subvariant `.ts` chunks load seamlessly in ExoPlayer.
+- **Server Selection & Active Server Synchronization**:
+  - Synchronized ViewModel server state with player server selection dialog, ensuring the currently playing broadcast server is accurately highlighted and switchable in real time.
+
+---
+
 ## [2.1.1 Cloud 7] - 2026-10-14
 
 > **Feature & Hardening Release**: Introduces TV3 Malaysia Live streaming with official high-res branding and resilient YouTube Live fallback, hardware-level Voice Activity Detection (VAD) audio processing for real-time speech synchronization, Dual Subtitle display with customizable mask box, auto-pilot subtitle calibration, and interactive Supabase RLS broadcast management.

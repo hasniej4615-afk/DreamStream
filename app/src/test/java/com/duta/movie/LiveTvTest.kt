@@ -97,15 +97,14 @@ class LiveTvTest {
     fun testTv3StreamUrl() = runBlocking {
         val tv3 = LiveTvCatalog.getChannelById("live_tv3")
         assertNotNull(tv3)
-        assertTrue("TV3 initial URL should be valid YouTube watch URL", tv3!!.videoUrl.contains("youtube.com/watch?v="))
+        assertTrue("TV3 initial URL should be valid Tonton HLS endpoint", tv3!!.videoUrl.contains("tonton") || tv3.videoUrl.contains("api.dani-dev.co.za"))
         assertEquals("https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/tv3-my.png", tv3.thumbnailUrl)
         assertTrue(com.duta.movie.util.VideoExtractor.isValidImageUrl(tv3.thumbnailUrl))
         
         val resolved = LiveTvCatalog.resolveDynamicStream("live_tv3")
-        assertNotNull(resolved)
-        assertTrue("TV3 dynamic URL should be YouTube watch URL", resolved!!.contains("youtube.com/watch?v="))
-        val id = com.duta.movie.util.VideoExtractor.extractYouTubeId(resolved)
-        assertNotNull("Resolved TV3 ID should be extractable", id)
-        assertEquals(11, id!!.length)
+        assertNotNull("TV3 resolved stream should not be null", resolved)
+        println("Resolved TV3 stream URL: $resolved")
+        assertTrue("TV3 dynamic URL should be valid stream URL (HLS or backup)", 
+            resolved!!.contains(".m3u8") || resolved.contains("tonton") || resolved.contains("youtube.com/watch?v="))
     }
 }
