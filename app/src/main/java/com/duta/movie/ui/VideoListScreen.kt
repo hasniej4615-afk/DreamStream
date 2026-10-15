@@ -1005,8 +1005,10 @@ fun HorizontalVideoRow(
         key = "${rowKey}_aligned"
     ) { mutableStateOf(false) }
 
+    var isProgrammaticScroll by remember { mutableStateOf(false) }
+
     LaunchedEffect(listState.isScrollInProgress) {
-        if (listState.isScrollInProgress) {
+        if (listState.isScrollInProgress && !isProgrammaticScroll && listState.firstVisibleItemIndex > 0) {
             hasUserScrolled = true
             isStartupAligned = true
             viewModel?.markRowStartupInitialized(rowKey)
@@ -1014,23 +1016,43 @@ fun HorizontalVideoRow(
     }
 
     val uniqueVideos = remember(videos) { videos.distinctBy { it.id } }
+    val currentFirstId = uniqueVideos.firstOrNull()?.id
+    var previousFirstId by androidx.compose.runtime.saveable.rememberSaveable(
+        effectiveSessionId,
+        key = "${rowKey}_first_id"
+    ) { mutableStateOf<String?>(null) }
 
-    val isRowInitialized = isStartupAligned || (viewModel?.isRowStartupInitialized(rowKey) == true)
+    // DYNAMIC FRONT-ANCHORING & TV FOCUS STABILITY:
+    // When fresh network thumbnails load in front of the category (currentFirstId != previousFirstId),
+    // or on initial cache load: keep the row anchored at index 0 if the user has not actively browsed away.
+    LaunchedEffect(currentFirstId, effectiveSessionId) {
+        if (currentFirstId != null) {
+            val isFirstItemChanged = previousFirstId != null && previousFirstId != currentFirstId
+            val isReturningFromDetail = viewModel?.shouldRestoreFocusOnResume == true
 
-    // ONE-TIME STARTUP ALIGNMENT:
-    // Only execute on cold app launch before the user has interacted with or browsed this row.
-    // Once initialized or browsed, this row NEVER resets to item 0 when returning from video detail or scrolling.
-    LaunchedEffect(uniqueVideos.firstOrNull()?.id, effectiveSessionId) {
-        if (!isRowInitialized && !hasUserScrolled) {
-            if (uniqueVideos.isNotEmpty()) {
-                if (listState.firstVisibleItemIndex > 0) {
+            if (!isReturningFromDetail) {
+                // If user hasn't scrolled away from front, or new items were prepended in front:
+                if (!hasUserScrolled || isFirstItemChanged) {
                     try {
-                        listState.scrollToItem(0)
-                    } catch (_: Exception) {}
+                        isProgrammaticScroll = true
+                        if (listState.firstVisibleItemIndex > 0 || isFirstItemChanged) {
+                            listState.scrollToItem(0)
+                        }
+                    } catch (_: Exception) {} finally {
+                        kotlinx.coroutines.delay(50)
+                        isProgrammaticScroll = false
+                    }
+
+                    // TV MODE OPTIMIZATION: If this row currently holds focus, keep the focus box anchored to the new front item
+                    if (isAnyTV && hasFocus && (!hasUserScrolled || isFirstItemChanged)) {
+                        kotlinx.coroutines.delay(50)
+                        try {
+                            (firstItemFocusRequester ?: rowFirstItemFocusRequester).requestFocus()
+                        } catch (_: Exception) {}
+                    }
                 }
-                isStartupAligned = true
-                viewModel?.markRowStartupInitialized(rowKey)
             }
+            previousFirstId = currentFirstId
         }
     }
 
@@ -1212,11 +1234,11 @@ fun HorizontalVideoRow(
                     isPakcikRekomen = isPakcikRekomen,
                     onPosterMissing = { viewModel?.healMissingPoster(video) },
                     onFocus = { 
-                        if (index > 0 || listState.firstVisibleItemIndex > 0) {
+                        if (index > 0) {
                             hasUserScrolled = true
+                            isStartupAligned = true
+                            viewModel?.markRowStartupInitialized(rowKey)
                         }
-                        isStartupAligned = true
-                        viewModel?.markRowStartupInitialized(rowKey)
                         viewModel?.lastFocusedHomeVideoId = video.id
                         viewModel?.lastFocusedCategoryRowIndex = rowIndex
                         if (index > 0 || rowIndex > 0 || hasUserScrolled) {
