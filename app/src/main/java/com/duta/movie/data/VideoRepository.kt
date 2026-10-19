@@ -639,6 +639,23 @@ class VideoRepository @Inject constructor(
                     if (item.id == video.id || item.videoUrl == video.videoUrl) continue
                     if (candidateVideos.any { it.id == item.id }) continue
 
+                    // 1. Strict Media Type Isolation: Never mix TV series / micro-dramas with standalone movies
+                    val candIsSeries = item.isSeries == true || item.isShortTv ||
+                            item.videoUrl.contains("type=2") || item.videoUrl.contains("type=7") || item.videoUrl.contains("type=5")
+                    if (!isSeriesPlayback && candIsSeries) continue
+                    if (isSeriesPlayback && !candIsSeries && !item.id.startsWith("mb_") && !item.videoUrl.startsWith("moviebox://")) continue
+
+                    // 2. Strict Year Check: Reject year discrepancies (e.g. 2026 vs 2024)
+                    val targetYear = Regex("""\b(19\d{2}|20\d{2})\b""").find(video.title + " " + video.date + " " + video.videoUrl)?.groupValues?.get(1)?.toIntOrNull()
+                    val candYear = Regex("""\b(19\d{2}|20\d{2})\b""").find(item.title + " " + item.date + " " + item.videoUrl)?.groupValues?.get(1)?.toIntOrNull()
+                    if (targetYear != null && candYear != null && Math.abs(targetYear - candYear) > 1) {
+                        continue
+                    }
+                    // For short titles (<= 4 chars, e.g. "Ain", "Saw", "It"), require year if target has one
+                    if (targetYear != null && candYear == null && targetBaseNoYear.length <= 4) {
+                        continue
+                    }
+
                     val cleanCandTitle = VideoExtractor.cleanTitle(item.title)
                     val candSeason = Regex("""(?i)\b(?:season|s)[-_ ]?(\d+)\b""").find(item.title)?.groupValues?.get(1)?.toIntOrNull()
                     val isSeasonMatch = if (isSeriesPlayback) {
@@ -648,6 +665,8 @@ class VideoRepository @Inject constructor(
                     val cleanCandBase = cleanCandTitle.replace(Regex("""(?i)\b(?:season|s)[-_ ]?\d+\b"""), "").replace(Regex("""[\(\)\[\]\{\}\-_,:\.'\"\|\\\/–—]"""), " ").trim()
                     val candBaseNoYear = cleanCandBase.replace(Regex("""\b(19\d{2}|20\d{2})\b"""), "").replace(Regex("""\s+"""), " ").trim()
 
+                    val targetTokens = targetBaseNoYear.split(Regex("""\s+""")).filter { it.isNotBlank() }
+
                     val isSeriesTitleMatch = isSeriesPlayback && isSeasonMatch && (
                         cleanCandBase.equals(cleanTargetBase, ignoreCase = true) ||
                         item.title.startsWith(video.title, ignoreCase = true) ||
@@ -656,17 +675,27 @@ class VideoRepository @Inject constructor(
                         item.title.contains("$cleanTargetBase Season $targetSeason", ignoreCase = true)
                     )
 
-                    val isNoYearTitleMatch = candBaseNoYear.isNotBlank() && targetBaseNoYear.isNotBlank() && (
-                        candBaseNoYear.equals(targetBaseNoYear, ignoreCase = true) ||
-                        cleanCandTitle.startsWith(targetBaseNoYear, ignoreCase = true) ||
-                        cleanTargetTitle.startsWith(candBaseNoYear, ignoreCase = true)
+                    val isTitleExact = candBaseNoYear.isNotBlank() && targetBaseNoYear.isNotBlank() &&
+                        candBaseNoYear.equals(targetBaseNoYear, ignoreCase = true)
+
+                    // Prefix matching is ONLY allowed for multi-token titles with length >= 6 (e.g. "Spider-Man: Brand New Day")
+                    // Never allow loose startsWith on short single-token titles like "Ain", "It", "Up"
+                    val isTitlePrefix = if (targetTokens.size >= 2 && targetBaseNoYear.length >= 6) {
+                        cleanCandTitle.startsWith("$targetBaseNoYear ", ignoreCase = true) ||
+                        cleanCandTitle.startsWith("$targetBaseNoYear:", ignoreCase = true) ||
+                        cleanCandTitle.startsWith("$targetBaseNoYear -", ignoreCase = true) ||
+                        cleanTargetTitle.startsWith("$candBaseNoYear ", ignoreCase = true) ||
+                        cleanTargetTitle.startsWith("$candBaseNoYear:", ignoreCase = true) ||
+                        cleanTargetTitle.startsWith("$candBaseNoYear -", ignoreCase = true)
+                    } else false
+
+                    val isMovieMatch = !isSeriesPlayback && (
+                        isTitleExact ||
+                        isTitlePrefix ||
+                        VideoExtractor.isCrossProviderMovieMatch(video, item)
                     )
 
-                    val isMatch = isSeriesTitleMatch ||
-                                  isNoYearTitleMatch ||
-                                  VideoExtractor.isCrossProviderMovieMatch(video, item) ||
-                                  item.title.equals(video.title, ignoreCase = true) ||
-                                  item.title.equals(q, ignoreCase = true)
+                    val isMatch = if (isSeriesPlayback) isSeriesTitleMatch else isMovieMatch
 
                     if (isMatch) {
                         candidateVideos.add(item)
@@ -731,6 +760,22 @@ class VideoRepository @Inject constructor(
                     if (item.id == video.id || item.videoUrl == video.videoUrl) continue
                     if (candidateVideos.any { it.id == item.id }) continue
 
+                    // 1. Strict Media Type Isolation: Never mix TV series / micro-dramas with standalone movies
+                    val candIsSeries = item.isSeries == true || item.isShortTv ||
+                            item.videoUrl.contains("type=2") || item.videoUrl.contains("type=7") || item.videoUrl.contains("type=5")
+                    if (!isSeriesPlayback && candIsSeries) continue
+                    if (isSeriesPlayback && !candIsSeries && !item.id.startsWith("mb_") && !item.videoUrl.startsWith("moviebox://")) continue
+
+                    // 2. Strict Year Check: Reject year discrepancies (e.g. 2026 vs 2024)
+                    val targetYear = Regex("""\b(19\d{2}|20\d{2})\b""").find(video.title + " " + video.date + " " + video.videoUrl)?.groupValues?.get(1)?.toIntOrNull()
+                    val candYear = Regex("""\b(19\d{2}|20\d{2})\b""").find(item.title + " " + item.date + " " + item.videoUrl)?.groupValues?.get(1)?.toIntOrNull()
+                    if (targetYear != null && candYear != null && Math.abs(targetYear - candYear) > 1) {
+                        continue
+                    }
+                    if (targetYear != null && candYear == null && cleanTargetBase.length <= 4) {
+                        continue
+                    }
+
                     val cleanCandTitle = VideoExtractor.cleanTitle(item.title)
                     val candSeason = Regex("""(?i)\b(?:season|s)[-_ ]?(\d+)\b""").find(item.title)?.groupValues?.get(1)?.toIntOrNull()
                     val isSeasonMatch = if (isSeriesPlayback) {
@@ -746,10 +791,12 @@ class VideoRepository @Inject constructor(
                         item.title.contains("$cleanTargetBase Season $targetSeason", ignoreCase = true)
                     )
 
-                    val isMatch = isSeriesTitleMatch ||
-                                  VideoExtractor.isCrossProviderMovieMatch(video, item) ||
-                                  item.title.equals(video.title, ignoreCase = true) ||
-                                  item.title.equals(q, ignoreCase = true)
+                    val isMovieMatch = !isSeriesPlayback && (
+                        cleanCandBase.equals(cleanTargetBase, ignoreCase = true) ||
+                        VideoExtractor.isCrossProviderMovieMatch(video, item)
+                    )
+
+                    val isMatch = if (isSeriesPlayback) isSeriesTitleMatch else isMovieMatch
 
                     if (isMatch) {
                         candidateVideos.add(item)

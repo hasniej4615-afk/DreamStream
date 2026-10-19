@@ -29,24 +29,35 @@ object SubtitleSyncEngine {
         val method: String = "Auto-Pilot"
     )
 
+    data class SyncEvaluationResult(
+        val offsetMs: Long? = null,
+        val isConfident: Boolean = false,
+        val isConfirmedMismatch: Boolean = false,
+        val recall: Double = 0.0,
+        val snr: Double = 0.0,
+        val totalSpeechMs: Long = 0L
+    )
+
     data class StreamSignature(
         val quality: String = "",       // e.g. "1080p", "720p", "4k"
         val source: String = "",        // e.g. "WEB-DL", "WEBRip", "BluRay", "HDTV", "CAM"
         val platform: String = "",      // e.g. "AMZN", "NF", "ATVP", "DSNP", "HMAX"
         val releaseGroup: String = "",  // e.g. "YTS", "RARBG", "PSA", "GalaxyRG", "FLUX"
-        val serverHost: String = ""     // e.g. "rebahin", "lk21", "pencuri", "streamtape"
+        val serverHost: String = "",    // e.g. "rebahin", "lk21", "pencuri", "streamtape"
+        val targetYear: String = ""     // e.g. "2026", "2024", "1968"
     )
 
     /**
-     * Extracts encode signature from title, quality string, server URL, and stream URL.
+     * Extracts encode signature from title, quality string, server URL, stream URL, and release year.
      */
     fun extractSignature(
         title: String,
         quality: String? = null,
         serverUrl: String? = null,
-        streamUrl: String? = null
+        streamUrl: String? = null,
+        year: String? = null
     ): StreamSignature {
-        val combined = "$title ${quality ?: ""} ${serverUrl ?: ""} ${streamUrl ?: ""}".lowercase()
+        val combined = "$title ${quality ?: ""} ${serverUrl ?: ""} ${streamUrl ?: ""} ${year ?: ""}".lowercase()
 
         // 1. Resolution
         val detectedQuality = when {
@@ -97,12 +108,19 @@ object SubtitleSyncEngine {
             else -> ""
         }
 
+        // 6. Release Year
+        val detectedYear = when {
+            !year.isNullOrBlank() -> Regex("""(?<!\d)(19\d{2}|20\d{2})(?!\d)""").find(year)?.groupValues?.get(1) ?: year.trim()
+            else -> Regex("""(?<!\d)(19\d{2}|20\d{2})(?!\d)""").find("$title ${serverUrl ?: ""} ${streamUrl ?: ""}")?.groupValues?.get(1) ?: ""
+        }
+
         return StreamSignature(
             quality = detectedQuality,
             source = detectedSource,
             platform = detectedPlatform,
             releaseGroup = detectedGroup,
-            serverHost = detectedHost
+            serverHost = detectedHost,
+            targetYear = detectedYear
         )
     }
 
@@ -122,6 +140,24 @@ object SubtitleSyncEngine {
             rawText.contains("[embedded]")
         ) {
             return 10000
+        }
+
+        // 2. Release Year Verification (Defends against same-title reboots/classics e.g. 1968 vs 2026)
+        val targetYearInt = signature.targetYear.toIntOrNull()
+        if (targetYearInt != null) {
+            val subYearMatch = Regex("""(?<!\d)(19\d{2}|20\d{2})(?!\d)""").find(rawText)
+            val subYear = subYearMatch?.groupValues?.get(1)?.toIntOrNull()
+            if (subYear != null) {
+                val diff = Math.abs(subYear - targetYearInt)
+                if (diff > 1) {
+                    // Critical year mismatch: completely different movie release!
+                    return -10000
+                } else if (diff == 0) {
+                    score += 80 // Exact release year match
+                } else {
+                    score += 20 // Adjacent release year (e.g. late Dec theatrical vs Jan digital)
+                }
+            }
         }
 
         val isSubCam = rawText.contains("cam") || rawText.contains("telesync") ||
@@ -215,10 +251,18 @@ object SubtitleSyncEngine {
             score += 25
         }
 
-        // 7. Verified Subtitle Providers (SubDL, OpenSubtitles, SubSource)
-        if (rawText.contains("[subdl]")) score += 20
-        if (rawText.contains("[opensubtitles]") || rawText.contains("[opensubs]")) score += 20
-        if (rawText.contains("[subsource]")) score += 20
+        // 7. Verified Subtitle Providers (SubDL, OpenSubtitles, SubSource, Subscene)
+        if (rawText.contains("[subdl]")) score += 30
+        if (rawText.contains("[opensubtitles]") || rawText.contains("[opensubs]")) score += 30
+        if (rawText.contains("[subsource]")) score += 30
+        if (rawText.contains("[subscene]")) score += 30
+
+        // SubCat non-English are automated bot translations of unverified torrent uploads.
+        // Heavily demote non-English SubCat to avoid hijacking real releases or blocking AI translation.
+        if ((rawText.contains("[subcat]") || rawText.contains("subtitlecat")) && 
+            !sub.language.equals("English", ignoreCase = true)) {
+            score -= 80
+        }
 
         // 8. Hearing Impaired / SDH flag bonus (official transcripts have high timing accuracy)
         if (rawText.contains(" sdh") || rawText.contains(".sdh") || rawText.contains(" hi ") || rawText.contains(".hi.") ||
@@ -230,18 +274,32 @@ object SubtitleSyncEngine {
     }
 
     /**
+     * Determines whether a subtitle is an embedded container track (hardware presentation timestamp sync).
+     */
+    fun isEmbedded(sub: Subtitle?): Boolean {
+        if (sub == null) return false
+        val low = sub.label.lowercase()
+        val url = sub.url.lowercase()
+        return url.startsWith("embedded://") || low.contains("[stream]") || low.contains("[embedded]")
+    }
+
+    /**
      * Determines whether a subtitle is an exact release match or embedded track.
-     * Matched subtitles already have perfect frame-accurate synchronization (0ms native offset).
      */
     fun isMatchedOrEmbedded(sub: Subtitle?, signature: StreamSignature): Boolean {
         if (sub == null) return false
+        if (isEmbedded(sub)) return true
         val low = sub.label.lowercase()
         val url = sub.url.lowercase()
         val rawText = "$low $url"
 
-        // 1. Hardware / Stream / Embedded Track (Direct PTS sync: ALWAYS MATCHED)
-        if (url.startsWith("embedded://") || low.contains("[stream]") || low.contains("[embedded]")) {
-            return true
+        // Release Year Check: Subtitles with conflicting release years (> 1 year difference) can NEVER be matched
+        val targetYearInt = signature.targetYear.toIntOrNull()
+        if (targetYearInt != null) {
+            val subYear = Regex("""(?<!\d)(19\d{2}|20\d{2})(?!\d)""").find(rawText)?.groupValues?.get(1)?.toIntOrNull()
+            if (subYear != null && Math.abs(subYear - targetYearInt) > 1) {
+                return false
+            }
         }
 
         // 2. AI Translated from verified source
@@ -301,7 +359,35 @@ object SubtitleSyncEngine {
         }
         if (matchingLanguageSubs.isEmpty()) return null
 
-        return matchingLanguageSubs.maxByOrNull { scoreSubtitle(it, signature) }
+        val bestCandidate = matchingLanguageSubs
+            .map { it to scoreSubtitle(it, signature) }
+            .filter { it.second > 0 }
+            .maxByOrNull { it.second }
+            ?.first ?: return null
+
+        // QUALITY GATE: If target language candidate is an unverified SubCat machine translation,
+        // and high-quality verified English source subtitles exist, do NOT settle for low-quality SubCat scrape.
+        // Return null so AI translation fallback can translate the verified official English release!
+        val isSubCatBot = (bestCandidate.label.contains("[SubCat]", ignoreCase = true) || bestCandidate.url.contains("subtitlecat.com")) &&
+                !normTarget.equals("English", ignoreCase = true)
+        if (isSubCatBot) {
+            val hasVerifiedEnglish = subtitles.any { sub ->
+                !sub.label.startsWith("[AI Translated]") &&
+                SubtitleExtractor.normalizeLanguage(sub.language).equals("English", ignoreCase = true) &&
+                (sub.label.contains("[opensubtitles]", ignoreCase = true) ||
+                 sub.label.contains("[opensubs]", ignoreCase = true) ||
+                 sub.label.contains("[subsource]", ignoreCase = true) ||
+                 sub.label.contains("[subdl]", ignoreCase = true) ||
+                 sub.label.contains("[subscene]", ignoreCase = true) ||
+                 scoreSubtitle(sub, signature) >= 120)
+            }
+            if (hasVerifiedEnglish) {
+                Log.i("SubtitleSyncEngine", "Skipping unverified SubCat target sub '${bestCandidate.label}' in favor of AI-translating verified English source")
+                return null
+            }
+        }
+
+        return bestCandidate
     }
 
     enum class FpsMode(val label: String, val ratio: Float) {
@@ -527,6 +613,174 @@ object SubtitleSyncEngine {
 
         // Weak cluster: do not guess prematurely while anchors are still being evaluated
         return null
+    }
+
+    data class SpeechSegment(
+        val startMs: Long,
+        val endMs: Long
+    ) {
+        val durationMs: Long get() = maxOf(0L, endMs - startMs)
+    }
+
+    /**
+     * Sliding-Window Cross-Correlation Subtitle Synchronization (Mini-FFSubSync).
+     *
+     * Discretizes voice activity from real-time audio and subtitle cue display intervals
+     * into 50ms time bins, computing the cross-correlation profile across candidate shifts:
+     * R(τ) = ∑ Audio(t) * Subtitle(t + τ).
+     *
+     * Mathematically guarantees noise resistance against intro music, sound effects, and dialogue
+     * pauses by finding the indisputable global consensus peak.
+     */
+    fun evaluateCrossCorrelationDetailed(
+        speechSegments: List<SpeechSegment>,
+        dialogueCues: List<ParsedSubtitleCue>,
+        currentOffset: Long = 0L,
+        isUserManualCalibrated: Boolean = false,
+        minSpeechDurationMs: Long = 2000L,
+        searchRangeMs: Long = 45000L,
+        binSizeMs: Int = 50
+    ): SyncEvaluationResult {
+        if (isUserManualCalibrated) return SyncEvaluationResult()
+        if (speechSegments.isEmpty() || dialogueCues.isEmpty()) return SyncEvaluationResult()
+
+        val spokenCues = dialogueCues.filter { isSpokenDialogueCue(it.text) }.ifEmpty { dialogueCues }
+        if (spokenCues.isEmpty()) return SyncEvaluationResult()
+
+        val totalSpeechMs = speechSegments.sumOf { it.durationMs }
+        if (totalSpeechMs < minSpeechDurationMs) {
+            // Need at least 2.0s of actual speech before cross-correlation produces a statistically significant peak
+            return SyncEvaluationResult(totalSpeechMs = totalSpeechMs)
+        }
+
+        // Limit search domain to the first 4 minutes or cue coverage
+        val maxCueTimeMs = spokenCues.take(25).maxOfOrNull { it.endTimeMs } ?: 0L
+        val maxAudioTimeMs = speechSegments.maxOfOrNull { it.endMs } ?: 0L
+        val timelineEndMs = maxOf(240_000L, maxCueTimeMs + searchRangeMs, maxAudioTimeMs + 5000L)
+        val numBins = ((timelineEndMs / binSizeMs) + 1).toInt().coerceAtMost(8000)
+
+        // 1. Build Subtitle Activity Mask (discretized binary vector)
+        val subMask = BooleanArray(numBins)
+        for (cue in spokenCues.take(30)) {
+            val startBin = (cue.startTimeMs / binSizeMs).toInt().coerceIn(0, numBins - 1)
+            val endBin = (cue.endTimeMs / binSizeMs).toInt().coerceIn(0, numBins - 1)
+            for (b in startBin..endBin) {
+                subMask[b] = true
+            }
+        }
+
+        // 2. Discretize Audio Speech Segments
+        val activeAudioBins = mutableListOf<Int>()
+        for (seg in speechSegments) {
+            val startBin = (seg.startMs / binSizeMs).toInt().coerceIn(0, numBins - 1)
+            val endBin = (seg.endMs / binSizeMs).toInt().coerceIn(0, numBins - 1)
+            for (b in startBin..endBin) {
+                activeAudioBins.add(b)
+            }
+        }
+        val distinctAudioBins = activeAudioBins.distinct().toIntArray()
+        if (distinctAudioBins.isEmpty()) return SyncEvaluationResult(totalSpeechMs = totalSpeechMs)
+
+        // 3. Compute Cross-Correlation R(τ) across all candidate shifts
+        val minTauBin = (-searchRangeMs / binSizeMs).toInt()
+        val maxTauBin = (searchRangeMs / binSizeMs).toInt()
+        val binSpan = maxTauBin - minTauBin + 1
+        val scores = IntArray(binSpan)
+
+        var maxOverlap = 0
+
+        for (tauBin in minTauBin..maxTauBin) {
+            var overlap = 0
+            for (aBin in distinctAudioBins) {
+                val sBin = aBin + tauBin
+                if (sBin in 0 until numBins && subMask[sBin]) {
+                    overlap++
+                }
+            }
+            val idx = tauBin - minTauBin
+            scores[idx] = overlap
+            if (overlap > maxOverlap) {
+                maxOverlap = overlap
+            }
+        }
+
+        if (maxOverlap == 0) {
+            val isMismatch = totalSpeechMs >= 8000L
+            return SyncEvaluationResult(isConfirmedMismatch = isMismatch, totalSpeechMs = totalSpeechMs)
+        }
+
+        // Select the center/midpoint of the optimal consensus plateau
+        val optimalBins = mutableListOf<Int>()
+        for (tauBin in minTauBin..maxTauBin) {
+            if (scores[tauBin - minTauBin] == maxOverlap) {
+                optimalBins.add(tauBin)
+            }
+        }
+        val bestTauBin = optimalBins[optimalBins.size / 2]
+
+        // 4. Statistical Confidence Metrics
+        val totalBins = distinctAudioBins.size
+        val recall = maxOverlap.toDouble() / totalBins
+        val meanOverlap = scores.average()
+        val snr = if (meanOverlap > 0.0) maxOverlap / meanOverlap else maxOverlap.toDouble()
+
+        // Peak separation: find highest competitor at least 1.5s away
+        val minSeparationBins = (1500 / binSizeMs)
+        var secondPeakOverlap = 0
+        for (tauBin in minTauBin..maxTauBin) {
+            if (Math.abs(tauBin - bestTauBin) >= minSeparationBins) {
+                val s = scores[tauBin - minTauBin]
+                if (s > secondPeakOverlap) secondPeakOverlap = s
+            }
+        }
+        val peakMargin = if (secondPeakOverlap > 0) maxOverlap.toDouble() / secondPeakOverlap else 3.0
+
+        val isConfirmedMismatch = totalSpeechMs >= 8000L && recall < 0.38
+        val isConfident = recall >= 0.45 && snr >= 1.8 && peakMargin >= 1.2
+        if (!isConfident) {
+            Log.d("SubtitleSyncEngine", "Cross-correlation below confidence: recall=${String.format("%.1f%%", recall * 100)}, snr=${String.format("%.2f", snr)}x, margin=${String.format("%.2f", peakMargin)}x (speech=${totalSpeechMs}ms, mismatch=$isConfirmedMismatch)")
+            return SyncEvaluationResult(
+                offsetMs = null,
+                isConfident = false,
+                isConfirmedMismatch = isConfirmedMismatch,
+                recall = recall,
+                snr = snr,
+                totalSpeechMs = totalSpeechMs
+            )
+        }
+
+        val bestOffsetMs = bestTauBin * binSizeMs.toLong()
+        Log.i("SubtitleSyncEngine", "⚡ Mini-FFSubSync Cross-Correlation Peak: ${bestOffsetMs}ms (Recall: ${String.format("%.1f%%", recall * 100)}, SNR: ${String.format("%.2f", snr)}x, Margin: ${String.format("%.2f", peakMargin)}x, Speech: ${totalSpeechMs}ms in ${speechSegments.size} segments)")
+
+        val finalOffset = if (Math.abs(bestOffsetMs - currentOffset) <= 150L && currentOffset != 0L) {
+            currentOffset
+        } else {
+            bestOffsetMs
+        }
+
+        return SyncEvaluationResult(
+            offsetMs = finalOffset,
+            isConfident = true,
+            isConfirmedMismatch = false,
+            recall = recall,
+            snr = snr,
+            totalSpeechMs = totalSpeechMs
+        )
+    }
+
+    fun evaluateCrossCorrelationAutoSync(
+        speechSegments: List<SpeechSegment>,
+        dialogueCues: List<ParsedSubtitleCue>,
+        currentOffset: Long = 0L,
+        isUserManualCalibrated: Boolean = false,
+        minSpeechDurationMs: Long = 2000L,
+        searchRangeMs: Long = 45000L,
+        binSizeMs: Int = 50
+    ): Long? {
+        return evaluateCrossCorrelationDetailed(
+            speechSegments, dialogueCues, currentOffset, isUserManualCalibrated,
+            minSpeechDurationMs, searchRangeMs, binSizeMs
+        ).offsetMs
     }
 
     /**

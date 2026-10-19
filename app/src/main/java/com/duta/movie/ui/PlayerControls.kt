@@ -32,6 +32,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -82,7 +83,9 @@ fun PlayerControls(
     voiceEnhancerMode: Int = 0,
     onVoiceEnhancerSelect: ((Int) -> Unit)? = null,
     playbackSpeed: Float = 1.0f,
-    onSpeedSelect: ((Float) -> Unit)? = null
+    onSpeedSelect: ((Float) -> Unit)? = null,
+    onChannelZapperClick: (() -> Unit)? = null,
+    liveEpgText: String? = null
 ) {
     val context = LocalContext.current
     val playbackState by rememberPlayerState(player)
@@ -147,42 +150,56 @@ fun PlayerControls(
                             )
                         }
                     }
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
+                    Column(
                         modifier = Modifier.weight(1f).padding(horizontal = 24.dp)
                     ) {
-                        Text(
-                            text = title,
-                            color = Color.White,
-                            fontSize = if (isTV) 24.sp else 20.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            modifier = Modifier.weight(1f, fill = false)
-                        )
-                        if (isLive) {
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Surface(
-                                color = Color(0xFFE50914),
-                                shape = RoundedCornerShape(4.dp)
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = title,
+                                color = Color.White,
+                                fontSize = if (isTV) 22.sp else 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            if (isLive) {
+                                Spacer(modifier = Modifier.width(10.dp))
+                                Surface(
+                                    color = Color(0xFFE50914),
+                                    shape = RoundedCornerShape(4.dp)
                                 ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(7.dp)
-                                            .background(Color.White, CircleShape)
-                                    )
-                                    Spacer(modifier = Modifier.width(5.dp))
-                                    Text(
-                                        text = "LIVE",
-                                        color = Color.White,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.ExtraBold
-                                    )
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp)
+                                    ) {
+                                        Box(
+                                            modifier = Modifier
+                                                .size(7.dp)
+                                                .background(Color.White, CircleShape)
+                                        )
+                                        Spacer(modifier = Modifier.width(5.dp))
+                                        Text(
+                                            text = "LIVE",
+                                            color = Color.White,
+                                            fontSize = 11.sp,
+                                            fontWeight = FontWeight.ExtraBold
+                                        )
+                                    }
                                 }
                             }
+                        }
+                        if (isLive && !liveEpgText.isNullOrBlank()) {
+                            Spacer(modifier = Modifier.height(2.dp))
+                            Text(
+                                text = liveEpgText,
+                                color = Color(0xFFFFD54F),
+                                fontSize = if (isTV) 13.sp else 11.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
                         }
                     }
 
@@ -369,6 +386,33 @@ fun PlayerControls(
                         ) {
                             Icon(Icons.Default.VideoLibrary, contentDescription = stringResource(R.string.episodes), tint = Color.White)
                         }
+                    }
+                    // In-Player Live TV Channel Zapper button
+                    if (isLive && onChannelZapperClick != null) {
+                        var isZapperFocused by remember { mutableStateOf(false) }
+                        val zapperScale by animateFloatAsState(if (isZapperFocused) 1.15f else 1f)
+                        Button(
+                            onClick = onChannelZapperClick,
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isZapperFocused) Color(0xFFE50914) else Color.White.copy(alpha = 0.2f),
+                                contentColor = Color.White
+                            ),
+                            shape = RoundedCornerShape(18.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                            modifier = Modifier
+                                .scale(zapperScale)
+                                .onFocusChanged { isZapperFocused = it.isFocused }
+                                .focusable()
+                                .border(
+                                    if (isZapperFocused) BorderStroke(2.dp, Color.White) else BorderStroke(1.dp, Color.White.copy(alpha = 0.3f)),
+                                    RoundedCornerShape(18.dp)
+                                )
+                        ) {
+                            Icon(Icons.Default.LiveTv, contentDescription = "Saluran TV", modifier = Modifier.size(16.dp))
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Text("Saluran TV", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
                     }
 
                     if (onPipClick != null) {

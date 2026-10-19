@@ -963,6 +963,8 @@ class MyLocalTest {
             releaseGroup = "",
             serverHost = ""
         )
+        assertTrue(com.duta.movie.util.SubtitleSyncEngine.isEmbedded(streamSub))
+        assertFalse(com.duta.movie.util.SubtitleSyncEngine.isEmbedded(webDlSub))
         assertTrue(com.duta.movie.util.SubtitleSyncEngine.isMatchedOrEmbedded(streamSub, testSignature))
         assertTrue(com.duta.movie.util.SubtitleSyncEngine.isMatchedOrEmbedded(webDlSub, testSignature))
         assertTrue(com.duta.movie.util.SubtitleSyncEngine.isMatchedOrEmbedded(webRipSub, testSignature))

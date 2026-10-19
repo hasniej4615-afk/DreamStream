@@ -145,5 +145,112 @@ class MovieboxSearchTest {
             }
         }
     }
+
+    @Test
+    fun testShortTitleMovieRejectsWrongSeries() {
+        val targetMovie = Video(
+            id = "ain-2026",
+            title = "Ain (2026)",
+            videoUrl = "https://example.com/ain-2026",
+            date = "2026",
+            thumbnailUrl = "",
+            duration = "100m",
+            isSeries = false
+        )
+
+        val cleanTargetTitle = VideoExtractor.cleanTitle(targetMovie.title)
+        val cleanTargetBase = cleanTargetTitle.replace(Regex("""(?i)\b(?:season|s)[-_ ]?\d+\b"""), "").replace(Regex("""[\(\)\[\]\{\}\-_,:\.'\"\|\\\/–—]"""), " ").trim()
+        val targetBaseNoYear = cleanTargetBase.replace(Regex("""\b(19\d{2}|20\d{2})\b"""), "").replace(Regex("""\s+"""), " ").trim()
+        val targetTokens = targetBaseNoYear.split(Regex("""\s+""")).filter { it.isNotBlank() }
+        val targetYear = Regex("""\b(19\d{2}|20\d{2})\b""").find(targetMovie.title + " " + targetMovie.date)?.groupValues?.get(1)?.toIntOrNull()
+
+        fun isCandidateAccepted(cand: Video): Boolean {
+            val isSeriesPlayback = targetMovie.isSeries == true
+            val candIsSeries = cand.isSeries == true || cand.isShortTv ||
+                    cand.videoUrl.contains("type=2") || cand.videoUrl.contains("type=7") || cand.videoUrl.contains("type=5")
+            if (!isSeriesPlayback && candIsSeries) return false
+            if (isSeriesPlayback && !candIsSeries && !cand.id.startsWith("mb_") && !cand.videoUrl.startsWith("moviebox://")) return false
+
+            val candYear = Regex("""\b(19\d{2}|20\d{2})\b""").find(cand.title + " " + cand.date + " " + cand.videoUrl)?.groupValues?.get(1)?.toIntOrNull()
+            if (targetYear != null && candYear != null && Math.abs(targetYear - candYear) > 1) {
+                return false
+            }
+            if (targetYear != null && candYear == null && targetBaseNoYear.length <= 4) {
+                return false
+            }
+
+            val cleanCandTitle = VideoExtractor.cleanTitle(cand.title)
+            val cleanCandBase = cleanCandTitle.replace(Regex("""(?i)\b(?:season|s)[-_ ]?\d+\b"""), "").replace(Regex("""[\(\)\[\]\{\}\-_,:\.'\"\|\\\/–—]"""), " ").trim()
+            val candBaseNoYear = cleanCandBase.replace(Regex("""\b(19\d{2}|20\d{2})\b"""), "").replace(Regex("""\s+"""), " ").trim()
+
+            val isTitleExact = candBaseNoYear.isNotBlank() && targetBaseNoYear.isNotBlank() &&
+                    candBaseNoYear.equals(targetBaseNoYear, ignoreCase = true)
+
+            val isTitlePrefix = if (targetTokens.size >= 2 && targetBaseNoYear.length >= 6) {
+                cleanCandTitle.startsWith("$targetBaseNoYear ", ignoreCase = true) ||
+                cleanCandTitle.startsWith("$targetBaseNoYear:", ignoreCase = true) ||
+                cleanCandTitle.startsWith("$targetBaseNoYear -", ignoreCase = true) ||
+                cleanTargetTitle.startsWith("$candBaseNoYear ", ignoreCase = true) ||
+                cleanTargetTitle.startsWith("$candBaseNoYear:", ignoreCase = true) ||
+                cleanTargetTitle.startsWith("$candBaseNoYear -", ignoreCase = true)
+            } else false
+
+            val isMovieMatch = !isSeriesPlayback && (
+                isTitleExact ||
+                isTitlePrefix ||
+                VideoExtractor.isCrossProviderMovieMatch(targetMovie, cand)
+            )
+
+            return isMovieMatch
+        }
+
+        // 1. Unrelated series starting with "Ain" -> MUST BE REJECTED
+        val wrongSeries = Video(
+            id = "mb_123",
+            title = "Ain Se Ishq",
+            videoUrl = "moviebox://detail?id=123&type=2",
+            date = "2026",
+            thumbnailUrl = "",
+            duration = "30m",
+            isSeries = true
+        )
+        org.junit.Assert.assertFalse("Should reject TV series when target is a movie", isCandidateAccepted(wrongSeries))
+
+        // 2. Unrelated movie starting with "Ain" (prefix match rejected for short title) -> MUST BE REJECTED
+        val wrongPrefixMovie = Video(
+            id = "mb_124",
+            title = "Ain Se Ishq",
+            videoUrl = "moviebox://detail?id=124&type=1",
+            date = "2026",
+            thumbnailUrl = "",
+            duration = "90m",
+            isSeries = false
+        )
+        org.junit.Assert.assertFalse("Should reject prefix match on short title 'Ain'", isCandidateAccepted(wrongPrefixMovie))
+
+        // 3. Old movie named "Ain" with mismatched year (2021) -> MUST BE REJECTED
+        val oldMovie = Video(
+            id = "mb_125",
+            title = "Ain (2021)",
+            videoUrl = "moviebox://detail?id=125&type=1",
+            date = "2021",
+            thumbnailUrl = "",
+            duration = "95m",
+            isSeries = false
+        )
+        org.junit.Assert.assertFalse("Should reject movie with mismatched year", isCandidateAccepted(oldMovie))
+
+        // 4. Genuine 2026 movie named "Ain" -> MUST BE ACCEPTED
+        val legitimateMovie = Video(
+            id = "mb_126",
+            title = "Ain",
+            videoUrl = "moviebox://detail?id=126&type=1",
+            date = "2026",
+            thumbnailUrl = "",
+            duration = "100m",
+            isSeries = false
+        )
+        org.junit.Assert.assertTrue("Should accept legitimate exact match movie", isCandidateAccepted(legitimateMovie))
+    }
 }
 

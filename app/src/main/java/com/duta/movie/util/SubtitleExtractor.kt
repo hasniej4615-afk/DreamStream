@@ -245,6 +245,7 @@ object SubtitleExtractor {
             id?.let { Log.d(TAG, "Discovery ID: $it") }
 
             val filterStrict: (List<Subtitle>) -> List<Subtitle> = { list ->
+                val targetYearInt = Regex("""(?<!\d)(19\d{2}|20\d{2})(?!\d)""").find(cleanBase)?.groupValues?.get(1)?.toIntOrNull()
                 val requiredWords = cleanBase.lowercase()
                     .replace(Regex("""\b(19|20)\d{2}\b"""), " ")
                     .split(Regex("[\\s\\p{Punct}]+"))
@@ -253,6 +254,14 @@ object SubtitleExtractor {
                     val subLabel = sub.label.lowercase()
                     val titleMatch = requiredWords.isEmpty() || requiredWords.all { word -> subLabel.contains(word) } || (id != null && sub.url.contains(id))
                     if (!titleMatch) return@filter false
+
+                    // Release Year Filter: If movie specifies release year, reject subtitles explicitly declaring a conflicting year
+                    if (targetYearInt != null) {
+                        val subYear = Regex("""(?<!\d)(19\d{2}|20\d{2})(?!\d)""").find("${sub.label} ${sub.url}")?.groupValues?.get(1)?.toIntOrNull()
+                        if (subYear != null && Math.abs(subYear - targetYearInt) > 1) {
+                            return@filter false
+                        }
+                    }
 
                     // Strict Episode Filter for TV series: if subtitle declares an episode, it MUST match epNum
                     if (epNum != null) {
@@ -1536,6 +1545,7 @@ object SubtitleExtractor {
                 }
                 if (doc == null) return emptyList()
 
+                val targetYear = Regex("""(?<!\d)(19\d{2}|20\d{2})(?!\d)""").find(title)?.groupValues?.get(1)?.toIntOrNull()
                 val rows = doc.select("table tr:has(a[href*='subs/']), .sub-entry, .sub-row")
                 val candidateRows = mutableListOf<Pair<String, String>>()
                 for (row in rows) {
@@ -1548,6 +1558,12 @@ object SubtitleExtractor {
                             candidateRows.add(movieTitle to moviePageUrl)
                         }
                     } else {
+                        if (targetYear != null) {
+                            val rowYear = Regex("""(?<!\d)(19\d{2}|20\d{2})(?!\d)""").find("$movieTitle $moviePageUrl")?.groupValues?.get(1)?.toIntOrNull()
+                            if (rowYear != null && Math.abs(rowYear - targetYear) > 1) {
+                                continue // Reject mismatched movie year
+                            }
+                        }
                         candidateRows.add(movieTitle to moviePageUrl)
                     }
                 }
@@ -1557,10 +1573,18 @@ object SubtitleExtractor {
                     candidateRows.take(2)
                 } else {
                     if (candidateRows.isNotEmpty()) candidateRows.take(2) else {
-                        rows.take(2).mapNotNull { r ->
+                        rows.mapNotNull { r ->
                             val linkEl = r.select("a").firstOrNull { it.attr("href").contains("subs/") } ?: return@mapNotNull null
-                            linkEl.text().ifBlank { title }.trim() to linkEl.attr("abs:href")
-                        }
+                            val mTitle = linkEl.text().ifBlank { title }.trim()
+                            val mUrl = linkEl.attr("abs:href")
+                            if (targetYear != null) {
+                                val rowYear = Regex("""(?<!\d)(19\d{2}|20\d{2})(?!\d)""").find("$mTitle $mUrl")?.groupValues?.get(1)?.toIntOrNull()
+                                if (rowYear != null && Math.abs(rowYear - targetYear) > 1) {
+                                    return@mapNotNull null
+                                }
+                            }
+                            mTitle to mUrl
+                        }.take(2)
                     }
                 }
 

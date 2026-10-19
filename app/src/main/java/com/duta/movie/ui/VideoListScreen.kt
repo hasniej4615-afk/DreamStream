@@ -40,6 +40,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -992,6 +993,7 @@ fun HorizontalVideoRow(
     ) { androidx.compose.foundation.lazy.LazyListState(0, 0) }
     val isAnyTV = isRealTV || isTV
     var hasFocus by remember { mutableStateOf(false) }
+    var focusedItemIndex by remember { mutableIntStateOf(-1) }
     val rowFirstItemFocusRequester = remember { FocusRequester() }
     var shimmerHadFocus by remember { mutableStateOf(false) }
 
@@ -1005,13 +1007,18 @@ fun HorizontalVideoRow(
         key = "${rowKey}_aligned"
     ) { mutableStateOf(false) }
 
-    var isProgrammaticScroll by remember { mutableStateOf(false) }
+    val isReturningFromDetail = viewModel?.shouldRestoreFocusOnResume == true
 
-    LaunchedEffect(listState.isScrollInProgress) {
-        if (listState.isScrollInProgress && !isProgrammaticScroll && listState.firstVisibleItemIndex > 0) {
-            hasUserScrolled = true
-            isStartupAligned = true
-            viewModel?.markRowStartupInitialized(rowKey)
+    // TOUCH-ACCURATE USER DRAG TRACKING (Mobile):
+    // Only genuine touch/pointer drag interactions from the user can mark hasUserScrolled as true.
+    // Programmatic scrolls, layout measurement shifts, and key-anchoring changes will NEVER trip this.
+    LaunchedEffect(listState.interactionSource) {
+        listState.interactionSource.interactions.collect { interaction ->
+            if (interaction is androidx.compose.foundation.interaction.DragInteraction.Start) {
+                hasUserScrolled = true
+                isStartupAligned = true
+                viewModel?.markRowStartupInitialized(rowKey)
+            }
         }
     }
 
@@ -1022,34 +1029,21 @@ fun HorizontalVideoRow(
         key = "${rowKey}_first_id"
     ) { mutableStateOf<String?>(null) }
 
-    // DYNAMIC FRONT-ANCHORING & TV FOCUS STABILITY:
-    // When fresh network thumbnails load in front of the category (currentFirstId != previousFirstId),
-    // or on initial cache load: keep the row anchored at index 0 if the user has not actively browsed away.
+    val isRowInitialized = isStartupAligned || (viewModel?.isRowStartupInitialized(rowKey) == true)
+
+    // ONE-TIME STARTUP ALIGNMENT:
+    // Only execute on initial cold app launch before the user has interacted with or browsed this row.
+    // Once initialized or browsed, this row NEVER resets to item 0 when returning from video detail or scrolling.
     LaunchedEffect(currentFirstId, effectiveSessionId) {
         if (currentFirstId != null) {
             val isFirstItemChanged = previousFirstId != null && previousFirstId != currentFirstId
-            val isReturningFromDetail = viewModel?.shouldRestoreFocusOnResume == true
-
-            if (!isReturningFromDetail) {
-                // If user hasn't scrolled away from front, or new items were prepended in front:
-                if (!hasUserScrolled || isFirstItemChanged) {
+            if (!isReturningFromDetail && !hasFocus && !hasUserScrolled) {
+                if (!isRowInitialized || (isFirstItemChanged && listState.firstVisibleItemIndex > 0)) {
                     try {
-                        isProgrammaticScroll = true
-                        if (listState.firstVisibleItemIndex > 0 || isFirstItemChanged) {
-                            listState.scrollToItem(0)
-                        }
-                    } catch (_: Exception) {} finally {
-                        kotlinx.coroutines.delay(50)
-                        isProgrammaticScroll = false
-                    }
-
-                    // TV MODE OPTIMIZATION: If this row currently holds focus, keep the focus box anchored to the new front item
-                    if (isAnyTV && hasFocus && (!hasUserScrolled || isFirstItemChanged)) {
-                        kotlinx.coroutines.delay(50)
-                        try {
-                            (firstItemFocusRequester ?: rowFirstItemFocusRequester).requestFocus()
-                        } catch (_: Exception) {}
-                    }
+                        listState.scrollToItem(0)
+                    } catch (_: Exception) {}
+                    isStartupAligned = true
+                    viewModel?.markRowStartupInitialized(rowKey)
                 }
             }
             previousFirstId = currentFirstId
@@ -1069,12 +1063,7 @@ fun HorizontalVideoRow(
 
     LaunchedEffect(videos.isNotEmpty()) {
         if (videos.isNotEmpty()) {
-            if (firstItemFocusRequester != null && !hasUserScrolled && viewModel?.shouldRestoreFocusOnResume != true) {
-                delay(50)
-                try {
-                    (firstItemFocusRequester ?: rowFirstItemFocusRequester).requestFocus()
-                } catch (_: Exception) {}
-            } else if (shimmerHadFocus) {
+            if (shimmerHadFocus) {
                 shimmerHadFocus = false
                 delay(50)
                 try {
@@ -1128,18 +1117,32 @@ fun HorizontalVideoRow(
             .focusGroup()
             .focusProperties {
                 enter = {
-                    if (viewModel?.shouldRestoreFocusOnResume == true && targetRestoreId != null) {
-                        FocusRequester.Default
-                    } else if (hasUserScrolled) {
-                        FocusRequester.Default
+                    FocusRequester.Default
+                }
+                exit = { direction ->
+                    if (direction == FocusDirection.Left) {
+                        // TV GUARD: Only allow exiting to the sidebar if the user is explicitly on Card 0
+                        // AND the row is at the very beginning (firstVisibleItemIndex == 0).
+                        // When navigating between cards in the row (Card 1, 2, 3...) or when scrolled,
+                        // Left navigation MUST stay inside the row!
+                        if (focusedItemIndex == 0 && listState.firstVisibleItemIndex == 0) {
+                            FocusRequester.Default
+                        } else {
+                            FocusRequester.Cancel
+                        }
                     } else {
-                        firstItemFocusRequester ?: rowFirstItemFocusRequester
+                        FocusRequester.Default
                     }
                 }
             }
             .fillMaxWidth()
             .height(((if (isRealTV) 240 else if (isTV) 260 else 340) * thumbnailScale).dp)
-            .onFocusChanged { hasFocus = it.hasFocus }
+            .onFocusChanged { 
+                hasFocus = it.hasFocus 
+                if (!it.hasFocus) {
+                    focusedItemIndex = -1
+                }
+            }
     ) {
         if (isLoading && videos.isEmpty()) {
             items(5, contentType = { "shimmer" }) { shimmerIndex ->
@@ -1170,7 +1173,11 @@ fun HorizontalVideoRow(
                 )
             }
         } else {
-            itemsIndexed(uniqueVideos, key = { _, video -> video.id }, contentType = { _, _ -> "video_card" }) { index, video ->
+            itemsIndexed(
+                uniqueVideos, 
+                key = { _, video -> video.id }, 
+                contentType = { _, _ -> "video_card" }
+            ) { index, video ->
                 // SIDE-SCROLL LOOKAHEAD: Prefetch next 20 items ahead on every visible item
                 // (inFlightPrefetches dedup + memory cache check make repeated calls nearly free)
                 if (index + 1 < uniqueVideos.size) {
@@ -1234,6 +1241,7 @@ fun HorizontalVideoRow(
                     isPakcikRekomen = isPakcikRekomen,
                     onPosterMissing = { viewModel?.healMissingPoster(video) },
                     onFocus = { 
+                        focusedItemIndex = index
                         if (index > 0) {
                             hasUserScrolled = true
                             isStartupAligned = true
@@ -1563,13 +1571,21 @@ fun NetflixThumbnail(
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis
                             )
+                            val liveSubtitle = remember(video.id) {
+                                if (com.duta.movie.model.LiveTvCatalog.isLiveVideo(video.id)) {
+                                    com.duta.movie.model.LiveTvEpg.getNowPlayingTitle(video.id)
+                                } else {
+                                    "LIVE BROADCAST"
+                                }
+                            }
                             Text(
-                                text = "RTM LIVE",
-                                color = Color(0xFFB0B0B0),
+                                text = liveSubtitle,
+                                color = Color(0xFFFFD54F),
                                 fontSize = 8.5.sp,
                                 fontWeight = FontWeight.Bold,
-                                letterSpacing = 0.5.sp,
-                                maxLines = 1
+                                letterSpacing = 0.3.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
                             )
                         }
                     }

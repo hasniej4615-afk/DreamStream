@@ -157,6 +157,78 @@ object LiveTvCatalog {
             description = "Saluran liputan serantau dan hubungan antarabangsa negara-negara komuniti ASEAN oleh RTM.",
             servers = listOf(VideoServer("RTM CloudFront (1080p)", "https://d25tgymtnqzu8s.cloudfront.net/event/smil:event1/chunklist_b2596000_slENG.m3u8")),
             isSeries = false
+        ),
+        Video(
+            id = "live_8tv",
+            title = "8TV (八度空间)",
+            thumbnailUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/8tv-my.png",
+            backdropUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/8tv-my.png",
+            videoUrl = "https://api.dani-dev.co.za/v2/stream/tonton/live/8tv",
+            duration = "LIVE",
+            quality = "1080p FHD",
+            description = "Saluran televisyen swasta berbahasa Cina nombor satu di Malaysia oleh Media Prima. Siaran langsung drama Hong Kong TVB, Berita Mandarin 8TV, dan program hiburan terhebat.",
+            servers = listOf(
+                VideoServer("Tonton HLS 1080p (Official Broadcast)", "https://api.dani-dev.co.za/v2/stream/tonton/live/8tv"),
+                VideoServer("Tonton HLS (Direct Mirror)", "https://api.dani-dev.co.za/v1/stream/tonton/live/8tv")
+            ),
+            isSeries = false
+        ),
+        Video(
+            id = "live_tv9",
+            title = "TV9",
+            thumbnailUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/tv9-my.png",
+            backdropUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/tv9-my.png",
+            videoUrl = "https://api.dani-dev.co.za/v2/stream/tonton/live/tv9",
+            duration = "LIVE",
+            quality = "1080p FHD",
+            description = "Saluran keluarga dan hiburan santai oleh Media Prima. Drama Melayu tempatan, telefilem menarik, program kanak-kanak dan animasi kegemaran ramai.",
+            servers = listOf(
+                VideoServer("Tonton HLS 1080p (Official Broadcast)", "https://api.dani-dev.co.za/v2/stream/tonton/live/tv9"),
+                VideoServer("Tonton HLS (Direct Mirror)", "https://api.dani-dev.co.za/v1/stream/tonton/live/tv9")
+            ),
+            isSeries = false
+        ),
+        Video(
+            id = "live_tvs",
+            title = "TVS (TV Sarawak)",
+            thumbnailUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/tvs-my.png",
+            backdropUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/tvs-my.png",
+            videoUrl = "https://cuwf8jayq1.tenbytecdn.com/live/tvs/playlist.m3u8",
+            duration = "LIVE",
+            quality = "1080p FHD",
+            description = "Saluran televisyen wilayah Sarawak dan Borneo menyajikan liputan berita tempatan, kepelbagaian seni budaya etnik, dokumentari alam semula jadi, dan hiburan serantau.",
+            servers = listOf(
+                VideoServer("MYTV Tenbyte (1080p)", "https://cuwf8jayq1.tenbytecdn.com/live/tvs/playlist.m3u8")
+            ),
+            isSeries = false
+        ),
+        Video(
+            id = "live_astro_awani",
+            title = "Astro Awani",
+            thumbnailUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/astro-awani-my.png",
+            backdropUrl = "https://raw.githubusercontent.com/tv-logo/tv-logos/main/countries/malaysia/astro-awani-my.png",
+            videoUrl = "https://www.youtube.com/astroawani/live",
+            duration = "LIVE",
+            quality = "1080p FHD",
+            description = "Saluran berita 24 jam nombor satu Malaysia oleh Astro. Menyajikan laporan berita pantas, analisis ekonomi mendalam, wawancara eksklusif dan siaran langsung peristiwa penting negara.",
+            servers = listOf(
+                VideoServer("Astro Awani 24/7 (Official Live)", "https://www.youtube.com/astroawani/live")
+            ),
+            isSeries = false
+        ),
+        Video(
+            id = "live_makkah",
+            title = "Makkah Live (Quran TV)",
+            thumbnailUrl = "https://i.imgur.com/XdEPTqX.png",
+            backdropUrl = "https://i.imgur.com/XdEPTqX.png",
+            videoUrl = "https://www.youtube.com/@QuranChannelLive/live",
+            duration = "LIVE",
+            quality = "1080p FHD",
+            description = "Saluran siaran langsung rasmi 24 jam dari Masjidil Haram, Makkah oleh Kementerian Penerangan Arab Saudi. Siaran langsung solat fardu lima waktu berjemaah, tawaf di Kaabah, serta bacaan ayat-ayat suci Al-Quran.",
+            servers = listOf(
+                VideoServer("Saudi Quran TV 24/7 (Official Live)", "https://www.youtube.com/@QuranChannelLive/live")
+            ),
+            isSeries = false
         )
     )
 
@@ -166,29 +238,33 @@ object LiveTvCatalog {
         "live_cna" to "10792dcd-a26e-441f-95ec-c9c5ba965205"
     )
 
-    @Volatile
-    private var cachedTv3LiveUrl: String? = null
-    @Volatile
-    private var lastTv3ResolvedTime: Long = 0L
+    private val dynamicStreamCache = java.util.concurrent.ConcurrentHashMap<String, Pair<String, Long>>()
 
     fun isDynamicChannel(channelId: String): Boolean {
-        return channelId == "live_tv3" || dynamicChannelMap.containsKey(channelId)
+        return channelId in listOf("live_tv3", "live_8tv", "live_tv9", "live_astro_awani", "live_makkah") || 
+               dynamicChannelMap.containsKey(channelId)
     }
 
     /**
      * Resolves fresh tokenized 1080p playback URLs on demand for dynamic Live TV channels.
      */
     suspend fun resolveDynamicStream(channelId: String): String? = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-        if (channelId == "live_tv3") {
-            val now = System.currentTimeMillis()
-            if (now - lastTv3ResolvedTime < 10 * 60 * 1000L && !cachedTv3LiveUrl.isNullOrBlank()) {
-                return@withContext cachedTv3LiveUrl
-            }
+        val now = System.currentTimeMillis()
+        val cached = dynamicStreamCache[channelId]
+        if (cached != null && (now - cached.second) < 12 * 60 * 1000L && cached.first.isNotBlank()) {
+            return@withContext cached.first
+        }
 
-            // 1. Primary: Resolve official Tonton live HLS stream via dynamic endpoint
+        // 1. Tonton Media Prima Channels (TV3, 8TV, TV9)
+        if (channelId in listOf("live_tv3", "live_8tv", "live_tv9")) {
+            val slug = when (channelId) {
+                "live_8tv" -> "8tv"
+                "live_tv9" -> "tv9"
+                else -> "tv3"
+            }
             val primaryEndpoints = listOf(
-                "https://api.dani-dev.co.za/v2/stream/tonton/live/tv3",
-                "https://api.dani-dev.co.za/v1/stream/tonton/live/tv3",
+                "https://api.dani-dev.co.za/v2/stream/tonton/live/$slug",
+                "https://api.dani-dev.co.za/v1/stream/tonton/live/$slug",
                 "https://api.dani-dev.co.za/v2/stream/tonton/live/6420323"
             )
             for (endpoint in primaryEndpoints) {
@@ -202,50 +278,46 @@ object LiveTvCatalog {
                         if (resp.isSuccessful) {
                             val finalUrl = resp.request.url.toString()
                             if (finalUrl.contains(".m3u8") || finalUrl.contains("tonton")) {
-                                cachedTv3LiveUrl = finalUrl
-                                lastTv3ResolvedTime = now
-                                android.util.Log.i("LiveTvCatalog", "Successfully resolved live_tv3 to Tonton HLS: $finalUrl")
+                                dynamicStreamCache[channelId] = Pair(finalUrl, now)
+                                android.util.Log.i("LiveTvCatalog", "Successfully resolved $channelId to Tonton HLS: $finalUrl")
                                 return@withContext finalUrl
                             }
                         }
                     }
                 } catch (e: Exception) {
-                    android.util.Log.w("LiveTvCatalog", "Failed to resolve live_tv3 from $endpoint: ${e.message}")
+                    android.util.Log.w("LiveTvCatalog", "Failed to resolve $channelId from $endpoint: ${e.message}")
                 }
             }
 
-            // 2. Resilient Backup: Fall back to Buletin TV3 live stream if HLS proxies are unreachable
-            try {
-                val client = com.duta.movie.util.NetworkConfig.okHttpClient
-                val request = okhttp3.Request.Builder()
-                    .url("https://www.youtube.com/@BuletinTV3/live")
-                    .header("User-Agent", com.duta.movie.util.NetworkConfig.SHARED_USER_AGENT)
-                    .header("Accept-Language", "en-US,en;q=0.9")
-                    .build()
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val body = response.body?.string() ?: ""
-                        val canonMatch = Regex("""<link\s+rel="canonical"\s+href="([^"]+)"""").find(body)
-                        val canonUrl = canonMatch?.groupValues?.get(1)
-                        val videoId = if (!canonUrl.isNullOrBlank() && canonUrl.contains("v=")) {
-                            canonUrl.substringAfter("v=").substringBefore("&").substringBefore("?")
-                        } else {
-                            Regex(""""videoId":"([a-zA-Z0-9_-]{11})"""").find(body)?.groupValues?.get(1)
-                        }
-                        if (!videoId.isNullOrBlank() && videoId.length in 10..12) {
-                            val resolved = "https://www.youtube.com/watch?v=$videoId"
-                            cachedTv3LiveUrl = resolved
-                            lastTv3ResolvedTime = now
-                            return@withContext resolved
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                android.util.Log.w("LiveTvCatalog", "Failed to resolve live_tv3 dynamic YouTube fallback: ${e.message}")
+            // Fallback to official YouTube Live for Tonton channels
+            val ytFallback = when (channelId) {
+                "live_8tv" -> "https://www.youtube.com/@8TVbadukongjian/live"
+                "live_tv9" -> "https://www.youtube.com/@TV9MALAYSIAofficial/live"
+                else -> "https://www.youtube.com/@BuletinTV3/live"
             }
-            return@withContext cachedTv3LiveUrl ?: "https://api.dani-dev.co.za/v2/stream/tonton/live/tv3"
+            val resolvedYt = resolveYouTubeLiveToWatchUrl(ytFallback)
+            if (resolvedYt != null) {
+                dynamicStreamCache[channelId] = Pair(resolvedYt, now)
+                return@withContext resolvedYt
+            }
+            return@withContext "https://api.dani-dev.co.za/v2/stream/tonton/live/$slug"
         }
 
+        // 2. YouTube Live Channels (Astro Awani, Makkah Live)
+        if (channelId in listOf("live_astro_awani", "live_makkah")) {
+            val ytUrl = when (channelId) {
+                "live_astro_awani" -> "https://www.youtube.com/astroawani/live"
+                else -> "https://www.youtube.com/@QuranChannelLive/live"
+            }
+            val resolvedYt = resolveYouTubeLiveToWatchUrl(ytUrl)
+            if (resolvedYt != null) {
+                dynamicStreamCache[channelId] = Pair(resolvedYt, now)
+                return@withContext resolvedYt
+            }
+            return@withContext ytUrl
+        }
+
+        // 3. Tenbyte / MYTV Channels (Alhijrah, Bernama, CNA)
         val tenbyteId = dynamicChannelMap[channelId] ?: return@withContext null
         try {
             val client = com.duta.movie.util.NetworkConfig.okHttpClient
@@ -265,6 +337,7 @@ object LiveTvCatalog {
                         val dataObj = json.optJSONObject("data")
                         val playbackUrl = dataObj?.optString("playbackUrl")
                         if (!playbackUrl.isNullOrBlank()) {
+                            dynamicStreamCache[channelId] = Pair(playbackUrl, now)
                             return@withContext playbackUrl
                         }
                     }
@@ -273,6 +346,35 @@ object LiveTvCatalog {
         } catch (_: Exception) {
         }
         null
+    }
+
+    private fun resolveYouTubeLiveToWatchUrl(liveUrl: String): String? {
+        try {
+            val client = com.duta.movie.util.NetworkConfig.okHttpClient
+            val request = okhttp3.Request.Builder()
+                .url(liveUrl)
+                .header("User-Agent", com.duta.movie.util.NetworkConfig.SHARED_USER_AGENT)
+                .header("Accept-Language", "en-US,en;q=0.9")
+                .build()
+            client.newCall(request).execute().use { response ->
+                if (response.isSuccessful) {
+                    val body = response.body?.string() ?: ""
+                    val canonMatch = Regex("""<link\s+rel="canonical"\s+href="([^"]+)"""").find(body)
+                    val canonUrl = canonMatch?.groupValues?.get(1)
+                    val videoId = if (!canonUrl.isNullOrBlank() && canonUrl.contains("v=")) {
+                        canonUrl.substringAfter("v=").substringBefore("&").substringBefore("?")
+                    } else {
+                        Regex(""""videoId":"([a-zA-Z0-9_-]{11})"""").find(body)?.groupValues?.get(1)
+                    }
+                    if (!videoId.isNullOrBlank() && videoId.length in 10..12) {
+                        return "https://www.youtube.com/watch?v=$videoId"
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            android.util.Log.w("LiveTvCatalog", "Failed to resolve YouTube live $liveUrl: ${e.message}")
+        }
+        return null
     }
 
     fun isLiveVideo(id: String): Boolean {

@@ -2,21 +2,64 @@
 
 All notable changes to the Duta Movie application are documented in this file.
 
-## [2.1.2 Cloud 7] - 2026-10-15
+## [2.1.3 Cloud 7] - 2026-10-19
 
-> **Live TV Broadcast Upgrade**: Replaces the fallback YouTube news stream for TV3 Malaysia with the official Media Prima Tonton 1080p live broadcast stream, dynamic tokenized HMAC session resolution, resilient multi-server failover, and active server tracking in the player.
+> **Android TV Navigation & Expanded Live TV Lineup Release**: Completely fixes Android TV D-Pad horizontal category scrolling and eliminates accidental jumps into the sidebar menu. Expands the Malaysian Live TV lineup to 17 official broadcast channels with dynamic HMAC stream resolution and real-time EPG now-playing guides.
+
+### Added
+- **Expanded Malaysian Live TV Lineup (17 Official Channels)**:
+  - Added **8TV (八度空间)**: Malaysia's #1 Chinese commercial television channel by Media Prima with official 1080p FHD linear broadcast stream and backup mirrors.
+  - Added **TV9**: Media Prima family and local entertainment channel featuring drama series, kids cartoons, and telemovies.
+  - Added **TVS (TV Sarawak)**: Borneo's flagship regional broadcast with news, local documentaries, and cultural arts.
+  - Added **Astro Awani**: Malaysia's leading 24-hour news network.
+  - Added **Makkah Live (Saudi Quran TV)**: Official 24/7 direct broadcast from Masjidil Haram, Makkah.
+  - **Real-Time EPG Guides**: Integrated now-playing subtitle labels on TV channel cards displaying current programs.
+- **Dynamic Multi-Channel Stream Token Engine**:
+  - Unified tokenized HMAC pre-resolution and redirect caching across all Media Prima (TV3, 8TV, TV9) and Tenbyte CDN channels (Alhijrah, Bernama, CNA, TVS).
+
+### Fixed & Hardened
+- **Android TV D-Pad Horizontal Category Scrolling**:
+  - Eliminated continuous index watchdog (`snapshotFlow { listState.firstVisibleItemIndex }`) that was snapping category rows back to index 0 on D-Pad Right.
+  - Users can now smoothly and continuously navigate horizontally across all cards in any category row without interruption.
+- **TV Sidebar Menu Focus Lock**:
+  - Stabilized `LazyRow` item keys (`key = { _, video -> video.id }`), preventing Composable destruction and dropped-focus fallbacks to the navigation rail while navigating.
+  - Hardened `LazyRow.focusProperties`: D-Pad Left is strictly trapped inside the row and only permitted to exit to the sidebar menu when the user is explicitly on **Card 0** at the beginning of the row (`focusedItemIndex == 0 && listState.firstVisibleItemIndex == 0`).
+  - Restored natural 2D vertical grid navigation (`enter = { FocusRequester.Default }`), preserving horizontal column alignment across rows without yanking focus back to Card 0.
+- **Browsing State & Focus Theft Protection**:
+  - Cold-startup alignment only triggers once prior to user interaction. Row positions and focus are completely immune to resets during thumbnail preloading or pagination.
+
+---
+
+## [2.1.2 Cloud 7] - 2026-10-18
+
+> **Major Feature & Subtitle Auto-Pilot 2.0 Release**: Upgrades TV3 Malaysia to the official Media Prima Tonton 1080p linear broadcast stream with dynamic HMAC session tokens, overhauls the Subtitle Engine with Auto-Pilot 2.0 (unverified scraper demotion, AI translation preference, and real-time speech mismatch auto-recovery), stabilizes Android TV category row focus, and introduces high-resolution transparent Live TV channel branding.
 
 ### Added
 - **Official Tonton TV3 1080p Live Broadcast**:
   - Direct integration with official Media Prima Tonton CloudFront HLS master manifest stream (up to 1080p FHD at 5.7 Mbps, DRM-free unencrypted MPEG-TS chunks).
-  - Broadcasts actual linear programming (Drama Akasia, Buletin Utama, local entertainment, and live sports), replacing news-only feeds.
+  - Broadcasts actual linear television programming (Drama Akasia, Buletin Utama, local entertainment, and live sports), replacing news-only feeds.
   - Multi-server redundancy: Server 1 (`Tonton HLS 1080p Official Broadcast`), Server 2 (`Tonton HLS Direct Mirror`), and Server 3 (`Buletin TV3 24/7 News Backup`).
+- **Smart Subtitle Auto-Pilot 2.0 & AI Fallback**:
+  - **Provider Scoring & Quality Gate**: SubtitleCat bot machine-translations heavily demoted (`-80` score penalty) while verified provider releases (`[OpenSubtitles]`, `[SubSource]`, `[SubDL]`, `[Subscene]`) receive a `+30` priority bonus.
+  - **AI Translation Preference**: If the only candidate in the user's target language is an unverified bot scrape, the engine automatically skips it in favor of AI-translating verified official English releases using Gemini AI.
+  - **Automatic Preference Cleansing**: Disqualifies and purges obsolete or mislabeled SubtitleCat entries previously saved in local preferences.
+  - **Autonomous Runtime Content Mismatch Auto-Recovery**: Detects wrong movie subtitles during playback via VAD cross-correlation (`speech >= 8s`, `recall < 38%`). Automatically blacklists the bad file, purges saved offsets, and auto-recovers by translating verified English releases with a HUD notice (`⚡ Subtitles Auto-Synced (Auto-Recovered)`).
+  - **Discrete Sliding-Window Cross-Correlation (Mini-FFSubSync)**: 50ms time-binned discrete dot-product alignment between VAD speech activity and dialogue cue masks, providing mathematical noise immunity against intro fanfare, logos, sound effects, and silence.
+- **High-Resolution Transparent Channel Branding**:
+  - Added clean transparent logos and custom brand gradients for **TV3**, **Bernama TV**, **TV Alhijrah**, and **CNA**.
 
 ### Improved & Hardened
 - **Dynamic HLS Session Pre-Resolution**:
   - Implemented automatic tokenized redirect following in `VideoViewModel` to pre-resolve dynamic HMAC API endpoints into the base CloudFront master playlist, ensuring subvariant `.ts` chunks load seamlessly in ExoPlayer.
 - **Server Selection & Active Server Synchronization**:
   - Synchronized ViewModel server state with player server selection dialog, ensuring the currently playing broadcast server is accurately highlighted and switchable in real time.
+- **Android TV Category Row D-Pad Stability**:
+  - Implemented dynamic front-anchoring for category rows, preventing sudden scroll jumps and focus loss when asynchronous thumbnail preloading finishes.
+  - Category rows maintain stable scroll position and restore exact card focus when navigating back from video detail screens.
+- **ExoPlayer Audio Processor Thread Safety**:
+  - Resolved thread access violations in `VadAudioProcessor` with a sample-accurate PCM clock and structured coroutine scoping.
+- **Automated Regression Test Suite**:
+  - Expanded `AutoSubtitleTest.kt` with comprehensive unit tests for subtitle scoring, scraper rejection, cross-correlation alignment, and content mismatch recovery.
 
 ---
 

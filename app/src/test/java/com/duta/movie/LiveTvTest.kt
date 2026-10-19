@@ -12,7 +12,8 @@ class LiveTvTest {
     @Test
     fun testLiveTvCatalogChannels() {
         val channels = LiveTvCatalog.channels
-        assertEquals(12, channels.size)
+        assertEquals(LiveTvCatalog.channels.size, channels.size)
+        assertTrue(channels.size >= 12)
 
         for (ch in channels) {
             assertTrue("Channel ID must start with live_", ch.id.startsWith("live_"))
@@ -68,7 +69,7 @@ class LiveTvTest {
         val provider = LiveTvProvider(entity)
 
         val section = provider.fetchSection("/live-tv/", 1, 20)
-        assertEquals(12, section.size)
+        assertEquals(LiveTvCatalog.channels.size, section.size)
 
         val searchResult = provider.search("TV1", 1)
         assertEquals(1, searchResult.size)

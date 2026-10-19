@@ -32,6 +32,9 @@ class VadAudioProcessor : BaseAudioProcessor() {
     private val _detectedVoiceOnsets = MutableStateFlow<List<Long>>(emptyList())
     val detectedVoiceOnsets: StateFlow<List<Long>> = _detectedVoiceOnsets.asStateFlow()
 
+    private val _detectedSpeechSegments = MutableStateFlow<List<com.duta.movie.util.SubtitleSyncEngine.SpeechSegment>>(emptyList())
+    val detectedSpeechSegments: StateFlow<List<com.duta.movie.util.SubtitleSyncEngine.SpeechSegment>> = _detectedSpeechSegments.asStateFlow()
+
     private val _isWindowElapsed = MutableStateFlow(false)
     val isWindowElapsed: StateFlow<Boolean> = _isWindowElapsed.asStateFlow()
 
@@ -53,12 +56,16 @@ class VadAudioProcessor : BaseAudioProcessor() {
     // 300Hz - 3400Hz Vocal Formant Biquad Bandpass Filter
     private val vocalFilter = VocalFormantBiquadFilter()
 
-    // Sustained Speech Energy Validation
+    // Sustained Speech Energy Validation & Segment Modeling
     private var candidateSpeechStartMs: Long = -1L
     private var consecutiveSpeechFrames: Int = 0
     private var consecutiveSpeechDurationMs: Long = 0L
     private var consecutiveSilenceFrames: Int = 0
     private var lastDiagLogMs: Long = 0L
+
+    private var isSpeechActive = false
+    private var activeSegmentStartMs = -1L
+    private var activeSegmentEndMs = -1L
 
     var playbackPositionProvider: (() -> Long)? = null
 
@@ -77,6 +84,9 @@ class VadAudioProcessor : BaseAudioProcessor() {
     }
 
     fun stopListening() {
+        if (isSpeechActive) {
+            finalizeActiveSegment()
+        }
         isListening = false
     }
 
@@ -96,6 +106,27 @@ class VadAudioProcessor : BaseAudioProcessor() {
         consecutiveSpeechFrames = 0
         consecutiveSpeechDurationMs = 0L
         consecutiveSilenceFrames = 0
+    }
+
+    private fun finalizeActiveSegment(currentPos: Long = -1L) {
+        val endMs = if (currentPos > activeSegmentEndMs) currentPos else activeSegmentEndMs
+        if (isSpeechActive && activeSegmentStartMs >= 0L && endMs > activeSegmentStartMs) {
+            val duration = endMs - activeSegmentStartMs
+            if (duration >= 150L) {
+                val currentList = _detectedSpeechSegments.value
+                val mergedList = if (currentList.isNotEmpty() && (activeSegmentStartMs - currentList.last().endMs) < 350L) {
+                    val last = currentList.last()
+                    currentList.dropLast(1) + com.duta.movie.util.SubtitleSyncEngine.SpeechSegment(last.startMs, endMs)
+                } else {
+                    currentList + com.duta.movie.util.SubtitleSyncEngine.SpeechSegment(activeSegmentStartMs, endMs)
+                }
+                _detectedSpeechSegments.value = mergedList
+                Log.i("VadAudioProcessor", "🎙️ Speech Segment [${mergedList.size}]: ${activeSegmentStartMs}ms - ${endMs}ms (${endMs - activeSegmentStartMs}ms)")
+            }
+        }
+        isSpeechActive = false
+        activeSegmentStartMs = -1L
+        activeSegmentEndMs = -1L
     }
 
     override fun onConfigure(inputAudioFormat: AudioProcessor.AudioFormat): AudioProcessor.AudioFormat {
@@ -126,8 +157,8 @@ class VadAudioProcessor : BaseAudioProcessor() {
         }
         val currentPos = providerPos ?: currentAudioPositionMs
 
-        // Re-arm listening if playback scrubs back into search window and we haven't maxed out anchors
-        if (currentPos in searchWindowStartMs..searchWindowEndMs && !isListening && _detectedVoiceOnsets.value.size < 5) {
+        // Re-arm listening if playback scrubs back into search window and we haven't maxed out segments
+        if (currentPos in searchWindowStartMs..searchWindowEndMs && !isListening && _detectedSpeechSegments.value.size < 12) {
             isListening = true
             _isWindowElapsed.value = false
             Log.i("VadAudioProcessor", "Playback scrubbed back into search window: resumed listening at ${currentPos}ms")
@@ -135,13 +166,16 @@ class VadAudioProcessor : BaseAudioProcessor() {
 
         // Window expiration check (evaluated continuously on every audio packet)
         if (currentPos > searchWindowEndMs + 1000L && searchWindowEndMs != Long.MAX_VALUE && isListening) {
-            Log.i("VadAudioProcessor", "Search window [$searchWindowStartMs..$searchWindowEndMs] elapsed at ${currentPos}ms. Collected ${_detectedVoiceOnsets.value.size} voice onsets.")
+            Log.i("VadAudioProcessor", "Search window [$searchWindowStartMs..$searchWindowEndMs] elapsed at ${currentPos}ms. Collected ${_detectedVoiceOnsets.value.size} voice onsets, ${_detectedSpeechSegments.value.size} speech segments.")
+            if (isSpeechActive) {
+                finalizeActiveSegment(currentPos)
+            }
             stopListening()
             _isWindowElapsed.value = true
         }
 
-        // Inspect PCM waveforms if listening and we haven't maxed out anchor collection (up to 5 onsets)
-        if (isListening && _detectedVoiceOnsets.value.size < 5) {
+        // Inspect PCM waveforms if listening and we haven't maxed out segment collection (up to 12 segments)
+        if (isListening && _detectedSpeechSegments.value.size < 12) {
             val isFloat = inputAudioFormat.encoding == C.ENCODING_PCM_FLOAT
             val dup = inputBuffer.asReadOnlyBuffer()
             dup.order(ByteOrder.LITTLE_ENDIAN)
@@ -198,7 +232,7 @@ class VadAudioProcessor : BaseAudioProcessor() {
             if (Math.abs(currentPos - lastDiagLogMs) >= 4000L) {
                 lastDiagLogMs = currentPos
                 val inWin = currentPos in searchWindowStartMs..searchWindowEndMs
-                Log.d("VadAudioProcessor", "🔊 [VAD Monitor] pos=${currentPos}ms, rms=${String.format("%.4f", rms)}, inWindow=$inWin, window=[$searchWindowStartMs..$searchWindowEndMs], anchors=${_detectedVoiceOnsets.value.size}")
+                Log.d("VadAudioProcessor", "🔊 [VAD Monitor] pos=${currentPos}ms, rms=${String.format("%.4f", rms)}, inWindow=$inWin, window=[$searchWindowStartMs..$searchWindowEndMs], anchors=${_detectedVoiceOnsets.value.size}, segments=${_detectedSpeechSegments.value.size}")
             }
 
             // Human dialogue vocal formant RMS thresholds (tuned to cinema dialogue mix: conversational & whispers)
@@ -234,15 +268,35 @@ class VadAudioProcessor : BaseAudioProcessor() {
                             }
                             Log.i("VadAudioProcessor", "⚡ Vocal Formant Speech Onset [Anchor ${updated.size}]: ${preciseOnsetMs}ms (Vocal RMS: ${String.format("%.3f", rms)}, duration: ${consecutiveSpeechDurationMs}ms)")
                         }
-                        resetCandidate()
+
+                        if (!isSpeechActive) {
+                            isSpeechActive = true
+                            activeSegmentStartMs = preciseOnsetMs
+                            activeSegmentEndMs = currentPos + bufferDurationMs
+                        } else {
+                            activeSegmentEndMs = currentPos + bufferDurationMs
+                        }
+                    } else if (isSpeechActive) {
+                        activeSegmentEndMs = currentPos + bufferDurationMs
                     }
                 } else {
+                    if (isSpeechActive) {
+                        finalizeActiveSegment(currentPos)
+                    }
                     resetCandidate()
                 }
-            } else if (rms < speechSilenceThreshold) {
+            } else if (rms >= speechSilenceThreshold) {
+                consecutiveSilenceFrames = 0
+                if (isSpeechActive) {
+                    activeSegmentEndMs = currentPos + bufferDurationMs
+                }
+            } else {
                 consecutiveSilenceFrames++
-                // Require 4 consecutive silence frames (~80-120ms) before resetting candidate speech
+                // Require 4 consecutive silence frames (~80-120ms) before concluding speech segment
                 if (consecutiveSilenceFrames >= 4) {
+                    if (isSpeechActive) {
+                        finalizeActiveSegment(currentPos)
+                    }
                     resetCandidate()
                 }
             }
@@ -259,6 +313,9 @@ class VadAudioProcessor : BaseAudioProcessor() {
         framesProcessed = 0L
         vocalFilter.reset()
         resetCandidate()
+        isSpeechActive = false
+        activeSegmentStartMs = -1L
+        activeSegmentEndMs = -1L
     }
 
     override fun onReset() {
@@ -266,8 +323,12 @@ class VadAudioProcessor : BaseAudioProcessor() {
         framesProcessed = 0L
         vocalFilter.reset()
         resetCandidate()
+        isSpeechActive = false
+        activeSegmentStartMs = -1L
+        activeSegmentEndMs = -1L
         _detectedVoiceOnsetMs.value = -1L
         _detectedVoiceOnsets.value = emptyList()
+        _detectedSpeechSegments.value = emptyList()
         _isWindowElapsed.value = false
         isListening = true
     }
@@ -277,8 +338,12 @@ class VadAudioProcessor : BaseAudioProcessor() {
         streamStartPositionMs.set(0L)
         vocalFilter.reset()
         resetCandidate()
+        isSpeechActive = false
+        activeSegmentStartMs = -1L
+        activeSegmentEndMs = -1L
         _detectedVoiceOnsetMs.value = -1L
         _detectedVoiceOnsets.value = emptyList()
+        _detectedSpeechSegments.value = emptyList()
         _isWindowElapsed.value = false
         isListening = true
     }

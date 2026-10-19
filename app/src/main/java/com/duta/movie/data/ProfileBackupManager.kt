@@ -14,8 +14,9 @@ import java.util.Locale
 
 data class ProfileBackupData(
     val version: Int = 1,
-    val appVersion: String = "2.1.2 Cloud 7",
+    val appVersion: String = "2.1.3 Cloud 7",
     val exportedAt: Long = System.currentTimeMillis(),
+    val sourceDevice: String = "",
     val username: String = "",
     val avatarBase64: String? = null,
     val defaultSubtitleLanguage: String = "Indonesian",
@@ -45,6 +46,9 @@ object ProfileBackupManager {
         root.put("version", data.version)
         root.put("app_version", data.appVersion)
         root.put("exported_at", data.exportedAt)
+        if (data.sourceDevice.isNotBlank()) {
+            root.put("source_device", data.sourceDevice)
+        }
 
         val profile = JSONObject()
         profile.put("username", data.username)
@@ -100,8 +104,9 @@ object ProfileBackupManager {
         return try {
             val root = JSONObject(jsonStr)
             val version = root.optInt("version", 1)
-            val appVersion = root.optString("app_version", "2.1.2 Cloud 7")
+            val appVersion = root.optString("app_version", "2.1.3 Cloud 7")
             val exportedAt = root.optLong("exported_at", System.currentTimeMillis())
+            val sourceDevice = root.optString("source_device", "")
 
             val profile = root.optJSONObject("profile") ?: JSONObject()
             val username = profile.optString("username", "")
@@ -178,6 +183,7 @@ object ProfileBackupManager {
                 version = version,
                 appVersion = appVersion,
                 exportedAt = exportedAt,
+                sourceDevice = sourceDevice,
                 username = username,
                 avatarBase64 = avatarBase64,
                 defaultSubtitleLanguage = defaultSubtitleLang,

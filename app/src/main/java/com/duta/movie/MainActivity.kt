@@ -41,6 +41,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.FocusDirection
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.focusGroup
@@ -108,7 +109,8 @@ class MainActivity : AppCompatActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        if (isPlayerActiveGlobal) {
+        val isRealTV = com.duta.movie.util.DeviceUtils.isTvDevice(this)
+        if (isPlayerActiveGlobal && !isRealTV) {
             enterPipMode()
         }
     }
@@ -116,6 +118,22 @@ class MainActivity : AppCompatActivity() {
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: android.content.res.Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         isPipMode.value = isInPictureInPictureMode
+    }
+
+    fun updatePipParams(isActive: Boolean) {
+        isPlayerActiveGlobal = isActive
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                if (packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+                    val isRealTV = com.duta.movie.util.DeviceUtils.isTvDevice(this)
+                    val params = PictureInPictureParams.Builder()
+                        .setAspectRatio(Rational(16, 9))
+                        .setAutoEnterEnabled(isActive && !isRealTV)
+                        .build()
+                    setPictureInPictureParams(params)
+                }
+            }
+        } catch (_: Exception) {}
     }
 
     override fun onResume() {
@@ -132,15 +150,17 @@ class MainActivity : AppCompatActivity() {
     fun enterPipMode() {
         try {
             if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
-                val params = PictureInPictureParams.Builder()
-                    .setAspectRatio(Rational(16, 9))
-                    .build()
-                enterPictureInPictureMode(params)
+                if (packageManager.hasSystemFeature(android.content.pm.PackageManager.FEATURE_PICTURE_IN_PICTURE)) {
+                    val params = PictureInPictureParams.Builder()
+                        .setAspectRatio(Rational(16, 9))
+                        .build()
+                    enterPictureInPictureMode(params)
+                }
             }
         } catch (_: Exception) {}
     }
 
-    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class)
+    @OptIn(ExperimentalMaterial3WindowSizeClassApi::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         
@@ -244,6 +264,7 @@ class MainActivity : AppCompatActivity() {
 
                 LaunchedEffect(isPlayerActive) {
                     isPlayerActiveGlobal = isPlayerActive
+                    updatePipParams(isPlayerActive)
                 }
 
                 LaunchedEffect(isMobileLandscapeEnabled, isPlayerActive) {
@@ -310,9 +331,10 @@ class MainActivity : AppCompatActivity() {
                     }
                 ) { padding ->
                     CompositionLocalProvider(LocalPipMode provides isInPip) {
+                        val contentFocusRequester = remember { FocusRequester() }
                         Row(modifier = Modifier
                             .fillMaxSize()
-                            .padding(uiSafeAreaPadding.dp)
+                            .padding(if (isRealTV) uiSafeAreaPadding.dp else 0.dp)
                             .graphicsLayer {
                                 scaleX = uiScaleFactor
                                 scaleY = uiScaleFactor
@@ -329,6 +351,15 @@ class MainActivity : AppCompatActivity() {
                                     ),
                                     label = "sidebar_width"
                                 )
+
+                                if (isTVLayout && sidebarFocused) {
+                                    androidx.activity.compose.BackHandler {
+                                        sidebarFocused = false
+                                        try {
+                                            contentFocusRequester.requestFocus()
+                                        } catch (_: Exception) {}
+                                    }
+                                }
 
                                 Box(
                                     modifier = Modifier
@@ -351,6 +382,25 @@ class MainActivity : AppCompatActivity() {
                                     Column(
                                         modifier = Modifier
                                             .focusGroup()
+                                            .focusProperties {
+                                                // TV STABILITY: Sidebar drawer must ONLY receive focus when moving LEFT from content.
+                                                // Spurious fallback focus (e.g. during recomposition, data loading, or item recycling)
+                                                // and vertical 2D searches (UP/DOWN) must NEVER enter the sidebar!
+                                                enter = { direction ->
+                                                    if (direction == FocusDirection.Left) {
+                                                        FocusRequester.Default
+                                                    } else {
+                                                        FocusRequester.Cancel
+                                                    }
+                                                }
+                                                exit = { direction ->
+                                                    if (direction == FocusDirection.Right) {
+                                                        contentFocusRequester
+                                                    } else {
+                                                        FocusRequester.Cancel
+                                                    }
+                                                }
+                                            }
                                             .fillMaxHeight(),
                                         verticalArrangement = Arrangement.spacedBy(10.dp),
                                         horizontalAlignment = Alignment.Start
@@ -449,7 +499,18 @@ class MainActivity : AppCompatActivity() {
                                 startDestination = Destination.Home,
                                 modifier = Modifier
                                     .weight(1f)
+                                    .focusRequester(contentFocusRequester)
                                     .focusGroup()
+                                    .focusProperties {
+                                        exit = { direction ->
+                                            if (direction == FocusDirection.Up || direction == FocusDirection.Down) {
+                                                // Vertical navigation inside NavHost must NEVER bleed into the sidebar
+                                                FocusRequester.Cancel
+                                            } else {
+                                                FocusRequester.Default
+                                            }
+                                        }
+                                    }
                                     .padding(
                                         bottom = if (isInPip || isTVLayout) 0.dp else padding.calculateBottomPadding()
                                     ),

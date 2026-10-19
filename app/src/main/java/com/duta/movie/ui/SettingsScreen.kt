@@ -1999,7 +1999,7 @@ fun SettingsScreen(
 
         AlertDialog(
             onDismissRequest = { showChangelogDialog = false },
-            title = { Text(stringResource(R.string.changelog_v2_1_2), color = Color.White) },
+            title = { Text(stringResource(R.string.changelog_v2_1_3), color = Color.White) },
             text = {
                 Column(
                     modifier = Modifier
@@ -2087,10 +2087,20 @@ fun SettingsScreen(
                         .verticalScroll(changelogScrollState)
                         .padding(end = 8.dp)
                 ) {
+                    Text(stringResource(R.string.v2_1_3_updates), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_3_highlight_1), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_3_highlight_2), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_3_highlight_3), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_3_highlight_4), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+
+                    Spacer(modifier = Modifier.height(12.dp))
                     Text(stringResource(R.string.v2_1_2_updates), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
                     Text(stringResource(R.string.v2_1_2_highlight_1), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
                     Text(stringResource(R.string.v2_1_2_highlight_2), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
                     Text(stringResource(R.string.v2_1_2_highlight_3), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_2_highlight_4), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_2_highlight_5), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
+                    Text(stringResource(R.string.v2_1_2_highlight_6), color = Color.LightGray, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))
 
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(stringResource(R.string.v2_1_1_updates), color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp, modifier = Modifier.padding(vertical = 4.dp))

@@ -279,7 +279,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
     fun verifyPin(input: String, stored: String): Boolean = 
         if (stored.length != 64) input == stored else hashPin(input) == stored
 
-    val isAutoSubtitleEnabled: Flow<Boolean> = context.dataStore.data.map { it[AUTO_SUBTITLE_ENABLED_KEY] ?: false }
+    val isAutoSubtitleEnabled: Flow<Boolean> = context.dataStore.data.map { it[AUTO_SUBTITLE_ENABLED_KEY] ?: true }
 
     suspend fun setAutoSubtitleEnabled(enabled: Boolean) {
         context.dataStore.edit { it[AUTO_SUBTITLE_ENABLED_KEY] = enabled }
@@ -685,7 +685,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         val username = prefs[USER_NICKNAME_KEY] ?: ""
         val avatarBase64 = com.duta.movie.util.AvatarManager.getAvatarBase64(context)
         val defaultSubtitleLang = prefs[DEFAULT_SUBTITLE_LANGUAGE_KEY] ?: "Indonesian"
-        val autoSubtitle = prefs[AUTO_SUBTITLE_ENABLED_KEY] ?: false
+        val autoSubtitle = prefs[AUTO_SUBTITLE_ENABLED_KEY] ?: true
         val autoSubSync = prefs[AUTO_SUB_SYNC_ENABLED_KEY] ?: true
         val voiceEnhancer = prefs[VOICE_ENHANCER_MODE_KEY] ?: 0
         val mobileLandscape = prefs[MOBILE_LANDSCAPE_ENABLED_KEY] ?: false
@@ -716,7 +716,10 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
             }
         }
 
+        val isTv = com.duta.movie.util.DeviceUtils.isTvDevice(context)
+
         return ProfileBackupData(
+            sourceDevice = if (isTv) "tv" else "mobile",
             username = username,
             avatarBase64 = avatarBase64,
             defaultSubtitleLanguage = defaultSubtitleLang,
@@ -747,6 +750,11 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
                 }
             }
 
+            val isCurrentTv = com.duta.movie.util.DeviceUtils.isTvDevice(context)
+            val isSourceTv = data.sourceDevice.equals("tv", ignoreCase = true) ||
+                             (data.sourceDevice.isBlank() && data.uiSafeAreaPadding > 0)
+            val isSourceMobile = data.sourceDevice.equals("mobile", ignoreCase = true)
+
             context.dataStore.edit { prefs ->
                 if (data.username.isNotBlank()) {
                     prefs[USER_NICKNAME_KEY] = data.username
@@ -755,12 +763,34 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
                 prefs[AUTO_SUBTITLE_ENABLED_KEY] = data.autoSubtitleEnabled
                 prefs[AUTO_SUB_SYNC_ENABLED_KEY] = data.autoSubSyncEnabled
                 prefs[VOICE_ENHANCER_MODE_KEY] = data.voiceEnhancerMode
-                prefs[MOBILE_LANDSCAPE_ENABLED_KEY] = data.mobileLandscapeEnabled
+
+                // Mobile landscape setting should only be transferred if the source is not a TV
+                if (!isSourceTv) {
+                    prefs[MOBILE_LANDSCAPE_ENABLED_KEY] = data.mobileLandscapeEnabled
+                }
+
                 prefs[DEBUG_MODE_ENABLED_KEY] = data.debugModeEnabled
-                prefs[UI_SAFE_AREA_PADDING_KEY] = data.uiSafeAreaPadding
-                prefs[UI_HERO_HEIGHT_OFFSET_KEY] = data.uiHeroHeightOffset
-                prefs[UI_SCALE_FACTOR_KEY] = data.uiScaleFactor
-                prefs[UI_THUMBNAIL_SCALE_FACTOR_KEY] = data.uiThumbnailScaleFactor
+
+                if (isCurrentTv) {
+                    // Current device is Android TV:
+                    // If source is mobile, protect existing calibrated TV overscan margin and hero offset
+                    val existingPadding = prefs[UI_SAFE_AREA_PADDING_KEY] ?: 0
+                    if (!isSourceMobile || existingPadding == 0) {
+                        prefs[UI_SAFE_AREA_PADDING_KEY] = data.uiSafeAreaPadding.coerceIn(0, 100)
+                    }
+                    val existingHeroOffset = prefs[UI_HERO_HEIGHT_OFFSET_KEY] ?: 0
+                    if (!isSourceMobile || existingHeroOffset == 0) {
+                        prefs[UI_HERO_HEIGHT_OFFSET_KEY] = data.uiHeroHeightOffset.coerceIn(-100, 100)
+                    }
+                } else {
+                    // Current device is Mobile (phone / tablet):
+                    // TV overscan margins & hero height offsets do not apply to mobile - keep edge-to-edge (0dp)
+                    prefs[UI_SAFE_AREA_PADDING_KEY] = 0
+                    prefs[UI_HERO_HEIGHT_OFFSET_KEY] = 0
+                }
+
+                prefs[UI_SCALE_FACTOR_KEY] = data.uiScaleFactor.coerceIn(0.8f, 1.2f)
+                prefs[UI_THUMBNAIL_SCALE_FACTOR_KEY] = data.uiThumbnailScaleFactor.coerceIn(0.5f, 1.5f)
 
                 if (data.enabledCategories.isNotEmpty()) {
                     prefs[ENABLED_CATEGORIES_KEY] = data.enabledCategories

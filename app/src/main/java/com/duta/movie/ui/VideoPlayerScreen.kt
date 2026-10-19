@@ -267,13 +267,16 @@ fun VideoPlayerScreen(
     }
 
     val scope = rememberCoroutineScope()
+    var activeVideoId by remember(videoId) { mutableStateOf(videoId) }
+    var activeServerUrl by remember(serverUrl) { mutableStateOf(serverUrl) }
+
     val rawVideo: Video? by viewModel.videoMetadata.collectAsStateWithLifecycle()
-    val cleanVideoId = remember(videoId) { com.duta.movie.util.VideoExtractor.stripSourcePrefix(videoId) }
-    val video = remember(rawVideo, videoId) {
+    val cleanVideoId = remember(activeVideoId) { com.duta.movie.util.VideoExtractor.stripSourcePrefix(activeVideoId) }
+    val video = remember(rawVideo, activeVideoId) {
         val isMatch: (Video?) -> Boolean = { v ->
-            v != null && (v.id == videoId || (cleanVideoId.length >= 3 && com.duta.movie.util.VideoExtractor.stripSourcePrefix(v.id) == cleanVideoId))
+            v != null && (v.id == activeVideoId || (cleanVideoId.length >= 3 && com.duta.movie.util.VideoExtractor.stripSourcePrefix(v.id) == cleanVideoId))
         }
-        rawVideo?.takeIf(isMatch) ?: viewModel.getVideo(videoId)?.takeIf(isMatch)
+        rawVideo?.takeIf(isMatch) ?: viewModel.getVideo(activeVideoId)?.takeIf(isMatch)
     }
     val fallbackDurationMs = remember(video?.duration) { parseDurationToMillis(video?.duration) }
     val extractedUrl: String? by viewModel.extractedUrl.collectAsStateWithLifecycle()
@@ -287,17 +290,17 @@ fun VideoPlayerScreen(
     val resolutionLog by viewModel.resolutionLog.collectAsStateWithLifecycle()
     val currentEpUrl by viewModel.currentServerUrl.collectAsStateWithLifecycle()
     val rawCurrentEpisode by viewModel.currentEpisode.collectAsStateWithLifecycle()
-    val currentEpisode = remember(rawCurrentEpisode, video, videoId) {
+    val currentEpisode = remember(rawCurrentEpisode, video, activeVideoId) {
         rawCurrentEpisode?.takeIf { ep ->
             video == null || video.episodes.isEmpty() || video.episodes.any { it.url == ep.url || it.id == ep.id }
         }
     }
-    val effectiveProgressId = remember(videoId, currentEpisode) {
+    val effectiveProgressId = remember(activeVideoId, currentEpisode) {
         if (currentEpisode != null) {
             val slug = com.duta.movie.util.VideoExtractor.extractStableId(currentEpisode!!.url)
-            "${videoId}_ep_${slug}"
+            "${activeVideoId}_ep_${slug}"
         } else {
-            videoId
+            activeVideoId
         }
     }
     val savedProgress by viewModel.getVideoProgress(effectiveProgressId).collectAsState(initial = 0L)
@@ -321,7 +324,8 @@ fun VideoPlayerScreen(
     var showSubtitleDialog by remember { mutableStateOf(false) }
     var showSyncDialog by remember { mutableStateOf(false) }
     var showEpisodeDialog by remember { mutableStateOf(false) }
-    var autoRetryCount by remember(videoId, serverUrl) { mutableIntStateOf(0) }
+    var showChannelZapper by remember { mutableStateOf(false) }
+    var autoRetryCount by remember(activeVideoId, activeServerUrl) { mutableIntStateOf(0) }
     
     // Safety Check: Prevent playback of restricted content in Safe Mode
     
@@ -346,7 +350,7 @@ fun VideoPlayerScreen(
     var qualityTracks by remember { mutableStateOf<List<VideoQualityTrack>>(emptyList()) }
     var selectedQualityGroupIndex by remember { mutableIntStateOf(-1) }
     var seekFeedback by remember { mutableStateOf<String?>(null) }
-    val resolutionKey = remember(videoId, serverUrl) { "$videoId-$serverUrl" }
+    val resolutionKey = remember(activeVideoId, activeServerUrl) { "$activeVideoId-$activeServerUrl" }
 
     val subtitles by viewModel.subtitles.collectAsStateWithLifecycle()
     val isSubtitleLoading by viewModel.isSubtitleLoading.collectAsStateWithLifecycle()
@@ -483,12 +487,24 @@ fun VideoPlayerScreen(
     }
 
 
-    val isPencuri = remember(videoId, video?.videoUrl, extractedUrl) {
-        com.duta.movie.util.VideoExtractor.isPencuriMovie(videoId = videoId, videoUrl = video?.videoUrl, streamUrl = extractedUrl)
+    val isPencuri = remember(activeVideoId, video?.videoUrl, extractedUrl) {
+        com.duta.movie.util.VideoExtractor.isPencuriMovie(videoId = activeVideoId, videoUrl = video?.videoUrl, streamUrl = extractedUrl)
     }
 
-    val isLive = remember(videoId, video?.duration) {
-        com.duta.movie.model.LiveTvCatalog.isLiveVideo(videoId) || video?.duration == "LIVE"
+    val isLive = remember(activeVideoId, video?.duration) {
+        com.duta.movie.model.LiveTvCatalog.isLiveVideo(activeVideoId) || video?.duration == "LIVE"
+    }
+
+    val liveEpgInfo = remember(activeVideoId) {
+        if (com.duta.movie.model.LiveTvCatalog.isLiveVideo(activeVideoId)) {
+            com.duta.movie.model.LiveTvEpg.getEpgInfo(activeVideoId)
+        } else null
+    }
+
+    val liveEpgText = remember(liveEpgInfo) {
+        liveEpgInfo?.let {
+            "🔴 ${it.currentProgram.title} (${it.currentProgram.startTime} - ${it.currentProgram.endTime}) • Seterusnya: ${it.nextProgram?.title ?: "Tamat"}"
+        }
     }
 
     val isYouTube = remember(extractedUrl) {
@@ -523,13 +539,13 @@ fun VideoPlayerScreen(
 
     var isFinishing by remember { mutableStateOf(false) }
 
-    LaunchedEffect(videoId, video?.title, currentEpisode?.url) {
-        if (!com.duta.movie.model.LiveTvCatalog.isLiveVideo(videoId)) {
-            video?.title?.let { viewModel.fetchSubtitles(it, isTV = (video?.isSeries == true && video?.episodes?.isNotEmpty() == true) || currentEpisode != null, videoId = videoId) }
+    LaunchedEffect(activeVideoId, video?.title, currentEpisode?.url) {
+        if (!com.duta.movie.model.LiveTvCatalog.isLiveVideo(activeVideoId)) {
+            video?.title?.let { viewModel.fetchSubtitles(it, isTV = (video?.isSeries == true && video?.episodes?.isNotEmpty() == true) || currentEpisode != null, videoId = activeVideoId) }
         }
     }
 
-    val isAnyDialogOpen = showServerDialog || showSubtitleDialog || showSyncDialog || showEpisodeDialog || showResumeDialog
+    val isAnyDialogOpen = showServerDialog || showSubtitleDialog || showSyncDialog || showEpisodeDialog || showResumeDialog || showChannelZapper
     LaunchedEffect(showControls, isVideoReady, isAnyDialogOpen, lastInteractionTime) { 
         if (showControls && isVideoReady && !isAnyDialogOpen) { 
             delay(if (isTV) 12000L else 8000L)
@@ -559,10 +575,22 @@ fun VideoPlayerScreen(
         }
     }
     LaunchedEffect(vadAudioProcessor) {
+        vadAudioProcessor.detectedSpeechSegments.collect { segments ->
+            if (segments.isNotEmpty()) {
+                viewModel.setVadSpeechSegments(segments, isWindowElapsed = false)
+            }
+        }
+    }
+    LaunchedEffect(vadAudioProcessor) {
         vadAudioProcessor.isWindowElapsed.collect { elapsed ->
             if (elapsed) {
+                val segments = vadAudioProcessor.detectedSpeechSegments.value
                 val onsets = vadAudioProcessor.detectedVoiceOnsets.value
-                viewModel.setVadVoiceOnsets(onsets, isWindowElapsed = true)
+                if (segments.isNotEmpty()) {
+                    viewModel.setVadSpeechSegments(segments, isWindowElapsed = true)
+                } else if (onsets.isNotEmpty()) {
+                    viewModel.setVadVoiceOnsets(onsets, isWindowElapsed = true)
+                }
             }
         }
     }
@@ -574,7 +602,7 @@ fun VideoPlayerScreen(
     LaunchedEffect(autoSyncNotice) {
         val notice = autoSyncNotice
         if (notice != null) {
-            if (notice.method.contains("Cadence")) {
+            if (notice.method.contains("Cadence") || notice.method.contains("FFSubSync") || notice.method.contains("Auto-Pilot")) {
                 vadAudioProcessor.stopListening()
             }
             delay(3200)
@@ -582,7 +610,7 @@ fun VideoPlayerScreen(
         }
     }
     LaunchedEffect(selectedSubtitle) {
-        if (viewModel.isCurrentSubtitleMatched(selectedSubtitle)) {
+        if (viewModel.isCurrentSubtitleEmbedded(selectedSubtitle)) {
             vadAudioProcessor.stopListening()
             vadAudioProcessor.resetDetection()
         }
@@ -1041,8 +1069,8 @@ fun VideoPlayerScreen(
     val currentSub = remember { mutableStateOf<String?>(null) }
     val currentPreferredLang = rememberUpdatedState(preferredLanguageCode)
     val currentSelectedSubtitle = rememberUpdatedState(selectedSubtitle)
-    val currentVideoId = rememberUpdatedState(videoId)
-    val currentServerUrl = rememberUpdatedState(serverUrl)
+    val currentVideoId = rememberUpdatedState(activeVideoId)
+    val currentServerUrl = rememberUpdatedState(activeServerUrl)
 
     // Resolution logic - Use a state-backed key to avoid unnecessary resets
     // We only trigger resolution if the parameters CHANGE, not on internal rotation
@@ -1057,14 +1085,14 @@ fun VideoPlayerScreen(
         android.webkit.CookieManager.getInstance().removeAllCookies(null)
         android.webkit.CookieManager.getInstance().flush()
         
-        val isRealSeries = isSeriesPlayback(video, serverUrl)
+        val isRealSeries = isSeriesPlayback(video, activeServerUrl)
         if (isRealSeries) {
-            viewModel.playTVSeries(videoId, serverUrl, forceReset = true)
+            viewModel.playTVSeries(activeVideoId, activeServerUrl, forceReset = true)
         } else {
-            viewModel.playMovie(videoId, serverUrl, forceReset = true)
+            viewModel.playMovie(activeVideoId, activeServerUrl, forceReset = true)
         }
 
-        viewModel.addToRecentlyWatched(videoId)
+        viewModel.addToRecentlyWatched(activeVideoId)
         isVideoReady = false; showControls = true
         isFinishing = false
         playerErrorMessage = null
@@ -2014,6 +2042,13 @@ fun VideoPlayerScreen(
         onSyncClick = { showSyncDialog = true },
         onPipClick = { (context.findActivity() as? com.duta.movie.MainActivity)?.enterPipMode() },
         onEpisodeListClick = { showEpisodeDialog = true },
+        onChannelZapperClick = { showChannelZapper = true },
+        liveEpgText = liveEpgText,
+        onChannelSelect = { channel ->
+            showChannelZapper = false
+            activeVideoId = channel.id
+            activeServerUrl = channel.videoUrl
+        },
         onInteraction = { lastInteractionTime = System.currentTimeMillis() },
         onControlFocusChange = { 
             isAnyControlFocused = it
@@ -2030,13 +2065,13 @@ fun VideoPlayerScreen(
                 selectedQualityGroupIndex = t.groupIndex
             }
         },
-        onNextEpisodeClick = { viewModel.resolveNextEpisode(videoId) },
+        onNextEpisodeClick = { viewModel.resolveNextEpisode(activeVideoId) },
         onRetryClick = { 
             playerErrorMessage = null
-            if (isSeriesPlayback(video, serverUrl)) {
-                viewModel.playTVSeries(videoId, serverUrl, forceReset = true)
+            if (isSeriesPlayback(video, activeServerUrl)) {
+                viewModel.playTVSeries(activeVideoId, activeServerUrl, forceReset = true)
             } else {
-                viewModel.playMovie(videoId, serverUrl, forceReset = true)
+                viewModel.playMovie(activeVideoId, activeServerUrl, forceReset = true)
             }
         },
         onFindAlternativesClick = {
@@ -2173,7 +2208,7 @@ fun VideoPlayerScreen(
         onLogClick = { showResolutionLog = true },
         isTV = isTV,
         activeContentKey = activeContentKey,
-        videoId = videoId,
+        videoId = activeVideoId,
         onUserPauseChange = { userInitiatedPause = it },
         onUserSeek = { lastSeekTimeMs = System.currentTimeMillis() },
         fallbackDurationMs = fallbackDurationMs,
@@ -2276,6 +2311,19 @@ fun VideoPlayerScreen(
                     Text(stringResource(R.string.start_over), color = if (isStartFocused) Color.White else Color.Gray) 
                 }
             }
+        )
+    }
+
+    if (showChannelZapper) {
+        ChannelZapperDrawer(
+            activeChannelId = activeVideoId,
+            onChannelSelect = { channel ->
+                showChannelZapper = false
+                activeVideoId = channel.id
+                activeServerUrl = channel.videoUrl
+            },
+            onDismissRequest = { showChannelZapper = false },
+            isTV = isTV
         )
     }
 
@@ -2653,8 +2701,8 @@ fun VideoPlayerScreen(
                             )
                         }
 
-                        // AI Translate Button (Available when any subtitles cues exist)
-                        if (subtitleCues.isNotEmpty()) {
+                        // AI Translate Button (Available when any subtitles cues or subtitles exist)
+                        if (subtitleCues.isNotEmpty() || subtitles.isNotEmpty()) {
                             var isAiTransFocused by remember { mutableStateOf(false) }
                             OutlinedButton(
                                 onClick = {
@@ -2728,6 +2776,29 @@ fun VideoPlayerScreen(
                                         Pair("en", "🇬🇧 English")
                                     )
                                     
+                                    val onSelectTargetLang: (String) -> Unit = { code ->
+                                        showAiTranslateLanguageDialog = false
+                                        if (subtitleCues.isNotEmpty()) {
+                                            viewModel.translateSelectedSubtitle(code) { success, msg ->
+                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                            }
+                                        } else {
+                                            val cand = subtitles.firstOrNull { 
+                                                !it.label.startsWith("[AI Translated]") && 
+                                                com.duta.movie.util.SubtitleExtractor.normalizeLanguage(it.language).equals("English", ignoreCase = true) 
+                                            } ?: subtitles.firstOrNull { 
+                                                !it.label.startsWith("[AI Translated]") 
+                                            }
+                                            if (cand != null) {
+                                                val targetName = com.duta.movie.util.SubtitleTranslator.getLanguageDisplayName(code)
+                                                viewModel.triggerAutoTranslateFallback(cand, targetName)
+                                                showSubtitleDialog = false
+                                            } else {
+                                                Toast.makeText(context, "No source subtitle available to translate", Toast.LENGTH_SHORT).show()
+                                            }
+                                        }
+                                    }
+
                                     targetOptions.forEach { (code, label) ->
                                         var isOptionFocused by remember { mutableStateOf(false) }
                                         Surface(
@@ -2738,21 +2809,13 @@ fun VideoPlayerScreen(
                                                 .fillMaxWidth()
                                                 .padding(vertical = 4.dp)
                                                 .onFocusChanged { isOptionFocused = it.isFocused }
-                                                .clickable {
-                                                    showAiTranslateLanguageDialog = false
-                                                    viewModel.translateSelectedSubtitle(code) { success, msg ->
-                                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                                    }
-                                                }
+                                                .clickable { onSelectTargetLang(code) }
                                                 .onKeyEvent { keyEvent ->
                                                     if (keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
                                                         (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
                                                          keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
                                                          keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
-                                                        showAiTranslateLanguageDialog = false
-                                                        viewModel.translateSelectedSubtitle(code) { success, msg ->
-                                                            Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                                        }
+                                                        onSelectTargetLang(code)
                                                         true
                                                     } else false
                                                 }
@@ -3062,7 +3125,16 @@ fun VideoPlayerScreen(
                                     horizontalAlignment = Alignment.CenterHorizontally
                                 ) {
                                     val isTargetLangFiltered = selectedLanguageFilter == "Indonesian" || selectedLanguageFilter == "Malay" || selectedLanguageFilter == "English" || selectedLanguageFilter == defaultSubtitleLanguage
-                                    if (subtitleCues.isNotEmpty() && isTargetLangFiltered) {
+                                    val candidateForTranslation = remember(subtitles) {
+                                        subtitles.firstOrNull { 
+                                            !it.label.startsWith("[AI Translated]") && 
+                                            com.duta.movie.util.SubtitleExtractor.normalizeLanguage(it.language).equals("English", ignoreCase = true) 
+                                        } ?: subtitles.firstOrNull { 
+                                            !it.label.startsWith("[AI Translated]") 
+                                        }
+                                    }
+                                    val canAiTranslate = isTargetLangFiltered && (subtitleCues.isNotEmpty() || candidateForTranslation != null)
+                                    if (canAiTranslate) {
                                         Text(
                                             stringResource(R.string.ai_translate_prompt, targetLangName),
                                             color = Color.LightGray,
@@ -3073,9 +3145,14 @@ fun VideoPlayerScreen(
                                         var isAutoTransPromptFocused by remember { mutableStateOf(false) }
                                         Button(
                                             onClick = {
-                                                viewModel.translateSelectedSubtitle(targetLangCode) { success, msg ->
-                                                    Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                if (subtitleCues.isNotEmpty()) {
+                                                    viewModel.translateSelectedSubtitle(targetLangCode) { success, msg ->
+                                                        Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
+                                                    }
+                                                } else if (candidateForTranslation != null) {
+                                                    viewModel.triggerAutoTranslateFallback(candidateForTranslation, targetLangName)
                                                 }
+                                                showSubtitleDialog = false
                                             },
                                             colors = ButtonDefaults.buttonColors(
                                                 containerColor = if (isAutoTransPromptFocused) Color(0xFFE50914) else Color(0xFF1A237E)
@@ -3101,17 +3178,21 @@ fun VideoPlayerScreen(
                                                 fontWeight = FontWeight.Bold
                                             )
                                         }
-                                    } else if (subtitles.isNotEmpty()) {
-                                        Text(
-                                            stringResource(R.string.no_subs_in_filter),
-                                            color = Color.LightGray,
-                                            fontSize = 12.sp,
-                                            textAlign = TextAlign.Center
-                                        )
-                                        Spacer(Modifier.height(8.dp))
+                                        Spacer(Modifier.height(12.dp))
+                                    }
+                                    if (subtitles.isNotEmpty()) {
+                                        if (!canAiTranslate) {
+                                            Text(
+                                                stringResource(R.string.no_subs_in_filter),
+                                                color = Color.LightGray,
+                                                fontSize = 12.sp,
+                                                textAlign = TextAlign.Center
+                                            )
+                                            Spacer(Modifier.height(8.dp))
+                                        }
                                         var isShowAllFocused by remember { mutableStateOf(false) }
                                         OutlinedButton(
-                                            onClick = { selectedLanguageFilter = "all" },
+                                            onClick = { selectedLanguageFilter = "All" },
                                             modifier = Modifier
                                                 .onFocusChanged { isShowAllFocused = it.isFocused }
                                                 .focusable()
@@ -3292,6 +3373,7 @@ fun VideoPlayerScreen(
 
                     // Auto-Pilot Status Badge
                     val isAutoSubSyncEnabled by viewModel.isAutoSubSyncEnabled.collectAsStateWithLifecycle()
+                    val isEmbeddedSub = viewModel.isCurrentSubtitleEmbedded()
                     val isMatchedSub = viewModel.isCurrentSubtitleMatched()
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
@@ -3301,7 +3383,7 @@ fun VideoPlayerScreen(
                             .padding(bottom = 6.dp)
                     ) {
                         val badgeColor = when {
-                            isMatchedSub -> Color(0xFF29B6F6)
+                            isEmbeddedSub -> Color(0xFF29B6F6)
                             isAutoSubSyncEnabled -> Color(0xFF00E676)
                             else -> Color.Gray
                         }
@@ -3315,7 +3397,7 @@ fun VideoPlayerScreen(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = if (isMatchedSub) Icons.Default.Lock else Icons.Default.Bolt,
+                                    imageVector = if (isEmbeddedSub) Icons.Default.Lock else Icons.Default.Bolt,
                                     contentDescription = null,
                                     tint = badgeColor,
                                     modifier = Modifier.size(13.dp)
@@ -3323,8 +3405,8 @@ fun VideoPlayerScreen(
                                 Spacer(Modifier.width(4.dp))
                                 Text(
                                     text = when {
-                                        isMatchedSub -> "Auto-Pilot: Matched Release (Locked 0.0s)"
-                                        isAutoSubSyncEnabled -> "Auto-Pilot: Active"
+                                        isEmbeddedSub -> "Stream Track (Hardware Sync 0.0s)"
+                                        isAutoSubSyncEnabled -> if (isMatchedSub) "Auto-Pilot: Active (Release Matched)" else "Auto-Pilot: Active"
                                         else -> "Auto-Pilot: Disabled"
                                     },
                                     color = badgeColor,
@@ -4093,7 +4175,10 @@ fun VideoPlayerContent(
     onUserSeek: () -> Unit = {},
     fallbackDurationMs: Long = 0L,
     voiceEnhancerMode: Int = 0,
-    onVoiceEnhancerSelect: ((Int) -> Unit)? = null
+    onVoiceEnhancerSelect: ((Int) -> Unit)? = null,
+    onChannelZapperClick: (() -> Unit)? = null,
+    liveEpgText: String? = null,
+    onChannelSelect: ((Video) -> Unit)? = null
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
     val isLive = remember(videoId, video?.duration) {
@@ -4393,15 +4478,39 @@ fun VideoPlayerContent(
                         currentPlayer.seekTo(0L)
                         true
                     }
+                    android.view.KeyEvent.KEYCODE_CHANNEL_UP -> {
+                        if (isLive && onChannelSelect != null) {
+                            val channels = com.duta.movie.model.LiveTvCatalog.channels
+                            val curIdx = channels.indexOfFirst { it.id == videoId }
+                            val nextIdx = if (curIdx != -1 && curIdx < channels.size - 1) curIdx + 1 else 0
+                            onChannelSelect(channels[nextIdx])
+                            true
+                        } else false
+                    }
+                    android.view.KeyEvent.KEYCODE_CHANNEL_DOWN -> {
+                        if (isLive && onChannelSelect != null) {
+                            val channels = com.duta.movie.model.LiveTvCatalog.channels
+                            val curIdx = channels.indexOfFirst { it.id == videoId }
+                            val prevIdx = if (curIdx > 0) curIdx - 1 else channels.size - 1
+                            onChannelSelect(channels[prevIdx])
+                            true
+                        } else false
+                    }
                     android.view.KeyEvent.KEYCODE_DPAD_UP -> {
                         if (!showControls) { 
-                            onVisibilityToggle()
+                            if (isLive && onChannelZapperClick != null) {
+                                onChannelZapperClick()
+                            } else {
+                                onVisibilityToggle()
+                            }
                             true
                         } else false
                     }
                     android.view.KeyEvent.KEYCODE_DPAD_DOWN -> {
                         if (!showControls) { 
-                            if (video?.isSeries == true) {
+                            if (isLive && onChannelZapperClick != null) {
+                                onChannelZapperClick()
+                            } else if (video?.isSeries == true) {
                                 onEpisodeListClick()
                             } else {
                                 onVisibilityToggle()
@@ -4735,7 +4844,9 @@ fun VideoPlayerContent(
                 fallbackDurationMs = fallbackDurationMs,
                 isTV = isTV,
                 voiceEnhancerMode = voiceEnhancerMode,
-                onVoiceEnhancerSelect = onVoiceEnhancerSelect
+                onVoiceEnhancerSelect = onVoiceEnhancerSelect,
+                onChannelZapperClick = onChannelZapperClick,
+                liveEpgText = liveEpgText
             )
         }
 
@@ -4998,6 +5109,278 @@ fun VideoPlayerContent(
                             color = Color.White,
                             fontSize = if (isTV) 16.sp else 13.sp,
                             fontWeight = FontWeight.Bold
+                        )
+                    }
+                }
+            }
+        }
+        // ── Feature 4: Smart Skip Intro Pill (+85s) ──
+        val currentPlaybackPos = rememberPlayerPosition(currentPlayer, true)
+        val rawPlaybackDur = rememberPlayerDuration(currentPlayer, fallbackDurationMs, true)
+        val playbackDur = if (rawPlaybackDur > 0L) rawPlaybackDur else maxOf(fallbackDurationMs, 0L)
+
+        // Detect Short TV / Mini-Drama
+        val isShortTvContent = remember(video, extractedUrl, playbackDur) {
+            com.duta.movie.util.VideoExtractor.isShortTv(video) ||
+            video?.isShortTv == true ||
+            (video?.videoUrl?.contains("type=5") == true) ||
+            (video?.videoUrl?.contains("type=7") == true) ||
+            (video?.videoUrl?.contains("short-tv") == true) ||
+            (video?.videoUrl?.contains("dramabox") == true) ||
+            (video?.videoUrl?.contains("netshort") == true) ||
+            (extractedUrl?.contains("type=5") == true) ||
+            (extractedUrl?.contains("type=7") == true) ||
+            (extractedUrl?.contains("dramabox") == true) ||
+            (extractedUrl?.contains("netshort") == true) ||
+            (extractedUrl?.contains("hakunaymatata") == true) ||
+            (playbackDur in 10_000L..240_000L)
+        }
+
+        var isIntroDismissed by remember(videoId, activeContentKey) { mutableStateOf(false) }
+        // Auto-hide: shows from 4s to 18s (14s window), or when controls are active during the first 80s
+        // Never show Skip Intro on Short TV micro-dramas (they don't have long intros)
+        val showSkipIntro = remember(currentPlaybackPos, playbackDur, isLive, isIntroDismissed, showControls, isShortTvContent) {
+            !isLive && !isShortTvContent && !isIntroDismissed && playbackDur > 180_000L &&
+            ((currentPlaybackPos in 4_000L..18_000L) || (showControls && currentPlaybackPos in 4_000L..80_000L))
+        }
+
+        AnimatedVisibility(
+            visible = showSkipIntro && !isInPip,
+            enter = slideInHorizontally { -it } + fadeIn(),
+            exit = slideOutHorizontally { -it } + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomStart)
+                .padding(
+                    start = if (isTV) 32.dp else 16.dp,
+                    bottom = if (showControls) 84.dp else 24.dp
+                )
+                .zIndex(8500f)
+        ) {
+            var isSkipFocused by remember { mutableStateOf(false) }
+            val skipScale by animateFloatAsState(if (isSkipFocused) 1.06f else 1f)
+
+            Surface(
+                color = if (isSkipFocused) Color(0xFFE50914) else Color(0xF2141414), // Solid dark matte, reduced transparency
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(
+                    width = if (isSkipFocused) 2.dp else 1.dp,
+                    color = if (isSkipFocused) Color.White else Color.White.copy(alpha = 0.22f)
+                ),
+                shadowElevation = 4.dp,
+                modifier = Modifier.scale(skipScale)
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 10.dp, end = 4.dp, top = 4.dp, bottom = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .clickable {
+                                isIntroDismissed = true
+                                val target = (currentPlaybackPos + 85_000L).coerceAtMost(maxOf(0L, playbackDur - 5_000L))
+                                currentPlayer.seekTo(target)
+                                onSeekFeedback("Langkau Intro (+85s)")
+                            }
+                            .onFocusChanged { isSkipFocused = it.isFocused }
+                            .focusable(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(
+                            Icons.Default.FastForward,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(if (isTV) 15.dp else 13.dp)
+                        )
+                        Spacer(modifier = Modifier.width(5.dp))
+                        Text(
+                            text = "Langkau Intro",
+                            color = Color.White,
+                            fontSize = if (isTV) 12.sp else 11.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text(
+                            text = "+85s",
+                            color = if (isSkipFocused) Color.White else Color(0xFFAAAAAA),
+                            fontSize = if (isTV) 10.sp else 9.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(4.dp))
+                    IconButton(
+                        onClick = { isIntroDismissed = true },
+                        modifier = Modifier.size(if (isTV) 22.dp else 20.dp)
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Tutup",
+                            tint = Color.Gray,
+                            modifier = Modifier.size(12.dp)
+                        )
+                    }
+                }
+            }
+        }
+
+        // ── Feature 4: Smart Next Episode Auto-Play Mini-Pill Banner ──
+        val episodes = remember(video) {
+            video?.episodes?.filter { ep ->
+                val low = ep.name.lowercase()
+                !low.contains("lihat semua") && !low.contains("see all") && 
+                !low.contains("episode list") && !low.contains("daftar episode") &&
+                !low.contains("next") && !low.contains("prev") && !low.contains("halaman")
+            } ?: emptyList()
+        }
+        val nextEpisode = remember(episodes, currentEpisode) {
+            if (episodes.isEmpty()) null
+            else {
+                val currentEp = currentEpisode
+                val idx = if (currentEp != null) {
+                    val i = episodes.indexOfFirst { it.url == currentEp.url || it.id == currentEp.id }
+                    if (i == -1) {
+                        val slug = com.duta.movie.util.VideoExtractor.extractStableId(currentEp.url)
+                        episodes.indexOfFirst { com.duta.movie.util.VideoExtractor.extractStableId(it.url) == slug }
+                    } else i
+                } else if (episodes.isNotEmpty()) 0 else -1
+                if (idx != -1 && idx < episodes.size - 1) episodes[idx + 1] else null
+            }
+        }
+
+        var isNextEpDismissed by remember(videoId, activeContentKey) { mutableStateOf(false) }
+
+        // Short TV: exactly 10s trigger; Normal TV: 14s trigger
+        val triggerWindowMs = if (isShortTvContent) 10_000L else 14_000L
+        val minDurationForAutoPlay = if (isShortTvContent) 15_000L else 60_000L
+        val maxCountdownSeconds = if (isShortTvContent) 10L else 14L
+
+        val isNearEnd = remember(currentPlaybackPos, playbackDur, isLive, isNextEpDismissed, nextEpisode, isShortTvContent) {
+            !isLive && nextEpisode != null && !isNextEpDismissed &&
+            playbackDur > minDurationForAutoPlay &&
+            currentPlaybackPos >= (playbackDur - triggerWindowMs) &&
+            currentPlaybackPos < (playbackDur - 100L)
+        }
+        val remainingSeconds = remember(currentPlaybackPos, playbackDur, maxCountdownSeconds) {
+            if (playbackDur <= 0L) maxCountdownSeconds
+            else ((playbackDur - currentPlaybackPos) / 1000L).coerceIn(1L, maxCountdownSeconds)
+        }
+
+        // CRITICAL: DO NOT stop video prematurely!
+        // Allow the entire video to play to the very last frame (natural completion or STATE_ENDED).
+        // Only trigger auto-advance when playback reaches the genuine end of the stream (within 200ms of finish).
+        LaunchedEffect(isNearEnd, currentPlaybackPos, playbackDur) {
+            if (isNearEnd && !isNextEpDismissed && playbackDur > 0L && currentPlaybackPos >= (playbackDur - 200L)) {
+                isNextEpDismissed = true
+                onNextEpisodeClick()
+            }
+        }
+
+        AnimatedVisibility(
+            visible = isNearEnd && !isInPip,
+            enter = slideInHorizontally { it } + fadeIn(),
+            exit = slideOutHorizontally { it } + fadeOut(),
+            modifier = Modifier
+                .align(Alignment.BottomEnd)
+                .padding(
+                    end = if (isTV) 32.dp else 16.dp,
+                    bottom = if (showControls) 84.dp else 24.dp
+                )
+                .zIndex(8500f)
+        ) {
+            Surface(
+                color = Color(0xF5141414), // Solid dark matte, reduced transparency (96% opaque)
+                shape = RoundedCornerShape(20.dp),
+                border = BorderStroke(1.dp, Color.White.copy(alpha = 0.2f)),
+                shadowElevation = 6.dp
+            ) {
+                Row(
+                    modifier = Modifier.padding(start = 12.dp, end = 6.dp, top = 5.dp, bottom = 5.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        Icons.Default.SkipNext,
+                        contentDescription = null,
+                        tint = Color(0xFFE50914),
+                        modifier = Modifier.size(if (isTV) 18.dp else 15.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Column(modifier = Modifier.padding(vertical = 1.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Episod Seterusnya",
+                                color = Color.White,
+                                fontSize = if (isTV) 11.sp else 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text(
+                                text = "• ${remainingSeconds}s",
+                                color = Color(0xFFFFD54F),
+                                fontSize = if (isTV) 11.sp else 10.sp,
+                                fontWeight = FontWeight.ExtraBold
+                            )
+                        }
+                        nextEpisode?.name?.let { epName ->
+                            Text(
+                                text = epName,
+                                color = Color(0xFFAAAAAA),
+                                fontSize = if (isTV) 10.sp else 9.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.widthIn(max = if (isTV) 160.dp else 110.dp)
+                            )
+                        }
+                    }
+                    Spacer(modifier = Modifier.width(8.dp))
+
+                    var isWatchFocused by remember { mutableStateOf(false) }
+                    val watchScale by animateFloatAsState(if (isWatchFocused) 1.08f else 1f)
+                    Surface(
+                        onClick = {
+                            isNextEpDismissed = true
+                            onNextEpisodeClick()
+                        },
+                        color = if (isWatchFocused) Color(0xFFFF1744) else Color(0xFFE50914),
+                        shape = RoundedCornerShape(14.dp),
+                        border = if (isWatchFocused) BorderStroke(1.5.dp, Color.White) else BorderStroke(0.dp, Color.Transparent),
+                        modifier = Modifier
+                            .scale(watchScale)
+                            .onFocusChanged { isWatchFocused = it.isFocused }
+                            .focusable()
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.PlayArrow,
+                                contentDescription = null,
+                                tint = Color.White,
+                                modifier = Modifier.size(12.dp)
+                            )
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text(
+                                text = "Tonton",
+                                color = Color.White,
+                                fontSize = if (isTV) 11.sp else 10.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(2.dp))
+                    var isCloseFocused by remember { mutableStateOf(false) }
+                    IconButton(
+                        onClick = { isNextEpDismissed = true },
+                        modifier = Modifier
+                            .size(if (isTV) 24.dp else 22.dp)
+                            .onFocusChanged { isCloseFocused = it.isFocused }
+                            .focusable()
+                    ) {
+                        Icon(
+                            Icons.Default.Close,
+                            contentDescription = "Batal",
+                            tint = if (isCloseFocused) Color.White else Color.Gray,
+                            modifier = Modifier.size(13.dp)
                         )
                     }
                 }
@@ -6465,5 +6848,250 @@ fun ServerSelectionDialog(
             }
         }
     )
+}
+
+@Composable
+fun ChannelZapperDrawer(
+    activeChannelId: String,
+    onChannelSelect: (com.duta.movie.model.Video) -> Unit,
+    onDismissRequest: () -> Unit,
+    isTV: Boolean
+) {
+    val channels = remember { com.duta.movie.model.LiveTvCatalog.channels }
+    val activeIndex = remember(activeChannelId) {
+        channels.indexOfFirst { it.id == activeChannelId }.coerceAtLeast(0)
+    }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (activeIndex - 1).coerceAtLeast(0))
+    val focusRequesters = remember { List(channels.size) { FocusRequester() } }
+
+    var lastInteraction by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(lastInteraction) {
+        delay(6000) // Auto-hide after 6 seconds of inactivity
+        onDismissRequest()
+    }
+
+    // Auto-focus the current active channel when opened on TV
+    LaunchedEffect(Unit) {
+        if (isTV) {
+            delay(150)
+            try {
+                focusRequesters.getOrNull(activeIndex)?.requestFocus()
+            } catch (_: Exception) {}
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color.Black.copy(alpha = 0.55f))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null
+            ) { onDismissRequest() }
+            .zIndex(9000f)
+    ) {
+        Surface(
+            color = Color(0xF2121212),
+            modifier = Modifier
+                .width(if (isTV) 380.dp else 300.dp)
+                .fillMaxHeight()
+                .align(Alignment.CenterStart)
+                .clickable(
+                    interactionSource = remember { MutableInteractionSource() },
+                    indication = null
+                ) { lastInteraction = System.currentTimeMillis() }
+                .border(
+                    BorderStroke(1.dp, Color.White.copy(alpha = 0.12f)),
+                    shape = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp)
+                ),
+            shape = RoundedCornerShape(topEnd = 16.dp, bottomEnd = 16.dp),
+            shadowElevation = 16.dp
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(vertical = 16.dp, horizontal = 12.dp)
+            ) {
+                // Header
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 8.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        Icons.Default.LiveTv,
+                        contentDescription = null,
+                        tint = Color(0xFFE50914),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text(
+                            text = "SALURAN TV",
+                            color = Color.White,
+                            fontSize = if (isTV) 18.sp else 16.sp,
+                            fontWeight = FontWeight.Black,
+                            letterSpacing = 1.sp
+                        )
+                        Text(
+                            text = "Tukar siaran serta-merta",
+                            color = Color(0xFFAAAAAA),
+                            fontSize = 11.sp
+                        )
+                    }
+                    IconButton(
+                        onClick = onDismissRequest,
+                        modifier = Modifier.size(32.dp)
+                    ) {
+                        Icon(Icons.Default.Close, contentDescription = "Tutup", tint = Color.Gray)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+                HorizontalDivider(color = Color.White.copy(alpha = 0.1f))
+                Spacer(modifier = Modifier.height(8.dp))
+
+                LazyColumn(
+                    state = listState,
+                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                    modifier = Modifier
+                        .fillMaxSize()
+                ) {
+                    itemsIndexed(channels, key = { _, ch -> ch.id }) { index, channel ->
+                        val isCurrent = channel.id == activeChannelId
+                        val epgInfo = remember(channel.id) { com.duta.movie.model.LiveTvEpg.getEpgInfo(channel.id) }
+                        var isItemFocused by remember { mutableStateOf(false) }
+                        val itemScale by animateFloatAsState(if (isItemFocused) 1.04f else 1.0f)
+
+                        Surface(
+                            onClick = {
+                                onChannelSelect(channel)
+                            },
+                            shape = RoundedCornerShape(12.dp),
+                            color = when {
+                                isItemFocused -> Color(0xFFE50914).copy(alpha = 0.35f)
+                                isCurrent -> Color(0xFF222222)
+                                else -> Color(0xFF181818)
+                            },
+                            border = BorderStroke(
+                                width = if (isItemFocused) 2.5.dp else if (isCurrent) 1.5.dp else 0.5.dp,
+                                color = when {
+                                    isItemFocused -> Color(0xFFE50914)
+                                    isCurrent -> Color(0xFF00E676)
+                                    else -> Color.White.copy(alpha = 0.08f)
+                                }
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .scale(itemScale)
+                                .focusRequester(focusRequesters[index])
+                                .onFocusChanged {
+                                    isItemFocused = it.isFocused
+                                    if (it.isFocused) lastInteraction = System.currentTimeMillis()
+                                }
+                                .onKeyEvent { keyEvent ->
+                                    if (keyEvent.type == KeyEventType.KeyDown) {
+                                        lastInteraction = System.currentTimeMillis()
+                                        when (keyEvent.nativeKeyEvent.keyCode) {
+                                            android.view.KeyEvent.KEYCODE_DPAD_LEFT,
+                                            android.view.KeyEvent.KEYCODE_BACK -> {
+                                                onDismissRequest()
+                                                true
+                                            }
+                                            android.view.KeyEvent.KEYCODE_DPAD_CENTER,
+                                            android.view.KeyEvent.KEYCODE_ENTER,
+                                            android.view.KeyEvent.KEYCODE_NUMPAD_ENTER -> {
+                                                onChannelSelect(channel)
+                                                true
+                                            }
+                                            else -> false
+                                        }
+                                    } else false
+                                }
+                                .focusable()
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(8.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                // Channel index number
+                                Text(
+                                    text = String.format("%02d", index + 1),
+                                    color = if (isCurrent) Color(0xFF00E676) else Color.Gray,
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    modifier = Modifier.width(24.dp)
+                                )
+
+                                // Channel Logo
+                                Box(
+                                    modifier = Modifier
+                                        .size(46.dp)
+                                        .background(Color.Black.copy(alpha = 0.5f), RoundedCornerShape(8.dp))
+                                        .padding(4.dp),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    coil.compose.AsyncImage(
+                                        model = channel.thumbnailUrl,
+                                        contentDescription = channel.title,
+                                        modifier = Modifier.fillMaxSize(),
+                                        contentScale = androidx.compose.ui.layout.ContentScale.Fit
+                                    )
+                                }
+
+                                Spacer(modifier = Modifier.width(10.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = channel.title,
+                                            color = Color.White,
+                                            fontSize = if (isTV) 15.sp else 13.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            maxLines = 1,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        if (isCurrent) {
+                                            Spacer(modifier = Modifier.width(6.dp))
+                                            Surface(
+                                                color = Color(0xFF00E676).copy(alpha = 0.2f),
+                                                shape = RoundedCornerShape(4.dp)
+                                            ) {
+                                                Text(
+                                                    text = "SEDANG DITONTON",
+                                                    color = Color(0xFF00E676),
+                                                    fontSize = 8.sp,
+                                                    fontWeight = FontWeight.Black,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+                                    }
+
+                                    Spacer(modifier = Modifier.height(2.dp))
+                                    Text(
+                                        text = epgInfo.currentProgram.title,
+                                        color = if (isCurrent) Color(0xFFFFD54F) else Color(0xFFCCCCCC),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                    Text(
+                                        text = "${epgInfo.currentProgram.startTime} - ${epgInfo.currentProgram.endTime}",
+                                        color = Color.Gray,
+                                        fontSize = 9.sp
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
