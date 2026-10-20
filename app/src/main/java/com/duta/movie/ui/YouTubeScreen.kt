@@ -704,12 +704,12 @@ fun YouTubeScreen(
     var activeDislikes by remember { mutableStateOf("") }
     var isVideoPlaying by remember { mutableStateOf(false) }
 
-    // SponsorBlock Toast State
-    var sponsorToastMessage by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(sponsorToastMessage) {
-        if (sponsorToastMessage != null) {
-            delay(2800)
-            sponsorToastMessage = null
+    // User Action Toast State (for explicit button clicks only)
+    var toastMessage by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(toastMessage) {
+        if (toastMessage != null) {
+            delay(1500)
+            toastMessage = null
         }
     }
 
@@ -862,19 +862,16 @@ fun YouTubeScreen(
             @JavascriptInterface
             fun onShortAutoScrolled(url: String) {
                 currentUrl = url
-                sponsorToastMessage = "⚡ Auto-scrolled to next Short"
             }
 
             @JavascriptInterface
             fun onShortAdBypassed() {
-                sponsorToastMessage = "⚡ Bypassed Ad Short"
+                // Silently bypass ad in background
             }
 
             @JavascriptInterface
             fun onAdStateChanged(isAdPlaying: Boolean) {
-                if (isAdPlaying) {
-                    sponsorToastMessage = "⚡ Auto-skipping Ad..."
-                }
+                // Silently skip ad in background
             }
 
             @JavascriptInterface
@@ -893,15 +890,7 @@ fun YouTubeScreen(
 
             @JavascriptInterface
             fun onSponsorSkipped(category: String, seconds: Int) {
-                val label = when (category) {
-                    "sponsor" -> "Sponsor"
-                    "selfpromo" -> "Self-Promo"
-                    "interaction" -> "Subscribe Reminder"
-                    "intro" -> "Intro"
-                    "outro" -> "Outro"
-                    else -> "Segment"
-                }
-                sponsorToastMessage = "⚡ Skipped $label (${seconds}s)"
+                // Silently skip sponsor in background
             }
         }
     }
@@ -1256,7 +1245,7 @@ fun YouTubeScreen(
                                             tint = if (isShortsAutoScrollEnabled) Color(0xFFFF0000) else Color.White,
                                             onClick = {
                                                 viewModel.toggleShortsAutoScroll()
-                                                sponsorToastMessage = if (!isShortsAutoScrollEnabled) {
+                                                toastMessage = if (!isShortsAutoScrollEnabled) {
                                                     "⚡ Auto-Scroll ON"
                                                 } else {
                                                     "Auto-Scroll OFF"
@@ -1465,8 +1454,8 @@ fun YouTubeScreen(
                     )
                 }
 
-                // SponsorBlock Toast Notification
-                if (sponsorToastMessage != null) {
+                // User Action Toast Notification
+                if (toastMessage != null) {
                     Surface(
                         color = Color(0xFF1E1E1E).copy(alpha = 0.95f),
                         shape = RoundedCornerShape(20.dp),
@@ -1477,7 +1466,7 @@ fun YouTubeScreen(
                             .padding(top = 16.dp)
                     ) {
                         Text(
-                            text = sponsorToastMessage!!,
+                            text = toastMessage!!,
                             color = Color.White,
                             fontWeight = FontWeight.SemiBold,
                             fontSize = if (isRealTV) 15.sp else 13.sp,
@@ -1547,7 +1536,7 @@ fun YouTubeScreen(
                             )
                             .clickable {
                                 viewModel.toggleShortsAutoScroll()
-                                sponsorToastMessage = if (!isShortsAutoScrollEnabled) {
+                                toastMessage = if (!isShortsAutoScrollEnabled) {
                                     "⚡ Auto-Scroll ON"
                                 } else {
                                     "Auto-Scroll OFF"
