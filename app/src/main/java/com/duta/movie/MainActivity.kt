@@ -252,6 +252,7 @@ class MainActivity : AppCompatActivity() {
                 val isYouTubePlaying by videoViewModel.isYouTubePlaying.collectAsStateWithLifecycle()
                 val isCurrentAtYouTube = currentDestination?.hasRoute<Destination.YouTube>() == true
                 val isAnyPlayerActive = isPlayerActive || (isCurrentAtYouTube && isYouTubePlaying)
+                val isYouTubeFullScreen by videoViewModel.isYouTubeFullScreen.collectAsStateWithLifecycle()
                 val isMobileLandscapeEnabled by videoViewModel.isMobileLandscapeEnabled.collectAsStateWithLifecycle()
                 val showBroadcastDialog by videoViewModel.showBroadcastDialog.collectAsStateWithLifecycle()
                 val activeBroadcast by videoViewModel.activeBroadcast.collectAsStateWithLifecycle()
@@ -271,9 +272,9 @@ class MainActivity : AppCompatActivity() {
                     updatePipParams(isAnyPlayerActive)
                 }
 
-                LaunchedEffect(isMobileLandscapeEnabled, isPlayerActive) {
+                LaunchedEffect(isMobileLandscapeEnabled, isPlayerActive, isYouTubeFullScreen) {
                     val isRealTV = com.duta.movie.util.DeviceUtils.isTvDevice(this@MainActivity)
-                    if (!isRealTV && !isPlayerActive) {
+                    if (!isRealTV && !isPlayerActive && !isYouTubeFullScreen) {
                         requestedOrientation = if (isMobileLandscapeEnabled) {
                             android.content.pm.ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
                         } else {
@@ -296,7 +297,7 @@ class MainActivity : AppCompatActivity() {
                     Triple(Destination.MyList, Icons.Default.Bookmark, stringResource(R.string.my_list))
                 )
                 val isAtPlayer = currentDestination?.hasRoute<Destination.Player>() == true
-                val showNav = !isAtPlayer && !isInPip
+                val showNav = !isAtPlayer && !isInPip && !isYouTubeFullScreen
 
                 Scaffold(
                     containerColor = Color.Black,

@@ -2,6 +2,11 @@ package com.duta.movie.ui
 
 import android.annotation.SuppressLint
 import android.app.Activity
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
@@ -354,6 +359,31 @@ fun YouTubeScreen(
     // Custom full screen video view (for YouTube's native fullscreen)
     var customView by remember { mutableStateOf<View?>(null) }
     var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
+    var isManualFullScreenLandscape by remember { mutableStateOf(false) }
+    val isFullScreenActive = customView != null || isManualFullScreenLandscape
+    val isMobileLandscapeEnabled by viewModel.isMobileLandscapeEnabled.collectAsStateWithLifecycle()
+
+    LaunchedEffect(isFullScreenActive) {
+        viewModel.setYouTubeFullScreen(isFullScreenActive)
+        if (!isRealTV) {
+            val act = context.findActivity() ?: return@LaunchedEffect
+            val window = act.window
+            val controller = WindowCompat.getInsetsController(window, window.decorView)
+
+            if (isFullScreenActive) {
+                act.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                controller.hide(WindowInsetsCompat.Type.systemBars())
+                controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                act.requestedOrientation = if (isMobileLandscapeEnabled) {
+                    ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                } else {
+                    ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                }
+                controller.show(WindowInsetsCompat.Type.systemBars())
+            }
+        }
+    }
 
     // Original YouTube Search State & Controllers
     var isSearchActive by remember { mutableStateOf(false) }
@@ -483,6 +513,19 @@ fun YouTubeScreen(
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
             viewModel.setYouTubePlaying(false)
+            viewModel.setYouTubeFullScreen(false)
+            if (!isRealTV) {
+                val act = context.findActivity()
+                if (act != null) {
+                    val controller = WindowCompat.getInsetsController(act.window, act.window.decorView)
+                    controller.show(WindowInsetsCompat.Type.systemBars())
+                    act.requestedOrientation = if (isMobileLandscapeEnabled) {
+                        ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                    } else {
+                        ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                    }
+                }
+            }
             if (customView != null) {
                 try {
                     customViewCallback?.onCustomViewHidden()
@@ -490,6 +533,7 @@ fun YouTubeScreen(
                 customView = null
                 customViewCallback = null
             }
+            isManualFullScreenLandscape = false
             isBlackScreenMode = false
         }
     }
@@ -499,8 +543,20 @@ fun YouTubeScreen(
         if (isBlackScreenMode) {
             isBlackScreenMode = false
         } else if (customView != null) {
-            customViewCallback?.onCustomViewHidden()
+            try { customViewCallback?.onCustomViewHidden() } catch (_: Exception) {}
             customView = null
+            customViewCallback = null
+            isManualFullScreenLandscape = false
+            webViewInstance?.evaluateJavascript(
+                "(function(){ if (document.exitFullscreen) document.exitFullscreen(); else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); })();",
+                null
+            )
+        } else if (isManualFullScreenLandscape) {
+            isManualFullScreenLandscape = false
+            webViewInstance?.evaluateJavascript(
+                "(function(){ if (document.exitFullscreen) document.exitFullscreen(); else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); })();",
+                null
+            )
         } else if (isSearchActive) {
             isSearchActive = false
             keyboardController?.hide()
@@ -520,8 +576,8 @@ fun YouTubeScreen(
             .background(Color(0xFF0F0F0F))
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // ── AUTHENTIC YOUTUBE HEADER & FILTER BAR (Hidden in PiP) ───────
-            if (customView == null && !isInPip && !isBlackScreenMode) {
+            // ── AUTHENTIC YOUTUBE HEADER & FILTER BAR (Hidden in PiP & Fullscreen Landscape) ──
+            if (customView == null && !isInPip && !isBlackScreenMode && !isManualFullScreenLandscape) {
                 Surface(
                     color = Color(0xFF0F0F0F),
                     modifier = Modifier
@@ -777,6 +833,50 @@ fun YouTubeScreen(
 
                                         Spacer(modifier = Modifier.width(2.dp))
 
+                                        // 5. Fullscreen Landscape Button (Mobile mode)
+                                        if (!isRealTV) {
+                                            HeaderIconButton(
+                                                icon = if (isFullScreenActive) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
+                                                contentDescription = if (isFullScreenActive) "Exit Fullscreen" else "Fullscreen Landscape",
+                                                isTV = false,
+                                                tint = if (isFullScreenActive) Color.Red else Color.White,
+                                                onClick = {
+                                                    if (isFullScreenActive) {
+                                                        if (customView != null) {
+                                                            try { customViewCallback?.onCustomViewHidden() } catch (_: Exception) {}
+                                                            customView = null
+                                                            customViewCallback = null
+                                                        }
+                                                        isManualFullScreenLandscape = false
+                                                        webViewInstance?.evaluateJavascript(
+                                                            "(function(){ if (document.exitFullscreen) document.exitFullscreen(); else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); })();",
+                                                            null
+                                                        )
+                                                    } else {
+                                                        isManualFullScreenLandscape = true
+                                                        webViewInstance?.evaluateJavascript(
+                                                            """(function(){
+                                                                var p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                                                                var v = document.querySelector('video');
+                                                                if (p && typeof p.toggleFullscreen === 'function') {
+                                                                    p.toggleFullscreen();
+                                                                } else if (v && v.requestFullscreen) {
+                                                                    v.requestFullscreen();
+                                                                } else if (v && v.webkitRequestFullscreen) {
+                                                                    v.webkitRequestFullscreen();
+                                                                } else {
+                                                                    var btn = document.querySelector('.ytp-fullscreen-button, button[aria-label*="full screen" i]');
+                                                                    if (btn) btn.click();
+                                                                }
+                                                            })();""",
+                                                            null
+                                                        )
+                                                    }
+                                                }
+                                            )
+                                            Spacer(modifier = Modifier.width(2.dp))
+                                        }
+
                                         if (canGoBack) {
                                             HeaderIconButton(
                                                 icon = Icons.AutoMirrored.Filled.ArrowBack,
@@ -983,6 +1083,39 @@ fun YouTubeScreen(
                             onRelease = { fl ->
                                 fl.removeAllViews()
                             }
+                        )
+                    }
+                }
+
+                // ── FLOATING EXIT FULLSCREEN BUTTON IN LANDSCAPE FULLSCREEN ──
+                if (isFullScreenActive && !isRealTV) {
+                    Box(
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 16.dp, end = 16.dp)
+                            .size(42.dp)
+                            .clip(CircleShape)
+                            .background(Color.Black.copy(alpha = 0.65f))
+                            .border(1.dp, Color.White.copy(alpha = 0.3f), CircleShape)
+                            .clickable {
+                                if (customView != null) {
+                                    try { customViewCallback?.onCustomViewHidden() } catch (_: Exception) {}
+                                    customView = null
+                                    customViewCallback = null
+                                }
+                                isManualFullScreenLandscape = false
+                                webViewInstance?.evaluateJavascript(
+                                    "(function(){ if (document.exitFullscreen) document.exitFullscreen(); else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); })();",
+                                    null
+                                )
+                            },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.FullscreenExit,
+                            contentDescription = "Exit Fullscreen",
+                            tint = Color.White,
+                            modifier = Modifier.size(24.dp)
                         )
                     }
                 }

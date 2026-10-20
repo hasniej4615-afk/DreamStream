@@ -1566,6 +1566,13 @@ class VideoViewModel @Inject constructor(
         _isYouTubePlaying.value = isPlaying
     }
 
+    private val _isYouTubeFullScreen = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val isYouTubeFullScreen: kotlinx.coroutines.flow.StateFlow<Boolean> = _isYouTubeFullScreen.asStateFlow()
+
+    fun setYouTubeFullScreen(isFullScreen: Boolean) {
+        _isYouTubeFullScreen.value = isFullScreen
+    }
+
     fun toggleYouTubeFavorite(videoId: String, title: String) {
         viewModelScope.launch {
             val stableId = if (videoId.startsWith("yt_")) videoId else "yt_$videoId"
