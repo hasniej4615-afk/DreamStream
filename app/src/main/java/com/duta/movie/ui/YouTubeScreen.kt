@@ -53,9 +53,12 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
+import com.duta.movie.LocalPipMode
 import com.duta.movie.util.DeviceUtils
+import kotlinx.coroutines.delay
 import java.io.ByteArrayInputStream
 import java.net.URLEncoder
 
@@ -90,8 +93,7 @@ private val BLOCKED_AD_PATHS = listOf(
 /**
  * Early-injected JavaScript evaluated before ANY YouTube script runs.
  * Hooks JSON.parse, fetch, and XMLHttpRequest to strip adPlacements and adSlots
- * directly from the /youtubei/v1/player and /youtubei/v1/next API responses,
- * completely preventing YouTube's player from ever queuing or showing video ads.
+ * directly from the /youtubei/v1/player and /youtubei/v1/next API responses.
  */
 private const val YOUTUBE_EARLY_ADBLOCK_SCRIPT = """
 (function() {
@@ -161,8 +163,7 @@ private const val YOUTUBE_EARLY_ADBLOCK_SCRIPT = """
 """
 
 /**
- * Watchdog & DOM Nuker script:
- * Injects aggressive CSS rules to hide ad elements and runs high-frequency auto-skipping.
+ * Watchdog, DOM Nuker, SponsorBlock & Return YouTube Dislike (RYD) script.
  */
 private const val YOUTUBE_DOM_NUKER_SCRIPT = """
 (function() {
@@ -234,8 +235,75 @@ private const val YOUTUBE_DOM_NUKER_SCRIPT = """
             (document.head || document.documentElement).appendChild(style);
         }
 
+        let currentTrackedVideoId = null;
+        let sponsorSegments = [];
+        let rydData = null;
+
+        function formatCount(num) {
+            if (num >= 1000000) return (num / 1000000).toFixed(1) + 'M';
+            if (num >= 1000) return (num / 1000).toFixed(1) + 'K';
+            return num.toString();
+        }
+
+        function checkVideoIdAndFetchServices() {
+            const match = location.href.match(/[?&]v=([^&#]+)/) || location.href.match(/\/shorts\/([^&#/?]+)/);
+            const vId = match ? match[1] : null;
+            if (vId && vId !== currentTrackedVideoId) {
+                currentTrackedVideoId = vId;
+                sponsorSegments = [];
+                rydData = null;
+
+                // 1. Fetch SponsorBlock segments
+                fetch('https://sponsor.ajay.app/api/skipSegments?videoID=' + vId + '&categories=["sponsor","selfpromo","interaction","intro","outro"]')
+                    .then(r => r.json())
+                    .then(data => {
+                        if (Array.isArray(data)) {
+                            sponsorSegments = data;
+                        }
+                    })
+                    .catch(() => {});
+
+                // 2. Fetch Return YouTube Dislike (RYD)
+                fetch('https://returnyoutubedislikeapi.com/votes?videoId=' + vId)
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data && data.dislikes !== undefined) {
+                            rydData = data;
+                            updateDislikeButton(data);
+                            notifyBridge(vId);
+                        }
+                    })
+                    .catch(() => {});
+
+                notifyBridge(vId);
+            }
+        }
+
+        function updateDislikeButton(data) {
+            if (!data) return;
+            const formatted = formatCount(data.dislikes);
+            const dislikeBtn = document.querySelector('dislike-button-view-model button') ||
+                               document.querySelector('.slim-video-action-bar-actions button[aria-label*="Dislike" i]') ||
+                               document.querySelector('[aria-label*="Dislike" i]');
+            if (dislikeBtn) {
+                const label = dislikeBtn.querySelector('.yt-spec-button-shape-next__button-text-content, span');
+                if (label) label.textContent = formatted;
+            }
+        }
+
+        function notifyBridge(vId) {
+            if (!window.DutaYouTubeBridge) return;
+            const titleEl = document.querySelector('h1.slim-video-metadata-title, h1.title, ytm-slim-video-metadata-section-renderer h1');
+            const title = titleEl ? titleEl.textContent.trim() : document.title.replace(' - YouTube', '');
+            const likes = rydData ? formatCount(rydData.likes) : '';
+            const dislikes = rydData ? formatCount(rydData.dislikes) : '';
+            window.DutaYouTubeBridge.onVideoDetected(vId, title, likes, dislikes);
+        }
+
         function skipAndFastForwardAds() {
             try {
+                checkVideoIdAndFetchServices();
+
                 // 1. YouTube Player API skip
                 var player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
                 if (player && typeof player.skipAd === 'function') {
@@ -258,7 +326,28 @@ private const val YOUTUBE_DOM_NUKER_SCRIPT = """
                     video.muted = false;
                 }
 
-                // 3. Auto-click all known skip button selectors
+                // 3. SponsorBlock Auto-Skip check
+                if (video && !isAdActive && sponsorSegments.length > 0) {
+                    const cur = video.currentTime;
+                    for (let s of sponsorSegments) {
+                        if (cur >= s.segment[0] && cur < s.segment[1] - 0.2) {
+                            const skipSec = Math.round(s.segment[1] - s.segment[0]);
+                            video.currentTime = s.segment[1];
+                            if (window.DutaYouTubeBridge && window.DutaYouTubeBridge.onSponsorSkipped) {
+                                window.DutaYouTubeBridge.onSponsorSkipped(s.category, skipSec);
+                            }
+                            break;
+                        }
+                    }
+                }
+
+                // 4. Report playback state for PiP & background audio
+                if (video && window.DutaYouTubeBridge) {
+                    const isPlaying = !video.paused && !video.ended && video.readyState > 2;
+                    window.DutaYouTubeBridge.onPlaybackState(isPlaying, video.currentTime || 0, video.duration || 0);
+                }
+
+                // 5. Auto-click all known skip button selectors
                 var skipBtns = document.querySelectorAll(
                     '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .videoAdUiSkipButton, ' +
                     '.ytp-skip-ad-button, .ytp-ad-overlay-close-button, [class*="skip-button"], ' +
@@ -268,7 +357,7 @@ private const val YOUTUBE_DOM_NUKER_SCRIPT = """
                     try { skipBtns[i].click(); } catch(e) {}
                 }
 
-                // 4. Auto-dismiss upsell & promotional modal sheets
+                // 6. Auto-dismiss upsell & promotional modal sheets
                 var dismissBtns = document.querySelectorAll(
                     'ytm-mealbar-promo-renderer button, ytm-upsell-dialog-renderer button, [aria-label*="Dismiss" i], [aria-label*="No thanks" i]'
                 );
@@ -305,23 +394,53 @@ data class YouTubeCategory(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun YouTubeScreen(
+    initialUrl: String? = null,
+    viewModel: VideoViewModel,
     modifier: Modifier = Modifier,
     onBackClick: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val isRealTV = remember { DeviceUtils.isTvDevice(context) }
-    
+    val isInPip = LocalPipMode.current
+    val myList by viewModel.myList.collectAsStateWithLifecycle()
+
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
-    var currentUrl by remember { mutableStateOf(YOUTUBE_BASE_URL) }
+    val startUrl = remember { initialUrl ?: YOUTUBE_BASE_URL }
+    var currentUrl by remember { mutableStateOf(startUrl) }
     var pageTitle by remember { mutableStateOf("YouTube") }
     var isLoading by remember { mutableStateOf(true) }
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
-    
+
+    // Active video metadata from Bridge
+    var activeVideoId by remember { mutableStateOf<String?>(null) }
+    var activeVideoTitle by remember { mutableStateOf("") }
+    var activeLikes by remember { mutableStateOf("") }
+    var activeDislikes by remember { mutableStateOf("") }
+    var isVideoPlaying by remember { mutableStateOf(false) }
+
+    // SponsorBlock Toast State
+    var sponsorToastMessage by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(sponsorToastMessage) {
+        if (sponsorToastMessage != null) {
+            delay(2800)
+            sponsorToastMessage = null
+        }
+    }
+
+    // Playback Speed State (1x -> 1.25x -> 1.5x -> 2x)
+    var playbackSpeed by remember { mutableStateOf(1.0f) }
+
+    // Quality Lock State (Auto, 1080p, 720p)
+    var selectedQuality by remember { mutableStateOf(if (isRealTV) "1080p" else "Auto") }
+
+    // Black Screen Mode (OLED Audio-Only Power Saver)
+    var isBlackScreenMode by remember { mutableStateOf(false) }
+
     // Custom full screen video view (for YouTube's native fullscreen)
     var customView by remember { mutableStateOf<View?>(null) }
     var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
-    
+
     // Original YouTube Search State
     var isSearchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
@@ -361,9 +480,50 @@ fun YouTubeScreen(
         }
     }
 
-    // Back handling: Exit fullscreen -> Collapse search -> Go back in webView -> Pop screen
+    // Bridge for metadata & SponsorBlock
+    val jsBridge = remember {
+        object {
+            @JavascriptInterface
+            fun onVideoDetected(videoId: String, title: String, likes: String, dislikes: String) {
+                activeVideoId = videoId
+                activeVideoTitle = title
+                activeLikes = likes
+                activeDislikes = dislikes
+            }
+
+            @JavascriptInterface
+            fun onPlaybackState(isPlaying: Boolean, currentTime: Double, duration: Double) {
+                isVideoPlaying = isPlaying
+                viewModel.setYouTubePlaying(isPlaying)
+            }
+
+            @JavascriptInterface
+            fun onSponsorSkipped(category: String, seconds: Int) {
+                val label = when (category) {
+                    "sponsor" -> "Sponsor"
+                    "selfpromo" -> "Self-Promo"
+                    "interaction" -> "Subscribe Reminder"
+                    "intro" -> "Intro"
+                    "outro" -> "Outro"
+                    else -> "Segment"
+                }
+                sponsorToastMessage = "⚡ Skipped $label (${seconds}s)"
+            }
+        }
+    }
+
+    // Sync playing state with ViewModel on dispose
+    DisposableEffect(Unit) {
+        onDispose {
+            viewModel.setYouTubePlaying(false)
+        }
+    }
+
+    // Back handling: Exit Black Screen -> Exit fullscreen -> Collapse search -> Go back in webView -> Pop screen
     BackHandler {
-        if (customView != null) {
+        if (isBlackScreenMode) {
+            isBlackScreenMode = false
+        } else if (customView != null) {
             customViewCallback?.onCustomViewHidden()
             customView = null
         } else if (isSearchActive) {
@@ -375,14 +535,16 @@ fun YouTubeScreen(
         }
     }
 
+    val isFavorite = activeVideoId != null && myList.contains("yt_$activeVideoId")
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(Color(0xFF0F0F0F))
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // ── AUTHENTIC YOUTUBE HEADER & FILTER BAR ──────────────────────
-            if (customView == null) {
+            // ── AUTHENTIC YOUTUBE HEADER & FILTER BAR (Hidden in PiP) ───────
+            if (customView == null && !isInPip && !isBlackScreenMode) {
                 Surface(
                     color = Color(0xFF0F0F0F),
                     modifier = Modifier.fillMaxWidth()
@@ -405,7 +567,6 @@ fun YouTubeScreen(
                                         .height(if (isRealTV) 48.dp else 42.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
-                                    // Back from search button
                                     HeaderIconButton(
                                         icon = Icons.AutoMirrored.Filled.ArrowBack,
                                         contentDescription = "Back",
@@ -415,7 +576,6 @@ fun YouTubeScreen(
 
                                     Spacer(modifier = Modifier.width(8.dp))
 
-                                    // Search Text Input Pill
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
@@ -485,7 +645,6 @@ fun YouTubeScreen(
 
                                     Spacer(modifier = Modifier.width(8.dp))
 
-                                    // Voice Search in Search Bar
                                     VoiceSearchButton(isTV = isRealTV) {
                                         try {
                                             val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -508,7 +667,7 @@ fun YouTubeScreen(
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
-                                    // YouTube Authentic Logo
+                                    // YouTube Logo + RYD Dislike Rating
                                     Row(
                                         verticalAlignment = Alignment.CenterVertically,
                                         modifier = Modifier.clickable {
@@ -516,7 +675,6 @@ fun YouTubeScreen(
                                             webViewInstance?.loadUrl(YOUTUBE_BASE_URL)
                                         }
                                     ) {
-                                        // Official YouTube Play Badge
                                         Box(
                                             modifier = Modifier
                                                 .size(width = 30.dp, height = 21.dp)
@@ -543,10 +701,96 @@ fun YouTubeScreen(
                                             fontSize = if (isRealTV) 20.sp else 18.sp,
                                             letterSpacing = (-0.8).sp
                                         )
+
+                                        // RYD Rating Badge (Return YouTube Dislike)
+                                        if (activeDislikes.isNotBlank()) {
+                                            Spacer(modifier = Modifier.width(10.dp))
+                                            Surface(
+                                                color = Color(0xFF272727),
+                                                shape = RoundedCornerShape(12.dp),
+                                                modifier = Modifier.padding(vertical = 2.dp)
+                                            ) {
+                                                Row(
+                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                                    verticalAlignment = Alignment.CenterVertically
+                                                ) {
+                                                    if (activeLikes.isNotBlank()) {
+                                                        Text("👍 $activeLikes ", fontSize = 11.sp, color = Color.LightGray)
+                                                    }
+                                                    Text("👎 $activeDislikes", fontSize = 11.sp, color = Color(0xFFFF5252), fontWeight = FontWeight.Bold)
+                                                }
+                                            }
+                                        }
                                     }
 
-                                    // Right Action Icons (History Nav, Voice Search, Search)
+                                    // Right Action Icons (My List, Speed, Quality, Black Screen, Search, Voice)
                                     Row(verticalAlignment = Alignment.CenterVertically) {
+                                        // 1. Add to My List Bookmark Button
+                                        if (activeVideoId != null) {
+                                            HeaderIconButton(
+                                                icon = if (isFavorite) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                                contentDescription = if (isFavorite) "In My List" else "Add to My List",
+                                                tint = if (isFavorite) Color.Red else Color.White,
+                                                isTV = isRealTV,
+                                                onClick = {
+                                                    activeVideoId?.let { vId ->
+                                                        viewModel.toggleYouTubeFavorite(vId, activeVideoTitle)
+                                                    }
+                                                }
+                                            )
+                                            Spacer(modifier = Modifier.width(2.dp))
+                                        }
+
+                                        // 2. Playback Speed Button (1.0x -> 1.25x -> 1.5x -> 2.0x)
+                                        HeaderChipButton(
+                                            text = "${playbackSpeed}x",
+                                            isTV = isRealTV,
+                                            onClick = {
+                                                playbackSpeed = when (playbackSpeed) {
+                                                    1.0f -> 1.25f
+                                                    1.25f -> 1.5f
+                                                    1.5f -> 2.0f
+                                                    else -> 1.0f
+                                                }
+                                                webViewInstance?.evaluateJavascript(
+                                                    "(function(){ var v = document.querySelector('video'); if (v) v.playbackRate = $playbackSpeed; })();",
+                                                    null
+                                                )
+                                            }
+                                        )
+
+                                        Spacer(modifier = Modifier.width(2.dp))
+
+                                        // 3. Quality Lock Button (Auto -> 1080p -> 720p)
+                                        HeaderChipButton(
+                                            text = selectedQuality,
+                                            isTV = isRealTV,
+                                            onClick = {
+                                                selectedQuality = when (selectedQuality) {
+                                                    "Auto" -> "1080p"
+                                                    "1080p" -> "720p"
+                                                    else -> "Auto"
+                                                }
+                                                val qParam = if (selectedQuality == "1080p") "hd1080" else if (selectedQuality == "720p") "hd720" else "default"
+                                                webViewInstance?.evaluateJavascript(
+                                                    "(function(){ var p = document.getElementById('movie_player') || document.querySelector('.html5-video-player'); if (p && p.setPlaybackQualityRange) p.setPlaybackQualityRange('$qParam', 'highres'); })();",
+                                                    null
+                                                )
+                                            }
+                                        )
+
+                                        Spacer(modifier = Modifier.width(2.dp))
+
+                                        // 4. OLED / Black Screen Mode Button (Audio-only Power Saver)
+                                        HeaderIconButton(
+                                            icon = Icons.Default.Bedtime,
+                                            contentDescription = "OLED Black Screen Mode",
+                                            isTV = isRealTV,
+                                            onClick = { isBlackScreenMode = true }
+                                        )
+
+                                        Spacer(modifier = Modifier.width(2.dp))
+
                                         if (canGoBack) {
                                             HeaderIconButton(
                                                 icon = Icons.AutoMirrored.Filled.ArrowBack,
@@ -572,21 +816,17 @@ fun YouTubeScreen(
                                             onClick = { webViewInstance?.reload() }
                                         )
 
-                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Spacer(modifier = Modifier.width(2.dp))
 
-                                        // Search trigger
                                         HeaderIconButton(
                                             icon = Icons.Default.Search,
                                             contentDescription = "Search",
                                             isTV = isRealTV,
-                                            onClick = {
-                                                isSearchActive = true
-                                            }
+                                            onClick = { isSearchActive = true }
                                         )
 
-                                        Spacer(modifier = Modifier.width(4.dp))
+                                        Spacer(modifier = Modifier.width(2.dp))
 
-                                        // Voice Search Button
                                         VoiceSearchButton(isTV = isRealTV) {
                                             try {
                                                 val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -644,6 +884,7 @@ fun YouTubeScreen(
                         createYouTubeWebView(
                             context = ctx,
                             isRealTV = isRealTV,
+                            jsBridge = jsBridge,
                             onTitleChanged = { pageTitle = it },
                             onLoadingChanged = { isLoading = it },
                             onHistoryChanged = { back, forward ->
@@ -680,6 +921,27 @@ fun YouTubeScreen(
                     )
                 }
 
+                // SponsorBlock Toast Notification
+                if (sponsorToastMessage != null) {
+                    Surface(
+                        color = Color(0xFF1E1E1E).copy(alpha = 0.95f),
+                        shape = RoundedCornerShape(20.dp),
+                        border = androidx.compose.foundation.BorderStroke(1.dp, Color(0xFFFFD600)),
+                        shadowElevation = 6.dp,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 16.dp)
+                    ) {
+                        Text(
+                            text = sponsorToastMessage!!,
+                            color = Color.White,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = if (isRealTV) 15.sp else 13.sp,
+                            modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                        )
+                    }
+                }
+
                 // Fullscreen Custom View (YouTube native fullscreen video expanded)
                 if (customView != null) {
                     Box(
@@ -704,6 +966,38 @@ fun YouTubeScreen(
                         )
                     }
                 }
+
+                // ── OLED BLACK SCREEN / AUDIO-ONLY OVERLAY ──────────────────
+                if (isBlackScreenMode) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black)
+                            .clickable { isBlackScreenMode = false },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Icon(
+                                imageVector = Icons.Default.Bedtime,
+                                contentDescription = null,
+                                tint = Color.DarkGray,
+                                modifier = Modifier.size(36.dp)
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            Text(
+                                text = "Audio-Only Mode (OLED Power Saver)",
+                                color = Color.Gray,
+                                fontSize = 14.sp
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = "Tap screen or press remote to wake",
+                                color = Color.DarkGray,
+                                fontSize = 12.sp
+                            )
+                        }
+                    }
+                }
             }
         }
     }
@@ -715,13 +1009,14 @@ private fun HeaderIconButton(
     contentDescription: String,
     isTV: Boolean,
     enabled: Boolean = true,
+    tint: Color = Color.White,
     onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
 
     Box(
         modifier = Modifier
-            .size(if (isTV) 40.dp else 36.dp)
+            .size(if (isTV) 38.dp else 34.dp)
             .clip(CircleShape)
             .background(
                 when {
@@ -742,8 +1037,40 @@ private fun HeaderIconButton(
         Icon(
             imageVector = icon,
             contentDescription = contentDescription,
-            tint = if (enabled) Color.White else Color.Gray.copy(alpha = 0.4f),
-            modifier = Modifier.size(if (isTV) 22.dp else 20.dp)
+            tint = if (enabled) tint else Color.Gray.copy(alpha = 0.4f),
+            modifier = Modifier.size(if (isTV) 20.dp else 18.dp)
+        )
+    }
+}
+
+@Composable
+private fun HeaderChipButton(
+    text: String,
+    isTV: Boolean,
+    onClick: () -> Unit
+) {
+    var isFocused by remember { mutableStateOf(false) }
+
+    Surface(
+        color = if (isFocused) Color(0xFF383838) else Color(0xFF272727),
+        shape = RoundedCornerShape(12.dp),
+        modifier = Modifier
+            .clip(RoundedCornerShape(12.dp))
+            .border(
+                width = if (isFocused) 2.dp else 0.dp,
+                color = if (isFocused) Color(0xFFFF0000) else Color.Transparent,
+                shape = RoundedCornerShape(12.dp)
+            )
+            .focusable()
+            .onFocusChanged { isFocused = it.isFocused }
+            .clickable(onClick = onClick)
+    ) {
+        Text(
+            text = text,
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            fontSize = if (isTV) 12.sp else 11.sp,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
         )
     }
 }
@@ -757,7 +1084,7 @@ private fun VoiceSearchButton(
 
     Box(
         modifier = Modifier
-            .size(if (isTV) 40.dp else 36.dp)
+            .size(if (isTV) 38.dp else 34.dp)
             .clip(CircleShape)
             .background(
                 when {
@@ -784,12 +1111,6 @@ private fun VoiceSearchButton(
     }
 }
 
-/**
- * Pill chip mimicking YouTube's exact dark mode category pills:
- * - Selected: Pure white background (#FFFFFF) with jet black text (#0F0F0F)
- * - Unselected: Charcoal background (#272727) with light grey text (#F1F1F1)
- * - On TV focus: 1.08x scale + glowing red border
- */
 @Composable
 private fun YouTubePillChip(
     title: String,
@@ -836,6 +1157,7 @@ private fun YouTubePillChip(
 private fun createYouTubeWebView(
     context: Context,
     isRealTV: Boolean,
+    jsBridge: Any,
     onTitleChanged: (String) -> Unit,
     onLoadingChanged: (Boolean) -> Unit,
     onHistoryChanged: (Boolean, Boolean) -> Unit,
@@ -858,7 +1180,7 @@ private fun createYouTubeWebView(
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             cacheMode = WebSettings.LOAD_DEFAULT
 
-            // TV Spatial Navigation via safe reflection (allows remote D-pad to traverse links and video cards)
+            // TV Spatial Navigation via safe reflection
             if (isRealTV) {
                 try {
                     val m = this.javaClass.getMethod(
@@ -869,7 +1191,7 @@ private fun createYouTubeWebView(
                 } catch (_: Exception) {}
             }
 
-            // Set clean Chrome mobile User-Agent for modern responsive UI without WebView branding
+            // Clean Chrome Mobile User-Agent without WebView identifiers
             val defaultUa = userAgentString
             userAgentString = if (defaultUa.contains("wv")) {
                 defaultUa.replace("; wv", "")
@@ -881,8 +1203,10 @@ private fun createYouTubeWebView(
         isFocusable = true
         isFocusableInTouchMode = true
 
-        // 1. EARLY DOCUMENT START SCRIPT:
-        // Injects our fetch & JSON.parse hooks into every frame BEFORE page scripts execute!
+        // Register Duta bridge for metadata, SponsorBlock notifications, and PiP state
+        addJavascriptInterface(jsBridge, "DutaYouTubeBridge")
+
+        // Document-Start script injection via AndroidX WebKit
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
             try {
                 WebViewCompat.addDocumentStartJavaScript(
@@ -895,25 +1219,34 @@ private fun createYouTubeWebView(
             }
         }
 
-        // TV Remote key events dispatcher
+        // TV Remote key events dispatcher (Media controls & Remote number seeking)
         setOnKeyListener { _, keyCode, event ->
             if (event.action == KeyEvent.ACTION_DOWN) {
-                when (keyCode) {
-                    KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> {
+                when {
+                    // Number Key Seeking: '1' -> 10%, '5' -> 50%, '0' -> restart 0s
+                    keyCode in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> {
+                        val fraction = if (keyCode == KeyEvent.KEYCODE_0) 0.0 else (keyCode - KeyEvent.KEYCODE_0) * 0.1
+                        evaluateJavascript(
+                            "(function(){ var v = document.querySelector('video'); if (v && v.duration) v.currentTime = v.duration * $fraction; else if (v) v.currentTime = 0; })();",
+                            null
+                        )
+                        return@setOnKeyListener true
+                    }
+                    keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || keyCode == KeyEvent.KEYCODE_HEADSETHOOK -> {
                         evaluateJavascript(
                             "(function(){ var v = document.querySelector('video'); if (v) { if (v.paused) v.play(); else v.pause(); } })();",
                             null
                         )
                         return@setOnKeyListener true
                     }
-                    KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                    keyCode == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
                         evaluateJavascript(
                             "(function(){ var v = document.querySelector('video'); if (v) v.currentTime += 10; })();",
                             null
                         )
                         return@setOnKeyListener true
                     }
-                    KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                    keyCode == KeyEvent.KEYCODE_MEDIA_REWIND -> {
                         evaluateJavascript(
                             "(function(){ var v = document.querySelector('video'); if (v) v.currentTime = Math.max(0, v.currentTime - 10); })();",
                             null
@@ -961,7 +1294,6 @@ private fun createYouTubeWebView(
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 onLoadingChanged(true)
-                // Fallback early injection if DOCUMENT_START_SCRIPT was not supported
                 view?.evaluateJavascript(YOUTUBE_EARLY_ADBLOCK_SCRIPT, null)
                 view?.evaluateJavascript(YOUTUBE_DOM_NUKER_SCRIPT, null)
             }
@@ -976,7 +1308,6 @@ private fun createYouTubeWebView(
 
             override fun onLoadResource(view: WebView?, url: String?) {
                 super.onLoadResource(view, url)
-                // Re-trigger DOM nuker on resource loads to catch dynamic SPA video navigations
                 view?.evaluateJavascript(YOUTUBE_DOM_NUKER_SCRIPT, null)
             }
         }

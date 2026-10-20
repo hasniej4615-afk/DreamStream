@@ -249,6 +249,9 @@ class MainActivity : AppCompatActivity() {
                     videoViewModel.resetStartupState()
                 }
                 val isPlayerActive by videoViewModel.isPlayerActive.collectAsStateWithLifecycle()
+                val isYouTubePlaying by videoViewModel.isYouTubePlaying.collectAsStateWithLifecycle()
+                val isCurrentAtYouTube = currentDestination?.hasRoute<Destination.YouTube>() == true
+                val isAnyPlayerActive = isPlayerActive || (isCurrentAtYouTube && isYouTubePlaying)
                 val isMobileLandscapeEnabled by videoViewModel.isMobileLandscapeEnabled.collectAsStateWithLifecycle()
                 val showBroadcastDialog by videoViewModel.showBroadcastDialog.collectAsStateWithLifecycle()
                 val activeBroadcast by videoViewModel.activeBroadcast.collectAsStateWithLifecycle()
@@ -263,9 +266,9 @@ class MainActivity : AppCompatActivity() {
                 val uiSafeAreaPadding by videoViewModel.uiSafeAreaPadding.collectAsStateWithLifecycle()
                 val uiScaleFactor by videoViewModel.uiScaleFactor.collectAsStateWithLifecycle()
 
-                LaunchedEffect(isPlayerActive) {
-                    isPlayerActiveGlobal = isPlayerActive
-                    updatePipParams(isPlayerActive)
+                LaunchedEffect(isAnyPlayerActive) {
+                    isPlayerActiveGlobal = isAnyPlayerActive
+                    updatePipParams(isAnyPlayerActive)
                 }
 
                 LaunchedEffect(isMobileLandscapeEnabled, isPlayerActive) {
@@ -289,7 +292,7 @@ class MainActivity : AppCompatActivity() {
                     Triple(Destination.Home, Icons.Default.Home, stringResource(R.string.home)),
                     Triple(Destination.Movies, Icons.Default.Movie, stringResource(R.string.movies)),
                     Triple(Destination.TVShows, Icons.Default.Tv, stringResource(R.string.tv_shows)),
-                    Triple(Destination.YouTube, Icons.Default.SmartDisplay, stringResource(R.string.youtube)),
+                    Triple(Destination.YouTube(), Icons.Default.SmartDisplay, stringResource(R.string.youtube)),
                     Triple(Destination.MyList, Icons.Default.Bookmark, stringResource(R.string.my_list))
                 )
                 val isAtPlayer = currentDestination?.hasRoute<Destination.Player>() == true
@@ -491,6 +494,9 @@ class MainActivity : AppCompatActivity() {
                                 if (com.duta.movie.model.LiveTvCatalog.isLiveVideo(id)) {
                                     val ch = com.duta.movie.model.LiveTvCatalog.getChannelById(id)
                                     navController.navigate(Destination.Player(id, ch?.videoUrl))
+                                } else if (id.startsWith("yt_")) {
+                                    val rawId = id.removePrefix("yt_")
+                                    navController.navigate(Destination.YouTube(initialUrl = "https://m.youtube.com/watch?v=$rawId"))
                                 } else {
                                     navController.navigate(Destination.VideoDetail(id))
                                 }
@@ -549,8 +555,11 @@ class MainActivity : AppCompatActivity() {
                                         onVideoClick = onAppVideoClick
                                     )
                                 }
-                                composable<Destination.YouTube> {
+                                composable<Destination.YouTube> { backStackEntry ->
+                                    val dest = backStackEntry.toRoute<Destination.YouTube>()
                                     YouTubeScreen(
+                                        initialUrl = dest.initialUrl,
+                                        viewModel = videoViewModel,
                                         onBackClick = { navController.popBackStack() }
                                     )
                                 }

@@ -1559,6 +1559,35 @@ class VideoViewModel @Inject constructor(
         }
     }
 
+    private val _isYouTubePlaying = kotlinx.coroutines.flow.MutableStateFlow(false)
+    val isYouTubePlaying: kotlinx.coroutines.flow.StateFlow<Boolean> = _isYouTubePlaying.asStateFlow()
+
+    fun setYouTubePlaying(isPlaying: Boolean) {
+        _isYouTubePlaying.value = isPlaying
+    }
+
+    fun toggleYouTubeFavorite(videoId: String, title: String) {
+        viewModelScope.launch {
+            val stableId = if (videoId.startsWith("yt_")) videoId else "yt_$videoId"
+            val rawId = videoId.removePrefix("yt_")
+            val isFav = myList.value.contains(stableId)
+            val video = com.duta.movie.model.Video(
+                id = stableId,
+                title = title.ifBlank { "YouTube Video" },
+                thumbnailUrl = "https://i.ytimg.com/vi/$rawId/hqdefault.jpg",
+                backdropUrl = "https://i.ytimg.com/vi/$rawId/maxresdefault.jpg",
+                videoUrl = "https://www.youtube.com/watch?v=$rawId",
+                duration = "YouTube",
+                views = "",
+                date = "",
+                quality = "HD",
+                description = "Saved from YouTube"
+            )
+            videoRepository.updateVideoInDb(video)
+            videoRepository.toggleMyList(stableId)
+        }
+    }
+
     fun fetchHomeData(force: Boolean = false) {
         if (_isLoading.value && !force) return
         _isLoading.value = true; _isEndReached.value = false; currentPage = 1

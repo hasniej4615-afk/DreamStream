@@ -13,7 +13,7 @@ sealed interface Destination {
     data object TVShows : Destination
 
     @Serializable
-    data object YouTube : Destination
+    data class YouTube(val initialUrl: String? = null) : Destination
     
     @Serializable
     data object MyList : Destination
