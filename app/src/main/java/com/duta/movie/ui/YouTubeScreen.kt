@@ -84,12 +84,20 @@ private val BLOCKED_AD_HOSTS = listOf(
     "doubleclick.net",
     "ad.doubleclick.net",
     "securepubads.g.doubleclick.net",
-    "pubads.g.doubleclick.net"
+    "pubads.g.doubleclick.net",
+    "www.googleadservices.com",
+    "adformat.googleapis.com",
+    "ade.googlesyndication.com",
+    "ads.youtube.com"
 )
 
 private val BLOCKED_AD_PATHS = listOf(
     "/pagead/",
-    "/api/stats/ads"
+    "/api/stats/ads",
+    "/youtubei/v1/player/ad_break",
+    "/api/stats/qoe?*adformat*",
+    "/ptracking?",
+    "/get_midroll_info"
 )
 
 /**
@@ -118,7 +126,7 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 .ytp-ad-message-container, .ytp-ad-player-overlay,
                 .ytp-ad-text, .ytp-ad-preview-container,
                 .ytp-ad-action-interstitial, .ytp-ad-image-overlay,
-                .ytp-ad-button-icon, .ytp-ad-skip-button-slot,
+                .ytp-ad-button-icon,
                 .ytp-ad-hover-text-container, .ytp-ad-info-dialog-background,
                 ytm-promoted-sparkles-web-renderer,
                 ytm-promoted-sparkles-text-search-web-renderer,
@@ -240,6 +248,124 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
             window.DutaYouTubeBridge.onVideoDetected(vId, title, likes, dislikes);
         }
 
+        function advanceToNextShort() {
+            var advanced = false;
+            // 1. YouTube Mobile Web carousel accessibility button
+            var nextBtn = document.querySelector('button.ytShortsCarouselShortsA11yNavButton[aria-label="Next video"], button[aria-label="Next video"], [aria-label*="next video" i]');
+            if (nextBtn) {
+                try { nextBtn.click(); advanced = true; } catch(e){}
+            }
+
+            // 2. Desktop or secondary Shorts buttons
+            if (!advanced) {
+                var deskBtn = document.querySelector('#navigation-button-down button, ytd-shorts #down-button button, [aria-label*="Next video" i]');
+                if (deskBtn) {
+                    try { deskBtn.click(); advanced = true; } catch(e){}
+                }
+            }
+
+            // 3. Dispatch keyboard ArrowDown
+            if (!advanced) {
+                try {
+                    var kDown = new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40, bubbles: true, cancelable: true });
+                    (document.activeElement || window).dispatchEvent(kDown);
+                    window.dispatchEvent(kDown);
+                    advanced = true;
+                } catch(e){}
+            }
+
+            // 4. Smooth scroll fallback
+            if (!advanced) {
+                try {
+                    window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });
+                    advanced = true;
+                } catch(e){}
+            }
+
+            return advanced;
+        }
+
+        // Checks if the active Short/Reel is an Ad/Sponsored video
+        function isShortsAdActive() {
+            // 1. Sponsored or Ad badge aria labels
+            var sponsoredBadges = document.querySelectorAll(
+                '[aria-label="Sponsored" i], [aria-label*="Sponsored" i], ' +
+                '[aria-label="Ad" i], [aria-label*="Ad •" i], [aria-label*="Ad:" i], ' +
+                '.badge-shape-wiz--ad, ytm-ad-badge, .ytm-ad-badge, ' +
+                'ytm-badge-supported-renderer [aria-label*="Sponsored" i], ' +
+                '.ytp-ad-badge, .ytp-ad-simple-attributed-string'
+            );
+            for (var i = 0; i < sponsoredBadges.length; i++) {
+                var b = sponsoredBadges[i];
+                if (b.offsetParent !== null || b.getClientRects().length > 0) {
+                    return true;
+                }
+            }
+
+            // 2. Badge texts containing "Sponsored", "Ad", or "Promoted"
+            var badgeTexts = document.querySelectorAll(
+                '.yt-spec-badge-shape__text, ytm-badge-and-byline-renderer span, ' +
+                '.shorts-video-metadata-container span, .ytm-reel-item-renderer span, ' +
+                '.yt-badge-shape span'
+            );
+            for (var j = 0; j < badgeTexts.length; j++) {
+                var txt = (badgeTexts[j].textContent || '').trim().toLowerCase();
+                if (txt === 'sponsored' || txt === 'ad' || txt === 'promoted') {
+                    if (badgeTexts[j].offsetParent !== null || badgeTexts[j].getClientRects().length > 0) {
+                        return true;
+                    }
+                }
+            }
+
+            // 3. CTA buttons (Shop now, Install, Learn more, Download) that only exist on ad Shorts
+            var ctaButtons = document.querySelectorAll(
+                '.ytp-ad-action-interstitial, .ytp-ad-action-interstitial-action-button, ' +
+                'a[href*="googleadservices.com"], a[href*="doubleclick.net"], ' +
+                'button[aria-label*="Visit advertiser" i], button[aria-label*="Shop now" i], ' +
+                'button[aria-label*="Install" i], button[aria-label*="Learn more" i], ' +
+                'button[aria-label*="Download" i], button[aria-label*="Open advertiser" i], ' +
+                '.ytm-call-to-action-button-renderer'
+            );
+            for (var k = 0; k < ctaButtons.length; k++) {
+                var cta = ctaButtons[k];
+                if (cta.offsetParent !== null || cta.getClientRects().length > 0) {
+                    return true;
+                }
+            }
+
+            // 4. Video overlays or ad containers
+            if (document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay, .ytp-ad-overlay-container') !== null) {
+                return true;
+            }
+
+            // 5. Container attributes
+            var activeReel = document.querySelector('ytm-shorts-carousel-video-renderer[is-active], ytm-reel-item-renderer[is-active], ytd-reel-video-renderer[is-active]');
+            if (activeReel) {
+                if (activeReel.hasAttribute('is-ad') || activeReel.classList.contains('ad-showing')) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        // Checks if a standard video ad is playing
+        function isRegularVideoAdActive() {
+            var player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+            if (player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting'))) {
+                return true;
+            }
+            if (document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay, .ytp-ad-overlay-container, .ytm-ad-module') !== null) {
+                return true;
+            }
+            if (document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton, [class*="skip-button"], button[aria-label*="Skip ad" i], button[aria-label*="Skip" i], .ytp-ad-text') !== null) {
+                return true;
+            }
+            return false;
+        }
+
+        var wasAdActive = false;
+
         function processAdsAndPlayback() {
             try {
                 checkVideoMetadata();
@@ -247,39 +373,96 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 var player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
                 var video = document.querySelector('video');
 
-                // Strictly detect if an ad is actively playing
-                var isAdActive = player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting'));
+                var isShortsOrReels = location.href.indexOf('/shorts') !== -1 ||
+                                      location.href.indexOf('/reel') !== -1 ||
+                                      location.href.indexOf('/reels') !== -1 ||
+                                      (document.body && (document.body.classList.contains('page-shorts') || document.body.classList.contains('shorts-carousel')));
 
-                if (isAdActive) {
-                    // 1. Try native player.skipAd
-                    if (typeof player.skipAd === 'function') {
-                        try { player.skipAd(); } catch(e){}
-                    }
-
-                    // 2. Click any visible skip button
-                    var skipBtns = document.querySelectorAll(
-                        '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .videoAdUiSkipButton, ' +
-                        '.ytp-skip-ad-button, .ytp-ad-overlay-close-button, [class*="skip-button"], ' +
-                        'button[aria-label*="Skip" i], button[id^="skip-button"], .ytm-skip-ad-button'
-                    );
-                    for (var i = 0; i < skipBtns.length; i++) {
-                        try { skipBtns[i].click(); } catch(e){}
-                    }
-
-                    // 3. Jump to end of ad safely (never use 16x rate to avoid crashing mobile hardware decoders)
-                    if (video && !isNaN(video.duration) && isFinite(video.duration) && video.duration > 0) {
-                        video.muted = true;
-                        if (video.currentTime < video.duration - 0.2) {
-                            video.currentTime = video.duration - 0.1;
+                // ── A. SHORT VIDEO AD BYPASS (ALWAYS BYPASSES ADS IN SHORTS TO NEXT REAL VIDEO) ──
+                if (isShortsOrReels) {
+                    var isShortAd = isShortsAdActive();
+                    if (isShortAd) {
+                        var sv = video || document.querySelector('video');
+                        if (sv) {
+                            sv.muted = true;
+                            window.__dutaMutedByAd = true;
+                            if (isFinite(sv.duration) && sv.duration > 0) {
+                                sv.currentTime = sv.duration;
+                            }
                         }
+                        var now = Date.now();
+                        if (!window.__lastShortsAdSkip || now - window.__lastShortsAdSkip > 1000) {
+                            window.__lastShortsAdSkip = now;
+                            var advanced = advanceToNextShort();
+                            if (advanced && window.DutaYouTubeBridge && typeof window.DutaYouTubeBridge.onShortAdBypassed === 'function') {
+                                window.DutaYouTubeBridge.onShortAdBypassed();
+                            }
+                        }
+                        return; // Ad short is being bypassed, skip remaining tick work
                     }
-                } else if (video && video.muted && !video.paused) {
-                    // Restore sound if it was muted during an ad
-                    video.muted = false;
                 }
 
-                // 4. SponsorBlock auto-skip (only for regular video content)
-                if (!isAdActive && video && sponsorSegments.length > 0) {
+                // ── B. REGULAR VIDEO AD SKIPPER ──
+                if (!isShortsOrReels) {
+                    var adCurrentlyActive = isRegularVideoAdActive();
+                    if (adCurrentlyActive) {
+                        if (!wasAdActive) {
+                            wasAdActive = true;
+                            if (window.DutaYouTubeBridge && typeof window.DutaYouTubeBridge.onAdStateChanged === 'function') {
+                                window.DutaYouTubeBridge.onAdStateChanged(true);
+                            }
+                        }
+
+                        // 1. Try native player.skipAd
+                        if (player && typeof player.skipAd === 'function') {
+                            try { player.skipAd(); } catch(e){}
+                        }
+
+                        // 2. Click any visible skip button
+                        var skipBtns = document.querySelectorAll(
+                            '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .videoAdUiSkipButton, ' +
+                            '.ytp-skip-ad-button, .ytp-ad-overlay-close-button, [class*="skip-button"], ' +
+                            'button[aria-label*="Skip ad" i], button[aria-label*="Skip" i], button[id^="skip-button"], .ytm-skip-ad-button, ' +
+                            '.ytp-ad-skip-button-slot, button.ytp-ad-skip-button-text'
+                        );
+                        for (var i = 0; i < skipBtns.length; i++) {
+                            try { skipBtns[i].click(); } catch(e){}
+                        }
+
+                        // 3. Mute & fast-forward ad to end (16x rate + currentTime = duration)
+                        if (video) {
+                            if (!video.muted) {
+                                video.muted = true;
+                                window.__dutaMutedByAd = true;
+                            }
+                            if (isFinite(video.duration) && video.duration > 0 && video.currentTime < video.duration - 0.1) {
+                                video.currentTime = video.duration;
+                            }
+                            video.playbackRate = 16.0;
+                        }
+                    } else {
+                        if (wasAdActive) {
+                            wasAdActive = false;
+                            if (window.DutaYouTubeBridge && typeof window.DutaYouTubeBridge.onAdStateChanged === 'function') {
+                                window.DutaYouTubeBridge.onAdStateChanged(false);
+                            }
+                        }
+
+                        // Restore sound & speed if it was muted/throttled during an ad
+                        if (video) {
+                            if (window.__dutaMutedByAd) {
+                                video.muted = false;
+                                window.__dutaMutedByAd = false;
+                            }
+                            if (video.playbackRate > 2.0) {
+                                video.playbackRate = window.__dutaTargetSpeed || 1.0;
+                            }
+                        }
+                    }
+                }
+
+                // ── C. SPONSORBLOCK (FOR REGULAR VIDEOS) ──
+                if (!isShortsOrReels && video && sponsorSegments.length > 0) {
                     var cur = video.currentTime;
                     for (var s = 0; s < sponsorSegments.length; s++) {
                         var seg = sponsorSegments[s];
@@ -294,13 +477,13 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                     }
                 }
 
-                // 5. Notify playback state for PiP & background audio
+                // ── D. NOTIFY PLAYBACK STATE ──
                 if (video && window.DutaYouTubeBridge) {
                     var isPlaying = !video.paused && !video.ended && video.readyState > 2;
                     window.DutaYouTubeBridge.onPlaybackState(isPlaying, video.currentTime || 0, video.duration || 0);
                 }
 
-                // 6. Dismiss promo / upsell dialogs
+                // ── E. DISMISS PROMO / UPSELL DIALOGS ──
                 var dismissBtns = document.querySelectorAll(
                     'ytm-mealbar-promo-renderer button, ytm-upsell-dialog-renderer button, [aria-label*="Dismiss" i], [aria-label*="No thanks" i]'
                 );
@@ -308,64 +491,26 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                     try { dismissBtns[k].click(); } catch(e){}
                 }
 
-                // 7. Auto-advance Shorts & Reels when current video finishes playing
-                var isShortsOrReels = location.href.indexOf('/shorts') !== -1 ||
-                                      location.href.indexOf('/reel') !== -1 ||
-                                      location.href.indexOf('/reels') !== -1 ||
-                                      (document.body && (document.body.classList.contains('page-shorts') || document.body.classList.contains('shorts-carousel')));
-
+                // ── F. NORMAL SHORTS AUTO-SCROLL (WHEN VIDEO FINISHES NATURALLY) ──
                 if (isShortsOrReels && window.__dutaAutoScrollEnabled) {
-                    var sv = video || document.querySelector('video');
-                    if (sv) {
-                        if (sv.loop) {
-                            sv.loop = false;
+                    var sv2 = video || document.querySelector('video');
+                    if (sv2) {
+                        if (sv2.loop) {
+                            sv2.loop = false;
                         }
-                        var now = Date.now();
-                        var isEnded = sv.ended || (sv.duration > 0 && sv.currentTime >= sv.duration - 0.25);
-                        if (!isEnded && sv.duration > 0 && window.__lastShortsTime !== undefined) {
-                            if (sv.currentTime < window.__lastShortsTime && window.__lastShortsTime > sv.duration * 0.85) {
+                        var now2 = Date.now();
+                        var isEnded = sv2.ended || (sv2.duration > 0 && sv2.currentTime >= sv2.duration - 0.25);
+                        if (!isEnded && sv2.duration > 0 && window.__lastShortsTime !== undefined) {
+                            if (sv2.currentTime < window.__lastShortsTime && window.__lastShortsTime > sv2.duration * 0.85) {
                                 isEnded = true;
                             }
                         }
-                        window.__lastShortsTime = sv.currentTime;
+                        window.__lastShortsTime = sv2.currentTime;
 
-                        if (isEnded && (!window.__lastShortsAdvance || now - window.__lastShortsAdvance > 1600)) {
-                            window.__lastShortsAdvance = now;
-
-                            var advanced = false;
-                            // 1. YouTube Mobile Web carousel accessibility button
-                            var nextBtn = document.querySelector('button.ytShortsCarouselShortsA11yNavButton[aria-label="Next video"], button[aria-label="Next video"], [aria-label*="next video" i]');
-                            if (nextBtn) {
-                                try { nextBtn.click(); advanced = true; } catch(e){}
-                            }
-
-                            // 2. Desktop or secondary Shorts buttons
-                            if (!advanced) {
-                                var deskBtn = document.querySelector('#navigation-button-down button, ytd-shorts #down-button button, [aria-label*="Next video" i]');
-                                if (deskBtn) {
-                                    try { deskBtn.click(); advanced = true; } catch(e){}
-                                }
-                            }
-
-                            // 3. Dispatch keyboard ArrowDown
-                            if (!advanced) {
-                                try {
-                                    var kDown = new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40, bubbles: true, cancelable: true });
-                                    (document.activeElement || window).dispatchEvent(kDown);
-                                    window.dispatchEvent(kDown);
-                                    advanced = true;
-                                } catch(e){}
-                            }
-
-                            // 4. Smooth scroll fallback
-                            if (!advanced) {
-                                try {
-                                    window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });
-                                    advanced = true;
-                                } catch(e){}
-                            }
-
-                            if (window.DutaYouTubeBridge && typeof window.DutaYouTubeBridge.onShortAutoScrolled === 'function') {
+                        if (isEnded && (!window.__lastShortsAdvance || now2 - window.__lastShortsAdvance > 1600)) {
+                            window.__lastShortsAdvance = now2;
+                            var advanced2 = advanceToNextShort();
+                            if (advanced2 && window.DutaYouTubeBridge && typeof window.DutaYouTubeBridge.onShortAutoScrolled === 'function') {
                                 window.DutaYouTubeBridge.onShortAutoScrolled(location.href);
                             }
                         }
@@ -376,7 +521,7 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
 
         if (!window.__dutaWatchdogStarted) {
             window.__dutaWatchdogStarted = true;
-            setInterval(processAdsAndPlayback, 400);
+            setInterval(processAdsAndPlayback, 150);
         }
         processAdsAndPlayback();
     } catch(e) {}
@@ -563,6 +708,19 @@ fun YouTubeScreen(
                 currentUrl = url
                 sponsorToastMessage = "⚡ Auto-scrolled to next Short"
             }
+
+            @JavascriptInterface
+            fun onShortAdBypassed() {
+                sponsorToastMessage = "⚡ Bypassed Ad Short"
+            }
+
+            @JavascriptInterface
+            fun onAdStateChanged(isAdPlaying: Boolean) {
+                if (isAdPlaying) {
+                    sponsorToastMessage = "⚡ Auto-skipping Ad..."
+                }
+            }
+
             @JavascriptInterface
             fun onVideoDetected(videoId: String, title: String, likes: String, dislikes: String) {
                 activeVideoId = videoId
@@ -1607,12 +1765,18 @@ private fun createYouTubeWebView(
                 val url = request?.url?.toString() ?: return null
                 val low = url.lowercase()
 
-                // Never intercept core YouTube streaming or player metadata
-                if (low.contains("googlevideo.com") || low.contains("/youtubei/") || low.contains("/videoplayback")) {
-                    return super.shouldInterceptRequest(view, request)
+                // 1. Intercept and block ad endpoints (e.g. ad_break, /pagead/, /api/stats/ads)
+                for (adPath in BLOCKED_AD_PATHS) {
+                    if (low.contains(adPath)) {
+                        return WebResourceResponse(
+                            "text/plain",
+                            "UTF-8",
+                            ByteArrayInputStream(ByteArray(0))
+                        )
+                    }
                 }
 
-                // Block known ad network hosts
+                // 2. Block known ad network hosts
                 for (adHost in BLOCKED_AD_HOSTS) {
                     if (low.contains(adHost)) {
                         return WebResourceResponse(
@@ -1623,15 +1787,9 @@ private fun createYouTubeWebView(
                     }
                 }
 
-                // Block known ad URL paths
-                for (adPath in BLOCKED_AD_PATHS) {
-                    if (low.contains(adPath)) {
-                        return WebResourceResponse(
-                            "text/plain",
-                            "UTF-8",
-                            ByteArrayInputStream(ByteArray(0))
-                        )
-                    }
+                // 3. Never intercept core YouTube streaming or player metadata
+                if (low.contains("googlevideo.com") || low.contains("/youtubei/") || low.contains("/videoplayback")) {
+                    return super.shouldInterceptRequest(view, request)
                 }
 
                 return super.shouldInterceptRequest(view, request)
