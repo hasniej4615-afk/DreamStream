@@ -55,6 +55,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.duta.movie.LocalPipMode
 import com.duta.movie.util.DeviceUtils
@@ -78,9 +81,7 @@ private val BLOCKED_AD_HOSTS = listOf(
 
 private val BLOCKED_AD_PATHS = listOf(
     "/pagead/",
-    "/api/stats/ads",
-    "/get_midroll_info",
-    "/youtubei/v1/player/ad_break"
+    "/api/stats/ads"
 )
 
 /**
@@ -236,16 +237,7 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                         try { player.skipAd(); } catch(e){}
                     }
 
-                    // 2. Fast-forward & mute the active ad
-                    if (video) {
-                        video.muted = true;
-                        video.playbackRate = 16.0;
-                        if (video.duration && isFinite(video.duration) && video.duration > 0) {
-                            video.currentTime = video.duration;
-                        }
-                    }
-
-                    // 3. Click any visible skip button
+                    // 2. Click any visible skip button
                     var skipBtns = document.querySelectorAll(
                         '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .videoAdUiSkipButton, ' +
                         '.ytp-skip-ad-button, .ytp-ad-overlay-close-button, [class*="skip-button"], ' +
@@ -254,9 +246,16 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                     for (var i = 0; i < skipBtns.length; i++) {
                         try { skipBtns[i].click(); } catch(e){}
                     }
-                } else if (video && video.playbackRate > 2.0) {
-                    // Restore regular speed and unmute for normal video playback
-                    video.playbackRate = 1.0;
+
+                    // 3. Jump to end of ad safely (never use 16x rate to avoid crashing mobile hardware decoders)
+                    if (video && !isNaN(video.duration) && isFinite(video.duration) && video.duration > 0) {
+                        video.muted = true;
+                        if (video.currentTime < video.duration - 0.2) {
+                            video.currentTime = video.duration - 0.1;
+                        }
+                    }
+                } else if (video && video.muted && !video.paused) {
+                    // Restore sound if it was muted during an ad
                     video.muted = false;
                 }
 
@@ -294,17 +293,7 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
 
         if (!window.__dutaWatchdogStarted) {
             window.__dutaWatchdogStarted = true;
-            setInterval(processAdsAndPlayback, 250);
-
-            var observer = new MutationObserver(function() {
-                processAdsAndPlayback();
-            });
-            observer.observe(document.documentElement, {
-                childList: true,
-                subtree: true,
-                attributes: true,
-                attributeFilter: ['class']
-            });
+            setInterval(processAdsAndPlayback, 400);
         }
         processAdsAndPlayback();
     } catch(e) {}
@@ -333,7 +322,7 @@ fun YouTubeScreen(
     val startUrl = remember { initialUrl ?: YOUTUBE_BASE_URL }
     var currentUrl by remember { mutableStateOf(startUrl) }
     var pageTitle by remember { mutableStateOf("YouTube") }
-    var isLoading by remember { mutableStateOf(true) }
+    var isLoading by remember { mutableStateOf(false) }
     var canGoBack by remember { mutableStateOf(false) }
     var canGoForward by remember { mutableStateOf(false) }
 
@@ -477,9 +466,31 @@ fun YouTubeScreen(
         }
     }
 
-    DisposableEffect(Unit) {
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> {
+                    webViewInstance?.onResume()
+                }
+                Lifecycle.Event.ON_PAUSE -> {
+                    webViewInstance?.onPause()
+                }
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
         onDispose {
+            lifecycleOwner.lifecycle.removeObserver(observer)
             viewModel.setYouTubePlaying(false)
+            if (customView != null) {
+                try {
+                    customViewCallback?.onCustomViewHidden()
+                } catch (_: Exception) {}
+                customView = null
+                customViewCallback = null
+            }
+            isBlackScreenMode = false
         }
     }
 
@@ -893,8 +904,16 @@ fun YouTubeScreen(
                             wv.loadUrl(currentUrl)
                         }
                     },
-                    update = { _ ->
-                        // Managed internally via webViewInstance
+                    update = { wv ->
+                        webViewInstance = wv
+                        wv.onResume()
+                        if (wv.url.isNullOrBlank() || wv.url == "about:blank") {
+                            wv.loadUrl(currentUrl)
+                        }
+                        wv.invalidate()
+                    },
+                    onRelease = { wv ->
+                        wv.onPause()
                     }
                 )
 
@@ -940,17 +959,29 @@ fun YouTubeScreen(
                     ) {
                         AndroidView(
                             modifier = Modifier.fillMaxSize(),
-                            factory = {
-                                FrameLayout(it).apply {
+                            factory = { ctx ->
+                                FrameLayout(ctx).apply {
                                     layoutParams = ViewGroup.LayoutParams(
                                         ViewGroup.LayoutParams.MATCH_PARENT,
                                         ViewGroup.LayoutParams.MATCH_PARENT
                                     )
-                                    customView?.let { cv ->
-                                        (cv.parent as? ViewGroup)?.removeView(cv)
-                                        addView(cv)
-                                    }
                                 }
+                            },
+                            update = { fl ->
+                                fl.removeAllViews()
+                                customView?.let { cv ->
+                                    (cv.parent as? ViewGroup)?.removeView(cv)
+                                    fl.addView(
+                                        cv,
+                                        ViewGroup.LayoutParams(
+                                            ViewGroup.LayoutParams.MATCH_PARENT,
+                                            ViewGroup.LayoutParams.MATCH_PARENT
+                                        )
+                                    )
+                                }
+                            },
+                            onRelease = { fl ->
+                                fl.removeAllViews()
                             }
                         )
                     }
@@ -1168,9 +1199,14 @@ private fun createYouTubeWebView(
         settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
+            databaseEnabled = true
+            allowFileAccess = true
+            allowContentAccess = true
             useWideViewPort = true
             loadWithOverviewMode = true
             mediaPlaybackRequiresUserGesture = false
+            javaScriptCanOpenWindowsAutomatically = true
+            setSupportMultipleWindows(false)
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
             cacheMode = WebSettings.LOAD_DEFAULT
 
@@ -1185,13 +1221,18 @@ private fun createYouTubeWebView(
                 } catch (_: Exception) {}
             }
 
-            // Clean Chrome Mobile User-Agent without WebView identifiers
+            // Clean Chrome Mobile User-Agent without WebView identifiers so YouTube does not restrict MSE codecs
             val defaultUa = userAgentString
-            userAgentString = if (defaultUa.contains("wv")) {
-                defaultUa.replace("; wv", "")
-            } else {
-                defaultUa
-            }
+            userAgentString = defaultUa
+                .replace("; wv", "")
+                .replace(Regex("Version/\\d+\\.\\d+\\s*"), "")
+        }
+
+        setLayerType(View.LAYER_TYPE_HARDWARE, null)
+
+        CookieManager.getInstance().let { cm ->
+            cm.setAcceptCookie(true)
+            cm.setAcceptThirdPartyCookies(this, true)
         }
 
         isFocusable = true
@@ -1266,6 +1307,11 @@ private fun createYouTubeWebView(
                 val url = request?.url?.toString() ?: return null
                 val low = url.lowercase()
 
+                // Never intercept core YouTube streaming or player metadata
+                if (low.contains("googlevideo.com") || low.contains("/youtubei/") || low.contains("/videoplayback")) {
+                    return super.shouldInterceptRequest(view, request)
+                }
+
                 // Block known ad network hosts
                 for (adHost in BLOCKED_AD_HOSTS) {
                     if (low.contains(adHost)) {
@@ -1294,18 +1340,12 @@ private fun createYouTubeWebView(
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 onLoadingChanged(true)
-                view?.evaluateJavascript(YOUTUBE_AD_NUKER_SCRIPT, null)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 onLoadingChanged(false)
                 onHistoryChanged(view?.canGoBack() == true, view?.canGoForward() == true)
-                view?.evaluateJavascript(YOUTUBE_AD_NUKER_SCRIPT, null)
-            }
-
-            override fun onLoadResource(view: WebView?, url: String?) {
-                super.onLoadResource(view, url)
                 view?.evaluateJavascript(YOUTUBE_AD_NUKER_SCRIPT, null)
             }
         }
@@ -1322,9 +1362,6 @@ private fun createYouTubeWebView(
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 super.onProgressChanged(view, newProgress)
                 onLoadingChanged(newProgress < 100)
-                if (newProgress > 30) {
-                    view?.evaluateJavascript(YOUTUBE_AD_NUKER_SCRIPT, null)
-                }
             }
 
             override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
