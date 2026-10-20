@@ -948,6 +948,8 @@ class VideoViewModel @Inject constructor(
     private var subSearchJob: Job? = null
     private var subResolveJob: Job? = null
     private var userExplicitlyDismissedSubtitles = false
+    var userManuallySelectedSubtitle: Boolean = false
+        private set
     private val blacklistedSubtitleUrls = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private var lastMismatchRecoveryTimeMs = 0L
     private var resolutionJob: Job? = null
@@ -2936,6 +2938,7 @@ class VideoViewModel @Inject constructor(
                 subResolveJob?.cancel()
                 subResolveJob = null
                 userExplicitlyDismissedSubtitles = false
+                userManuallySelectedSubtitle = false
                 userManuallyCalibratedSubtitleOffset = false
                 blacklistedSubtitleUrls.clear()
                 _autoSyncNotice.value = null
@@ -3037,6 +3040,7 @@ class VideoViewModel @Inject constructor(
                 subResolveJob?.cancel()
                 subResolveJob = null
                 userExplicitlyDismissedSubtitles = false
+                userManuallySelectedSubtitle = false
                 userManuallyCalibratedSubtitleOffset = false
                 blacklistedSubtitleUrls.clear()
                 _autoSyncNotice.value = null
@@ -4130,7 +4134,7 @@ class VideoViewModel @Inject constructor(
                             _subtitles.value = allSubs
 
                             // Hardware/Stream Subtitle Auto-Selection
-                            if (!userExplicitlyDismissedSubtitles && isAutoSubtitleEnabled.value && _selectedSubtitle.value == null) {
+                            if (!userExplicitlyDismissedSubtitles && isAutoSubtitleEnabled.value && _selectedSubtitle.value == null && !userManuallySelectedSubtitle && translationJob?.isActive != true) {
                                 val defLang = defaultSubtitleLanguage.value
                                 if (defLang != "Off" && defLang != "None") {
                                     val normDef = com.duta.movie.util.SubtitleExtractor.normalizeLanguage(defLang)
@@ -4585,6 +4589,8 @@ class VideoViewModel @Inject constructor(
                     )
                     withContext(Dispatchers.Main) {
                         if (!userExplicitlyDismissedSubtitles) {
+                            userManuallySelectedSubtitle = true
+                            blacklistedSubtitleUrls.remove(translatedSub.url)
                             _subtitleCues.value = parsed
                             _selectedSubtitle.value = translatedSub
                             _subtitles.value = listOf(translatedSub) + _subtitles.value.filter { it.url != translatedSub.url }
@@ -4785,26 +4791,26 @@ class VideoViewModel @Inject constructor(
                                 fallbackTranslateJob?.cancel()
                                 fallbackTranslateJob = null
                                 val current = _selectedSubtitle.value
-                                val newScore = com.duta.movie.util.SubtitleSyncEngine.scoreSubtitle(bestMatch, currentSignature)
-                                if (current == null) {
+                                val isUserOrProcessed = userManuallySelectedSubtitle ||
+                                    (current != null && (current.label.startsWith("[AI Translated]") || current.url.contains("translated_subtitles") || current.url.startsWith("file://") || current.localUri?.startsWith("file://") == true)) ||
+                                    translationJob?.isActive == true
+
+                                if (isUserOrProcessed) {
+                                    Log.d("SubtitleSyncEngine", "Retaining user/processed subtitle '${current?.label}' against background auto-selection")
+                                } else if (current == null) {
+                                    val newScore = com.duta.movie.util.SubtitleSyncEngine.scoreSubtitle(bestMatch, currentSignature)
                                     Log.i("SubtitleSyncEngine", "Auto-selected best-match subtitle: '${bestMatch.label}' [${bestMatch.language}] (score: $newScore)")
-                                    selectSubtitle(bestMatch)
-                                } else if (current.label.startsWith("[AI Translated]")) {
-                                    Log.i("SubtitleSyncEngine", "Upgraded from AI translated to native subtitle: '${bestMatch.label}' [${bestMatch.language}]")
-                                    autoTranslateFallbackJob?.cancel()
-                                    autoTranslateFallbackJob = null
-                                    translationJob?.cancel()
-                                    translationJob = null
-                                    selectSubtitle(bestMatch)
+                                    selectSubtitle(bestMatch, isUserManual = false)
                                 } else if (current != bestMatch) {
                                     val currentScore = com.duta.movie.util.SubtitleSyncEngine.scoreSubtitle(current, currentSignature)
+                                    val newScore = com.duta.movie.util.SubtitleSyncEngine.scoreSubtitle(bestMatch, currentSignature)
                                     // Upgrade to an exact-matched subtitle if incoming score is higher
                                     if (newScore > currentScore + 10) {
                                         Log.i("SubtitleSyncEngine", "Upgraded subtitle from '${current.label}' ($currentScore) to '${bestMatch.label}' ($newScore)")
-                                        selectSubtitle(bestMatch)
+                                        selectSubtitle(bestMatch, isUserManual = false)
                                     }
                                 }
-                            } else if (_selectedSubtitle.value == null && autoTranslateFallbackJob?.isActive != true && fallbackTranslateJob?.isActive != true) {
+                            } else if (_selectedSubtitle.value == null && !userManuallySelectedSubtitle && autoTranslateFallbackJob?.isActive != true && fallbackTranslateJob?.isActive != true && translationJob?.isActive != true) {
                                 // No native subtitle found yet. Look for candidate to auto-translate
                                 val topCandidate = combined.firstOrNull { 
                                     !it.label.startsWith("[AI Translated]") && 
@@ -4826,7 +4832,7 @@ class VideoViewModel @Inject constructor(
                                 if (topCandidate != null) {
                                     fallbackTranslateJob = viewModelScope.launch(Dispatchers.IO) {
                                         delay(2500L) // Brief 2.5s window for remaining scrapers before kicking off AI translation
-                                        if (!userExplicitlyDismissedSubtitles && isAutoSubtitleEnabled.value && _selectedSubtitle.value == null) {
+                                        if (!userExplicitlyDismissedSubtitles && isAutoSubtitleEnabled.value && _selectedSubtitle.value == null && !userManuallySelectedSubtitle && translationJob?.isActive != true) {
                                             Log.i("SubtitleSyncEngine", "⚡ Fast AI Translate Fallback: Auto-translating top candidate '${topCandidate.label}' (${topCandidate.language}) to $defLang")
                                             triggerAutoTranslateFallback(topCandidate, defLang)
                                         }
@@ -5110,6 +5116,8 @@ class VideoViewModel @Inject constructor(
                     val currentList = _subtitles.value.filter { it.url != localUriStr }
                     _subtitles.value = listOf(localSub) + currentList
                     userExplicitlyDismissedSubtitles = false
+                    userManuallySelectedSubtitle = true
+                    blacklistedSubtitleUrls.remove(localSub.url)
                     checkAndTriggerAutoPilotSync()
                     onResult(true, "Loaded ${cues.size} cues from $displayName")
                 }
@@ -5119,20 +5127,21 @@ class VideoViewModel @Inject constructor(
         }
     }
 
-    fun selectSubtitle(subtitle: Subtitle?) {
+    fun selectSubtitle(subtitle: Subtitle?, isUserManual: Boolean = false) {
         subResolveJob?.cancel()
         autoTranslateFallbackJob?.cancel()
         autoTranslateFallbackJob = null
         fallbackTranslateJob?.cancel()
         fallbackTranslateJob = null
-        translationJob?.cancel()
-        translationJob = null
         val effectiveVid = getEffectiveSubtitleVideoId()
         if (subtitle == null) {
             _selectedSubtitle.value = null
             _subtitleCues.value = emptyList()
             _subtitleError.value = null
             userExplicitlyDismissedSubtitles = true
+            userManuallySelectedSubtitle = false
+            translationJob?.cancel()
+            translationJob = null
             if (effectiveVid.isNotBlank()) {
                 viewModelScope.launch(Dispatchers.IO) {
                     preferenceManager.clearSavedSubtitleUrl(effectiveVid)
@@ -5142,6 +5151,14 @@ class VideoViewModel @Inject constructor(
         }
 
         userExplicitlyDismissedSubtitles = false
+        if (isUserManual) {
+            userManuallySelectedSubtitle = true
+            blacklistedSubtitleUrls.remove(subtitle.url)
+        }
+        if (!subtitle.label.startsWith("[AI Translated]")) {
+            translationJob?.cancel()
+            translationJob = null
+        }
         val isEmbedded = isCurrentSubtitleEmbedded(subtitle)
         if (isEmbedded) {
             userManuallyCalibratedSubtitleOffset = false
@@ -5366,6 +5383,8 @@ class VideoViewModel @Inject constructor(
                     )
                     withContext(Dispatchers.Main) {
                         if (!userExplicitlyDismissedSubtitles && isActive) {
+                            userManuallySelectedSubtitle = true
+                            blacklistedSubtitleUrls.remove(translatedSub.url)
                             _subtitleCues.value = translatedCues
                             _selectedSubtitle.value = translatedSub
                             val updatedList = listOf(translatedSub) + _subtitles.value.filter { it.url != translatedSub.url && !it.label.contains("(Streaming...)") }
@@ -5602,35 +5621,31 @@ class VideoViewModel @Inject constructor(
         if (now - lastMismatchRecoveryTimeMs < 5000L) return
         lastMismatchRecoveryTimeMs = now
 
-        Log.w("SubtitleSyncEngine", "🚨 Confirmed subtitle mismatch detected for '${badSub.label}' (${badSub.url}). Purging and auto-recovering...")
-
-        // 1. Blacklist bad URL
-        blacklistedSubtitleUrls.add(badSub.url)
-
-        // 2. Clear saved URL and offset for current video in preference
-        val currentVid = activeVideoId ?: _videoMetadata.value?.id
-        if (currentVid != null) {
-            viewModelScope.launch {
-                preferenceManager.clearSavedSubtitleUrl(currentVid)
-                preferenceManager.setSubtitleOffset(currentVid, 0L)
-            }
+        // Protection 1: User explicitly picked this subtitle
+        if (userManuallySelectedSubtitle) {
+            Log.d("SubtitleSyncEngine", "Skipping auto-recovery: Subtitle was manually selected by user ('${badSub.label}')")
+            return
         }
-        _subtitleOffset.value = 0L
 
-        // 3. Clear current cues and selection
-        _selectedSubtitle.value = null
-        _subtitleCues.value = emptyList()
+        // Protection 2: AI Translated subtitle (or in-progress translation)
+        if (badSub.label.startsWith("[AI Translated]") || badSub.url.contains("translated_subtitles") || translationJob?.isActive == true) {
+            Log.d("SubtitleSyncEngine", "Skipping auto-recovery: Subtitle is AI translated ('${badSub.label}')")
+            return
+        }
 
-        // 4. Notify UI HUD
-        _autoSyncNotice.value = com.duta.movie.util.SubtitleSyncEngine.AutoSyncNotice(
-            offsetMs = 0L,
-            formattedOffset = "Auto-Recovered",
-            method = "Auto-Pilot"
-        )
+        // Protection 3: Local device subtitle file
+        if (badSub.url.startsWith("file://") || badSub.localUri?.startsWith("file://") == true) {
+            Log.d("SubtitleSyncEngine", "Skipping auto-recovery: Subtitle is a local file ('${badSub.label}')")
+            return
+        }
 
-        // 5. Look for verified English source among available subtitles to translate
+        Log.w("SubtitleSyncEngine", "🚨 Confirmed subtitle mismatch detected for auto-selected '${badSub.label}' (${badSub.url}). Searching for alternative...")
+
+        val currentVid = activeVideoId ?: _videoMetadata.value?.id
         val defLang = defaultSubtitleLanguage.value
-        val validCandidates = _subtitles.value.filterNot { blacklistedSubtitleUrls.contains(it.url) }
+        val validCandidates = _subtitles.value.filterNot { 
+            blacklistedSubtitleUrls.contains(it.url) || it.url == badSub.url 
+        }
 
         val currentSignature = com.duta.movie.util.SubtitleSyncEngine.extractSignature(
             title = _videoMetadata.value?.title ?: currentVid ?: "",
@@ -5642,8 +5657,9 @@ class VideoViewModel @Inject constructor(
 
         val nativeMatch = com.duta.movie.util.SubtitleSyncEngine.findBestSubtitleMatch(validCandidates, defLang, currentSignature)
         if (nativeMatch != null) {
+            blacklistedSubtitleUrls.add(badSub.url)
             Log.i("SubtitleSyncEngine", "⚡ Auto-Recovery: Found alternative native match '${nativeMatch.label}'. Selecting...")
-            selectSubtitle(nativeMatch)
+            selectSubtitle(nativeMatch, isUserManual = false)
             return
         }
 
@@ -5663,14 +5679,24 @@ class VideoViewModel @Inject constructor(
         }
 
         if (bestVerified != null && defLang != "Off" && defLang != "None") {
+            blacklistedSubtitleUrls.add(badSub.url)
             Log.i("SubtitleSyncEngine", "⚡ Auto-Recovery: Found verified alternative '${bestVerified.label}' [${bestVerified.language}]. Auto-translating to $defLang...")
             triggerAutoTranslateFallback(bestVerified, defLang)
+            return
         } else if (bestVerified != null && defLang.equals("English", ignoreCase = true)) {
+            blacklistedSubtitleUrls.add(badSub.url)
             Log.i("SubtitleSyncEngine", "⚡ Auto-Recovery: Selecting verified alternative '${bestVerified.label}'")
-            selectSubtitle(bestVerified)
-        } else {
-            Log.w("SubtitleSyncEngine", "Auto-Recovery: No alternative verified subtitle found.")
+            selectSubtitle(bestVerified, isUserManual = false)
+            return
         }
+
+        // If no alternative found: DO NOT clear subtitle! Retain current subtitle intact!
+        Log.w("SubtitleSyncEngine", "Auto-Recovery: No alternative verified subtitle found. Retaining current subtitle at offset ${_subtitleOffset.value}ms.")
+        _autoSyncNotice.value = com.duta.movie.util.SubtitleSyncEngine.AutoSyncNotice(
+            offsetMs = _subtitleOffset.value,
+            formattedOffset = "Sync Paused",
+            method = "Auto-Pilot"
+        )
     }
 
     private val inFlightPrefetches = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
@@ -6788,6 +6814,7 @@ class VideoViewModel @Inject constructor(
             fallbackTranslateJob = null
             translationJob?.cancel()
             translationJob = null
+            userManuallySelectedSubtitle = false
             userExplicitlyDismissedSubtitles = false
             lastSubtitleSearchTitle = null
             activeVideoId = null

@@ -348,4 +348,34 @@ class AutoSubtitleTest {
         assertNull("Mismatched movie subtitles must not produce a confident offset", result.offsetMs)
         assertTrue("Cross-correlation must confirm subtitle mismatch when 8s+ speech fails to correlate", result.isConfirmedMismatch)
     }
+
+    @Test
+    fun testOpeningSpeechWithoutTemporalCueOverlapDoesNotDeclareMismatch() {
+        // Dialogue starts late at 75s (1m15s) after opening credits/music
+        val lateDialogueCues = listOf(
+            ParsedSubtitleCue(75000L, 78000L, "Good morning, Detective."),
+            ParsedSubtitleCue(82000L, 85000L, "We found something.")
+        )
+
+        // Opening audio speech detected in the first 12 seconds (e.g. intro logo / music voiceover)
+        // Total speech = 3s + 3s + 3s = 9.0s (>= 8000ms threshold)
+        val openingSpeechSegments = listOf(
+            SubtitleSyncEngine.SpeechSegment(1000L, 4000L),
+            SubtitleSyncEngine.SpeechSegment(5000L, 8000L),
+            SubtitleSyncEngine.SpeechSegment(9000L, 12000L)
+        )
+
+        // With default searchRangeMs = 45000L, shifted audio reaches at most 12s + 45s = 57s (< 75s).
+        // Temporal overlap between audio window and dialogue cues is 0ms.
+        val result = SubtitleSyncEngine.evaluateCrossCorrelationDetailed(
+            speechSegments = openingSpeechSegments,
+            dialogueCues = lateDialogueCues
+        )
+
+        assertNull("Offset must not be guessed when audio has not reached dialogue timeframe", result.offsetMs)
+        org.junit.Assert.assertFalse(
+            "Must NOT confirm mismatch when dialogue cues have not been reached temporally by search window",
+            result.isConfirmedMismatch
+        )
+    }
 }

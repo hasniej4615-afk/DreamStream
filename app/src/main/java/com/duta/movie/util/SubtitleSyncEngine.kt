@@ -483,14 +483,11 @@ object SubtitleSyncEngine {
         // 1. Credits, uploaders, websites, frame rates, sync tags
         val isCredit = txt.contains("subscene") || txt.contains("opensubtitles") ||
                        txt.contains("subdl") || txt.contains("subtitlecat") ||
-                       txt.contains("subcat") || txt.contains("subtitles by") ||
-                       txt.contains("sync by") || txt.contains("translated by") ||
-                       txt.contains("translated") || txt.contains("credit") ||
+                       txt.contains("subcat") || txt.contains("duta") ||
                        txt.contains("www.") || txt.contains(".com") ||
                        txt.contains(".org") || txt.contains(".net") ||
-                       txt.contains("sync") || txt.contains("duta") ||
-                       txt.contains("ripped by") || txt.contains("encoded by") ||
-                       txt.contains("fps")
+                       txt.contains("fps") ||
+                       Regex("""(?i)\b(?:subtitles?\s*by|translated\s*by|diterjemahkan\s*oleh|dialihbahasakan\s*oleh|alih\s*bahasa|subbed\s*by|sync(?:ed)?\s*by|resync(?:ed)?(?:\s*by)?|ripped\s*by|encoded\s*by|credit)\b""").containsMatchIn(clean)
         if (isCredit) return false
 
         // 2. Sound effects, musical cues in brackets or notation symbols
@@ -653,9 +650,20 @@ object SubtitleSyncEngine {
             return SyncEvaluationResult(totalSpeechMs = totalSpeechMs)
         }
 
-        // Limit search domain to the first 4 minutes or cue coverage
-        val maxCueTimeMs = spokenCues.take(25).maxOfOrNull { it.endTimeMs } ?: 0L
+        // 0. Temporal window metrics
+        val minCueTimeMs = spokenCues.take(30).minOfOrNull { it.startTimeMs } ?: 0L
+        val maxCueTimeMs = spokenCues.take(30).maxOfOrNull { it.endTimeMs } ?: 0L
+        val minAudioTimeMs = speechSegments.minOfOrNull { it.startMs } ?: 0L
         val maxAudioTimeMs = speechSegments.maxOfOrNull { it.endMs } ?: 0L
+
+        // Search range shifted audio window [audioSearchStartMs, audioSearchEndMs]
+        val audioSearchStartMs = minAudioTimeMs - searchRangeMs
+        val audioSearchEndMs = maxAudioTimeMs + searchRangeMs
+        val overlapStartMs = maxOf(audioSearchStartMs, minCueTimeMs)
+        val overlapEndMs = minOf(audioSearchEndMs, maxCueTimeMs)
+        val temporalOverlapMs = maxOf(0L, overlapEndMs - overlapStartMs)
+
+        // Limit search domain to the first 4 minutes or cue coverage
         val timelineEndMs = maxOf(240_000L, maxCueTimeMs + searchRangeMs, maxAudioTimeMs + 5000L)
         val numBins = ((timelineEndMs / binSizeMs) + 1).toInt().coerceAtMost(8000)
 
@@ -704,8 +712,11 @@ object SubtitleSyncEngine {
             }
         }
 
+        val hasTemporalOverlap = temporalOverlapMs >= 8000L
+
         if (maxOverlap == 0) {
-            val isMismatch = totalSpeechMs >= 8000L
+            // Mismatch can only be confirmed if the audio candidate window has substantially overlapped with subtitle cues
+            val isMismatch = hasTemporalOverlap && totalSpeechMs >= 8000L
             return SyncEvaluationResult(isConfirmedMismatch = isMismatch, totalSpeechMs = totalSpeechMs)
         }
 
@@ -735,7 +746,9 @@ object SubtitleSyncEngine {
         }
         val peakMargin = if (secondPeakOverlap > 0) maxOverlap.toDouble() / secondPeakOverlap else 3.0
 
-        val isConfirmedMismatch = totalSpeechMs >= 8000L && recall < 0.38
+        // Strict criteria for content mismatch: requires temporal overlap with dialogue cues,
+        // sufficient speech, and poor correlation across candidate offsets
+        val isConfirmedMismatch = hasTemporalOverlap && totalSpeechMs >= 8000L && recall < 0.38
         val isConfident = recall >= 0.45 && snr >= 1.8 && peakMargin >= 1.2
         if (!isConfident) {
             Log.d("SubtitleSyncEngine", "Cross-correlation below confidence: recall=${String.format("%.1f%%", recall * 100)}, snr=${String.format("%.2f", snr)}x, margin=${String.format("%.2f", peakMargin)}x (speech=${totalSpeechMs}ms, mismatch=$isConfirmedMismatch)")

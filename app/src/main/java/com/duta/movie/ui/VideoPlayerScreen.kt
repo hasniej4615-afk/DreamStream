@@ -367,6 +367,7 @@ fun VideoPlayerScreen(
     val translationProgress by viewModel.translationProgress.collectAsStateWithLifecycle()
     val vadVoiceOnsetMs by viewModel.vadVoiceOnsetMs.collectAsStateWithLifecycle()
     val autoSyncNotice by viewModel.autoSyncNotice.collectAsStateWithLifecycle()
+    val isAutoSubSyncEnabled by viewModel.isAutoSubSyncEnabled.collectAsStateWithLifecycle()
     val voiceEnhancerMode by viewModel.voiceEnhancerMode.collectAsStateWithLifecycle()
     val voiceEnhancerManager = remember { VoiceEnhancerManager() }
 
@@ -609,10 +610,13 @@ fun VideoPlayerScreen(
             viewModel.dismissAutoSyncNotice()
         }
     }
-    LaunchedEffect(selectedSubtitle) {
-        if (viewModel.isCurrentSubtitleEmbedded(selectedSubtitle)) {
+    LaunchedEffect(selectedSubtitle, isAutoSubSyncEnabled) {
+        if (viewModel.isCurrentSubtitleEmbedded(selectedSubtitle) || !isAutoSubSyncEnabled) {
             vadAudioProcessor.stopListening()
             vadAudioProcessor.resetDetection()
+        } else if (selectedSubtitle != null && isAutoSubSyncEnabled) {
+            vadAudioProcessor.resetDetection()
+            vadAudioProcessor.resumeListening()
         }
     }
     LaunchedEffect(videoId, serverUrl) {
@@ -2952,7 +2956,7 @@ fun VideoPlayerScreen(
                                             if (isDualModeTab) {
                                                 viewModel.selectSecondarySubtitle(null)
                                             } else {
-                                                viewModel.selectSubtitle(null)
+                                                viewModel.selectSubtitle(null, isUserManual = true)
                                             }
                                             showSubtitleDialog = false
                                             true
@@ -2962,7 +2966,7 @@ fun VideoPlayerScreen(
                                         if (isDualModeTab) {
                                             viewModel.selectSecondarySubtitle(null)
                                         } else {
-                                            viewModel.selectSubtitle(null)
+                                            viewModel.selectSubtitle(null, isUserManual = true)
                                         }
                                         showSubtitleDialog = false
                                     }
@@ -3070,7 +3074,7 @@ fun VideoPlayerScreen(
                                             if (isDualModeTab) {
                                                 viewModel.selectSecondarySubtitle(sub)
                                             } else {
-                                                viewModel.selectSubtitle(sub)
+                                                viewModel.selectSubtitle(sub, isUserManual = true)
                                             }
                                             showSubtitleDialog = false
                                             true
@@ -3080,7 +3084,7 @@ fun VideoPlayerScreen(
                                         if (isDualModeTab) {
                                             viewModel.selectSecondarySubtitle(sub)
                                         } else {
-                                            viewModel.selectSubtitle(sub)
+                                            viewModel.selectSubtitle(sub, isUserManual = true)
                                         }
                                         showSubtitleDialog = false
                                     }
@@ -3372,7 +3376,6 @@ fun VideoPlayerScreen(
                     Spacer(Modifier.height(8.dp))
 
                     // Auto-Pilot Status Badge
-                    val isAutoSubSyncEnabled by viewModel.isAutoSubSyncEnabled.collectAsStateWithLifecycle()
                     val isEmbeddedSub = viewModel.isCurrentSubtitleEmbedded()
                     val isMatchedSub = viewModel.isCurrentSubtitleMatched()
                     Row(
@@ -3387,13 +3390,29 @@ fun VideoPlayerScreen(
                             isAutoSubSyncEnabled -> Color(0xFF00E676)
                             else -> Color.Gray
                         }
+                        var isBadgeFocused by remember { mutableStateOf(false) }
                         Surface(
-                            color = badgeColor.copy(alpha = 0.15f),
+                            color = if (isBadgeFocused) badgeColor.copy(alpha = 0.3f) else badgeColor.copy(alpha = 0.15f),
                             shape = RoundedCornerShape(12.dp),
-                            border = BorderStroke(1.dp, badgeColor.copy(alpha = 0.6f))
+                            border = BorderStroke(if (isBadgeFocused) 2.dp else 1.dp, if (isBadgeFocused) Color.White else badgeColor.copy(alpha = 0.6f)),
+                            modifier = Modifier
+                                .onFocusChanged { isBadgeFocused = it.isFocused }
+                                .onKeyEvent { keyEvent ->
+                                    if (!isEmbeddedSub && keyEvent.nativeKeyEvent.action == android.view.KeyEvent.ACTION_DOWN &&
+                                        (keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
+                                         keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
+                                        viewModel.setAutoSubSyncEnabled(!isAutoSubSyncEnabled)
+                                        true
+                                    } else false
+                                }
+                                .clickable(!isEmbeddedSub) {
+                                    viewModel.setAutoSubSyncEnabled(!isAutoSubSyncEnabled)
+                                }
+                                .focusable(!isEmbeddedSub)
                         ) {
                             Row(
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
+                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp),
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
@@ -3402,12 +3421,12 @@ fun VideoPlayerScreen(
                                     tint = badgeColor,
                                     modifier = Modifier.size(13.dp)
                                 )
-                                Spacer(Modifier.width(4.dp))
+                                Spacer(Modifier.width(5.dp))
                                 Text(
                                     text = when {
                                         isEmbeddedSub -> "Stream Track (Hardware Sync 0.0s)"
-                                        isAutoSubSyncEnabled -> if (isMatchedSub) "Auto-Pilot: Active (Release Matched)" else "Auto-Pilot: Active"
-                                        else -> "Auto-Pilot: Disabled"
+                                        isAutoSubSyncEnabled -> if (isMatchedSub) "Auto-Pilot: Active (Release Matched)" else "Auto-Pilot: Active (Tap to toggle)"
+                                        else -> "Auto-Pilot: Disabled (Tap to enable)"
                                     },
                                     color = badgeColor,
                                     fontSize = 10.sp,
