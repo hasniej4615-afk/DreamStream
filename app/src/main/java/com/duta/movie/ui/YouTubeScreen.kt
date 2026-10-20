@@ -721,6 +721,7 @@ fun YouTubeScreen(
 
     // Black Screen Mode (OLED Audio-Only Power Saver)
     var isBlackScreenMode by remember { mutableStateOf(false) }
+    var isMoreMenuExpanded by remember { mutableStateOf(false) }
 
     // Custom full screen video view (for YouTube's native fullscreen)
     var customView by remember { mutableStateOf<View?>(null) }
@@ -1103,202 +1104,15 @@ fun YouTubeScreen(
                                     }
                                 }
                             } else {
-                                // ── STANDARD YOUTUBE BRANDED HEADER ──
+                                // ── STANDARD YOUTUBE BRANDED HEADER (Clean like Original YouTube) ──
                                 Row(
                                     modifier = Modifier.fillMaxWidth(),
                                     verticalAlignment = Alignment.CenterVertically,
                                     horizontalArrangement = Arrangement.SpaceBetween
                                 ) {
                                     Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier.clickable {
-                                            selectedCategoryTitle = "All"
-                                            webViewInstance?.loadUrl(YOUTUBE_BASE_URL)
-                                        }
+                                        verticalAlignment = Alignment.CenterVertically
                                     ) {
-                                        Box(
-                                            modifier = Modifier
-                                                .size(width = 30.dp, height = 21.dp)
-                                                .background(Color(0xFFFF0000), shape = RoundedCornerShape(6.dp)),
-                                            contentAlignment = Alignment.Center
-                                        ) {
-                                            Canvas(modifier = Modifier.size(9.dp)) {
-                                                val path = androidx.compose.ui.graphics.Path().apply {
-                                                    moveTo(0f, 0f)
-                                                    lineTo(size.width, size.height / 2f)
-                                                    lineTo(0f, size.height)
-                                                    close()
-                                                }
-                                                drawPath(path, color = Color.White)
-                                            }
-                                        }
-
-                                        Spacer(modifier = Modifier.width(4.dp))
-
-                                        Text(
-                                            text = "YouTube",
-                                            color = Color.White,
-                                            fontWeight = FontWeight.Bold,
-                                            fontSize = if (isRealTV) 20.sp else 18.sp,
-                                            letterSpacing = (-0.8).sp
-                                        )
-
-                                        // RYD Rating Badge (Return YouTube Dislike)
-                                        if (activeDislikes.isNotBlank()) {
-                                            Spacer(modifier = Modifier.width(10.dp))
-                                            Surface(
-                                                color = Color(0xFF272727),
-                                                shape = RoundedCornerShape(12.dp),
-                                                modifier = Modifier.padding(vertical = 2.dp)
-                                            ) {
-                                                Row(
-                                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 3.dp),
-                                                    verticalAlignment = Alignment.CenterVertically
-                                                ) {
-                                                    if (activeLikes.isNotBlank()) {
-                                                        Text("👍 $activeLikes ", fontSize = 11.sp, color = Color.LightGray)
-                                                    }
-                                                    Text("👎 $activeDislikes", fontSize = 11.sp, color = Color(0xFFFF5252), fontWeight = FontWeight.Bold)
-                                                }
-                                            }
-                                        }
-                                    }
-
-                                    // Right Action Icons (My List, Speed, Quality, Black Screen, Search, Voice)
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        modifier = Modifier
-                                            .weight(1f, fill = false)
-                                            .horizontalScroll(rememberScrollState())
-                                    ) {
-                                        // 1. Add to My List Bookmark Button
-                                        if (activeVideoId != null) {
-                                            HeaderIconButton(
-                                                icon = if (isFavorite) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                                                contentDescription = if (isFavorite) "In My List" else "Add to My List",
-                                                tint = if (isFavorite) Color.Red else Color.White,
-                                                isTV = isRealTV,
-                                                onClick = {
-                                                    activeVideoId?.let { vId ->
-                                                        viewModel.toggleYouTubeFavorite(vId, activeVideoTitle)
-                                                    }
-                                                }
-                                            )
-                                            Spacer(modifier = Modifier.width(2.dp))
-                                        }
-
-                                        // 2. Playback Speed Button (1.0x -> 1.25x -> 1.5x -> 2.0x)
-                                        HeaderChipButton(
-                                            text = "${playbackSpeed}x",
-                                            isTV = isRealTV,
-                                            onClick = {
-                                                playbackSpeed = when (playbackSpeed) {
-                                                    1.0f -> 1.25f
-                                                    1.25f -> 1.5f
-                                                    1.5f -> 2.0f
-                                                    else -> 1.0f
-                                                }
-                                                webViewInstance?.evaluateJavascript(
-                                                    "(function(){ var v = document.querySelector('video'); if (v) v.playbackRate = $playbackSpeed; })();",
-                                                    null
-                                                )
-                                            }
-                                        )
-
-                                        Spacer(modifier = Modifier.width(2.dp))
-
-                                        // 3. Quality Lock Button (Auto -> 1080p -> 720p)
-                                        HeaderChipButton(
-                                            text = selectedQuality,
-                                            isTV = isRealTV,
-                                            onClick = {
-                                                selectedQuality = when (selectedQuality) {
-                                                    "Auto" -> "1080p"
-                                                    "1080p" -> "720p"
-                                                    else -> "Auto"
-                                                }
-                                                val qParam = if (selectedQuality == "1080p") "hd1080" else if (selectedQuality == "720p") "hd720" else "default"
-                                                webViewInstance?.evaluateJavascript(
-                                                    "(function(){ var p = document.getElementById('movie_player') || document.querySelector('.html5-video-player'); if (p && p.setPlaybackQualityRange) p.setPlaybackQualityRange('$qParam', 'highres'); })();",
-                                                    null
-                                                )
-                                            }
-                                        )
-
-                                        Spacer(modifier = Modifier.width(2.dp))
-
-                                        // 4. OLED / Black Screen Mode Button
-                                        HeaderIconButton(
-                                            icon = Icons.Default.Bedtime,
-                                            contentDescription = "OLED Black Screen Mode",
-                                            isTV = isRealTV,
-                                            onClick = { isBlackScreenMode = true }
-                                        )
-
-                                        Spacer(modifier = Modifier.width(2.dp))
-
-                                        // 5. Auto-Scroll Toggle Button (Shorts & Reels)
-                                        HeaderIconButton(
-                                            icon = Icons.Default.Autorenew,
-                                            contentDescription = if (isShortsAutoScrollEnabled) "Auto-Scroll: ON" else "Auto-Scroll: OFF",
-                                            isTV = isRealTV,
-                                            tint = if (isShortsAutoScrollEnabled) Color(0xFFFF0000) else Color.White,
-                                            onClick = {
-                                                viewModel.toggleShortsAutoScroll()
-                                                toastMessage = if (!isShortsAutoScrollEnabled) {
-                                                    "⚡ Auto-Scroll ON"
-                                                } else {
-                                                    "Auto-Scroll OFF"
-                                                }
-                                            }
-                                        )
-
-                                        Spacer(modifier = Modifier.width(2.dp))
-
-                                        // 6. Fullscreen Landscape Button (Mobile mode)
-                                        if (!isRealTV) {
-                                            HeaderIconButton(
-                                                icon = if (isFullScreenActive) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
-                                                contentDescription = if (isFullScreenActive) "Exit Fullscreen" else "Fullscreen Landscape",
-                                                isTV = false,
-                                                tint = if (isFullScreenActive) Color.Red else Color.White,
-                                                onClick = {
-                                                    if (isFullScreenActive) {
-                                                        if (customView != null) {
-                                                            try { customViewCallback?.onCustomViewHidden() } catch (_: Exception) {}
-                                                            customView = null
-                                                            customViewCallback = null
-                                                        }
-                                                        isManualFullScreenLandscape = false
-                                                        webViewInstance?.evaluateJavascript(
-                                                            "(function(){ if (document.exitFullscreen) document.exitFullscreen(); else if (document.webkitExitFullscreen) document.webkitExitFullscreen(); })();",
-                                                            null
-                                                        )
-                                                    } else {
-                                                        isManualFullScreenLandscape = true
-                                                        webViewInstance?.evaluateJavascript(
-                                                            """(function(){
-                                                                var p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
-                                                                var v = document.querySelector('video');
-                                                                if (p && typeof p.toggleFullscreen === 'function') {
-                                                                    p.toggleFullscreen();
-                                                                } else if (v && v.requestFullscreen) {
-                                                                    v.requestFullscreen();
-                                                                } else if (v && v.webkitRequestFullscreen) {
-                                                                    v.webkitRequestFullscreen();
-                                                                } else {
-                                                                    var btn = document.querySelector('.ytp-fullscreen-button, button[aria-label*="full screen" i]');
-                                                                    if (btn) btn.click();
-                                                                }
-                                                            })();""",
-                                                            null
-                                                        )
-                                                    }
-                                                }
-                                            )
-                                            Spacer(modifier = Modifier.width(2.dp))
-                                        }
-
                                         if (canGoBack) {
                                             HeaderIconButton(
                                                 icon = Icons.AutoMirrored.Filled.ArrowBack,
@@ -1306,26 +1120,49 @@ fun YouTubeScreen(
                                                 isTV = isRealTV,
                                                 onClick = { webViewInstance?.goBack() }
                                             )
+                                            Spacer(modifier = Modifier.width(4.dp))
                                         }
 
-                                        if (canGoForward) {
-                                            HeaderIconButton(
-                                                icon = Icons.AutoMirrored.Filled.ArrowForward,
-                                                contentDescription = "Forward",
-                                                isTV = isRealTV,
-                                                onClick = { webViewInstance?.goForward() }
+                                        Row(
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            modifier = Modifier.clickable {
+                                                selectedCategoryTitle = "All"
+                                                webViewInstance?.loadUrl(YOUTUBE_BASE_URL)
+                                            }
+                                        ) {
+                                            Box(
+                                                modifier = Modifier
+                                                    .size(width = 30.dp, height = 21.dp)
+                                                    .background(Color(0xFFFF0000), shape = RoundedCornerShape(6.dp)),
+                                                contentAlignment = Alignment.Center
+                                            ) {
+                                                Canvas(modifier = Modifier.size(9.dp)) {
+                                                    val path = androidx.compose.ui.graphics.Path().apply {
+                                                        moveTo(0f, 0f)
+                                                        lineTo(size.width, size.height / 2f)
+                                                        lineTo(0f, size.height)
+                                                        close()
+                                                    }
+                                                    drawPath(path, color = Color.White)
+                                                }
+                                            }
+
+                                            Spacer(modifier = Modifier.width(4.dp))
+
+                                            Text(
+                                                text = "YouTube",
+                                                color = Color.White,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = if (isRealTV) 20.sp else 18.sp,
+                                                letterSpacing = (-0.8).sp
                                             )
                                         }
+                                    }
 
-                                        HeaderIconButton(
-                                            icon = Icons.Default.Refresh,
-                                            contentDescription = "Reload",
-                                            isTV = isRealTV,
-                                            onClick = { webViewInstance?.reload() }
-                                        )
-
-                                        Spacer(modifier = Modifier.width(2.dp))
-
+                                    // Right Action Icons (Clean Search, Voice, and More Options Menu)
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
                                         HeaderIconButton(
                                             icon = Icons.Default.Search,
                                             contentDescription = "Search",
@@ -1348,6 +1185,165 @@ fun YouTubeScreen(
                                             } catch (e: Exception) {
                                                 Log.w(TAG, "Speech intent error: ${e.message}")
                                                 isSearchActive = true
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.width(2.dp))
+
+                                        Box {
+                                            HeaderIconButton(
+                                                icon = Icons.Default.MoreVert,
+                                                contentDescription = "More Options",
+                                                isTV = isRealTV,
+                                                onClick = { isMoreMenuExpanded = true }
+                                            )
+
+                                            DropdownMenu(
+                                                expanded = isMoreMenuExpanded,
+                                                onDismissRequest = { isMoreMenuExpanded = false },
+                                                modifier = Modifier
+                                                    .background(Color(0xFF212121))
+                                                    .border(1.dp, Color(0xFF383838), RoundedCornerShape(12.dp))
+                                            ) {
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text("Auto-Scroll Shorts", color = Color.White, fontSize = 14.sp)
+                                                            Spacer(modifier = Modifier.width(16.dp))
+                                                            Text(
+                                                                if (isShortsAutoScrollEnabled) "ON" else "OFF",
+                                                                color = if (isShortsAutoScrollEnabled) Color(0xFFFF5252) else Color.Gray,
+                                                                fontWeight = FontWeight.Bold,
+                                                                fontSize = 12.sp
+                                                            )
+                                                        }
+                                                    },
+                                                    leadingIcon = {
+                                                        Icon(
+                                                            imageVector = Icons.Default.Autorenew,
+                                                            contentDescription = null,
+                                                            tint = if (isShortsAutoScrollEnabled) Color.Red else Color.White
+                                                        )
+                                                    },
+                                                    onClick = {
+                                                        viewModel.toggleShortsAutoScroll()
+                                                        toastMessage = if (!isShortsAutoScrollEnabled) "⚡ Auto-Scroll ON" else "Auto-Scroll OFF"
+                                                        isMoreMenuExpanded = false
+                                                    }
+                                                )
+
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text("Playback Speed", color = Color.White, fontSize = 14.sp)
+                                                            Spacer(modifier = Modifier.width(16.dp))
+                                                            Text("${playbackSpeed}x", color = Color(0xFFFF5252), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                        }
+                                                    },
+                                                    leadingIcon = {
+                                                        Icon(Icons.Default.Speed, contentDescription = null, tint = Color.White)
+                                                    },
+                                                    onClick = {
+                                                        playbackSpeed = when (playbackSpeed) {
+                                                            1.0f -> 1.25f
+                                                            1.25f -> 1.5f
+                                                            1.5f -> 2.0f
+                                                            else -> 1.0f
+                                                        }
+                                                        webViewInstance?.evaluateJavascript(
+                                                            "(function(){ var v = document.querySelector('video'); if (v) v.playbackRate = $playbackSpeed; })();",
+                                                            null
+                                                        )
+                                                        toastMessage = "Speed: ${playbackSpeed}x"
+                                                        isMoreMenuExpanded = false
+                                                    }
+                                                )
+
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text("Quality", color = Color.White, fontSize = 14.sp)
+                                                            Spacer(modifier = Modifier.width(16.dp))
+                                                            Text(selectedQuality, color = Color(0xFFFF5252), fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                                        }
+                                                    },
+                                                    leadingIcon = {
+                                                        Icon(Icons.Default.HighQuality, contentDescription = null, tint = Color.White)
+                                                    },
+                                                    onClick = {
+                                                        selectedQuality = when (selectedQuality) {
+                                                            "Auto" -> "1080p"
+                                                            "1080p" -> "720p"
+                                                            else -> "Auto"
+                                                        }
+                                                        val qParam = if (selectedQuality == "1080p") "hd1080" else if (selectedQuality == "720p") "hd720" else "default"
+                                                        webViewInstance?.evaluateJavascript(
+                                                            "(function(){ var p = document.getElementById('movie_player') || document.querySelector('.html5-video-player'); if (p && p.setPlaybackQualityRange) p.setPlaybackQualityRange('$qParam', 'highres'); })();",
+                                                            null
+                                                        )
+                                                        toastMessage = "Quality: $selectedQuality"
+                                                        isMoreMenuExpanded = false
+                                                    }
+                                                )
+
+                                                DropdownMenuItem(
+                                                    text = { Text("OLED Power Saver", color = Color.White, fontSize = 14.sp) },
+                                                    leadingIcon = {
+                                                        Icon(Icons.Default.Bedtime, contentDescription = null, tint = Color.White)
+                                                    },
+                                                    onClick = {
+                                                        isBlackScreenMode = true
+                                                        isMoreMenuExpanded = false
+                                                    }
+                                                )
+
+                                                if (activeVideoId != null) {
+                                                    DropdownMenuItem(
+                                                        text = {
+                                                            Text(
+                                                                if (isFavorite) "Remove from My List" else "Save to My List",
+                                                                color = Color.White,
+                                                                fontSize = 14.sp
+                                                            )
+                                                        },
+                                                        leadingIcon = {
+                                                            Icon(
+                                                                if (isFavorite) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                                                                contentDescription = null,
+                                                                tint = if (isFavorite) Color.Red else Color.White
+                                                            )
+                                                        },
+                                                        onClick = {
+                                                            activeVideoId?.let { vId ->
+                                                                viewModel.toggleYouTubeFavorite(vId, activeVideoTitle)
+                                                            }
+                                                            isMoreMenuExpanded = false
+                                                        }
+                                                    )
+                                                }
+
+                                                DropdownMenuItem(
+                                                    text = { Text("Reload Page", color = Color.White, fontSize = 14.sp) },
+                                                    leadingIcon = {
+                                                        Icon(Icons.Default.Refresh, contentDescription = null, tint = Color.White)
+                                                    },
+                                                    onClick = {
+                                                        webViewInstance?.reload()
+                                                        isMoreMenuExpanded = false
+                                                    }
+                                                )
                                             }
                                         }
                                     }
