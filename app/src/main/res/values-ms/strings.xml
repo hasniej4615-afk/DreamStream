@@ -213,6 +213,9 @@
 
     <string name="enable_mobile_landscape">Papar Melintang Mudah Alih</string>
 
+    <string name="shorts_auto_scroll_title">Tatal Auto Shorts &amp; Reels</string>
+    <string name="shorts_auto_scroll_desc">Tatal secara automatik ke video seterusnya apabila video tamat</string>
+
     <string name="join_telegram">Sertai Saluran Telegram Kami</string>
 
     <string name="manual_domain_update">Kemas Kini Domain Manual</string>

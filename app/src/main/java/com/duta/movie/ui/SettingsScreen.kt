@@ -1281,6 +1281,15 @@ fun SettingsScreen(
                                     }
                                 }
                                 item {
+                                    val isShortsAutoScrollEnabled by viewModel.isShortsAutoScrollEnabled.collectAsStateWithLifecycle()
+                                    SettingsToggleCard(
+                                        title = stringResource(R.string.shorts_auto_scroll_title),
+                                        description = stringResource(R.string.shorts_auto_scroll_desc),
+                                        checked = isShortsAutoScrollEnabled,
+                                        onCheckedChange = { viewModel.setShortsAutoScrollEnabled(it) }
+                                    )
+                                }
+                                item {
                                     DisplayAdjustmentSlider(
                                         label = stringResource(R.string.overall_ui_scale),
                                         value = uiScaleFactor,

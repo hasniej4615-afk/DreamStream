@@ -39,6 +39,7 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
         private val HOST_PLAYER_FAILURES_KEY = stringPreferencesKey("host_player_failures")
         private val DEBUG_MODE_ENABLED_KEY = booleanPreferencesKey("debug_mode_enabled")
         private val MOBILE_LANDSCAPE_ENABLED_KEY = booleanPreferencesKey("mobile_landscape_enabled")
+        private val SHORTS_AUTO_SCROLL_ENABLED_KEY = booleanPreferencesKey("shorts_auto_scroll_enabled")
         private val IS_INSTALL_REGISTERED_KEY = booleanPreferencesKey("is_install_registered_v1")
         private val LAST_KNOWN_INSTALL_COUNT_KEY = intPreferencesKey("last_known_install_count")
         private val USER_NICKNAME_KEY = stringPreferencesKey("user_nickname")
@@ -261,6 +262,12 @@ class PreferenceManager @Inject constructor(@ApplicationContext private val cont
 
     suspend fun setMobileLandscapeEnabled(enabled: Boolean) {
         context.dataStore.edit { it[MOBILE_LANDSCAPE_ENABLED_KEY] = enabled }
+    }
+
+    val isShortsAutoScrollEnabled: Flow<Boolean> = context.dataStore.data.map { it[SHORTS_AUTO_SCROLL_ENABLED_KEY] ?: false }
+
+    suspend fun setShortsAutoScrollEnabled(enabled: Boolean) {
+        context.dataStore.edit { it[SHORTS_AUTO_SCROLL_ENABLED_KEY] = enabled }
     }
 
 

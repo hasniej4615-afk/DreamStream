@@ -963,6 +963,7 @@ class VideoViewModel @Inject constructor(
     val isAutoSubSyncEnabled: StateFlow<Boolean> = videoRepository.isAutoSubSyncEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     val isDebugModeEnabled: StateFlow<Boolean> = preferenceManager.isDebugModeEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val isMobileLandscapeEnabled: StateFlow<Boolean> = preferenceManager.isMobileLandscapeEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val isShortsAutoScrollEnabled: StateFlow<Boolean> = preferenceManager.isShortsAutoScrollEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val voiceEnhancerMode: StateFlow<Int> = preferenceManager.voiceEnhancerMode.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
     val activeBaseUrl: StateFlow<String> = preferenceManager.activeBaseUrl.onEach { url ->
         if (url.isNotEmpty()) VideoExtractor.setBaseUrl(url)
@@ -1281,6 +1282,8 @@ class VideoViewModel @Inject constructor(
     fun setAutoSubSyncEnabled(enabled: Boolean) { viewModelScope.launch { preferenceManager.setAutoSubSyncEnabled(enabled) } }
     fun setDebugModeEnabled(enabled: Boolean) { viewModelScope.launch { preferenceManager.setDebugModeEnabled(enabled) } }
     fun setMobileLandscapeEnabled(enabled: Boolean) { viewModelScope.launch { preferenceManager.setMobileLandscapeEnabled(enabled) } }
+    fun setShortsAutoScrollEnabled(enabled: Boolean) { viewModelScope.launch { preferenceManager.setShortsAutoScrollEnabled(enabled) } }
+    fun toggleShortsAutoScroll() { viewModelScope.launch { preferenceManager.setShortsAutoScrollEnabled(!isShortsAutoScrollEnabled.value) } }
     fun setVoiceEnhancerMode(mode: Int) { viewModelScope.launch { preferenceManager.setVoiceEnhancerMode(mode) } }
     fun setUserNickname(nickname: String) { viewModelScope.launch { preferenceManager.setUserNickname(nickname) } }
     fun setUserAvatarPath(path: String) { viewModelScope.launch { preferenceManager.setUserAvatarPath(path) } }

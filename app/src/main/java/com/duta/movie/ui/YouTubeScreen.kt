@@ -23,6 +23,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -164,6 +165,11 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
             (document.head || document.documentElement).appendChild(style);
         }
 
+        window.__dutaAutoScrollEnabled = false;
+        window.setDutaAutoScrollEnabled = function(enabled) {
+            window.__dutaAutoScrollEnabled = !!enabled;
+        };
+
         var currentTrackedVideoId = null;
         var sponsorSegments = [];
 
@@ -174,6 +180,12 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
         }
 
         function checkVideoMetadata() {
+            if (window.DutaYouTubeBridge && typeof window.DutaYouTubeBridge.onUrlChanged === 'function') {
+                if (window.__lastReportedUrl !== location.href) {
+                    window.__lastReportedUrl = location.href;
+                    window.DutaYouTubeBridge.onUrlChanged(location.href);
+                }
+            }
             var match = location.href.match(/[?&]v=([^&#]+)/) || location.href.match(/\/shorts\/([^&#/?]+)/);
             var vId = match ? match[1] : null;
             if (vId && vId !== currentTrackedVideoId) {
@@ -293,6 +305,70 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 for (var k = 0; k < dismissBtns.length; k++) {
                     try { dismissBtns[k].click(); } catch(e){}
                 }
+
+                // 7. Auto-advance Shorts & Reels when current video finishes playing
+                var isShortsOrReels = location.href.indexOf('/shorts') !== -1 ||
+                                      location.href.indexOf('/reel') !== -1 ||
+                                      location.href.indexOf('/reels') !== -1 ||
+                                      (document.body && (document.body.classList.contains('page-shorts') || document.body.classList.contains('shorts-carousel')));
+
+                if (isShortsOrReels && window.__dutaAutoScrollEnabled) {
+                    var sv = video || document.querySelector('video');
+                    if (sv) {
+                        if (sv.loop) {
+                            sv.loop = false;
+                        }
+                        var now = Date.now();
+                        var isEnded = sv.ended || (sv.duration > 0 && sv.currentTime >= sv.duration - 0.25);
+                        if (!isEnded && sv.duration > 0 && window.__lastShortsTime !== undefined) {
+                            if (sv.currentTime < window.__lastShortsTime && window.__lastShortsTime > sv.duration * 0.85) {
+                                isEnded = true;
+                            }
+                        }
+                        window.__lastShortsTime = sv.currentTime;
+
+                        if (isEnded && (!window.__lastShortsAdvance || now - window.__lastShortsAdvance > 1600)) {
+                            window.__lastShortsAdvance = now;
+
+                            var advanced = false;
+                            // 1. YouTube Mobile Web carousel accessibility button
+                            var nextBtn = document.querySelector('button.ytShortsCarouselShortsA11yNavButton[aria-label="Next video"], button[aria-label="Next video"], [aria-label*="next video" i]');
+                            if (nextBtn) {
+                                try { nextBtn.click(); advanced = true; } catch(e){}
+                            }
+
+                            // 2. Desktop or secondary Shorts buttons
+                            if (!advanced) {
+                                var deskBtn = document.querySelector('#navigation-button-down button, ytd-shorts #down-button button, [aria-label*="Next video" i]');
+                                if (deskBtn) {
+                                    try { deskBtn.click(); advanced = true; } catch(e){}
+                                }
+                            }
+
+                            // 3. Dispatch keyboard ArrowDown
+                            if (!advanced) {
+                                try {
+                                    var kDown = new KeyboardEvent('keydown', { key: 'ArrowDown', code: 'ArrowDown', keyCode: 40, which: 40, bubbles: true, cancelable: true });
+                                    (document.activeElement || window).dispatchEvent(kDown);
+                                    window.dispatchEvent(kDown);
+                                    advanced = true;
+                                } catch(e){}
+                            }
+
+                            // 4. Smooth scroll fallback
+                            if (!advanced) {
+                                try {
+                                    window.scrollBy({ top: window.innerHeight, behavior: 'smooth' });
+                                    advanced = true;
+                                } catch(e){}
+                            }
+
+                            if (window.DutaYouTubeBridge && typeof window.DutaYouTubeBridge.onShortAutoScrolled === 'function') {
+                                window.DutaYouTubeBridge.onShortAutoScrolled(location.href);
+                            }
+                        }
+                    }
+                }
             } catch(err) {}
         }
 
@@ -362,6 +438,14 @@ fun YouTubeScreen(
     var isManualFullScreenLandscape by remember { mutableStateOf(false) }
     val isFullScreenActive = customView != null || isManualFullScreenLandscape
     val isMobileLandscapeEnabled by viewModel.isMobileLandscapeEnabled.collectAsStateWithLifecycle()
+    val isShortsAutoScrollEnabled by viewModel.isShortsAutoScrollEnabled.collectAsStateWithLifecycle()
+
+    LaunchedEffect(isShortsAutoScrollEnabled, webViewInstance) {
+        webViewInstance?.evaluateJavascript(
+            "if (window.setDutaAutoScrollEnabled) window.setDutaAutoScrollEnabled($isShortsAutoScrollEnabled);",
+            null
+        )
+    }
 
     LaunchedEffect(isFullScreenActive) {
         viewModel.setYouTubeFullScreen(isFullScreenActive)
@@ -467,6 +551,16 @@ fun YouTubeScreen(
     // Bridge for metadata & SponsorBlock
     val jsBridge = remember {
         object {
+            @JavascriptInterface
+            fun onUrlChanged(url: String) {
+                currentUrl = url
+            }
+
+            @JavascriptInterface
+            fun onShortAutoScrolled(url: String) {
+                currentUrl = url
+                sponsorToastMessage = "⚡ Auto-scrolled to next Short"
+            }
             @JavascriptInterface
             fun onVideoDetected(videoId: String, title: String, likes: String, dislikes: String) {
                 activeVideoId = videoId
@@ -833,7 +927,25 @@ fun YouTubeScreen(
 
                                         Spacer(modifier = Modifier.width(2.dp))
 
-                                        // 5. Fullscreen Landscape Button (Mobile mode)
+                                        // 5. Auto-Scroll Toggle Button (Shorts & Reels)
+                                        HeaderIconButton(
+                                            icon = if (isShortsAutoScrollEnabled) Icons.Default.Autorenew else Icons.Default.SyncDisabled,
+                                            contentDescription = if (isShortsAutoScrollEnabled) "Auto-Scroll: ON" else "Auto-Scroll: OFF",
+                                            isTV = isRealTV,
+                                            tint = if (isShortsAutoScrollEnabled) Color(0xFF00E676) else Color.White,
+                                            onClick = {
+                                                viewModel.toggleShortsAutoScroll()
+                                                sponsorToastMessage = if (!isShortsAutoScrollEnabled) {
+                                                    "⚡ Auto-Scroll Enabled for Shorts"
+                                                } else {
+                                                    "Auto-Scroll Disabled"
+                                                }
+                                            }
+                                        )
+
+                                        Spacer(modifier = Modifier.width(2.dp))
+
+                                        // 6. Fullscreen Landscape Button (Mobile mode)
                                         if (!isRealTV) {
                                             HeaderIconButton(
                                                 icon = if (isFullScreenActive) Icons.Default.FullscreenExit else Icons.Default.Fullscreen,
@@ -990,6 +1102,7 @@ fun YouTubeScreen(
                                 canGoBack = back
                                 canGoForward = forward
                             },
+                            onUrlChanged = { currentUrl = it },
                             onShowCustomView = { v, cb ->
                                 customView = v
                                 customViewCallback = cb
@@ -1084,6 +1197,53 @@ fun YouTubeScreen(
                                 fl.removeAllViews()
                             }
                         )
+                    }
+                }
+
+                // ── FLOATING SHORTS / REELS AUTO-SCROLL QUICK TOGGLE PILL ──
+                val isShortsOrReels = currentUrl.contains("/shorts") || currentUrl.contains("/reel")
+                if (isShortsOrReels && !isBlackScreenMode && !isInPip) {
+                    Surface(
+                        onClick = {
+                            viewModel.toggleShortsAutoScroll()
+                            sponsorToastMessage = if (!isShortsAutoScrollEnabled) {
+                                "⚡ Auto-Scroll Enabled for Shorts"
+                            } else {
+                                "Auto-Scroll Disabled"
+                            }
+                        },
+                        shape = RoundedCornerShape(20.dp),
+                        color = if (isShortsAutoScrollEnabled) Color(0xDD00C853.toInt()) else Color(0xCC212121.toInt()),
+                        border = BorderStroke(
+                            1.dp,
+                            if (isShortsAutoScrollEnabled) Color(0xFF69F0AE) else Color(0xFF424242)
+                        ),
+                        shadowElevation = 6.dp,
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(
+                                top = if (isFullScreenActive) 16.dp else 10.dp,
+                                start = 12.dp
+                            )
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                        ) {
+                            Icon(
+                                imageVector = if (isShortsAutoScrollEnabled) Icons.Default.Autorenew else Icons.Default.SyncDisabled,
+                                contentDescription = null,
+                                tint = if (isShortsAutoScrollEnabled) Color.Black else Color.White,
+                                modifier = Modifier.size(15.dp)
+                            )
+                            Spacer(modifier = Modifier.width(5.dp))
+                            Text(
+                                text = if (isShortsAutoScrollEnabled) "Auto-Scroll ON" else "Auto-Scroll OFF",
+                                color = if (isShortsAutoScrollEnabled) Color.Black else Color.White,
+                                fontSize = 11.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
                     }
                 }
 
@@ -1314,6 +1474,7 @@ private fun createYouTubeWebView(
     onTitleChanged: (String) -> Unit,
     onLoadingChanged: (Boolean) -> Unit,
     onHistoryChanged: (Boolean, Boolean) -> Unit,
+    onUrlChanged: (String) -> Unit,
     onShowCustomView: (View, WebChromeClient.CustomViewCallback) -> Unit,
     onHideCustomView: () -> Unit,
     onOpenSearch: () -> Unit
@@ -1479,7 +1640,17 @@ private fun createYouTubeWebView(
                 super.onPageFinished(view, url)
                 onLoadingChanged(false)
                 onHistoryChanged(view?.canGoBack() == true, view?.canGoForward() == true)
+                if (!url.isNullOrBlank()) {
+                    onUrlChanged(url)
+                }
                 view?.evaluateJavascript(YOUTUBE_AD_NUKER_SCRIPT, null)
+            }
+
+            override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
+                super.doUpdateVisitedHistory(view, url, isReload)
+                if (!url.isNullOrBlank()) {
+                    onUrlChanged(url)
+                }
             }
         }
 

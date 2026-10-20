@@ -214,6 +214,9 @@
 
     <string name="enable_mobile_landscape">Enable Mobile Landscape</string>
 
+    <string name="shorts_auto_scroll_title">Auto-Scroll Shorts &amp; Reels</string>
+    <string name="shorts_auto_scroll_desc">Automatically advance to the next Short when the current video finishes</string>
+
     <string name="join_telegram">Join our Telegram Channel</string>
 
     <string name="manual_domain_update">Manual Domain Update</string>
