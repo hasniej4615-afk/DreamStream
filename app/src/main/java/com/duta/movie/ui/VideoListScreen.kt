@@ -41,6 +41,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.FocusDirection
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -241,6 +242,14 @@ fun VideoListScreen(
             try {
                 homeLazyListState.scrollToItem(0)
             } catch (_: Exception) {}
+        }
+    }
+
+    LaunchedEffect(homeLazyListState.interactionSource) {
+        homeLazyListState.interactionSource.interactions.collect { interaction ->
+            if (interaction is androidx.compose.foundation.interaction.DragInteraction.Start) {
+                viewModel.hasUserBrowsed = true
+            }
         }
     }
 
@@ -647,7 +656,19 @@ fun VideoListScreen(
                                 .fillMaxSize()
                                 .padding(top = if (isRealTV) 330.dp else 240.dp) // Precise clipping boundary below Watch button
                                 .zIndex(10f)
-                                .onFocusChanged { isAnyRowFocused = it.hasFocus },
+                                .onFocusChanged { isAnyRowFocused = it.hasFocus }
+                                .onPreviewKeyEvent { keyEvent ->
+                                    if (keyEvent.type == KeyEventType.KeyDown) {
+                                        val keyCode = keyEvent.nativeKeyEvent.keyCode
+                                        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP ||
+                                            keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN ||
+                                            keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
+                                            keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+                                            viewModel.hasUserBrowsed = true
+                                        }
+                                    }
+                                    false
+                                },
                                 contentPadding = PaddingValues(top = 20.dp, bottom = 40.dp),
                                 verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
@@ -829,7 +850,19 @@ fun VideoListScreen(
                             modifier = Modifier
                                 .fillMaxSize()
                                 .padding(top = heroHeight - 40.dp) // Start LazyColumn 40dp higher to overlap gradient
-                                .zIndex(5f),
+                                .zIndex(5f)
+                                .onPreviewKeyEvent { keyEvent ->
+                                    if (keyEvent.type == KeyEventType.KeyDown) {
+                                        val keyCode = keyEvent.nativeKeyEvent.keyCode
+                                        if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP ||
+                                            keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN ||
+                                            keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
+                                            keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+                                            viewModel.hasUserBrowsed = true
+                                        }
+                                    }
+                                    false
+                                },
                             contentPadding = PaddingValues(top = 40.dp, bottom = 120.dp), // Push first item down so it starts exactly at heroHeight
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
@@ -1009,6 +1042,8 @@ fun HorizontalVideoRow(
 
     val isReturningFromDetail = viewModel?.shouldRestoreFocusOnResume == true
 
+    var isProgrammaticScroll by remember { mutableStateOf(false) }
+
     // TOUCH-ACCURATE USER DRAG TRACKING (Mobile):
     // Only genuine touch/pointer drag interactions from the user can mark hasUserScrolled as true.
     // Programmatic scrolls, layout measurement shifts, and key-anchoring changes will NEVER trip this.
@@ -1018,6 +1053,7 @@ fun HorizontalVideoRow(
                 hasUserScrolled = true
                 isStartupAligned = true
                 viewModel?.markRowStartupInitialized(rowKey)
+                viewModel?.hasUserBrowsed = true
             }
         }
     }
@@ -1031,19 +1067,34 @@ fun HorizontalVideoRow(
 
     val isRowInitialized = isStartupAligned || (viewModel?.isRowStartupInitialized(rowKey) == true)
 
-    // ONE-TIME STARTUP ALIGNMENT:
-    // Only execute on initial cold app launch before the user has interacted with or browsed this row.
-    // Once initialized or browsed, this row NEVER resets to item 0 when returning from video detail or scrolling.
+    // DYNAMIC FRONT-ANCHORING & TV FOCUS STABILITY:
+    // When fresh network thumbnails load in front of the category (currentFirstId != previousFirstId),
+    // or on initial cache load: keep the row anchored at index 0 if the user has not actively browsed away.
     LaunchedEffect(currentFirstId, effectiveSessionId) {
         if (currentFirstId != null) {
             val isFirstItemChanged = previousFirstId != null && previousFirstId != currentFirstId
-            if (!isReturningFromDetail && !hasFocus && !hasUserScrolled) {
-                if (!isRowInitialized || (isFirstItemChanged && listState.firstVisibleItemIndex > 0)) {
-                    try {
+            val isUserActivelyBrowsing = viewModel?.hasUserBrowsed == true && hasUserScrolled
+
+            if (!isReturningFromDetail && !isUserActivelyBrowsing) {
+                try {
+                    isProgrammaticScroll = true
+                    if (listState.firstVisibleItemIndex > 0 || isFirstItemChanged) {
                         listState.scrollToItem(0)
+                    }
+                } catch (_: Exception) {} finally {
+                    kotlinx.coroutines.delay(50)
+                    isProgrammaticScroll = false
+                }
+                isStartupAligned = true
+                viewModel?.markRowStartupInitialized(rowKey)
+
+                // TV MODE OPTIMIZATION: If this row currently holds focus or is the top category row on startup,
+                // keep the focus box anchored to the front item (index 0) so it doesn't drift into the middle.
+                if (isAnyTV && (hasFocus || (firstItemFocusRequester != null && viewModel?.hasUserBrowsed != true))) {
+                    kotlinx.coroutines.delay(50)
+                    try {
+                        (firstItemFocusRequester ?: rowFirstItemFocusRequester).requestFocus()
                     } catch (_: Exception) {}
-                    isStartupAligned = true
-                    viewModel?.markRowStartupInitialized(rowKey)
                 }
             }
             previousFirstId = currentFirstId
@@ -1063,12 +1114,20 @@ fun HorizontalVideoRow(
 
     LaunchedEffect(videos.isNotEmpty()) {
         if (videos.isNotEmpty()) {
-            if (shimmerHadFocus) {
-                shimmerHadFocus = false
-                delay(50)
-                try {
-                    (firstItemFocusRequester ?: rowFirstItemFocusRequester).requestFocus()
-                } catch (_: Exception) {}
+            val isUserActivelyBrowsing = viewModel?.hasUserBrowsed == true && hasUserScrolled
+            if (!isReturningFromDetail && !isUserActivelyBrowsing) {
+                if (listState.firstVisibleItemIndex > 0) {
+                    try {
+                        listState.scrollToItem(0)
+                    } catch (_: Exception) {}
+                }
+                if (firstItemFocusRequester != null || shimmerHadFocus || hasFocus) {
+                    shimmerHadFocus = false
+                    delay(50)
+                    try {
+                        (firstItemFocusRequester ?: rowFirstItemFocusRequester).requestFocus()
+                    } catch (_: Exception) {}
+                }
             }
         }
     }
@@ -1117,7 +1176,15 @@ fun HorizontalVideoRow(
             .focusGroup()
             .focusProperties {
                 enter = {
-                    FocusRequester.Default
+                    if (viewModel?.shouldRestoreFocusOnResume == true && targetRestoreId != null) {
+                        FocusRequester.Default
+                    } else if (viewModel?.hasUserBrowsed == true && hasUserScrolled) {
+                        FocusRequester.Default
+                    } else if (viewModel?.hasUserBrowsed != true || !hasUserScrolled) {
+                        firstItemFocusRequester ?: rowFirstItemFocusRequester
+                    } else {
+                        FocusRequester.Default
+                    }
                 }
                 exit = { direction ->
                     if (direction == FocusDirection.Left) {
@@ -1134,6 +1201,22 @@ fun HorizontalVideoRow(
                         FocusRequester.Default
                     }
                 }
+            }
+            .onPreviewKeyEvent { keyEvent ->
+                if (keyEvent.type == KeyEventType.KeyDown) {
+                    val keyCode = keyEvent.nativeKeyEvent.keyCode
+                    if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
+                        keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+                        hasUserScrolled = true
+                        isStartupAligned = true
+                        viewModel?.markRowStartupInitialized(rowKey)
+                        viewModel?.hasUserBrowsed = true
+                    } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP ||
+                               keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
+                        viewModel?.hasUserBrowsed = true
+                    }
+                }
+                false
             }
             .fillMaxWidth()
             .height(((if (isRealTV) 240 else if (isTV) 260 else 340) * thumbnailScale).dp)
@@ -1242,15 +1325,14 @@ fun HorizontalVideoRow(
                     onPosterMissing = { viewModel?.healMissingPoster(video) },
                     onFocus = { 
                         focusedItemIndex = index
-                        if (index > 0) {
-                            hasUserScrolled = true
-                            isStartupAligned = true
-                            viewModel?.markRowStartupInitialized(rowKey)
-                        }
-                        viewModel?.lastFocusedHomeVideoId = video.id
-                        viewModel?.lastFocusedCategoryRowIndex = rowIndex
-                        if (index > 0 || rowIndex > 0 || hasUserScrolled) {
-                            viewModel?.hasUserBrowsed = true
+                        if (viewModel?.hasUserBrowsed == true) {
+                            if (index > 0) {
+                                hasUserScrolled = true
+                                isStartupAligned = true
+                                viewModel?.markRowStartupInitialized(rowKey)
+                            }
+                            viewModel?.lastFocusedHomeVideoId = video.id
+                            viewModel?.lastFocusedCategoryRowIndex = rowIndex
                         }
                         onVideoFocus(video)
                         if (isRealTV || isTV) {
