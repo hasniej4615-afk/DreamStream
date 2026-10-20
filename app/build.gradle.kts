@@ -104,6 +104,7 @@ dependencies {
     implementation(libs.androidx.fragment.ktx)
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.androidx.navigation.compose)
+    implementation("androidx.webkit:webkit:1.12.0")
 
     // Media3
     implementation(libs.media3.exoplayer)

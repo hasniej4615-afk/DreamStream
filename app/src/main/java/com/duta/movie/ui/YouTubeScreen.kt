@@ -5,9 +5,6 @@ import android.app.Activity
 import android.content.Context
 import android.content.Intent
 import android.graphics.Bitmap
-import android.net.Uri
-import android.os.Build
-import android.os.Bundle
 import android.speech.RecognizerIntent
 import android.util.Log
 import android.view.KeyEvent
@@ -25,7 +22,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -35,8 +31,9 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.*
-import androidx.compose.material.icons.automirrored.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -50,14 +47,14 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
-import com.duta.movie.R
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import com.duta.movie.util.DeviceUtils
 import java.io.ByteArrayInputStream
 import java.net.URLEncoder
@@ -75,7 +72,9 @@ private val BLOCKED_AD_HOSTS = listOf(
     "googlesyndication.com",
     "google-analytics.com",
     "www.google-analytics.com",
-    "play.google.com/log"
+    "play.google.com/log",
+    "securepubads.g.doubleclick.net",
+    "pubads.g.doubleclick.net"
 )
 
 private val BLOCKED_AD_PATHS = listOf(
@@ -83,20 +82,91 @@ private val BLOCKED_AD_PATHS = listOf(
     "/api/stats/ads",
     "/api/stats/atr",
     "/ptracking",
-    "/aclk"
+    "/aclk",
+    "/get_midroll_info",
+    "/youtubei/v1/player/ad_break"
 )
 
 /**
- * Enhanced JavaScript to block, hide, and auto-skip YouTube ads,
- * while styling web content to seamlessly integrate with our native YouTube chrome.
+ * Early-injected JavaScript evaluated before ANY YouTube script runs.
+ * Hooks JSON.parse, fetch, and XMLHttpRequest to strip adPlacements and adSlots
+ * directly from the /youtubei/v1/player and /youtubei/v1/next API responses,
+ * completely preventing YouTube's player from ever queuing or showing video ads.
  */
-private const val YOUTUBE_AD_NUKER_SCRIPT = """
+private const val YOUTUBE_EARLY_ADBLOCK_SCRIPT = """
 (function() {
     try {
-        if (window.__dutaYtNukerInitialized) return;
-        window.__dutaYtNukerInitialized = true;
+        if (window.__dutaEarlyAdblockInit) return;
+        window.__dutaEarlyAdblockInit = true;
 
-        // 1. Inject aggressive CSS to hide ad containers, promo banners, and duplicate web header
+        // 1. Monkey-patch JSON.parse: Strips ad payloads from all YouTube player configurations
+        const origParse = JSON.parse;
+        JSON.parse = function(text, reviver) {
+            let data = origParse.call(this, text, reviver);
+            if (data && typeof data === 'object') {
+                if (data.adPlacements) delete data.adPlacements;
+                if (data.adSlots) delete data.adSlots;
+                if (data.playerAds) delete data.playerAds;
+                if (data.adBreakHeartbeatParams) delete data.adBreakHeartbeatParams;
+            }
+            return data;
+        };
+
+        // 2. Monkey-patch window.fetch: Intercepts player API & blocks ad network calls
+        const origFetch = window.fetch;
+        window.fetch = async function(...args) {
+            const url = (args[0] && typeof args[0] === 'string') ? args[0] : (args[0] && args[0].url) || '';
+            // Silently drop ad tracking & stat pings
+            if (url.includes('/pagead/') || url.includes('/api/stats/ads') || url.includes('/ptracking') || url.includes('doubleclick.net')) {
+                return new Response('', { status: 200, headers: { 'Content-Type': 'text/plain' } });
+            }
+            const response = await origFetch.apply(this, args);
+            // If it's a player or next video manifest request, strip all ad components
+            if (url.includes('/youtubei/v1/player') || url.includes('/youtubei/v1/next')) {
+                try {
+                    const clone = response.clone();
+                    const text = await clone.text();
+                    let data = origParse.call(JSON, text);
+                    if (data && typeof data === 'object') {
+                        if (data.adPlacements) delete data.adPlacements;
+                        if (data.adSlots) delete data.adSlots;
+                        if (data.playerAds) delete data.playerAds;
+                        return new Response(JSON.stringify(data), {
+                            status: response.status,
+                            statusText: response.statusText,
+                            headers: response.headers
+                        });
+                    }
+                } catch(e) {}
+            }
+            return response;
+        };
+
+        // 3. Monkey-patch XMLHttpRequest: Drops ad tracking XHR calls
+        const origOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function(method, url, ...rest) {
+            this._reqUrl = url;
+            return origOpen.apply(this, [method, url, ...rest]);
+        };
+        const origSend = XMLHttpRequest.prototype.send;
+        XMLHttpRequest.prototype.send = function(body) {
+            const url = this._reqUrl || '';
+            if (url.includes('/pagead/') || url.includes('/api/stats/ads') || url.includes('/ptracking') || url.includes('doubleclick.net')) {
+                return;
+            }
+            return origSend.apply(this, [body]);
+        };
+    } catch(e) {}
+})();
+"""
+
+/**
+ * Watchdog & DOM Nuker script:
+ * Injects aggressive CSS rules to hide ad elements and runs high-frequency auto-skipping.
+ */
+private const val YOUTUBE_DOM_NUKER_SCRIPT = """
+(function() {
+    try {
         if (!document.getElementById('duta-yt-antiad-style')) {
             var style = document.createElement('style');
             style.id = 'duta-yt-antiad-style';
@@ -109,12 +179,13 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                     display: none !important;
                 }
 
-                /* Block & suppress ads, promos, and nag dialogs */
+                /* Block & suppress ads, promos, sponsored cards, and nag dialogs */
                 .video-ads, .ytp-ad-module, .ytp-ad-overlay-container,
                 .ytp-ad-message-container, .ytp-ad-player-overlay,
                 .ytp-ad-text, .ytp-ad-preview-container,
                 .ytp-ad-action-interstitial, .ytp-ad-image-overlay,
                 .ytp-ad-button-icon, .ytp-ad-skip-button-slot,
+                .ytp-ad-hover-text-container, .ytp-ad-info-dialog-background,
                 ytm-promoted-sparkles-web-renderer,
                 ytm-promoted-sparkles-text-search-web-renderer,
                 ytm-statement-banner-renderer,
@@ -124,7 +195,16 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 ytm-open-app-button-renderer,
                 .mobile-topbar-header-sign-in-button,
                 ytm-pivot-bar-item-renderer:has([aria-label*="Create"]),
-                .ad-container, #player-ads, .player-ads {
+                .ad-container, #player-ads, .player-ads,
+                ytm-compact-promoted-video-renderer,
+                ytm-promoted-video-renderer,
+                ytm-in-feed-ad-layout-renderer,
+                ytm-brand-video-singleton-renderer,
+                ytm-ad-slot-renderer,
+                ad-slot-renderer,
+                ytm-item-section-renderer:has(ytm-promoted-sparkles-web-renderer),
+                ytm-item-section-renderer:has(ytm-ad-slot-renderer),
+                [class*="ad-showing"] .video-ads {
                     display: none !important;
                     visibility: hidden !important;
                     opacity: 0 !important;
@@ -156,64 +236,63 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
 
         function skipAndFastForwardAds() {
             try {
-                // Auto-click any visible skip buttons
-                var skipSelectors = [
-                    '.ytp-ad-skip-button',
-                    '.ytp-ad-skip-button-modern',
-                    '.videoAdUiSkipButton',
-                    '.ytp-skip-ad-button',
-                    '.ytp-ad-overlay-close-button',
-                    '[class*="skip-button"]',
-                    'button[aria-label*="Skip"]',
-                    'button[id^="skip-button"]'
-                ];
-                for (var i = 0; i < skipSelectors.length; i++) {
-                    var btns = document.querySelectorAll(skipSelectors[i]);
-                    for (var j = 0; j < btns.length; j++) {
-                        try { btns[j].click(); } catch(e) {}
-                    }
+                // 1. YouTube Player API skip
+                var player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                if (player && typeof player.skipAd === 'function') {
+                    try { player.skipAd(); } catch(e){}
                 }
 
-                // Close upsell / install app dialogs
-                var closeBtns = document.querySelectorAll(
-                    'ytm-mealbar-promo-renderer button, ytm-upsell-dialog-renderer button, [aria-label*="Dismiss"], [aria-label*="No thanks"]'
-                );
-                for (var k = 0; k < closeBtns.length; k++) {
-                    try { closeBtns[k].click(); } catch(e) {}
-                }
-
-                // Detect video player ad mode and fast-forward at 16x speed
-                var player = document.querySelector('.html5-video-player');
+                // 2. Video element fast forward & mute if ad is showing
                 var isAdActive = (player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting'))) ||
-                                 document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay');
+                                 document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay, .ytp-ad-module');
                 var video = document.querySelector('video');
 
                 if (isAdActive && video) {
                     video.muted = true;
                     video.playbackRate = 16.0;
-                    if (video.duration && !isNaN(video.duration) && isFinite(video.duration)) {
-                        video.currentTime = video.duration;
+                    if (video.duration && isFinite(video.duration) && video.duration > 0) {
+                        video.currentTime = video.duration - 0.05;
                     }
                 } else if (video && video.playbackRate > 2.0) {
                     video.playbackRate = 1.0;
                     video.muted = false;
                 }
+
+                // 3. Auto-click all known skip button selectors
+                var skipBtns = document.querySelectorAll(
+                    '.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .videoAdUiSkipButton, ' +
+                    '.ytp-skip-ad-button, .ytp-ad-overlay-close-button, [class*="skip-button"], ' +
+                    'button[aria-label*="Skip" i], button[id^="skip-button"], .ytm-skip-ad-button'
+                );
+                for (var i = 0; i < skipBtns.length; i++) {
+                    try { skipBtns[i].click(); } catch(e) {}
+                }
+
+                // 4. Auto-dismiss upsell & promotional modal sheets
+                var dismissBtns = document.querySelectorAll(
+                    'ytm-mealbar-promo-renderer button, ytm-upsell-dialog-renderer button, [aria-label*="Dismiss" i], [aria-label*="No thanks" i]'
+                );
+                for (var k = 0; k < dismissBtns.length; k++) {
+                    try { dismissBtns[k].click(); } catch(e) {}
+                }
             } catch(err) {}
         }
 
-        // Run continuous check on an interval
-        setInterval(skipAndFastForwardAds, 300);
+        if (!window.__dutaWatchdogStarted) {
+            window.__dutaWatchdogStarted = true;
+            setInterval(skipAndFastForwardAds, 100);
 
-        // Run immediate check on DOM changes
-        var observer = new MutationObserver(function() {
-            skipAndFastForwardAds();
-        });
-        observer.observe(document.documentElement, {
-            childList: true,
-            subtree: true,
-            attributes: true,
-            attributeFilter: ['class']
-        });
+            var observer = new MutationObserver(function() {
+                skipAndFastForwardAds();
+            });
+            observer.observe(document.documentElement, {
+                childList: true,
+                subtree: true,
+                attributes: true,
+                attributeFilter: ['class']
+            });
+        }
+        skipAndFastForwardAds();
     } catch(e) {}
 })();
 """
@@ -773,7 +852,7 @@ private fun createYouTubeWebView(
         settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
-                        useWideViewPort = true
+            useWideViewPort = true
             loadWithOverviewMode = true
             mediaPlaybackRequiresUserGesture = false
             mixedContentMode = WebSettings.MIXED_CONTENT_ALWAYS_ALLOW
@@ -802,8 +881,22 @@ private fun createYouTubeWebView(
         isFocusable = true
         isFocusableInTouchMode = true
 
+        // 1. EARLY DOCUMENT START SCRIPT:
+        // Injects our fetch & JSON.parse hooks into every frame BEFORE page scripts execute!
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            try {
+                WebViewCompat.addDocumentStartJavaScript(
+                    this,
+                    YOUTUBE_EARLY_ADBLOCK_SCRIPT,
+                    setOf("*")
+                )
+            } catch (e: Exception) {
+                Log.w(TAG, "addDocumentStartJavaScript notice: ${e.message}")
+            }
+        }
+
         // TV Remote key events dispatcher
-        setOnKeyListener { v, keyCode, event ->
+        setOnKeyListener { _, keyCode, event ->
             if (event.action == KeyEvent.ACTION_DOWN) {
                 when (keyCode) {
                     KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> {
@@ -868,22 +961,23 @@ private fun createYouTubeWebView(
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 onLoadingChanged(true)
-                // Inject nuker script immediately on page start
-                view?.evaluateJavascript(YOUTUBE_AD_NUKER_SCRIPT, null)
+                // Fallback early injection if DOCUMENT_START_SCRIPT was not supported
+                view?.evaluateJavascript(YOUTUBE_EARLY_ADBLOCK_SCRIPT, null)
+                view?.evaluateJavascript(YOUTUBE_DOM_NUKER_SCRIPT, null)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 onLoadingChanged(false)
                 onHistoryChanged(view?.canGoBack() == true, view?.canGoForward() == true)
-                // Inject nuker script on page finish
-                view?.evaluateJavascript(YOUTUBE_AD_NUKER_SCRIPT, null)
+                view?.evaluateJavascript(YOUTUBE_EARLY_ADBLOCK_SCRIPT, null)
+                view?.evaluateJavascript(YOUTUBE_DOM_NUKER_SCRIPT, null)
             }
 
             override fun onLoadResource(view: WebView?, url: String?) {
                 super.onLoadResource(view, url)
-                // Continuous injection to guarantee 0ms ad elimination
-                view?.evaluateJavascript(YOUTUBE_AD_NUKER_SCRIPT, null)
+                // Re-trigger DOM nuker on resource loads to catch dynamic SPA video navigations
+                view?.evaluateJavascript(YOUTUBE_DOM_NUKER_SCRIPT, null)
             }
         }
 
@@ -899,6 +993,9 @@ private fun createYouTubeWebView(
             override fun onProgressChanged(view: WebView?, newProgress: Int) {
                 super.onProgressChanged(view, newProgress)
                 onLoadingChanged(newProgress < 100)
+                if (newProgress > 30) {
+                    view?.evaluateJavascript(YOUTUBE_DOM_NUKER_SCRIPT, null)
+                }
             }
 
             override fun onShowCustomView(view: View?, callback: CustomViewCallback?) {
