@@ -26,6 +26,8 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
@@ -860,7 +862,12 @@ fun YouTubeScreen(
                                     }
 
                                     // Right Action Icons (My List, Speed, Quality, Black Screen, Search, Voice)
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        modifier = Modifier
+                                            .weight(1f, fill = false)
+                                            .horizontalScroll(rememberScrollState())
+                                    ) {
                                         // 1. Add to My List Bookmark Button
                                         if (activeVideoId != null) {
                                             HeaderIconButton(
@@ -929,16 +936,16 @@ fun YouTubeScreen(
 
                                         // 5. Auto-Scroll Toggle Button (Shorts & Reels)
                                         HeaderIconButton(
-                                            icon = if (isShortsAutoScrollEnabled) Icons.Default.Autorenew else Icons.Default.SyncDisabled,
+                                            icon = Icons.Default.Autorenew,
                                             contentDescription = if (isShortsAutoScrollEnabled) "Auto-Scroll: ON" else "Auto-Scroll: OFF",
                                             isTV = isRealTV,
-                                            tint = if (isShortsAutoScrollEnabled) Color(0xFF00E676) else Color.White,
+                                            tint = if (isShortsAutoScrollEnabled) Color(0xFFFF0000) else Color.White,
                                             onClick = {
                                                 viewModel.toggleShortsAutoScroll()
                                                 sponsorToastMessage = if (!isShortsAutoScrollEnabled) {
-                                                    "⚡ Auto-Scroll Enabled for Shorts"
+                                                    "⚡ Auto-Scroll ON"
                                                 } else {
-                                                    "Auto-Scroll Disabled"
+                                                    "Auto-Scroll OFF"
                                                 }
                                             }
                                         )
@@ -1200,50 +1207,44 @@ fun YouTubeScreen(
                     }
                 }
 
-                // ── FLOATING SHORTS / REELS AUTO-SCROLL QUICK TOGGLE PILL ──
+
+
+                // ── COMPACT SHORTS / REELS AUTO-SCROLL FLOATING BUTTON ──
                 val isShortsOrReels = currentUrl.contains("/shorts") || currentUrl.contains("/reel")
-                if (isShortsOrReels && !isBlackScreenMode && !isInPip) {
-                    Surface(
-                        onClick = {
-                            viewModel.toggleShortsAutoScroll()
-                            sponsorToastMessage = if (!isShortsAutoScrollEnabled) {
-                                "⚡ Auto-Scroll Enabled for Shorts"
-                            } else {
-                                "Auto-Scroll Disabled"
-                            }
-                        },
-                        shape = RoundedCornerShape(20.dp),
-                        color = if (isShortsAutoScrollEnabled) Color(0xDD00C853.toInt()) else Color(0xCC212121.toInt()),
-                        border = BorderStroke(
-                            1.dp,
-                            if (isShortsAutoScrollEnabled) Color(0xFF69F0AE) else Color(0xFF424242)
-                        ),
-                        shadowElevation = 6.dp,
+                if (isShortsOrReels && !isBlackScreenMode && !isInPip && !isRealTV) {
+                    Box(
                         modifier = Modifier
-                            .align(Alignment.TopStart)
+                            .align(Alignment.TopEnd)
                             .padding(
-                                top = if (isFullScreenActive) 16.dp else 10.dp,
-                                start = 12.dp
+                                top = if (isFullScreenActive) 14.dp else 10.dp,
+                                end = if (isFullScreenActive) 66.dp else 54.dp
                             )
+                            .size(30.dp)
+                            .clip(CircleShape)
+                            .background(
+                                if (isShortsAutoScrollEnabled) Color(0xDDFF0000.toInt()) else Color.Black.copy(alpha = 0.60f)
+                            )
+                            .border(
+                                1.dp,
+                                if (isShortsAutoScrollEnabled) Color(0xFFFF5252) else Color.White.copy(alpha = 0.35f),
+                                CircleShape
+                            )
+                            .clickable {
+                                viewModel.toggleShortsAutoScroll()
+                                sponsorToastMessage = if (!isShortsAutoScrollEnabled) {
+                                    "⚡ Auto-Scroll ON"
+                                } else {
+                                    "Auto-Scroll OFF"
+                                }
+                            },
+                        contentAlignment = Alignment.Center
                     ) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
-                        ) {
-                            Icon(
-                                imageVector = if (isShortsAutoScrollEnabled) Icons.Default.Autorenew else Icons.Default.SyncDisabled,
-                                contentDescription = null,
-                                tint = if (isShortsAutoScrollEnabled) Color.Black else Color.White,
-                                modifier = Modifier.size(15.dp)
-                            )
-                            Spacer(modifier = Modifier.width(5.dp))
-                            Text(
-                                text = if (isShortsAutoScrollEnabled) "Auto-Scroll ON" else "Auto-Scroll OFF",
-                                color = if (isShortsAutoScrollEnabled) Color.Black else Color.White,
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold
-                            )
-                        }
+                        Icon(
+                            imageVector = Icons.Default.Autorenew,
+                            contentDescription = if (isShortsAutoScrollEnabled) "Auto-Scroll ON" else "Auto-Scroll OFF",
+                            tint = if (isShortsAutoScrollEnabled) Color.White else Color.White.copy(alpha = 0.85f),
+                            modifier = Modifier.size(16.dp)
+                        )
                     }
                 }
 
@@ -1360,19 +1361,24 @@ private fun HeaderIconButton(
 private fun HeaderChipButton(
     text: String,
     isTV: Boolean,
+    isActive: Boolean = false,
     onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
 
     Surface(
         onClick = onClick,
-        color = if (isFocused) Color(0xFF383838) else Color(0xFF272727),
+        color = when {
+            isActive -> Color(0xFFFF0000)
+            isFocused -> Color(0xFF383838)
+            else -> Color(0xFF272727)
+        },
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .clip(RoundedCornerShape(12.dp))
             .border(
-                width = if (isFocused) 2.dp else 0.dp,
-                color = if (isFocused) Color(0xFFFF0000) else Color.Transparent,
+                width = if (isFocused) 2.dp else if (isActive) 1.dp else 0.dp,
+                color = if (isFocused) Color.White else if (isActive) Color(0xFFFF5252) else Color.Transparent,
                 shape = RoundedCornerShape(12.dp)
             )
             .focusable()
