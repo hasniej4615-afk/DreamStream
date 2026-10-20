@@ -325,7 +325,7 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
             // 1. Sponsored or Ad badge aria labels
             var sponsoredBadges = document.querySelectorAll(
                 '[aria-label="Sponsored" i], [aria-label*="Sponsored" i], ' +
-                '[aria-label="Ad" i], [aria-label*="Ad •" i], [aria-label*="Ad:" i], ' +
+                '[aria-label*="Ad •" i], [aria-label*="Ad:" i], ' +
                 '.badge-shape-wiz--ad, ytm-ad-badge, .ytm-ad-badge, ' +
                 'ytm-badge-supported-renderer [aria-label*="Sponsored" i], ' +
                 '.ytp-ad-badge, .ytp-ad-simple-attributed-string'
@@ -352,14 +352,11 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 }
             }
 
-            // 3. CTA buttons (Shop now, Install, Learn more, Download) that only exist on ad Shorts
+            // 3. Ad tracking links or interstitial action buttons (targeted ad markers)
             var ctaButtons = document.querySelectorAll(
                 '.ytp-ad-action-interstitial, .ytp-ad-action-interstitial-action-button, ' +
                 'a[href*="googleadservices.com"], a[href*="doubleclick.net"], ' +
-                'button[aria-label*="Visit advertiser" i], button[aria-label*="Shop now" i], ' +
-                'button[aria-label*="Install" i], button[aria-label*="Learn more" i], ' +
-                'button[aria-label*="Download" i], button[aria-label*="Open advertiser" i], ' +
-                '.ytm-call-to-action-button-renderer'
+                'button[aria-label*="Visit advertiser" i], button[aria-label*="Open advertiser" i]'
             );
             for (var k = 0; k < ctaButtons.length; k++) {
                 var cta = ctaButtons[k];
@@ -369,7 +366,7 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
             }
 
             // 4. Video overlays or ad containers
-            if (document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay, .ytp-ad-overlay-container') !== null) {
+            if (document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay') !== null) {
                 return true;
             }
 
@@ -390,10 +387,11 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
             if (player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting'))) {
                 return true;
             }
-            if (document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay, .ytp-ad-overlay-container, .ytm-ad-module') !== null) {
+            if (document.querySelector('.ad-showing, .ad-interrupting') !== null) {
                 return true;
             }
-            if (document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton, [class*="skip-button"], button[aria-label*="Skip ad" i], button[aria-label*="Skip" i], .ytp-ad-text') !== null) {
+            var skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton, button[aria-label*="Skip ad" i]');
+            if (skipBtn && (skipBtn.offsetParent !== null || skipBtn.getClientRects().length > 0)) {
                 return true;
             }
             return false;
@@ -608,7 +606,7 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
 
         if (!window.__dutaWatchdogStarted) {
             window.__dutaWatchdogStarted = true;
-            setInterval(processAdsAndPlayback, 150);
+            setInterval(processAdsAndPlayback, 300);
         }
         processAdsAndPlayback();
     } catch(e) {}
@@ -1723,6 +1721,22 @@ private fun YouTubePillChip(
     }
 }
 
+private fun createBlockedAdResponse(): WebResourceResponse {
+    return WebResourceResponse(
+        "text/plain",
+        "UTF-8",
+        204,
+        "No Content",
+        mapOf(
+            "Access-Control-Allow-Origin" to "*",
+            "Access-Control-Allow-Methods" to "GET, POST, OPTIONS, HEAD",
+            "Access-Control-Allow-Headers" to "*",
+            "Access-Control-Max-Age" to "86400"
+        ),
+        ByteArrayInputStream(ByteArray(0))
+    )
+}
+
 @SuppressLint("SetJavaScriptEnabled")
 private fun createYouTubeWebView(
     context: Context,
@@ -1862,22 +1876,14 @@ private fun createYouTubeWebView(
                 // 1. Intercept and block ad endpoints (e.g. ad_break, /pagead/, /api/stats/ads)
                 for (adPath in BLOCKED_AD_PATHS) {
                     if (low.contains(adPath)) {
-                        return WebResourceResponse(
-                            "text/plain",
-                            "UTF-8",
-                            ByteArrayInputStream(ByteArray(0))
-                        )
+                        return createBlockedAdResponse()
                     }
                 }
 
                 // 2. Block known ad network hosts
                 for (adHost in BLOCKED_AD_HOSTS) {
                     if (low.contains(adHost)) {
-                        return WebResourceResponse(
-                            "text/plain",
-                            "UTF-8",
-                            ByteArrayInputStream(ByteArray(0))
-                        )
+                        return createBlockedAdResponse()
                     }
                 }
 
