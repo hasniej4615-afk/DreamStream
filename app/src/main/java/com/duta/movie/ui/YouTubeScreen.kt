@@ -33,6 +33,7 @@ import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -163,6 +164,8 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 *:focus, [tabindex]:focus, a:focus, button:focus,
                 ytm-video-with-context-renderer:focus,
                 ytm-compact-video-renderer:focus,
+                ytm-reel-item-renderer:focus,
+                ytm-shorts-carousel-video-renderer:focus,
                 ytm-item-section-renderer:focus {
                     outline: 3px solid #FF0000 !important;
                     outline-offset: 3px !important;
@@ -320,6 +323,46 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
             return advanced;
         }
 
+        function goToPreviousShort() {
+            var backed = false;
+            // 1. YouTube Mobile Web carousel accessibility button
+            var prevBtn = document.querySelector('button.ytShortsCarouselShortsA11yNavButton[aria-label="Previous video"], button[aria-label="Previous video"], [aria-label*="previous video" i]');
+            if (prevBtn) {
+                try { prevBtn.click(); backed = true; } catch(e){}
+            }
+
+            // 2. Desktop or secondary Shorts buttons
+            if (!backed) {
+                var deskUpBtn = document.querySelector('#navigation-button-up button, ytd-shorts #up-button button, [aria-label*="Previous video" i]');
+                if (deskUpBtn) {
+                    try { deskUpBtn.click(); backed = true; } catch(e){}
+                }
+            }
+
+            // 3. Dispatch keyboard ArrowUp
+            if (!backed) {
+                try {
+                    var kUp = new KeyboardEvent('keydown', { key: 'ArrowUp', code: 'ArrowUp', keyCode: 38, which: 38, bubbles: true, cancelable: true });
+                    (document.activeElement || window).dispatchEvent(kUp);
+                    window.dispatchEvent(kUp);
+                    backed = true;
+                } catch(e){}
+            }
+
+            // 4. Smooth scroll fallback
+            if (!backed) {
+                try {
+                    window.scrollBy({ top: -window.innerHeight, behavior: 'smooth' });
+                    backed = true;
+                } catch(e){}
+            }
+
+            return backed;
+        }
+
+        window.advanceToNextShort = advanceToNextShort;
+        window.goToPreviousShort = goToPreviousShort;
+
         // Checks if the active Short/Reel is an Ad/Sponsored video
         function isShortsAdActive() {
             // 1. Sponsored or Ad badge aria labels
@@ -448,8 +491,23 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
 
         var wasAdActive = false;
 
+        function ensureTvFocusableElements() {
+            var items = document.querySelectorAll(
+                'ytm-video-with-context-renderer, ytm-compact-video-renderer, ' +
+                'ytm-shorts-carousel-video-renderer, ytm-reel-item-renderer, ' +
+                'ytm-chip-cloud-chip-renderer, ytm-channel-renderer'
+            );
+            for (var i = 0; i < items.length; i++) {
+                var el = items[i];
+                if (!el.hasAttribute('tabindex')) {
+                    el.setAttribute('tabindex', '0');
+                }
+            }
+        }
+
         function processAdsAndPlayback() {
             try {
+                ensureTvFocusableElements();
                 checkVideoMetadata();
 
                 var player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
@@ -706,8 +764,16 @@ fun YouTubeScreen(
     var searchQuery by remember { mutableStateOf("") }
     var selectedCategoryTitle by remember { mutableStateOf("All") }
     val searchFocusRequester = remember { FocusRequester() }
+    val initialChipFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
+
+    LaunchedEffect(isRealTV) {
+        if (isRealTV) {
+            delay(300)
+            try { initialChipFocusRequester.requestFocus() } catch (_: Exception) {}
+        }
+    }
 
     val executeSearch: (String) -> Unit = { query ->
         val clean = query.trim()
@@ -1319,12 +1385,13 @@ fun YouTubeScreen(
                                     )
                                 }
                             } else {
-                                items(categories) { cat ->
+                                itemsIndexed(categories) { index, cat ->
                                     val isSelected = selectedCategoryTitle == cat.title
                                     YouTubePillChip(
                                         title = cat.title,
                                         isSelected = isSelected,
                                         isTV = isRealTV,
+                                        modifier = if (index == 0) Modifier.focusRequester(initialChipFocusRequester) else Modifier,
                                         onClick = {
                                             selectedCategoryTitle = cat.title
                                             currentUrl = cat.url
@@ -1684,13 +1751,14 @@ private fun YouTubePillChip(
     title: String,
     isSelected: Boolean,
     isTV: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
 
     Surface(
         onClick = onClick,
-        modifier = Modifier
+        modifier = modifier
             .scale(if (isFocused) 1.08f else 1.0f)
             .clip(RoundedCornerShape(8.dp))
             .border(
@@ -1807,18 +1875,42 @@ private fun createYouTubeWebView(
         // Register Duta bridge for metadata, SponsorBlock notifications, and PiP state
         addJavascriptInterface(jsBridge, "DutaYouTubeBridge")
 
-        // TV Remote key events dispatcher (Media controls & Remote number seeking)
+        // TV Remote key events dispatcher (Shorts navigation, media controls & remote number seeking)
         setOnKeyListener { _, keyCode, event ->
             if (event.action == KeyEvent.ACTION_DOWN) {
+                val isShorts = url?.contains("/shorts") == true || url?.contains("/reel") == true
                 when {
                     keyCode == KeyEvent.KEYCODE_SEARCH -> {
                         onOpenSearch()
                         return@setOnKeyListener true
                     }
-                    keyCode in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> {
-                        val fraction = if (keyCode == KeyEvent.KEYCODE_0) 0.0 else (keyCode - KeyEvent.KEYCODE_0) * 0.1
+                    isShorts && (keyCode == KeyEvent.KEYCODE_DPAD_DOWN || keyCode == KeyEvent.KEYCODE_PAGE_DOWN ||
+                            keyCode == KeyEvent.KEYCODE_MEDIA_NEXT || keyCode == KeyEvent.KEYCODE_CHANNEL_DOWN) -> {
+                        evaluateJavascript("if (window.advanceToNextShort) window.advanceToNextShort();", null)
+                        return@setOnKeyListener true
+                    }
+                    isShorts && (keyCode == KeyEvent.KEYCODE_DPAD_UP || keyCode == KeyEvent.KEYCODE_PAGE_UP ||
+                            keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS || keyCode == KeyEvent.KEYCODE_CHANNEL_UP) -> {
+                        evaluateJavascript("if (window.goToPreviousShort) window.goToPreviousShort();", null)
+                        return@setOnKeyListener true
+                    }
+                    isShorts && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) -> {
                         evaluateJavascript(
-                            "(function(){ var v = document.querySelector('video'); if (v && v.duration) v.currentTime = v.duration * $fraction; else if (v) v.currentTime = 0; })();",
+                            "(function(){ var v = document.querySelector('video'); if (v) { if (v.paused) v.play(); else v.pause(); } })();",
+                            null
+                        )
+                        return@setOnKeyListener true
+                    }
+                    isShorts && keyCode == KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        evaluateJavascript(
+                            "(function(){ var v = document.querySelector('video'); if (v) v.currentTime += 5; })();",
+                            null
+                        )
+                        return@setOnKeyListener true
+                    }
+                    isShorts && keyCode == KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        evaluateJavascript(
+                            "(function(){ var v = document.querySelector('video'); if (v) v.currentTime = Math.max(0, v.currentTime - 5); })();",
                             null
                         )
                         return@setOnKeyListener true
@@ -1826,6 +1918,28 @@ private fun createYouTubeWebView(
                     keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || keyCode == KeyEvent.KEYCODE_HEADSETHOOK -> {
                         evaluateJavascript(
                             "(function(){ var v = document.querySelector('video'); if (v) { if (v.paused) v.play(); else v.pause(); } })();",
+                            null
+                        )
+                        return@setOnKeyListener true
+                    }
+                    keyCode == KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                        evaluateJavascript(
+                            "(function(){ var v = document.querySelector('video'); if (v && v.paused) v.play(); })();",
+                            null
+                        )
+                        return@setOnKeyListener true
+                    }
+                    keyCode == KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                        evaluateJavascript(
+                            "(function(){ var v = document.querySelector('video'); if (v && !v.paused) v.pause(); })();",
+                            null
+                        )
+                        return@setOnKeyListener true
+                    }
+                    keyCode in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> {
+                        val fraction = if (keyCode == KeyEvent.KEYCODE_0) 0.0 else (keyCode - KeyEvent.KEYCODE_0) * 0.1
+                        evaluateJavascript(
+                            "(function(){ var v = document.querySelector('video'); if (v && v.duration) v.currentTime = v.duration * $fraction; else if (v) v.currentTime = 0; })();",
                             null
                         )
                         return@setOnKeyListener true
