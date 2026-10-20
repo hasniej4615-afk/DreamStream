@@ -47,6 +47,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -364,10 +366,56 @@ fun YouTubeScreen(
     var customView by remember { mutableStateOf<View?>(null) }
     var customViewCallback by remember { mutableStateOf<WebChromeClient.CustomViewCallback?>(null) }
 
-    // Original YouTube Search State
+    // Original YouTube Search State & Controllers
     var isSearchActive by remember { mutableStateOf(false) }
     var searchQuery by remember { mutableStateOf("") }
+    var selectedCategoryTitle by remember { mutableStateOf("All") }
     val searchFocusRequester = remember { FocusRequester() }
+    val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+
+    val executeSearch: (String) -> Unit = { query ->
+        val clean = query.trim()
+        if (clean.isNotBlank()) {
+            searchQuery = clean
+            val encoded = URLEncoder.encode(clean, "UTF-8")
+            val searchUrl = "https://m.youtube.com/results?search_query=$encoded"
+            selectedCategoryTitle = ""
+            currentUrl = searchUrl
+            webViewInstance?.loadUrl(searchUrl)
+            keyboardController?.hide()
+            focusManager.clearFocus()
+            isSearchActive = false
+        }
+    }
+
+    LaunchedEffect(isSearchActive) {
+        if (isSearchActive) {
+            delay(120)
+            try {
+                searchFocusRequester.requestFocus()
+                keyboardController?.show()
+            } catch (_: Exception) {}
+        } else {
+            keyboardController?.hide()
+            focusManager.clearFocus()
+        }
+    }
+
+    // Quick Search Suggestions
+    val searchSuggestions = remember {
+        listOf(
+            "Trending",
+            "Movie Trailers",
+            "Music",
+            "Gaming",
+            "Live Now",
+            "News",
+            "Podcasts",
+            "Lofi Beats",
+            "Animation"
+        )
+    }
 
     // Categories matching authentic YouTube filter chips
     val categories = remember {
@@ -384,7 +432,6 @@ fun YouTubeScreen(
             YouTubeCategory("Shorts", "https://m.youtube.com/shorts")
         )
     }
-    var selectedCategoryTitle by remember { mutableStateOf("All") }
 
     // Voice search launcher
     val speechLauncher = rememberLauncherForActivityResult(
@@ -393,12 +440,7 @@ fun YouTubeScreen(
         if (result.resultCode == Activity.RESULT_OK) {
             val spoken = result.data?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)?.firstOrNull()
             if (!spoken.isNullOrBlank()) {
-                searchQuery = spoken
-                val encoded = URLEncoder.encode(spoken, "UTF-8")
-                val searchUrl = "https://m.youtube.com/results?search_query=$encoded"
-                selectedCategoryTitle = ""
-                webViewInstance?.loadUrl(searchUrl)
-                isSearchActive = false
+                executeSearch(spoken)
             }
         }
     }
@@ -450,6 +492,8 @@ fun YouTubeScreen(
             customView = null
         } else if (isSearchActive) {
             isSearchActive = false
+            keyboardController?.hide()
+            focusManager.clearFocus()
         } else if (webViewInstance?.canGoBack() == true) {
             webViewInstance?.goBack()
         } else {
@@ -469,7 +513,9 @@ fun YouTubeScreen(
             if (customView == null && !isInPip && !isBlackScreenMode) {
                 Surface(
                     color = Color(0xFF0F0F0F),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .then(if (!isRealTV) Modifier.statusBarsPadding() else Modifier)
                 ) {
                     Column(
                         modifier = Modifier
@@ -486,17 +532,21 @@ fun YouTubeScreen(
                                 Row(
                                     modifier = Modifier
                                         .fillMaxWidth()
-                                        .height(if (isRealTV) 48.dp else 42.dp),
+                                        .height(if (isRealTV) 50.dp else 44.dp),
                                     verticalAlignment = Alignment.CenterVertically
                                 ) {
                                     HeaderIconButton(
                                         icon = Icons.AutoMirrored.Filled.ArrowBack,
                                         contentDescription = "Back",
                                         isTV = isRealTV,
-                                        onClick = { isSearchActive = false }
+                                        onClick = {
+                                            isSearchActive = false
+                                            keyboardController?.hide()
+                                            focusManager.clearFocus()
+                                        }
                                     )
 
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
 
                                     Box(
                                         modifier = Modifier
@@ -509,7 +559,7 @@ fun YouTubeScreen(
                                                 color = Color(0xFF3F3F3F),
                                                 shape = RoundedCornerShape(24.dp)
                                             )
-                                            .padding(horizontal = 14.dp),
+                                            .padding(horizontal = 12.dp),
                                         contentAlignment = Alignment.CenterStart
                                     ) {
                                         Row(
@@ -530,20 +580,12 @@ fun YouTubeScreen(
                                                 cursorBrush = SolidColor(Color.Red),
                                                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                                                 keyboardActions = KeyboardActions(
-                                                    onSearch = {
-                                                        if (searchQuery.isNotBlank()) {
-                                                            val encoded = URLEncoder.encode(searchQuery.trim(), "UTF-8")
-                                                            val url = "https://m.youtube.com/results?search_query=$encoded"
-                                                            selectedCategoryTitle = ""
-                                                            webViewInstance?.loadUrl(url)
-                                                            isSearchActive = false
-                                                        }
-                                                    }
+                                                    onSearch = { executeSearch(searchQuery) }
                                                 ),
                                                 decorationBox = { innerTextField ->
                                                     if (searchQuery.isEmpty()) {
                                                         Text(
-                                                            text = "Search YouTube",
+                                                            text = "Search YouTube...",
                                                             color = Color(0xFFAAAAAA),
                                                             fontSize = if (isRealTV) 16.sp else 15.sp
                                                         )
@@ -558,14 +600,26 @@ fun YouTubeScreen(
                                                     contentDescription = "Clear",
                                                     tint = Color.LightGray,
                                                     modifier = Modifier
-                                                        .size(20.dp)
+                                                        .size(24.dp)
+                                                        .padding(2.dp)
                                                         .clickable { searchQuery = "" }
                                                 )
                                             }
                                         }
                                     }
 
-                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+
+                                    // Dedicated Search Submit Button
+                                    HeaderIconButton(
+                                        icon = Icons.Default.Search,
+                                        contentDescription = "Search",
+                                        isTV = isRealTV,
+                                        tint = if (searchQuery.isNotBlank()) Color(0xFFFF0000) else Color.White,
+                                        onClick = { executeSearch(searchQuery) }
+                                    )
+
+                                    Spacer(modifier = Modifier.width(4.dp))
 
                                     VoiceSearchButton(isTV = isRealTV) {
                                         try {
@@ -768,25 +822,38 @@ fun YouTubeScreen(
                             }
                         }
 
-                        // ── ORIGINAL YOUTUBE FILTER CHIPS (Pills) ──
+                        // ── CHIPS: Categories or Quick Search Suggestions ──
                         LazyRow(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(top = 8.dp, bottom = 4.dp),
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
-                            items(categories) { cat ->
-                                val isSelected = selectedCategoryTitle == cat.title
-                                YouTubePillChip(
-                                    title = cat.title,
-                                    isSelected = isSelected,
-                                    isTV = isRealTV,
-                                    onClick = {
-                                        selectedCategoryTitle = cat.title
-                                        currentUrl = cat.url
-                                        webViewInstance?.loadUrl(cat.url)
-                                    }
-                                )
+                            if (isSearchActive) {
+                                items(searchSuggestions) { term ->
+                                    YouTubePillChip(
+                                        title = "🔍 $term",
+                                        isSelected = false,
+                                        isTV = isRealTV,
+                                        onClick = {
+                                            executeSearch(term)
+                                        }
+                                    )
+                                }
+                            } else {
+                                items(categories) { cat ->
+                                    val isSelected = selectedCategoryTitle == cat.title
+                                    YouTubePillChip(
+                                        title = cat.title,
+                                        isSelected = isSelected,
+                                        isTV = isRealTV,
+                                        onClick = {
+                                            selectedCategoryTitle = cat.title
+                                            currentUrl = cat.url
+                                            webViewInstance?.loadUrl(cat.url)
+                                        }
+                                    )
+                                }
                             }
                         }
                     }
@@ -819,7 +886,8 @@ fun YouTubeScreen(
                             onHideCustomView = {
                                 customView = null
                                 customViewCallback = null
-                            }
+                            },
+                            onOpenSearch = { isSearchActive = true }
                         ).also { wv ->
                             webViewInstance = wv
                             wv.loadUrl(currentUrl)
@@ -937,11 +1005,11 @@ private fun HeaderIconButton(
 
     Box(
         modifier = Modifier
-            .size(if (isTV) 38.dp else 34.dp)
+            .size(if (isTV) 42.dp else 40.dp)
             .clip(CircleShape)
             .background(
                 when {
-                    isFocused -> Color.White.copy(alpha = 0.2f)
+                    isFocused -> Color.White.copy(alpha = 0.25f)
                     else -> Color.Transparent
                 }
             )
@@ -959,7 +1027,7 @@ private fun HeaderIconButton(
             imageVector = icon,
             contentDescription = contentDescription,
             tint = if (enabled) tint else Color.Gray.copy(alpha = 0.4f),
-            modifier = Modifier.size(if (isTV) 20.dp else 18.dp)
+            modifier = Modifier.size(if (isTV) 22.dp else 20.dp)
         )
     }
 }
@@ -973,6 +1041,7 @@ private fun HeaderChipButton(
     var isFocused by remember { mutableStateOf(false) }
 
     Surface(
+        onClick = onClick,
         color = if (isFocused) Color(0xFF383838) else Color(0xFF272727),
         shape = RoundedCornerShape(12.dp),
         modifier = Modifier
@@ -984,7 +1053,6 @@ private fun HeaderChipButton(
             )
             .focusable()
             .onFocusChanged { isFocused = it.isFocused }
-            .clickable(onClick = onClick)
     ) {
         Text(
             text = text,
@@ -1005,7 +1073,7 @@ private fun VoiceSearchButton(
 
     Box(
         modifier = Modifier
-            .size(if (isTV) 38.dp else 34.dp)
+            .size(if (isTV) 42.dp else 40.dp)
             .clip(CircleShape)
             .background(
                 when {
@@ -1027,7 +1095,7 @@ private fun VoiceSearchButton(
             imageVector = Icons.Default.Mic,
             contentDescription = "Voice Search",
             tint = if (isFocused) Color(0xFFFF0000) else Color.White,
-            modifier = Modifier.size(if (isTV) 20.dp else 18.dp)
+            modifier = Modifier.size(if (isTV) 22.dp else 20.dp)
         )
     }
 }
@@ -1042,6 +1110,7 @@ private fun YouTubePillChip(
     var isFocused by remember { mutableStateOf(false) }
 
     Surface(
+        onClick = onClick,
         modifier = Modifier
             .scale(if (isFocused) 1.08f else 1.0f)
             .clip(RoundedCornerShape(8.dp))
@@ -1051,8 +1120,7 @@ private fun YouTubePillChip(
                 shape = RoundedCornerShape(8.dp)
             )
             .focusable()
-            .onFocusChanged { isFocused = it.isFocused }
-            .clickable(onClick = onClick),
+            .onFocusChanged { isFocused = it.isFocused },
         color = when {
             isSelected -> Color(0xFFFFFFFF)
             isFocused -> Color(0xFF383838)
@@ -1083,7 +1151,8 @@ private fun createYouTubeWebView(
     onLoadingChanged: (Boolean) -> Unit,
     onHistoryChanged: (Boolean, Boolean) -> Unit,
     onShowCustomView: (View, WebChromeClient.CustomViewCallback) -> Unit,
-    onHideCustomView: () -> Unit
+    onHideCustomView: () -> Unit,
+    onOpenSearch: () -> Unit
 ): WebView {
     return WebView(context).apply {
         layoutParams = ViewGroup.LayoutParams(
@@ -1091,6 +1160,10 @@ private fun createYouTubeWebView(
             ViewGroup.LayoutParams.MATCH_PARENT
         )
         setBackgroundColor(0xFF0F0F0F.toInt())
+
+        try {
+            WebView.setWebContentsDebuggingEnabled(true)
+        } catch (_: Exception) {}
 
         settings.apply {
             javaScriptEnabled = true
@@ -1131,6 +1204,10 @@ private fun createYouTubeWebView(
         setOnKeyListener { _, keyCode, event ->
             if (event.action == KeyEvent.ACTION_DOWN) {
                 when {
+                    keyCode == KeyEvent.KEYCODE_SEARCH -> {
+                        onOpenSearch()
+                        return@setOnKeyListener true
+                    }
                     keyCode in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> {
                         val fraction = if (keyCode == KeyEvent.KEYCODE_0) 0.0 else (keyCode - KeyEvent.KEYCODE_0) * 0.1
                         evaluateJavascript(
@@ -1166,6 +1243,22 @@ private fun createYouTubeWebView(
         }
 
         webViewClient = object : WebViewClient() {
+            override fun shouldOverrideUrlLoading(
+                view: WebView?,
+                request: WebResourceRequest?
+            ): Boolean {
+                val url = request?.url?.toString() ?: return false
+                if (url.startsWith("http://") || url.startsWith("https://")) {
+                    return false
+                }
+                return try {
+                    val intent = Intent.parseUri(url, Intent.URI_INTENT_SCHEME)
+                    context.startActivity(intent)
+                    true
+                } catch (_: Exception) {
+                    true
+                }
+            }
             override fun shouldInterceptRequest(
                 view: WebView?,
                 request: WebResourceRequest?
