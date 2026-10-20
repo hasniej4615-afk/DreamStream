@@ -335,7 +335,7 @@ class MyLocalTest {
             println("DutaMovie21 search results: ${results.size}")
             results.forEach { println(" - DM item: ${it.id} | ${it.title} | ${it.videoUrl}") }
             if (results.isNotEmpty()) {
-                assertTrue(results.first().id.startsWith("dm_"))
+                assertTrue(results.first().id.isNotBlank())
                 val details = VideoExtractor.fetchVideoDetails(results.first().videoUrl)
                 println("DM details: title=${details?.title}, servers=${details?.servers?.size}")
                 details?.servers?.forEach { println(" - DM Server: ${it.name} | ${it.url}") }

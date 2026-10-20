@@ -59,6 +59,7 @@ import com.duta.movie.ui.VideoPlayerScreen
 import com.duta.movie.ui.CategoryResultsScreen
 import com.duta.movie.ui.ActressProfileScreen
 import com.duta.movie.ui.SettingsScreen
+import com.duta.movie.ui.YouTubeScreen
 import com.duta.movie.ui.UpdateDialog
 import com.duta.movie.ui.BroadcastAnnouncementDialog
 import com.duta.movie.ui.navigation.Destination
@@ -288,6 +289,7 @@ class MainActivity : AppCompatActivity() {
                     Triple(Destination.Home, Icons.Default.Home, stringResource(R.string.home)),
                     Triple(Destination.Movies, Icons.Default.Movie, stringResource(R.string.movies)),
                     Triple(Destination.TVShows, Icons.Default.Tv, stringResource(R.string.tv_shows)),
+                    Triple(Destination.YouTube, Icons.Default.SmartDisplay, stringResource(R.string.youtube)),
                     Triple(Destination.MyList, Icons.Default.Bookmark, stringResource(R.string.my_list))
                 )
                 val isAtPlayer = currentDestination?.hasRoute<Destination.Player>() == true
@@ -545,6 +547,11 @@ class MainActivity : AppCompatActivity() {
                                         windowSizeClass = windowSizeClass,
                                         onBackClick = { navController.popBackStack() },
                                         onVideoClick = onAppVideoClick
+                                    )
+                                }
+                                composable<Destination.YouTube> {
+                                    YouTubeScreen(
+                                        onBackClick = { navController.popBackStack() }
                                     )
                                 }
                                 composable<Destination.MyList> {

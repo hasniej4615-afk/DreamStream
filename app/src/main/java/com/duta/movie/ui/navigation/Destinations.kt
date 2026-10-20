@@ -11,6 +11,9 @@ sealed interface Destination {
     
     @Serializable
     data object TVShows : Destination
+
+    @Serializable
+    data object YouTube : Destination
     
     @Serializable
     data object MyList : Destination
