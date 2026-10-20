@@ -175,10 +175,45 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
             (document.head || document.documentElement).appendChild(style);
         }
 
-        window.__dutaAutoScrollEnabled = false;
+        if (typeof window.__dutaAutoScrollEnabled === 'undefined') {
+            window.__dutaAutoScrollEnabled = false;
+        }
         window.setDutaAutoScrollEnabled = function(enabled) {
             window.__dutaAutoScrollEnabled = !!enabled;
         };
+
+        function isAutoScrollActive() {
+            if (window.DutaYouTubeBridge && typeof window.DutaYouTubeBridge.isAutoScrollEnabled === 'function') {
+                try {
+                    return window.DutaYouTubeBridge.isAutoScrollEnabled();
+                } catch(e) {}
+            }
+            return !!window.__dutaAutoScrollEnabled;
+        }
+
+        // Prevent YouTube from forcing loop = true on HTMLMediaElement when auto-scroll is on
+        try {
+            var protoLoopDesc = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'loop');
+            if (!window.__dutaLoopOverridden && protoLoopDesc) {
+                window.__dutaLoopOverridden = true;
+                Object.defineProperty(HTMLMediaElement.prototype, 'loop', {
+                    get: function() {
+                        var isShorts = location.href.indexOf('/shorts') !== -1 || location.href.indexOf('/reel') !== -1;
+                        if (isShorts && isAutoScrollActive()) return false;
+                        return protoLoopDesc.get ? protoLoopDesc.get.call(this) : false;
+                    },
+                    set: function(val) {
+                        var isShorts = location.href.indexOf('/shorts') !== -1 || location.href.indexOf('/reel') !== -1;
+                        if (isShorts && isAutoScrollActive()) {
+                            if (protoLoopDesc.set) protoLoopDesc.set.call(this, false);
+                            return false;
+                        }
+                        if (protoLoopDesc.set) protoLoopDesc.set.call(this, val);
+                    },
+                    configurable: true
+                });
+            }
+        } catch(e) {}
 
         var currentTrackedVideoId = null;
         var sponsorSegments = [];
@@ -364,6 +399,55 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
             return false;
         }
 
+        function hookShortsVideo(v) {
+            if (!v || v.__dutaHooked) return;
+            v.__dutaHooked = true;
+
+            function onPlaybackCheck() {
+                var isShorts = location.href.indexOf('/shorts') !== -1 ||
+                               location.href.indexOf('/reel') !== -1 ||
+                               location.href.indexOf('/reels') !== -1;
+                if (!isShorts) return;
+
+                // 1. Ad Short bypass
+                if (isShortsAdActive()) {
+                    var nowAd = Date.now();
+                    if (!window.__lastShortsAdSkip || nowAd - window.__lastShortsAdSkip > 1000) {
+                        window.__lastShortsAdSkip = nowAd;
+                        var advAd = advanceToNextShort();
+                        if (advAd && window.DutaYouTubeBridge && typeof window.DutaYouTubeBridge.onShortAdBypassed === 'function') {
+                            window.DutaYouTubeBridge.onShortAdBypassed();
+                        }
+                    }
+                    return;
+                }
+
+                // 2. Normal Auto-scroll
+                if (isAutoScrollActive()) {
+                    if (v.loop) v.loop = false;
+                    var now = Date.now();
+                    var isEnded = v.ended || (v.duration > 0 && v.currentTime >= v.duration - 0.35);
+                    if (!isEnded && v.duration > 0 && v.__dutaLastTime !== undefined) {
+                        if (v.currentTime < v.__dutaLastTime && v.__dutaLastTime > v.duration * 0.8) {
+                            isEnded = true;
+                        }
+                    }
+                    v.__dutaLastTime = v.currentTime;
+
+                    if (isEnded && (!window.__lastShortsAdvance || now - window.__lastShortsAdvance > 1500)) {
+                        window.__lastShortsAdvance = now;
+                        var adv = advanceToNextShort();
+                        if (adv && window.DutaYouTubeBridge && typeof window.DutaYouTubeBridge.onShortAutoScrolled === 'function') {
+                            window.DutaYouTubeBridge.onShortAutoScrolled(location.href);
+                        }
+                    }
+                }
+            }
+
+            v.addEventListener('timeupdate', onPlaybackCheck);
+            v.addEventListener('ended', onPlaybackCheck);
+        }
+
         var wasAdActive = false;
 
         function processAdsAndPlayback() {
@@ -372,6 +456,9 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
 
                 var player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
                 var video = document.querySelector('video');
+                if (video) {
+                    hookShortsVideo(video);
+                }
 
                 var isShortsOrReels = location.href.indexOf('/shorts') !== -1 ||
                                       location.href.indexOf('/reel') !== -1 ||
@@ -492,22 +579,22 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 }
 
                 // ── F. NORMAL SHORTS AUTO-SCROLL (WHEN VIDEO FINISHES NATURALLY) ──
-                if (isShortsOrReels && window.__dutaAutoScrollEnabled) {
+                if (isShortsOrReels && isAutoScrollActive()) {
                     var sv2 = video || document.querySelector('video');
                     if (sv2) {
                         if (sv2.loop) {
                             sv2.loop = false;
                         }
                         var now2 = Date.now();
-                        var isEnded = sv2.ended || (sv2.duration > 0 && sv2.currentTime >= sv2.duration - 0.25);
+                        var isEnded = sv2.ended || (sv2.duration > 0 && sv2.currentTime >= sv2.duration - 0.35);
                         if (!isEnded && sv2.duration > 0 && window.__lastShortsTime !== undefined) {
-                            if (sv2.currentTime < window.__lastShortsTime && window.__lastShortsTime > sv2.duration * 0.85) {
+                            if (sv2.currentTime < window.__lastShortsTime && window.__lastShortsTime > sv2.duration * 0.8) {
                                 isEnded = true;
                             }
                         }
                         window.__lastShortsTime = sv2.currentTime;
 
-                        if (isEnded && (!window.__lastShortsAdvance || now2 - window.__lastShortsAdvance > 1600)) {
+                        if (isEnded && (!window.__lastShortsAdvance || now2 - window.__lastShortsAdvance > 1500)) {
                             window.__lastShortsAdvance = now2;
                             var advanced2 = advanceToNextShort();
                             if (advanced2 && window.DutaYouTubeBridge && typeof window.DutaYouTubeBridge.onShortAutoScrolled === 'function') {
@@ -698,6 +785,11 @@ fun YouTubeScreen(
     // Bridge for metadata & SponsorBlock
     val jsBridge = remember {
         object {
+            @JavascriptInterface
+            fun isAutoScrollEnabled(): Boolean {
+                return viewModel.isShortsAutoScrollEnabled.value
+            }
+
             @JavascriptInterface
             fun onUrlChanged(url: String) {
                 currentUrl = url
@@ -1261,6 +1353,7 @@ fun YouTubeScreen(
                             context = ctx,
                             isRealTV = isRealTV,
                             jsBridge = jsBridge,
+                            isAutoScrollSupplier = { viewModel.isShortsAutoScrollEnabled.value },
                             onTitleChanged = { pageTitle = it },
                             onLoadingChanged = { isLoading = it },
                             onHistoryChanged = { back, forward ->
@@ -1635,6 +1728,7 @@ private fun createYouTubeWebView(
     context: Context,
     isRealTV: Boolean,
     jsBridge: Any,
+    isAutoScrollSupplier: () -> Boolean = { false },
     onTitleChanged: (String) -> Unit,
     onLoadingChanged: (Boolean) -> Unit,
     onHistoryChanged: (Boolean, Boolean) -> Unit,
@@ -1808,6 +1902,11 @@ private fun createYouTubeWebView(
                     onUrlChanged(url)
                 }
                 view?.evaluateJavascript(YOUTUBE_AD_NUKER_SCRIPT, null)
+                val autoScroll = isAutoScrollSupplier()
+                view?.evaluateJavascript(
+                    "if (window.setDutaAutoScrollEnabled) window.setDutaAutoScrollEnabled($autoScroll);",
+                    null
+                )
             }
 
             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
@@ -1815,6 +1914,11 @@ private fun createYouTubeWebView(
                 if (!url.isNullOrBlank()) {
                     onUrlChanged(url)
                 }
+                val autoScroll = isAutoScrollSupplier()
+                view?.evaluateJavascript(
+                    "if (window.setDutaAutoScrollEnabled) window.setDutaAutoScrollEnabled($autoScroll);",
+                    null
+                )
             }
         }
 
