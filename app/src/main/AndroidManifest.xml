@@ -50,6 +50,7 @@
 
         <activity
             android:name="com.duta.movie.MainActivity"
+            android:banner="@drawable/app_banner"
             android:exported="true"
             android:hardwareAccelerated="true"
             android:supportsPictureInPicture="true"
