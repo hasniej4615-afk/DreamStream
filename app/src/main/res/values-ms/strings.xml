@@ -381,6 +381,13 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="no_other_sources_found">Tiada sumber alternatif ditemui untuk tajuk ini</string>
     <string name="auto_healed_source">Swapulih %d pelayan cermin alternatif</string>
     <string name="added_multi_provider_alt_sources">Menambah carian silang berbilang penyedia &amp; swapulih automatik: pulih pelayan cermin baharu secara automatik apabila pautan mati atau tamat tempoh.</string>
+    <string name="changelog_v2_1_4">Log Perubahan v2.1.4 Cloud 7</string>
+    <string name="v2_1_4_updates">Kemaskini v2.1.4:</string>
+    <string name="v2_1_4_highlight_1">Penyama Audio DSP Web YouTube: Enjin penapis audio masa nyata menampilkan profil akustik ikonik Sony Mega Bass Walkman (+9.5dB dentuman sub-bass, -2.5dB potongan midrange tidak keruh, +4.5dB udara treble, beserta pemampat dinamik pengurang herotan).</string>
+    <string name="v2_1_4_highlight_2">Pratetap Muzik Khusus: Mod ujian dengar A/B segera untuk Music Hi-Fi (keluk studio seimbang), Bass Boost Max, Vocal Clarity (jelas untuk pertuturan &amp; podcast), dan mod Normal.</string>
+    <string name="v2_1_4_highlight_3">Navigasi Alat Kawalan Jauh Dioptimumkan TV: Dialog penyama audio dengan gelung fokus D-Pad kontras tinggi, saiz fon 10 kaki lebih besar, dan pemilihan mesra alat kawalan jauh.</string>
+    <string name="v2_1_4_highlight_4">Penyegerakan Awan Latar Belakang Senyap: Penyegerakan automatik profil awan dan sejarah tontonan kini diproses secara senyap di latar belakang tanpa gangguan notifikasi toast.</string>
+    <string name="v2_1_4_highlight_5">Enjin Terjemahan &amp; Sari Kata: Menstabilkan pengambilan sari kata berbilang bahasa dan fungsi terjemahan automatik.</string>
     <string name="changelog_v2_1_3">Log Perubahan v2.1.3 Cloud 7</string>
     <string name="v2_1_3_updates">Kemaskini v2.1.3:</string>
     <string name="v2_1_3_highlight_1">Navigasi D-Pad Android TV &amp; Skrol Baris Lancar: Memperbaiki masalah D-Pad Kanan tidak boleh menatal baris kategori. Kunci item distabilkan dan penambat indeks berterusan dibuang untuk navigasi mendatar yang lancar.</string>
@@ -526,6 +533,10 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="help_topic_cast_title">Penstriman Google Cast &amp; TV</string>
     <string name="help_topic_cast_desc">Pancarkan filem dan siri secara wayarles ke TV Pintar, Chromecast dan peranti Google TV.</string>
     <string name="help_topic_cast_content">• Penstriman TV Wayarles: Ketik butang Google Cast pada bar navigasi atas atau dalam pemain video untuk menyambung ke Chromecast atau Google TV anda.\n• Enjin Pelayan Sarikata Passthrough: Aplikasi menyertakan enjin penstriman sarikata WebVTT tempatan yang menukar dan menstrim sarikata terus ke skrin TV anda.\n• Keserasian Format Strim: Google Cast dioptimumkan untuk pelayan MP4 terus dan pelayan awan VIP. Jika pelayan web luar tidak serasi dengan Cast, tukar ke tab pelayan alternatif dalam pemain.\n• Alat Kawalan Telefon &amp; Tablet: Gunakan telefon atau tablet anda sebagai alat kawalan jauh untuk memainkan, menjeda, melangkau masa dan melaraskan kelantangan semasa menonton di TV.\n• Sambung Semula Semasa Terputus: Apabila sambungan Cast diputuskan, main balik akan disambung secara automatik pada peranti mudah alih anda tepat di tempat anda berhenti.</string>
+
+    <string name="help_topic_youtube_title">Pemain YouTube &amp; Penyama Audio Sony Mega Bass</string>
+    <string name="help_topic_youtube_desc">Enjin Penapis DSP Web Audio masa nyata, replika Sony Mega Bass Walkman, pratetap muzik, kawalan TV, dan main latar belakang.</string>
+    <string name="help_topic_youtube_content">• Enjin Penapis Web Audio Masa Nyata: Pemprosesan audio berkuasa tinggi disambung terus ke enjin video HTML5 tanpa kelewatan masa.\n• Replika Sony Mega Bass Walkman: Penalaan akustik tepat menampilkan dentuman +9.5dB sub-bass @ 60Hz, potongan -2.5dB midrange tidak keruh @ 600Hz, kilauan treble +4.5dB @ 10kHz, serta pemampat dinamik untuk mengelakkan herotan pembesar suara.\n• Pratetap Muzik Khusus: Mod ujian dengar A/B segera termasuk Music Hi-Fi (keluk seimbang audiophile), Bass Boost (Max), Vocal Clarity (jelas untuk pertuturan &amp; podcast), dan mod Normal (Flat bypass).\n• Akses Pantas Header: Ketik ikon Penyama Audio berwarna merah di bar atas atau pilih \'Audio Equalizer\' daripada menu 3 titik Pilihan Lanjutan.\n• Pengoptimuman D-Pad Android TV: Navigasi alat kawalan jauh penuh dengan sempadan fokus putih berkontras tinggi (1.5dp), pembesaran kad (1.02x), dan saiz teks mesra pandangan 10 kaki.\n• Mod Skrin Gelap OLED: Malapkan paparan sepenuhnya sementara audio dan EQ kekal aktif untuk penjimatan bateri atau mendengar muzik waktu malam.\n• Kawalan &amp; Shorts TV: Gunakan D-pad Kiri/Kanan untuk langkau 10 saat, nombor 0-9 untuk lompat garis masa, dan D-pad Atas/Bawah untuk melayari YouTube Shorts.</string>
 
     <string name="help_topic_tv_title">Panduan Kawalan Jauh Android TV</string>
     <string name="help_topic_tv_desc">Panduan penuh navigasi, langkau masa, penukaran pelayan dan kawalan audio menggunakan alat kawalan jauh.</string>
@@ -703,4 +714,12 @@ Ketik untuk mencari semula dan muat semula kandungan</string>
     <string name="search_custom_title_hint">Cuba cari dengan tajuk tersuai atau buka sari kata tempatan</string>
     <string name="no_subs_in_filter">Tiada sari kata ditemui dalam bahasa ini</string>
     <string name="switch_to_all_subs">Papar Semua Bahasa (%d)</string>
+    <string name="category_all">Semua</string>
+    <string name="category_movies">Filem</string>
+    <string name="category_series">Siri TV</string>
+    <string name="category_short_tv">Short TV</string>
+    <string name="category_live_tv">TV Langsung</string>
+    <string name="category_anime">Anime</string>
+    <string name="next_episode">Episod Seterusnya</string>
+    <string name="previous_episode">Episod Sebelumnya</string>
 </resources>

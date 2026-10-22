@@ -255,6 +255,7 @@ class VideoViewModel @Inject constructor(
                         _pakcikRekomenVideos.value = newVideos
                     }
                     prefetchThumbnails(newVideos)
+                    prefetchBackdrops(newVideos, limit = 3)
                     updateMetadataCache(newVideos, triggerBackground = false)
                     viewModelScope.launch(Dispatchers.IO) {
                         videoRepository.insertOrUpdateVideos(newVideos)
@@ -621,6 +622,12 @@ class VideoViewModel @Inject constructor(
     val metadataCache = ConcurrentHashMap<String, Video>()
     val episodeServersCache = ConcurrentHashMap<String, List<VideoServer>>()
     val filterResultCache = ConcurrentHashMap<String, Boolean>()
+    val networkFetchedCategories = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    val inFlightCategories = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    val inFlightLoadMoreCategories = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
+    val categoryRowJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
+    val categoryLoadMoreJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
+    private val inFlightPrefetches = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
     private val moviePath = VideoExtractor.normalizePath("/movies/")
     private val seriesPath = VideoExtractor.normalizePath("/series/")
 
@@ -965,7 +972,8 @@ class VideoViewModel @Inject constructor(
     val isAutoSubSyncEnabled: StateFlow<Boolean> = videoRepository.isAutoSubSyncEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, true)
     val isDebugModeEnabled: StateFlow<Boolean> = preferenceManager.isDebugModeEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, false)
     val isMobileLandscapeEnabled: StateFlow<Boolean> = preferenceManager.isMobileLandscapeEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, false)
-    val isShortsAutoScrollEnabled: StateFlow<Boolean> = preferenceManager.isShortsAutoScrollEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, false)
+    val isShortsAutoScrollEnabled: StateFlow<Boolean> = preferenceManager.isShortsAutoScrollEnabled.stateIn(viewModelScope, SharingStarted.Eagerly, true)
+    val youtubeAudioPreset: StateFlow<String> = preferenceManager.youtubeAudioPreset.stateIn(viewModelScope, SharingStarted.Eagerly, "NORMAL")
     val voiceEnhancerMode: StateFlow<Int> = preferenceManager.voiceEnhancerMode.stateIn(viewModelScope, SharingStarted.Eagerly, 0)
     val activeBaseUrl: StateFlow<String> = preferenceManager.activeBaseUrl.onEach { url ->
         if (url.isNotEmpty()) VideoExtractor.setBaseUrl(url)
@@ -1286,6 +1294,7 @@ class VideoViewModel @Inject constructor(
     fun setMobileLandscapeEnabled(enabled: Boolean) { viewModelScope.launch { preferenceManager.setMobileLandscapeEnabled(enabled) } }
     fun setShortsAutoScrollEnabled(enabled: Boolean) { viewModelScope.launch { preferenceManager.setShortsAutoScrollEnabled(enabled) } }
     fun toggleShortsAutoScroll() { viewModelScope.launch { preferenceManager.setShortsAutoScrollEnabled(!isShortsAutoScrollEnabled.value) } }
+    fun setYouTubeAudioPreset(preset: String) { viewModelScope.launch { preferenceManager.setYouTubeAudioPreset(preset) } }
     fun setVoiceEnhancerMode(mode: Int) { viewModelScope.launch { preferenceManager.setVoiceEnhancerMode(mode) } }
     fun setUserNickname(nickname: String) { viewModelScope.launch { preferenceManager.setUserNickname(nickname) } }
     fun setUserAvatarPath(path: String) { viewModelScope.launch { preferenceManager.setUserAvatarPath(path) } }
@@ -1604,9 +1613,43 @@ class VideoViewModel @Inject constructor(
         if (_isLoading.value && !force) return
         _isLoading.value = true; _isEndReached.value = false; currentPage = 1
         
+        // 1. INSTANT ROOM CACHE REHYDRATION (Concurrent 0ms UI bootstrap)
+        networkFetchedCategories.clear()
+        viewModelScope.launch(Dispatchers.IO) {
+            val enabled = enabledCategoryPaths.value
+            val fetchQueue = enabled.toList().sortedBy { path -> 
+                val i = PRIORITY_PATHS.indexOf(path)
+                if (i == -1) 999 else i 
+            }
+            val cachedMap = mutableMapOf<String, List<Video>>()
+            for (path in fetchQueue) {
+                val cached = videoRepository.getCachedVideosByCategory(path)
+                if (cached.isNotEmpty()) {
+                    val sorted = VideoExtractor.sortVideosByNewestRelease(cached)
+                    val withMeta = sorted.map { applyMetadata(it) }
+                    cachedMap[path] = withMeta
+                    if (path == moviePath && _latestMovies.value.isEmpty()) {
+                        _latestMovies.value = withMeta
+                        _headlinerVideo.value = withMeta.firstOrNull()
+                        prefetchBackdrops(withMeta, limit = 3)
+                    }
+                    if (path == seriesPath && _latestTVSeries.value.isEmpty()) {
+                        _latestTVSeries.value = withMeta
+                    }
+                }
+            }
+            if (cachedMap.isNotEmpty()) {
+                withContext(Dispatchers.Main) {
+                    _categoryVideos.update { current ->
+                        cachedMap.filter { (k, _) -> !current.containsKey(k) } + current
+                    }
+                }
+            }
+        }
+
         viewModelScope.launch {
             try {
-                // Fetch categories from site first
+                // Fetch categories from site concurrently
                 val fetchedCategories = withContext(Dispatchers.IO) { videoRepository.fetchCategories() }
                 
                 if (fetchedCategories.isNotEmpty()) {
@@ -1619,59 +1662,17 @@ class VideoViewModel @Inject constructor(
                     }
                 }
 
-                // ADAPTIVE DISCOVERY: Probe if the absolute basics are missing
-                val checkMovies = try { videoRepository.fetchVideosBySection(moviePath, 1, 5) } catch(_: Exception) { emptyList<Video>() }
-                if (checkMovies.isEmpty()) {
-                    Log.w("VideoViewModel", "Movies empty. Attempting domain discovery...")
-                    VideoExtractor.probeForNewDomain()?.let { newDomain ->
-                         VideoExtractor.setBaseUrl(newDomain)
-                         preferenceManager.setActiveBaseUrl(newDomain)
-                         try {
-                             val freshCats = withContext(Dispatchers.IO) { videoRepository.fetchCategories() }
-                             if (freshCats.isNotEmpty()) {
-                                 val current = _categories.value
-                                 val merged = sortAndNormalizeCategories(current + freshCats)
-                                 if (merged.size != current.size) {
-                                     _categories.value = merged
-                                     preferenceManager.saveDiscoveredCategories(merged)
-                                 }
-                             }
-                         } catch (_: Exception) {}
-                    }
-                }
-
-                // FAST CACHE REHYDRATION: Pre-populate all rows from Room cache instantly
-                networkFetchedCategories.clear()
+                // EAGER FETCH TOP ROWS: Network scrape core visible rows without blocking delays
                 val enabled = enabledCategoryPaths.value
                 val fetchQueue = enabled.toList().sortedBy { path -> 
                     val i = PRIORITY_PATHS.indexOf(path)
                     if (i == -1) 999 else i 
                 }
-                viewModelScope.launch(Dispatchers.IO) {
-                    val cachedMap = mutableMapOf<String, List<Video>>()
-                    for (path in fetchQueue) {
-                        val cached = videoRepository.getCachedVideosByCategory(path)
-                        if (cached.isNotEmpty()) {
-                            val sorted = VideoExtractor.sortVideosByNewestRelease(cached)
-                            cachedMap[path] = sorted.map { applyMetadata(it) }
-                        }
-                    }
-                    if (cachedMap.isNotEmpty()) {
-                        withContext(Dispatchers.Main) {
-                            _categoryVideos.update { current ->
-                                cachedMap.filter { (k, _) -> !current.containsKey(k) } + current
-                            }
-                        }
-                    }
-                }
-
-                // EAGER FETCH ONLY TOP ROWS: Network scrape core visible rows (e.g. 3)
-                // Other rows load lazily as user scrolls into them via LaunchedEffect in UI
                 val eagerQueue = fetchQueue.take(3)
                 eagerQueue.forEachIndexed { index, path ->
                     if (index > 0) {
                         viewModelScope.launch {
-                            delay(400L * index)
+                            delay(100L * index)
                             fetchVideosForCategoryRow(path, count = 50)
                         }
                     } else {
@@ -2464,7 +2465,7 @@ class VideoViewModel @Inject constructor(
                 val pageSize = if (isShortTv) 60 else 250
                 val results = videoRepository.fetchVideosBySection(category, page = 1, count = pageSize) 
                 if (results.isNotEmpty()) { 
-                    val sorted = if (isShortTv) results else VideoExtractor.sortVideosByNewestRelease(results)
+                    val sorted = VideoExtractor.sortVideosByNewestRelease(results)
                     updateMetadataCache(sorted) 
                     prefetchThumbnails(sorted)
                     _resultVideos.value = sorted 
@@ -2494,7 +2495,7 @@ class VideoViewModel @Inject constructor(
                     prefetchThumbnails(moreVideos)
                     val currentIds = _resultVideos.value.asSequence().map { it.id }.toSet()
                     val newItems = moreVideos.filter { it.id !in currentIds }
-                    val sortedNewItems = if (isShortTv) newItems else VideoExtractor.sortVideosByNewestRelease(newItems)
+                    val sortedNewItems = VideoExtractor.sortVideosByNewestRelease(newItems)
                     if (sortedNewItems.isNotEmpty()) {
                         _resultVideos.value = _resultVideos.value + sortedNewItems
                     }
@@ -4652,7 +4653,6 @@ class VideoViewModel @Inject constructor(
                     if (!userExplicitlyDismissedSubtitles) {
                         _subtitleCues.value = resolvedCues
                         _selectedSubtitle.value = activeCandidate.copy(localUri = resolvedLocalUri)
-                        Toast.makeText(context, "Auto-translating subtitles (${activeCandidate.language} ➔ $targetLangName)...", Toast.LENGTH_SHORT).show()
                     }
                 }
 
@@ -4661,11 +4661,7 @@ class VideoViewModel @Inject constructor(
                     targetLang = targetLang,
                     cuesToTranslate = resolvedCues,
                     sourceSub = activeCandidate
-                ) { success, msg ->
-                    if (success) {
-                        Toast.makeText(context, "Subtitles auto-translated to $targetLangName", Toast.LENGTH_SHORT).show()
-                    }
-                }
+                )
             } catch (e: Exception) {
                 if (e !is kotlinx.coroutines.CancellationException) {
                     Log.e("VideoViewModel", "Auto-translate fallback failed", e)
@@ -5699,8 +5695,6 @@ class VideoViewModel @Inject constructor(
         )
     }
 
-    private val inFlightPrefetches = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-
     fun prefetchThumbnails(videos: List<Video>, limit: Int? = null) {
         if (videos.isEmpty() || _isPlayerActive.value) return
         val actualLimit = limit ?: 50
@@ -5748,14 +5742,44 @@ class VideoViewModel @Inject constructor(
         }
     }
 
+    fun prefetchBackdrops(videos: List<Video>, limit: Int = 3) {
+        if (videos.isEmpty() || _isPlayerActive.value) return
+        val toPrefetch = videos.take(limit)
+        viewModelScope.launch(Dispatchers.IO) {
+            val isTv = com.duta.movie.util.DeviceUtils.isTvDevice(context)
+            toPrefetch.forEach { video ->
+                try {
+                    val heroImg = video.backdropUrl.ifEmpty { video.thumbnailUrl }
+                    if (heroImg.isNotEmpty() && !com.duta.movie.util.VideoExtractor.isDeadImage(heroImg) && com.duta.movie.util.VideoExtractor.isValidImageUrl(heroImg)) {
+                        val opt = com.duta.movie.util.VideoUtils.getOptimizedBackdrop(heroImg, isTv, context)
+                        val cacheKey = coil.memory.MemoryCache.Key(opt)
+                        if (imageLoader.memoryCache?.get(cacheKey) != null) return@forEach
+                        if (inFlightPrefetches.add(opt)) {
+                            try {
+                                val request = coil.request.ImageRequest.Builder(context)
+                                    .data(opt)
+                                    .memoryCacheKey(opt)
+                                    .diskCacheKey(opt)
+                                    .allowHardware(true)
+                                    .crossfade(false)
+                                    .dispatcher(Dispatchers.IO)
+                                    .diskCachePolicy(coil.request.CachePolicy.ENABLED)
+                                    .memoryCachePolicy(coil.request.CachePolicy.ENABLED)
+                                    .networkCachePolicy(coil.request.CachePolicy.ENABLED)
+                                    .build()
+                                imageLoader.enqueue(request)
+                            } finally {
+                                inFlightPrefetches.remove(opt)
+                            }
+                        }
+                    }
+                } catch (_: Exception) {}
+            }
+        }
+    }
+
     private val _isDetailScreenActive = MutableStateFlow(false)
     val isDetailScreenActive: StateFlow<Boolean> = _isDetailScreenActive.asStateFlow()
-
-    private val inFlightCategories = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-    private val inFlightLoadMoreCategories = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
-    private val categoryRowJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
-    private val categoryLoadMoreJobs = java.util.concurrent.ConcurrentHashMap<String, kotlinx.coroutines.Job>()
-    val networkFetchedCategories = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     fun isCategoryNetworkFetched(category: String): Boolean = networkFetchedCategories.contains(category)
 
@@ -5802,6 +5826,7 @@ class VideoViewModel @Inject constructor(
                     if (category == moviePath) {
                         _latestMovies.value = displayCached
                         _headlinerVideo.value = displayCached.firstOrNull()
+                        prefetchBackdrops(displayCached, limit = 3)
                     }
                     if (category == seriesPath) _latestTVSeries.value = displayCached
                 }
@@ -5825,7 +5850,8 @@ class VideoViewModel @Inject constructor(
                             val existing = current[category] ?: emptyList()
                             val newIds = withMeta.map { it.id }.toSet()
                             val remainingExisting = existing.filter { it.id !in newIds }
-                            current + (category to (withMeta + remainingExisting))
+                            val merged = VideoExtractor.sortVideosByNewestRelease(withMeta + remainingExisting)
+                            current + (category to merged)
                         }
                         val isShortTv = category == "/short-tv/" || category.contains("short-tv") || category.equals("Short TV", ignoreCase = true)
                         categoryPages[category] = if (isShortTv) 2 else 3 
@@ -5835,6 +5861,7 @@ class VideoViewModel @Inject constructor(
                         if (category == moviePath) {
                             _latestMovies.value = withMeta
                             _headlinerVideo.value = withMeta.firstOrNull()
+                            prefetchBackdrops(withMeta, limit = 3)
                         }
                         if (category == seriesPath) _latestTVSeries.value = withMeta
                     }
@@ -5869,7 +5896,7 @@ class VideoViewModel @Inject constructor(
                 if (more.isNotEmpty()) { 
                     val withMeta = withContext(Dispatchers.Default) {
                         val distinctMore = more.distinctBy { it.id }
-                        val sorted = if (isShortTv) distinctMore else VideoExtractor.sortVideosByNewestRelease(distinctMore)
+                        val sorted = VideoExtractor.sortVideosByNewestRelease(distinctMore)
                         sorted.forEach { v ->
                             val cleanedTitle = VideoExtractor.cleanTitle(v.title)
                             metadataCache.putIfAbsent(v.id, v.copy(title = cleanedTitle))
@@ -6521,6 +6548,48 @@ class VideoViewModel @Inject constructor(
         }
         
         Log.w("VideoViewModel", "AUTOPLAY: End of series or episode not found.")
+        return false
+    }
+
+    fun resolvePreviousEpisode(videoId: String): Boolean {
+        Log.i("VideoViewModel", "AUTOPLAY: Looking for previous episode for $videoId")
+        val video = getVideo(videoId) ?: return false
+        if ((video.isSeries == false && !video.isShortTv) || video.episodes.isEmpty()) {
+            Log.w("VideoViewModel", "AUTOPLAY: Not a series or no episodes found.")
+            return false
+        }
+        
+        val episodes = video.episodes.filter { ep ->
+            val low = ep.name.lowercase()
+            !low.contains("lihat semua") && !low.contains("see all") && 
+            !low.contains("episode list") && !low.contains("daftar episode") &&
+            !low.contains("next") && !low.contains("prev") && !low.contains("halaman")
+        }
+        
+        val currentEp = _currentEpisode.value
+        val currentIdx = if (currentEp != null) {
+            val idx = episodes.indexOfFirst { it.url == currentEp.url || it.id == currentEp.id }
+            if (idx == -1) {
+                val slug = VideoExtractor.extractStableId(currentEp.url)
+                episodes.indexOfFirst { VideoExtractor.extractStableId(it.url) == slug }
+            } else idx
+        } else {
+            val activeUrl = _currentServerUrl.value ?: ""
+            val activeSlug = VideoExtractor.extractStableId(activeUrl)
+            episodes.indexOfFirst { it.url == activeUrl || VideoExtractor.extractStableId(it.url) == activeSlug }
+        }
+        
+        Log.d("VideoViewModel", "AUTOPLAY Engine (Prev): FoundIdx=$currentIdx, TotalEps=${episodes.size}, ActiveEp=${currentEp?.name}")
+
+        if (currentIdx > 0 && currentIdx < episodes.size) {
+            val prevEp = episodes[currentIdx - 1]
+            Log.i("VideoViewModel", "AUTOPLAY: Progressing to Previous Episode: ${prevEp.name} (${prevEp.url})")
+            _shouldSuppressResume.value = true
+            playTVSeries(videoId, prevEp.url, forceReset = true, targetEpisode = prevEp, clearBlacklist = false)
+            return true
+        }
+        
+        Log.w("VideoViewModel", "AUTOPLAY: Beginning of series or episode not found.")
         return false
     }
 

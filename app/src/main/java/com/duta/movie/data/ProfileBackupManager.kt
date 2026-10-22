@@ -14,7 +14,7 @@ import java.util.Locale
 
 data class ProfileBackupData(
     val version: Int = 1,
-    val appVersion: String = "2.1.3 Cloud 7",
+    val appVersion: String = "2.1.4 Cloud 7",
     val exportedAt: Long = System.currentTimeMillis(),
     val sourceDevice: String = "",
     val username: String = "",
@@ -104,7 +104,7 @@ object ProfileBackupManager {
         return try {
             val root = JSONObject(jsonStr)
             val version = root.optInt("version", 1)
-            val appVersion = root.optString("app_version", "2.1.3 Cloud 7")
+            val appVersion = root.optString("app_version", "2.1.4 Cloud 7")
             val exportedAt = root.optLong("exported_at", System.currentTimeMillis())
             val sourceDevice = root.optString("source_device", "")
 

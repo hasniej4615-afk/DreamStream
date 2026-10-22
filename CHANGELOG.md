@@ -2,6 +2,30 @@
 
 All notable changes to the Duta Movie application are documented in this file.
 
+## [2.1.4 Cloud 7] - 2026-10-22
+
+> **YouTube Web Audio Equalizer (Sony Mega Bass) & Background Silent Sync Release**: Introduces an in-engine real-time Web Audio DSP Equalizer for YouTube featuring a dedicated Sony Mega Bass acoustic replica (+9.5dB punch, -2.5dB de-mud, dynamics compression) and audiophile music presets with instant A/B switching and full Android TV D-Pad remote optimization. Silently manages cloud profile synchronization and hardens multi-language subtitle fetching and translation.
+
+### Added
+- **YouTube Web Audio DSP Equalizer**:
+  - Direct integration into YouTube HTML5 video stream using Web Audio API (`AudioContext`, BiquadFilterNodes, DynamicsCompressor, and GainNode).
+  - **Sony Mega Bass Replica**: Faithfully replicates the classic Sony Walkman acoustic curve with +9.5dB sub-bass boost @ 60Hz, +6.0dB bass shelf @ 120Hz, -2.5dB midrange clarity cut @ 600Hz, +1.0dB vocal presence @ 3kHz, +4.5dB airy treble @ 10kHz, coupled with a fast-acting dynamics compressor (-16dB threshold, 5:1 ratio, 3ms attack) to prevent speaker clipping or distortion.
+  - **Dedicated Music & Speech Presets**: Added **Music Hi-Fi (Balanced)**, **Bass Boost (Max)**, **Vocal Clarity**, and **Normal (Flat Bypass)**.
+  - **Real-Time A/B Switching**: Interactive dialog lets users switch presets on-the-fly while listening without any audio clicks or pops (50ms exponential smoothing).
+  - **Header Quick Access**: Added glowing red Equalizer icon in the YouTube header and an entry in the More Options menu.
+  - **Android TV Remote Optimization**: Preset cards feature high-contrast D-pad focus outlines (`BorderStroke 1.5.dp, Color.White`), subtle card zoom (`1.02x`), enlarged typography for 10-foot viewing, and remote back button dismissal.
+  - **OLED Black Screen Badge**: Active audio preset pill displayed during darkened AMOLED listening mode.
+
+### Fixed & Improved
+- **Silent Background Cloud Sync**:
+  - Removed disruptive toast notification popups on automatic periodic profile and watch history syncing.
+  - Synchronization runs completely silently in the background while maintaining full error logging for diagnostics.
+- **Subtitle & Translation Engine**:
+  - Verified and stabilized multi-source subtitle retrieval and auto-translation flows.
+- **In-App Help & User Manual Synchronization**:
+  - Added comprehensive `[YOUTUBE & EQ]` interactive manual card covering the Web Audio DSP Equalizer, Sony Mega Bass Walkman replica, music presets, TV remote controls, and OLED screen dimming.
+  - Updated Cloud Profile & Sync manual with silent synchronization behavior.
+
 ## [2.1.3 Cloud 7] - 2026-10-19
 
 > **Android TV Navigation & Expanded Live TV Lineup Release**: Completely fixes Android TV D-Pad horizontal category scrolling and eliminates accidental jumps into the sidebar menu. Expands the Malaysian Live TV lineup to 17 official broadcast channels with dynamic HMAC stream resolution and real-time EPG now-playing guides.

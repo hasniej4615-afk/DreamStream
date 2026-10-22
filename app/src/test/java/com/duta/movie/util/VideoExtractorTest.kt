@@ -657,6 +657,19 @@ class VideoExtractorTest {
         assert(sorted[4].id == "op-x")
         // 1980 last
         assert(sorted[5].id == "adik-manja")
+
+        // Test Short TV items with exact dates (e.g. October 2026 updates vs August 2026 vs 2025)
+        val vOct20 = Video(id = "cinderella", title = "One More Chance, My XXL Cinderella", thumbnailUrl = "https://pbcdnw.aoneroom.com/image/2026/10/20/e30b3739.jpg", videoUrl = "", duration = "", date = "2026-10-20")
+        val vOct18 = Video(id = "don", title = "The Don's One-Night President", thumbnailUrl = "https://pbcdnw.aoneroom.com/image/2026/10/18/abcd.jpg", videoUrl = "", duration = "", date = "2026-10-18")
+        val vAug19 = Video(id = "pregnant", title = "I'm pregnant, it's not yours", thumbnailUrl = "https://pbcdnw.aoneroom.com/image/2026/08/19/1234.jpg", videoUrl = "", duration = "", date = "2026-08-19")
+        val vNov2025 = Video(id = "househusband", title = "House Husband? Try Supreme Immortal", thumbnailUrl = "https://pbcdnw.aoneroom.com/image/2025/11/13/5678.jpg", videoUrl = "", duration = "", date = "2025-11-13")
+
+        val shortList = listOf(vAug19, vNov2025, vOct18, vOct20)
+        val sortedShort = VideoExtractor.sortVideosByNewestRelease(shortList)
+        assert(sortedShort[0].id == "cinderella") // 2026-10-20
+        assert(sortedShort[1].id == "don")        // 2026-10-18
+        assert(sortedShort[2].id == "pregnant")   // 2026-08-19
+        assert(sortedShort[3].id == "househusband") // 2025-11-13
     }
 
     @Test

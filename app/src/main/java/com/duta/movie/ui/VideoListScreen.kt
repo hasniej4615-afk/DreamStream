@@ -80,6 +80,7 @@ import coil.request.ImageRequest
 import com.duta.movie.util.VideoUtils
 import com.duta.movie.util.VideoExtractor
 import com.duta.movie.model.Video
+import com.duta.movie.model.LiveTvCatalog
 import androidx.compose.material3.windowsizeclass.WindowSizeClass
 import androidx.compose.material3.windowsizeclass.WindowWidthSizeClass
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -135,6 +136,43 @@ fun VideoListScreen(
             (it["path"] ?: "").isNotBlank() && (it["name"] ?: "").isNotBlank()
         }.distinctBy { it["path"] }
     }
+    var activeCategoryPill by rememberSaveable { mutableStateOf<String?>(null) }
+    val allLabel = stringResource(R.string.category_all)
+    val moviesLabel = stringResource(R.string.category_movies)
+    val seriesLabel = stringResource(R.string.category_series)
+    val shortTvLabel = stringResource(R.string.category_short_tv)
+    val liveTvLabel = stringResource(R.string.category_live_tv)
+    val animeLabel = stringResource(R.string.category_anime)
+    val categoryPills = remember(allLabel, moviesLabel, seriesLabel, shortTvLabel, liveTvLabel, animeLabel) {
+        listOf(
+            "all" to allLabel,
+            "movies" to moviesLabel,
+            "series" to seriesLabel,
+            "short-tv" to shortTvLabel,
+            "live-tv" to liveTvLabel,
+            "anime" to animeLabel
+        )
+    }
+    val displayedCategories = remember(distinctCategories, activeCategoryPill) {
+        if (activeCategoryPill == null || activeCategoryPill == "all") {
+            distinctCategories
+        } else {
+            distinctCategories.filter { cat ->
+                val p = (cat["path"] ?: "").lowercase()
+                val n = (cat["name"] ?: "").lowercase()
+                when (activeCategoryPill) {
+                    "movies" -> p.contains("movie") || p.contains("box-office") || p.contains("top-imdb") || p.contains("most-viewed") || n.contains("movie") || n.contains("filem")
+                    "series" -> (p.contains("series") || p.contains("serial") || (p.contains("tv") && !p.contains("live"))) || n.contains("series") || n.contains("siri") || n.contains("drama")
+                    "short-tv" -> p.contains("short-tv") || n.contains("short tv")
+                    "live-tv" -> p.contains("live-tv") || n.contains("live tv") || n.contains("tv langsung")
+                    "anime" -> p.contains("anime") || p.contains("animasi") || n.contains("anime") || n.contains("animasi")
+                    else -> true
+                }
+            }
+        }
+    }
+    val showAuxiliaryRows = activeCategoryPill == null || activeCategoryPill == "all"
+
     val searchQuery by viewModel.searchQuery.collectAsStateWithLifecycle()
     val isSearching by viewModel.isSearching.collectAsStateWithLifecycle()
     val lastCompletedSearchQuery by viewModel.lastCompletedSearchQuery.collectAsStateWithLifecycle()
@@ -402,19 +440,57 @@ fun VideoListScreen(
     var debouncedHeroVideo by remember { mutableStateOf<Video?>(null) }
     
     var randomMobileHero by remember { mutableStateOf<Video?>(null) }
+
+    val isLiveTvVideo: (Video?) -> Boolean = remember {
+        { v ->
+            v != null && (
+                LiveTvCatalog.isLiveVideo(v.id) ||
+                v.duration.equals("LIVE", ignoreCase = true) ||
+                v.id.startsWith("live_") ||
+                v.videoUrl.contains("live-tv")
+            )
+        }
+    }
     
+    // Instant reactive selection as soon as ANY content arrives on mobile
+    LaunchedEffect(categoryVideos, pakcikRekomenVideos, latestMovies) {
+        if (!isRealTV && randomMobileHero == null) {
+            val pool = buildList {
+                addAll(pakcikRekomenVideos)
+                addAll(latestMovies)
+                categoryVideos.filterKeys { key ->
+                    val k = key.lowercase()
+                    !k.contains("live-tv") && k != "live tv" && !k.contains("live")
+                }.values.forEach { addAll(it) }
+            }.distinctBy { it.id }.filter { video ->
+                (video.thumbnailUrl.isNotBlank() || video.backdropUrl.isNotBlank()) &&
+                !isLiveTvVideo(video)
+            }
+            if (pool.isNotEmpty() && (focusedVideo == null || isLiveTvVideo(focusedVideo))) {
+                randomMobileHero = pool.random()
+            }
+        }
+    }
+    
+    // Periodic rotation every 12 seconds
     LaunchedEffect(isRealTV) {
         if (!isRealTV) {
             while (true) {
-                // Wait for some data to load initially
-                if (randomMobileHero == null) kotlinx.coroutines.delay(1000) else kotlinx.coroutines.delay(10000)
-                
+                kotlinx.coroutines.delay(12000L)
                 val currentCategoryVideos = viewModel.categoryVideos.value
-                val pool = currentCategoryVideos.values.flatten()
-                    .distinctBy { it.id }
-                    .filter { it.thumbnailUrl.isNotBlank() || it.backdropUrl.isNotBlank() }
+                val pool = buildList {
+                    addAll(viewModel.pakcikRekomenVideos.value)
+                    addAll(viewModel.latestMovies.value)
+                    currentCategoryVideos.filterKeys { key ->
+                        val k = key.lowercase()
+                        !k.contains("live-tv") && k != "live tv" && !k.contains("live")
+                    }.values.forEach { addAll(it) }
+                }.distinctBy { it.id }.filter { video ->
+                    (video.thumbnailUrl.isNotBlank() || video.backdropUrl.isNotBlank()) &&
+                    !isLiveTvVideo(video)
+                }
                 
-                if (pool.isNotEmpty() && focusedVideo == null) {
+                if (pool.isNotEmpty() && (focusedVideo == null || isLiveTvVideo(focusedVideo))) {
                     randomMobileHero = pool.random()
                 }
             }
@@ -423,22 +499,50 @@ fun VideoListScreen(
     
     LaunchedEffect(focusedVideo) {
         val target = focusedVideo ?: return@LaunchedEffect
+        // On mobile, never focus or set Live TV video as the hero
+        if (!isRealTV && isLiveTvVideo(target)) {
+            return@LaunchedEffect
+        }
         kotlinx.coroutines.delay(if (isImmersiveMode) 350L else 600L)
         debouncedHeroVideo = target
         viewModel.prefetchVideoDetails(target)
     }
 
-    val featuredHeroVideo = remember(debouncedHeroVideo, featuredVideos, latestMovies, latestTVSeries, randomMobileHero, metadataTrigger) {
-        val base = debouncedHeroVideo ?: run {
-            if (!isRealTV && randomMobileHero != null) {
-                randomMobileHero
-            } else if (!isRealTV && latestMovies.isNotEmpty()) {
-                latestMovies.first()
-            } else {
-                featuredVideos.firstOrNull() ?: latestMovies.firstOrNull()
-            }
+    val featuredHeroVideo = remember(
+        debouncedHeroVideo,
+        randomMobileHero,
+        pakcikRekomenVideos,
+        latestMovies,
+        latestTVSeries,
+        categoryVideos,
+        featuredVideos,
+        metadataTrigger
+    ) {
+        val base = if (!isRealTV) {
+            debouncedHeroVideo?.takeUnless { isLiveTvVideo(it) }
+                ?: randomMobileHero?.takeUnless { isLiveTvVideo(it) }
+                ?: pakcikRekomenVideos.firstOrNull { !isLiveTvVideo(it) && (it.backdropUrl.isNotBlank() || it.thumbnailUrl.isNotBlank()) }
+                ?: latestMovies.firstOrNull { !isLiveTvVideo(it) }
+                ?: categoryVideos["/"]?.firstOrNull { !isLiveTvVideo(it) && (it.backdropUrl.isNotBlank() || it.thumbnailUrl.isNotBlank()) }
+                ?: latestTVSeries.firstOrNull { !isLiveTvVideo(it) }
+                ?: categoryVideos.values.flatten().firstOrNull { !isLiveTvVideo(it) && (it.backdropUrl.isNotBlank() || it.thumbnailUrl.isNotBlank()) }
+                ?: featuredVideos.firstOrNull { !isLiveTvVideo(it) }
+        } else {
+            debouncedHeroVideo
+                ?: pakcikRekomenVideos.firstOrNull { (it.backdropUrl.isNotBlank() || it.thumbnailUrl.isNotBlank()) }
+                ?: latestMovies.firstOrNull()
+                ?: categoryVideos["/"]?.firstOrNull { (it.backdropUrl.isNotBlank() || it.thumbnailUrl.isNotBlank()) }
+                ?: latestTVSeries.firstOrNull()
+                ?: featuredVideos.firstOrNull()
         }
         base?.let { viewModel.applyMetadata(it) }
+    }
+
+    LaunchedEffect(featuredHeroVideo?.id) {
+        featuredHeroVideo?.let { v ->
+            viewModel.prefetchBackdrops(listOf(v), limit = 1)
+            viewModel.prefetchVideoDetails(v)
+        }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -672,7 +776,18 @@ fun VideoListScreen(
                                 contentPadding = PaddingValues(top = 20.dp, bottom = 40.dp),
                                 verticalArrangement = Arrangement.spacedBy(16.dp)
                             ) {
-                                if (recentlyWatchedVideos.isNotEmpty()) {
+                                item(key = "tv_home_category_pills") {
+                                    Column(modifier = Modifier.padding(bottom = 6.dp)) {
+                                        CategoryPillBar(
+                                            pills = categoryPills,
+                                            selectedPill = activeCategoryPill ?: "all",
+                                            onPillSelected = { activeCategoryPill = if (it == "all") null else it },
+                                            isTV = true
+                                        )
+                                    }
+                                }
+
+                                if (showAuxiliaryRows && recentlyWatchedVideos.isNotEmpty()) {
                                     item(key = "section_continue_watching") {
                                         var isRowFocused by remember { mutableStateOf(false) }
                                         val rowAlpha by animateFloatAsState(if (isRowFocused) 1f else 0.65f)
@@ -708,7 +823,7 @@ fun VideoListScreen(
                                      }
                                  }
 
-                                 if (pakcikRekomenVideos.isNotEmpty()) {
+                                 if (showAuxiliaryRows && pakcikRekomenVideos.isNotEmpty()) {
                                      item(key = "section_pakcik_rekomen") {
                                       var isRowFocused by remember { mutableStateOf(false) }
                                       val rowAlpha by animateFloatAsState(if (isRowFocused) 1f else 0.65f)
@@ -747,7 +862,7 @@ fun VideoListScreen(
 
 
 
-                              itemsIndexed(distinctCategories, key = { index, cat -> cat["path"] ?: "cat_$index" }) { index, category ->
+                              itemsIndexed(displayedCategories, key = { index, cat -> cat["path"] ?: "cat_$index" }) { index, category ->
                                   val name = translateCategoryName(category["name"] ?: "")
                                   val path = category["path"] ?: ""
                                   if (name.isNotEmpty() && path.isNotEmpty()) {
@@ -819,7 +934,7 @@ fun VideoListScreen(
                 } else {
                     Box(modifier = Modifier.fillMaxSize()) {
                         // 1. FROZEN HEADLINER
-                        if (featuredHeroVideo != null) {
+                        if (featuredHeroVideo != null && !isLiveTvVideo(featuredHeroVideo)) {
                             androidx.compose.animation.Crossfade(
                                 targetState = featuredHeroVideo,
                                 animationSpec = tween(400),
@@ -842,6 +957,23 @@ fun VideoListScreen(
                                     )
                                 }
                             }
+                        } else {
+                            // Dark cinematic placeholder while header data initializes
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(heroHeight)
+                                    .clipToBounds()
+                                    .zIndex(10f)
+                                    .background(
+                                        Brush.verticalGradient(
+                                            0.0f to Color(0xFF181818),
+                                            0.4f to Color(0xFF101010),
+                                            0.8f to Color(0xFF080808),
+                                            1.0f to Color.Black
+                                        )
+                                    )
+                            )
                         }
 
                         // 2. SCROLLABLE CATEGORIES
@@ -866,7 +998,7 @@ fun VideoListScreen(
                             contentPadding = PaddingValues(top = 40.dp, bottom = 120.dp), // Push first item down so it starts exactly at heroHeight
                             verticalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
-                            if (recentlyWatchedVideos.isNotEmpty()) {
+                            if (showAuxiliaryRows && recentlyWatchedVideos.isNotEmpty()) {
                                 item(key = "section_continue_watching") { 
                                     Column {
                                         Spacer(Modifier.height(12.dp))
@@ -889,7 +1021,7 @@ fun VideoListScreen(
                                 }
                             }
 
-                            if (pakcikRekomenVideos.isNotEmpty()) {
+                            if (showAuxiliaryRows && pakcikRekomenVideos.isNotEmpty()) {
                                 item(key = "section_pakcik_rekomen") {
                                     Column {
                                         Spacer(Modifier.height(12.dp))
@@ -921,7 +1053,7 @@ fun VideoListScreen(
                                 }
                             }
 
-                            itemsIndexed(distinctCategories, key = { index, cat -> cat["path"] ?: "cat_$index" }) { index, category ->
+                            itemsIndexed(displayedCategories, key = { index, cat -> cat["path"] ?: "cat_$index" }) { index, category ->
                                 val name = translateCategoryName(category["name"] ?: "")
                                 val path = category["path"] ?: ""
                                 if (name.isNotEmpty() && path.isNotEmpty()) {
@@ -1311,6 +1443,12 @@ fun HorizontalVideoRow(
                     else -> null
                 }
 
+                val isRankRow = isPakcikRekomen || (categoryPath != null && (
+                    categoryPath.contains("popular") || categoryPath.contains("top") || 
+                    categoryPath.contains("most-viewed") || categoryPath.contains("trending")
+                ))
+                val itemRank = if (!isRealTV && !isTV && isRankRow && index < 10) index + 1 else null
+
                 NetflixThumbnail(
                     video = video,
                     width = if (isRealTV) (140 * thumbnailScale).dp else if (isTV) (130 * thumbnailScale).dp else 165.dp, 
@@ -1322,6 +1460,7 @@ fun HorizontalVideoRow(
                     isTV = isTV,
                     isRealTV = isRealTV,
                     isPakcikRekomen = isPakcikRekomen,
+                    rank = itemRank,
                     onPosterMissing = { viewModel?.healMissingPoster(video) },
                     onFocus = { 
                         focusedItemIndex = index
@@ -1416,6 +1555,7 @@ fun NetflixThumbnail(
     isTV: Boolean = false,
     isRealTV: Boolean = false,
     isPakcikRekomen: Boolean = false,
+    rank: Int? = null,
     onPosterMissing: (() -> Unit)? = null,
     onFocus: () -> Unit = {},
     onClick: () -> Unit
@@ -1746,8 +1886,46 @@ fun NetflixThumbnail(
                         }
                     }
 
+                    if (!isRealTV && !isTV && rank != null && rank in 1..10) {
+                        Text(
+                            text = "$rank",
+                            fontSize = 36.sp,
+                            fontWeight = FontWeight.Black,
+                            color = Color.White,
+                            style = androidx.compose.ui.text.TextStyle(
+                                shadow = androidx.compose.ui.graphics.Shadow(
+                                    color = Color.Black,
+                                    offset = androidx.compose.ui.geometry.Offset(3f, 3f),
+                                    blurRadius = 8f
+                                )
+                            ),
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(start = 6.dp, bottom = 4.dp)
+                        )
+                    }
+
                     val isShortTvItem = VideoExtractor.isShortTv(video)
-                    if (isShortTvItem) {
+                    if (!isRealTV && !isTV && rank != null && rank in 1..10) {
+                        val isNarrowCard = (width != null && width < 120.dp) || (isRealTV && (width ?: 165.dp) < 120.dp)
+                        Surface(
+                            color = Color(0xFFE50914),
+                            shape = RoundedCornerShape(bottomEnd = 6.dp),
+                            modifier = Modifier.align(Alignment.TopStart)
+                        ) {
+                            Text(
+                                text = "TOP $rank",
+                                color = Color.White,
+                                fontSize = if (isNarrowCard) 8.sp else 9.5.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 0.5.sp,
+                                modifier = Modifier.padding(
+                                    horizontal = if (isNarrowCard) 5.dp else 7.dp, 
+                                    vertical = if (isNarrowCard) 2.dp else 3.dp
+                                )
+                            )
+                        }
+                    } else if (isShortTvItem) {
                         val isNarrowCard = (width != null && width < 120.dp) || (isRealTV && (width ?: 165.dp) < 120.dp)
                         Surface(
                             color = Color(0xFFE50914),
@@ -2290,28 +2468,30 @@ fun NetflixTopBar(
                 }
             }
         } else {
-            Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.dmstream), color = Color.Red, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, letterSpacing = (-0.5).sp)
-                Spacer(Modifier.weight(1f))
-                var isSearchFocused by remember { mutableStateOf(false) }
-                IconButton(
-                    onClick = { onSearchActiveChange(true) },
-                    modifier = Modifier
-                        .onFocusChanged { isSearchFocused = it.isFocused }
-                        .scale(if (isSearchFocused) 1.1f else 1f)
-                        .background(if (isSearchFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.White.copy(alpha = 0.1f), CircleShape)
-                        .border(if (isSearchFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
-                ) { Icon(Icons.Default.Search, null, tint = Color.White, modifier = Modifier.size(22.dp)) }
-                Spacer(Modifier.width(8.dp))
-                var isSettingsFocused by remember { mutableStateOf(false) }
-                IconButton(
-                    onClick = onSettingsClick,
-                    modifier = Modifier
-                        .onFocusChanged { isSettingsFocused = it.isFocused }
-                        .scale(if (isSettingsFocused) 1.1f else 1f)
-                        .background(if (isSettingsFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.White.copy(alpha = 0.1f), CircleShape)
-                        .border(if (isSettingsFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
-                ) { Icon(Icons.Default.Settings, null, tint = Color.White, modifier = Modifier.size(22.dp)) }
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text(stringResource(R.string.dmstream), color = Color.Red, fontWeight = FontWeight.ExtraBold, fontSize = 22.sp, letterSpacing = (-0.5).sp)
+                    Spacer(Modifier.weight(1f))
+                    var isSearchFocused by remember { mutableStateOf(false) }
+                    IconButton(
+                        onClick = { onSearchActiveChange(true) },
+                        modifier = Modifier
+                            .onFocusChanged { isSearchFocused = it.isFocused }
+                            .scale(if (isSearchFocused) 1.1f else 1f)
+                            .background(if (isSearchFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.White.copy(alpha = 0.1f), CircleShape)
+                            .border(if (isSearchFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                    ) { Icon(Icons.Default.Search, null, tint = Color.White, modifier = Modifier.size(22.dp)) }
+                    Spacer(Modifier.width(8.dp))
+                    var isSettingsFocused by remember { mutableStateOf(false) }
+                    IconButton(
+                        onClick = onSettingsClick,
+                        modifier = Modifier
+                            .onFocusChanged { isSettingsFocused = it.isFocused }
+                            .scale(if (isSettingsFocused) 1.1f else 1f)
+                            .background(if (isSettingsFocused) Color(0xFFE50914).copy(alpha = 0.35f) else Color.White.copy(alpha = 0.1f), CircleShape)
+                            .border(if (isSettingsFocused) BorderStroke(2.5.dp, Color(0xFFE50914)) else BorderStroke(0.dp, Color.Transparent), CircleShape)
+                    ) { Icon(Icons.Default.Settings, null, tint = Color.White, modifier = Modifier.size(22.dp)) }
+                }
             }
         }
     }
@@ -2355,44 +2535,38 @@ fun ListSectionHeader(title: String, isLargeLayout: Boolean = false, isRealTV: B
 @Composable
 fun translateCategoryName(name: String): String {
     return when(name) {
-        "LIVE TV", "Live TV" -> stringResource(R.string.live_tv)
-        "Newly Updated" -> stringResource(R.string.newly_updated)
-        "Movies" -> stringResource(R.string.movies)
-        "TV Series" -> stringResource(R.string.tv_series)
+        "LIVE TV", "Live TV", "TV Langsung" -> stringResource(R.string.category_live_tv)
+        "Newly Updated", "Terkini" -> stringResource(R.string.newly_updated)
+        "Movies", "Filem" -> stringResource(R.string.category_movies)
+        "TV Series", "Siri TV", "Series" -> stringResource(R.string.category_series)
+        "Short TV", "Short-TV", "ShortTv" -> stringResource(R.string.category_short_tv)
         "Box-Office" -> stringResource(R.string.box_office)
-        "Action" -> stringResource(R.string.action)
-        "Anime" -> stringResource(R.string.anime)
-        "Animasi" -> stringResource(R.string.anime)
+        "Action", "Aksi" -> stringResource(R.string.action)
+        "Anime", "Animasi" -> stringResource(R.string.category_anime)
         "Apple TV+" -> stringResource(R.string.apple_tv)
         "Disney+" -> stringResource(R.string.disney_plus)
         "HBO" -> stringResource(R.string.hbo)
-        "Comedy" -> stringResource(R.string.comedy)
+        "Comedy", "Komedi" -> stringResource(R.string.comedy)
         "Drama" -> stringResource(R.string.drama)
-        "Horror" -> stringResource(R.string.horror)
-        "Romance" -> stringResource(R.string.romance)
-        "Sci-Fi" -> stringResource(R.string.sci_fi)
-        "Science Fiction" -> stringResource(R.string.sci_fi)
+        "Horror", "Seram" -> stringResource(R.string.horror)
+        "Romance", "Romantik" -> stringResource(R.string.romance)
+        "Sci-Fi", "Science Fiction" -> stringResource(R.string.sci_fi)
         "Thriller" -> stringResource(R.string.thriller)
-        "Adventure" -> stringResource(R.string.adventure)
-        "Crime" -> stringResource(R.string.crime)
-        "Fantasy" -> stringResource(R.string.fantasy)
-        "Mystery" -> stringResource(R.string.mystery)
-        "Indonesia" -> stringResource(R.string.indonesia)
-        "Indonesian" -> stringResource(R.string.indonesia)
-        "Korea" -> stringResource(R.string.korea)
-        "South Korea" -> stringResource(R.string.korea)
+        "Adventure", "Pengembaraan" -> stringResource(R.string.adventure)
+        "Crime", "Jenayah" -> stringResource(R.string.crime)
+        "Fantasy", "Fantasi" -> stringResource(R.string.fantasy)
+        "Mystery", "Misteri" -> stringResource(R.string.mystery)
+        "Indonesia", "Indonesian" -> stringResource(R.string.indonesia)
+        "Korea", "South Korea" -> stringResource(R.string.korea)
         "Malaysia" -> stringResource(R.string.malaysia)
         "Netflix" -> stringResource(R.string.netflix)
         "Thailand" -> stringResource(R.string.thailand)
-        "Viet Nam" -> stringResource(R.string.vietnam)
-        "Vietnam" -> stringResource(R.string.vietnam)
-        "Japan" -> stringResource(R.string.japan)
+        "Viet Nam", "Vietnam" -> stringResource(R.string.vietnam)
+        "Japan", "Jepun" -> stringResource(R.string.japan)
         "China" -> stringResource(R.string.china)
         "India" -> stringResource(R.string.india)
-        "USA" -> stringResource(R.string.usa)
-        "United States" -> stringResource(R.string.usa)
-        "UK" -> stringResource(R.string.united_kingdom)
-        "United Kingdom" -> stringResource(R.string.united_kingdom)
+        "USA", "United States" -> stringResource(R.string.usa)
+        "UK", "United Kingdom" -> stringResource(R.string.united_kingdom)
         else -> name
     }
 }
@@ -2602,3 +2776,53 @@ fun SearchEmptyState(
     }
 }
 
+
+
+@Composable
+fun CategoryPillBar(
+    pills: List<Pair<String, String>>,
+    selectedPill: String,
+    onPillSelected: (String) -> Unit,
+    isTV: Boolean = false,
+    modifier: Modifier = Modifier
+) {
+    val scrollState = androidx.compose.foundation.lazy.rememberLazyListState()
+    androidx.compose.foundation.lazy.LazyRow(
+        state = scrollState,
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        modifier = modifier.fillMaxWidth(),
+        contentPadding = PaddingValues(horizontal = if (isTV) 48.dp else 4.dp, vertical = 4.dp)
+    ) {
+        items(pills, key = { it.first }) { (id, label) ->
+            val isSelected = id == selectedPill
+            var isFocused by remember { mutableStateOf(false) }
+            val scale by animateFloatAsState(if (isFocused) 1.08f else 1f, label = "pill_scale")
+            
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = when {
+                    isSelected -> Color(0xFFE50914)
+                    isFocused -> Color(0xFFE50914).copy(alpha = 0.35f)
+                    else -> Color(0xFF262626)
+                },
+                border = BorderStroke(
+                    width = if (isFocused) 2.dp else if (isSelected) 1.dp else 0.5.dp,
+                    color = if (isFocused || isSelected) Color(0xFFE50914) else Color(0xFF404040)
+                ),
+                modifier = Modifier
+                    .scale(scale)
+                    .onFocusChanged { isFocused = it.isFocused }
+                    .focusable()
+                    .clickable { onPillSelected(id) }
+            ) {
+                Text(
+                    text = label,
+                    color = if (isSelected || isFocused) Color.White else Color(0xFFCCCCCC),
+                    fontSize = if (isTV) 14.sp else 12.5.sp,
+                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.SemiBold,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp)
+                )
+            }
+        }
+    }
+}

@@ -17,6 +17,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.webkit.*
 import android.widget.FrameLayout
+import androidx.webkit.WebViewCompat
+import androidx.webkit.WebViewFeature
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
@@ -31,9 +33,11 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -95,10 +99,9 @@ private val BLOCKED_AD_HOSTS = listOf(
 private val BLOCKED_AD_PATHS = listOf(
     "/pagead/",
     "/api/stats/ads",
-    "/youtubei/v1/player/ad_break",
-    "/api/stats/qoe?*adformat*",
     "/ptracking?",
-    "/get_midroll_info"
+    "/youtubei/v1/player/ad_break",
+    "/player/ad_break"
 )
 
 /**
@@ -123,8 +126,8 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 }
 
                 /* Block & suppress ad banners, sponsored video cards, and promo dialogs */
-                .video-ads, .ytp-ad-module, .ytp-ad-overlay-container,
-                .ytp-ad-message-container, .ytp-ad-player-overlay,
+                .video-ads, .ytp-ad-overlay-container,
+                .ytp-ad-message-container,
                 .ytp-ad-text, .ytp-ad-preview-container,
                 .ytp-ad-action-interstitial, .ytp-ad-image-overlay,
                 .ytp-ad-button-icon,
@@ -137,16 +140,13 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 .upsell-dialog-renderer,
                 ytm-open-app-button-renderer,
                 .mobile-topbar-header-sign-in-button,
-                ytm-pivot-bar-item-renderer:has([aria-label*="Create"]),
                 .ad-container, #player-ads, .player-ads,
                 ytm-compact-promoted-video-renderer,
                 ytm-promoted-video-renderer,
                 ytm-in-feed-ad-layout-renderer,
                 ytm-brand-video-singleton-renderer,
                 ytm-ad-slot-renderer,
-                ad-slot-renderer,
-                ytm-item-section-renderer:has(ytm-promoted-sparkles-web-renderer),
-                ytm-item-section-renderer:has(ytm-ad-slot-renderer) {
+                ad-slot-renderer {
                     display: none !important;
                     visibility: hidden !important;
                     opacity: 0 !important;
@@ -171,15 +171,239 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                     outline-offset: 3px !important;
                     box-shadow: 0 0 20px rgba(255, 0, 0, 0.85) !important;
                     border-radius: 12px !important;
-                    transform: scale(1.02) !important;
-                    transition: transform 0.15s ease, outline 0.15s ease !important;
+                }
+
+                /* Keep video player unaffected by focus outlines or transforms and enforce authentic dark background */
+                video:focus, #movie_player:focus, .html5-video-player:focus, .html5-main-video:focus {
+                    outline: none !important;
+                    box-shadow: none !important;
+                    transform: none !important;
+                }
+                .html5-video-player, .html5-video-container {
+                    background-color: #0F0F0F !important;
                 }
             `;
             (document.head || document.documentElement).appendChild(style);
         }
 
+        // ── SMOOTH POSTER OVERLAY ENGINE (ELIMINATES ALL BLACK SCREEN VOIDS) ──
+        function updatePosterOverlay(forceShow, nextVid) {
+            try {
+                var player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                if (!player) return;
+
+                var ov = document.getElementById('duta-poster-overlay');
+                if (!ov) {
+                    ov = document.createElement('div');
+                    ov.id = 'duta-poster-overlay';
+                    ov.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;background-color:#0F0F0F;background-position:center;background-size:cover;background-repeat:no-repeat;z-index:15;pointer-events:none;transition:opacity 0.25s ease-out;opacity:0;';
+
+                    var sp = document.createElement('div');
+                    sp.style.cssText = 'position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:40px;height:40px;border:3px solid rgba(255,255,255,0.25);border-top-color:#FF0000;border-radius:50%;animation:dutaSpin 0.8s linear infinite;';
+                    ov.appendChild(sp);
+
+                    if (!document.getElementById('duta-spin-kf')) {
+                        var kf = document.createElement('style');
+                        kf.id = 'duta-spin-kf';
+                        kf.textContent = '@keyframes dutaSpin { to { transform: translate(-50%,-50%) rotate(360deg); } }';
+                        (document.head || document.documentElement).appendChild(kf);
+                    }
+                    player.appendChild(ov);
+                }
+
+                var match = location.href.match(/[?&]v=([^&#]+)/);
+                var vId = nextVid || (match ? match[1] : null);
+                var isWatch = location.href.indexOf('/watch') !== -1;
+                var video = document.querySelector('video');
+
+                if (!isWatch && !nextVid) {
+                    ov.style.opacity = '0';
+                    return;
+                }
+
+                if (vId) {
+                    var currentBg = ov.getAttribute('data-vid');
+                    if (currentBg !== vId) {
+                        ov.setAttribute('data-vid', vId);
+                        ov.style.backgroundImage = 'url("https://i.ytimg.com/vi/' + vId + '/hqdefault.jpg")';
+                        ov.style.opacity = '1';
+                    }
+                }
+
+                var isPlaying = video && !video.paused && video.currentTime > 0.05 && video.readyState >= 3;
+                if (isPlaying && !forceShow) {
+                    ov.style.opacity = '0';
+                } else if (forceShow || !video || video.readyState < 2) {
+                    ov.style.opacity = '1';
+                }
+            } catch(e) {}
+        }
+
+        // Catch clicks on any video link to pre-render poster immediately (0ms latency, zero black screen)
+        try {
+            if (!window.__dutaPosterClickHooked) {
+                window.__dutaPosterClickHooked = true;
+                document.addEventListener('click', function(e) {
+                    var target = e.target;
+                    var a = target ? target.closest('a[href*="/watch?v="]') : null;
+                    if (a && a.href) {
+                        var m = a.href.match(/[?&]v=([^&#]+)/);
+                        if (m) {
+                            window.__dutaUserPaused = false;
+                            updatePosterOverlay(true, m[1]);
+                        }
+                    }
+                }, true);
+            }
+        } catch(e) {}
+
+        // Deep clean ad placements, scheduled slots, and ad break heartbeats from YouTube player metadata
+        function cleanAdData(data) {
+            if (!data || typeof data !== 'object') return data;
+            try {
+                delete data.adBreakHeartbeatParams;
+                delete data.adBreakResponses;
+                delete data.adPlacements;
+                delete data.playerAds;
+                delete data.adSlots;
+                delete data.adBreaks;
+                delete data.adPlacementConfig;
+                delete data.adTagUrl;
+                delete data.adParams;
+                delete data.adSignalsInfo;
+                delete data.adBreakServiceRenderer;
+                delete data.instreamAdPlayerOverlayRenderer;
+                delete data.adPlaybackContext;
+                for (var k in data) {
+                    if (data[k] && typeof data[k] === 'object') {
+                        cleanAdData(data[k]);
+                    }
+                }
+            } catch(e) {}
+            return data;
+        }
+
+        // 1. Intercept and clean window.ytInitialPlayerResponse
+        try {
+            var _ytInitialPlayerResponse = window.ytInitialPlayerResponse;
+            if (_ytInitialPlayerResponse) {
+                cleanAdData(_ytInitialPlayerResponse);
+            }
+            if (!window.__dutaYtInitialHooked) {
+                window.__dutaYtInitialHooked = true;
+                Object.defineProperty(window, 'ytInitialPlayerResponse', {
+                    get: function() { return _ytInitialPlayerResponse; },
+                    set: function(val) { _ytInitialPlayerResponse = cleanAdData(val); },
+                    configurable: true
+                });
+            }
+        } catch(e) {}
+
+        // 2. Intercept JSON.parse for YouTube player responses
+        try {
+            if (!window.__dutaJsonParseHooked) {
+                window.__dutaJsonParseHooked = true;
+                var origParse = JSON.parse;
+                JSON.parse = function(text, reviver) {
+                    var res = origParse.apply(this, arguments);
+                    if (res && typeof res === 'object') {
+                        if (res.adBreakHeartbeatParams || res.adBreakResponses || res.adPlacements || res.playerAds || res.adSlots) {
+                            cleanAdData(res);
+                        }
+                    }
+                    return res;
+                };
+            }
+        } catch(e) {}
+
+        // 3. Intercept fetch for ALL /youtubei/v1/ endpoints (player, get_watch, next, browse) and ad_break
+        try {
+            if (!window.__dutaFetchHooked && window.fetch) {
+                window.__dutaFetchHooked = true;
+                var origFetch = window.fetch;
+                window.fetch = function(url, options) {
+                    var urlStr = (typeof url === 'string') ? url : (url && url.url ? url.url : '');
+                    if (urlStr.indexOf('ad_break') !== -1) {
+                        return Promise.resolve(new Response(JSON.stringify({}), {
+                            status: 200,
+                            headers: { 'Content-Type': 'application/json' }
+                        }));
+                    }
+                    var p = origFetch.apply(this, arguments);
+                    if (urlStr.indexOf('/youtubei/v1/') !== -1) {
+                        return p.then(function(response) {
+                            try {
+                                var clone = response.clone();
+                                return clone.json().then(function(data) {
+                                    cleanAdData(data);
+                                    return new Response(JSON.stringify(data), {
+                                        status: response.status,
+                                        statusText: response.statusText,
+                                        headers: response.headers
+                                    });
+                                }).catch(function() {
+                                    return response;
+                                });
+                            } catch(e) {
+                                return response;
+                            }
+                        });
+                    }
+                    return p;
+                };
+            }
+        } catch(e) {}
+
+        // 4. Intercept XMLHttpRequest for all YouTube InnerTube endpoints
+        try {
+            if (!window.__dutaXhrHooked && window.XMLHttpRequest) {
+                window.__dutaXhrHooked = true;
+                var origXhrOpen = XMLHttpRequest.prototype.open;
+                var origXhrSend = XMLHttpRequest.prototype.send;
+                XMLHttpRequest.prototype.open = function(method, url) {
+                    this.__dutaUrl = (typeof url === 'string') ? url : '';
+                    return origXhrOpen.apply(this, arguments);
+                };
+                XMLHttpRequest.prototype.send = function() {
+                    var url = this.__dutaUrl || '';
+                    if (url.indexOf('ad_break') !== -1) {
+                        var mockJson = JSON.stringify({});
+                        Object.defineProperty(this, 'responseText', { value: mockJson, configurable: true });
+                        Object.defineProperty(this, 'response', { value: mockJson, configurable: true });
+                        Object.defineProperty(this, 'status', { value: 200, configurable: true });
+                        Object.defineProperty(this, 'readyState', { value: 4, configurable: true });
+                        var selfMock = this;
+                        setTimeout(function() {
+                            if (typeof selfMock.onreadystatechange === 'function') selfMock.onreadystatechange();
+                            if (typeof selfMock.onload === 'function') selfMock.onload();
+                        }, 0);
+                        return;
+                    }
+                    if (url.indexOf('/youtubei/v1/') !== -1) {
+                        var self = this;
+                        this.addEventListener('readystatechange', function() {
+                            if (self.readyState === 4 && self.status === 200) {
+                                try {
+                                    if (self.responseType === '' || self.responseType === 'text') {
+                                        var parsed = JSON.parse(self.responseText);
+                                        cleanAdData(parsed);
+                                        var modified = JSON.stringify(parsed);
+                                        Object.defineProperty(self, 'responseText', { value: modified, configurable: true });
+                                        Object.defineProperty(self, 'response', { value: modified, configurable: true });
+                                    } else if (self.responseType === 'json' && self.response) {
+                                        cleanAdData(self.response);
+                                    }
+                                } catch(e) {}
+                            }
+                        });
+                    }
+                    return origXhrSend.apply(this, arguments);
+                };
+            }
+        } catch(e) {}
+
         if (typeof window.__dutaAutoScrollEnabled === 'undefined') {
-            window.__dutaAutoScrollEnabled = false;
+            window.__dutaAutoScrollEnabled = true;
         }
         window.setDutaAutoScrollEnabled = function(enabled) {
             window.__dutaAutoScrollEnabled = !!enabled;
@@ -365,8 +589,13 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
 
         // Checks if the active Short/Reel is an Ad/Sponsored video
         function isShortsAdActive() {
-            // 1. Sponsored or Ad badge aria labels
-            var sponsoredBadges = document.querySelectorAll(
+            var activeReel = document.querySelector(
+                'ytm-shorts-carousel-video-renderer[is-active], ytm-reel-item-renderer[is-active], ytd-reel-video-renderer[is-active], [is-active]'
+            );
+            var scope = activeReel || document;
+
+            // 1. Sponsored or Ad badge aria labels inside active reel
+            var sponsoredBadges = scope.querySelectorAll(
                 '[aria-label="Sponsored" i], [aria-label*="Sponsored" i], ' +
                 '[aria-label*="Ad •" i], [aria-label*="Ad:" i], ' +
                 '.badge-shape-wiz--ad, ytm-ad-badge, .ytm-ad-badge, ' +
@@ -380,8 +609,8 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 }
             }
 
-            // 2. Badge texts containing "Sponsored", "Ad", or "Promoted"
-            var badgeTexts = document.querySelectorAll(
+            // 2. Badge texts containing "Sponsored", "Ad", or "Promoted" inside active reel
+            var badgeTexts = scope.querySelectorAll(
                 '.yt-spec-badge-shape__text, ytm-badge-and-byline-renderer span, ' +
                 '.shorts-video-metadata-container span, .ytm-reel-item-renderer span, ' +
                 '.yt-badge-shape span'
@@ -395,8 +624,8 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 }
             }
 
-            // 3. Ad tracking links or interstitial action buttons (targeted ad markers)
-            var ctaButtons = document.querySelectorAll(
+            // 3. Ad tracking links or interstitial action buttons inside active reel
+            var ctaButtons = scope.querySelectorAll(
                 '.ytp-ad-action-interstitial, .ytp-ad-action-interstitial-action-button, ' +
                 'a[href*="googleadservices.com"], a[href*="doubleclick.net"], ' +
                 'button[aria-label*="Visit advertiser" i], button[aria-label*="Open advertiser" i]'
@@ -408,15 +637,9 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 }
             }
 
-            // 4. Video overlays or ad containers
-            if (document.querySelector('.ad-showing, .ad-interrupting, .ytp-ad-player-overlay') !== null) {
-                return true;
-            }
-
-            // 5. Container attributes
-            var activeReel = document.querySelector('ytm-shorts-carousel-video-renderer[is-active], ytm-reel-item-renderer[is-active], ytd-reel-video-renderer[is-active]');
+            // 4. Video overlays or ad containers ONLY if active reel or player actually has .ad-showing
             if (activeReel) {
-                if (activeReel.hasAttribute('is-ad') || activeReel.classList.contains('ad-showing')) {
+                if (activeReel.hasAttribute('is-ad') || activeReel.classList.contains('ad-showing') || activeReel.classList.contains('ad-interrupting')) {
                     return true;
                 }
             }
@@ -430,40 +653,54 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
             if (player && (player.classList.contains('ad-showing') || player.classList.contains('ad-interrupting'))) {
                 return true;
             }
-            if (document.querySelector('.ad-showing, .ad-interrupting') !== null) {
-                return true;
-            }
-            var skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton, button[aria-label*="Skip ad" i]');
+            var skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, .videoAdUiSkipButton');
             if (skipBtn && (skipBtn.offsetParent !== null || skipBtn.getClientRects().length > 0)) {
                 return true;
             }
             return false;
         }
 
-        function hookShortsVideo(v) {
+        function hookVideoElement(v) {
             if (!v || v.__dutaHooked) return;
             v.__dutaHooked = true;
 
-            function onPlaybackCheck() {
+            function notifyPlayback(playing) {
+                if (window.DutaYouTubeBridge && typeof window.DutaYouTubeBridge.onPlaybackState === 'function') {
+                    window.DutaYouTubeBridge.onPlaybackState(playing, v.currentTime || 0, v.duration || 0);
+                }
+            }
+
+            v.addEventListener('play', function() {
+                window.__dutaUserPaused = false;
+                notifyPlayback(true);
+            });
+            v.addEventListener('pause', function() { notifyPlayback(false); });
+            v.addEventListener('playing', function() {
+                window.__dutaUserPaused = false;
+                notifyPlayback(true);
+                updatePosterOverlay(false);
+            });
+            v.addEventListener('ended', function() { notifyPlayback(false); });
+            v.addEventListener('loadeddata', function() {
+                if (v.readyState >= 3) updatePosterOverlay(false);
+            });
+            v.addEventListener('emptied', function() {
+                updatePosterOverlay(true);
+            });
+            v.addEventListener('loadstart', function() {
+                updatePosterOverlay(true);
+            });
+            v.addEventListener('waiting', function() {
+                if (v.readyState < 2) updatePosterOverlay(true);
+            });
+
+            function onShortsPlaybackCheck() {
                 var isShorts = location.href.indexOf('/shorts') !== -1 ||
                                location.href.indexOf('/reel') !== -1 ||
                                location.href.indexOf('/reels') !== -1;
                 if (!isShorts) return;
 
-                // 1. Ad Short bypass
-                if (isShortsAdActive()) {
-                    var nowAd = Date.now();
-                    if (!window.__lastShortsAdSkip || nowAd - window.__lastShortsAdSkip > 1000) {
-                        window.__lastShortsAdSkip = nowAd;
-                        var advAd = advanceToNextShort();
-                        if (advAd && window.DutaYouTubeBridge && typeof window.DutaYouTubeBridge.onShortAdBypassed === 'function') {
-                            window.DutaYouTubeBridge.onShortAdBypassed();
-                        }
-                    }
-                    return;
-                }
-
-                // 2. Normal Auto-scroll
+                // Normal Auto-scroll
                 if (isAutoScrollActive()) {
                     if (v.loop) v.loop = false;
                     var now = Date.now();
@@ -485,13 +722,30 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 }
             }
 
-            v.addEventListener('timeupdate', onPlaybackCheck);
-            v.addEventListener('ended', onPlaybackCheck);
+            v.addEventListener('timeupdate', function() {
+                if (v.currentTime > 0.05 && v.readyState >= 3) {
+                    updatePosterOverlay(false);
+                }
+                if (isRegularVideoAdActive()) {
+                    processAdsAndPlayback();
+                }
+                onShortsPlaybackCheck();
+            });
+            v.addEventListener('loadedmetadata', function() {
+                if (isRegularVideoAdActive()) {
+                    processAdsAndPlayback();
+                }
+            });
         }
 
         var wasAdActive = false;
+        var lastTvFocusCheck = 0;
 
         function ensureTvFocusableElements() {
+            var now = Date.now();
+            if (now - lastTvFocusCheck < 3000) return;
+            lastTvFocusCheck = now;
+
             var items = document.querySelectorAll(
                 'ytm-video-with-context-renderer, ytm-compact-video-renderer, ' +
                 'ytm-shorts-carousel-video-renderer, ytm-reel-item-renderer, ' +
@@ -511,9 +765,19 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 checkVideoMetadata();
 
                 var player = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                if (player && !player.__dutaPlayerHooked) {
+                    player.__dutaPlayerHooked = true;
+                    if (typeof player.getPlayerResponse === 'function') {
+                        var origGetPR = player.getPlayerResponse;
+                        player.getPlayerResponse = function() {
+                            var r = origGetPR.apply(this, arguments);
+                            return cleanAdData(r);
+                        };
+                    }
+                }
                 var video = document.querySelector('video');
                 if (video) {
-                    hookShortsVideo(video);
+                    hookVideoElement(video);
                 }
 
                 var isShortsOrReels = location.href.indexOf('/shorts') !== -1 ||
@@ -529,9 +793,6 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                         if (sv) {
                             sv.muted = true;
                             window.__dutaMutedByAd = true;
-                            if (isFinite(sv.duration) && sv.duration > 0) {
-                                sv.currentTime = sv.duration;
-                            }
                         }
                         var now = Date.now();
                         if (!window.__lastShortsAdSkip || now - window.__lastShortsAdSkip > 1000) {
@@ -572,17 +833,21 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                             try { skipBtns[i].click(); } catch(e){}
                         }
 
-                        // 3. Mute & fast-forward ad to end (16x rate + currentTime = duration)
+                        // 3. Mute and jump ad to end immediately without buffering stall
                         if (video) {
                             if (!video.muted) {
                                 video.muted = true;
                                 window.__dutaMutedByAd = true;
                             }
-                            if (isFinite(video.duration) && video.duration > 0 && video.currentTime < video.duration - 0.1) {
-                                video.currentTime = video.duration;
+                            if (isFinite(video.duration) && video.duration > 0) {
+                                try {
+                                    video.currentTime = video.duration;
+                                } catch(e){}
                             }
-                            video.playbackRate = 16.0;
                         }
+
+                        // Schedule immediate tight re-check to restore video display in milliseconds
+                        setTimeout(processAdsAndPlayback, 50);
                     } else {
                         if (wasAdActive) {
                             wasAdActive = false;
@@ -591,16 +856,39 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                             }
                         }
 
-                        // Restore sound & speed if it was muted/throttled during an ad
+                        // Restore sound & visibility for the real video immediately
                         if (video) {
+                            video.style.opacity = '1';
                             if (window.__dutaMutedByAd) {
                                 video.muted = false;
                                 window.__dutaMutedByAd = false;
                             }
-                            if (video.playbackRate > 2.0) {
+                            if (video.playbackRate !== (window.__dutaTargetSpeed || 1.0)) {
                                 video.playbackRate = window.__dutaTargetSpeed || 1.0;
                             }
                         }
+                    }
+
+                    // Auto-start video when opening watch page if cued and paused
+                    if (location.href.indexOf('/watch') !== -1 && window.__lastAutoPlayedUrl !== location.href) {
+                        var p = document.getElementById('movie_player') || document.querySelector('.html5-video-player');
+                        if (p && typeof p.playVideo === 'function') {
+                            var st = typeof p.getPlayerState === 'function' ? p.getPlayerState() : -1;
+                            if ((st === -1 || st === 2 || st === 5) && !adCurrentlyActive) {
+                                try { p.playVideo(); } catch(e){}
+                            }
+                        }
+                        var bigPlay = document.querySelector('.ytp-large-play-button, button.slim-video-action-bar-button, button[aria-label="Play"]');
+                        if (bigPlay && (bigPlay.offsetParent !== null || bigPlay.getClientRects().length > 0)) {
+                            try { bigPlay.click(); } catch(e){}
+                        }
+                        if (video && video.paused && !adCurrentlyActive) {
+                            try { video.play(); } catch(e){}
+                        }
+                        if (video && !video.paused) {
+                            window.__lastAutoPlayedUrl = location.href;
+                        }
+                        updatePosterOverlay(false);
                     }
                 }
 
@@ -620,13 +908,7 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                     }
                 }
 
-                // ── D. NOTIFY PLAYBACK STATE ──
-                if (video && window.DutaYouTubeBridge) {
-                    var isPlaying = !video.paused && !video.ended && video.readyState > 2;
-                    window.DutaYouTubeBridge.onPlaybackState(isPlaying, video.currentTime || 0, video.duration || 0);
-                }
-
-                // ── E. DISMISS PROMO / UPSELL DIALOGS ──
+                // ── D. DISMISS PROMO / UPSELL DIALOGS ──
                 var dismissBtns = document.querySelectorAll(
                     'ytm-mealbar-promo-renderer button, ytm-upsell-dialog-renderer button, [aria-label*="Dismiss" i], [aria-label*="No thanks" i]'
                 );
@@ -634,7 +916,7 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                     try { dismissBtns[k].click(); } catch(e){}
                 }
 
-                // ── F. NORMAL SHORTS AUTO-SCROLL (WHEN VIDEO FINISHES NATURALLY) ──
+                // ── E. NORMAL SHORTS AUTO-SCROLL (WHEN VIDEO FINISHES NATURALLY) ──
                 if (isShortsOrReels && isAutoScrollActive()) {
                     var sv2 = video || document.querySelector('video');
                     if (sv2) {
@@ -659,12 +941,220 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                         }
                     }
                 }
+
+                // ── F. ATTACH DUTA WEB AUDIO DSP ENGINE TO ACTIVE VIDEO ──
+                if (window.DutaAudioEngine) {
+                    var curVideo = video || document.querySelector('video');
+                    if (curVideo) {
+                        window.DutaAudioEngine.attachVideo(curVideo);
+                    }
+                }
             } catch(err) {}
         }
 
+        window.processDutaAds = processAdsAndPlayback;
+
+        // ── 4. DUTA WEB AUDIO DSP ENGINE (SONY MEGA BASS & EQUALIZER PRESETS) ──
+        if (!window.DutaAudioEngine) {
+            window.DutaAudioEngine = (function() {
+                var audioCtx = null;
+                var subBass = null;
+                var bassShelf = null;
+                var midCut = null;
+                var presence = null;
+                var trebleShelf = null;
+                var compressor = null;
+                var outputGain = null;
+                var activePreset = 'NORMAL';
+                var isInitialized = false;
+
+                var PRESET_PARAMS = {
+                    'SONY_MEGA_BASS': {
+                        subBass: 9.5,
+                        bassShelf: 6.0,
+                        midCut: -2.5,
+                        presence: 1.0,
+                        trebleShelf: 4.5,
+                        gain: 0.95,
+                        compThreshold: -16.0,
+                        compRatio: 5.0
+                    },
+                    'MUSIC_HIFI': {
+                        subBass: 4.5,
+                        bassShelf: 3.5,
+                        midCut: 0.0,
+                        presence: 2.5,
+                        trebleShelf: 4.0,
+                        gain: 1.0,
+                        compThreshold: -18.0,
+                        compRatio: 3.0
+                    },
+                    'BASS_BOOST_MAX': {
+                        subBass: 12.0,
+                        bassShelf: 8.0,
+                        midCut: -3.5,
+                        presence: 0.0,
+                        trebleShelf: 2.0,
+                        gain: 0.88,
+                        compThreshold: -14.0,
+                        compRatio: 8.0
+                    },
+                    'VOCAL_CLARITY': {
+                        subBass: -6.0,
+                        bassShelf: -3.0,
+                        midCut: 1.0,
+                        presence: 6.5,
+                        trebleShelf: 3.0,
+                        gain: 1.05,
+                        compThreshold: -20.0,
+                        compRatio: 4.0
+                    },
+                    'NORMAL': {
+                        subBass: 0.0,
+                        bassShelf: 0.0,
+                        midCut: 0.0,
+                        presence: 0.0,
+                        trebleShelf: 0.0,
+                        gain: 1.0,
+                        compThreshold: 0.0,
+                        compRatio: 1.0
+                    }
+                };
+
+                function initContext() {
+                    if (isInitialized && audioCtx) return;
+                    try {
+                        var AudioContextClass = window.AudioContext || window.webkitAudioContext;
+                        if (!AudioContextClass) return;
+                        audioCtx = new AudioContextClass();
+
+                        subBass = audioCtx.createBiquadFilter();
+                        subBass.type = 'peaking';
+                        subBass.frequency.value = 60;
+                        subBass.Q.value = 1.4;
+
+                        bassShelf = audioCtx.createBiquadFilter();
+                        bassShelf.type = 'lowshelf';
+                        bassShelf.frequency.value = 120;
+
+                        midCut = audioCtx.createBiquadFilter();
+                        midCut.type = 'peaking';
+                        midCut.frequency.value = 600;
+                        midCut.Q.value = 1.0;
+
+                        presence = audioCtx.createBiquadFilter();
+                        presence.type = 'peaking';
+                        presence.frequency.value = 3000;
+                        presence.Q.value = 1.0;
+
+                        trebleShelf = audioCtx.createBiquadFilter();
+                        trebleShelf.type = 'highshelf';
+                        trebleShelf.frequency.value = 10000;
+
+                        compressor = audioCtx.createDynamicsCompressor();
+                        compressor.attack.value = 0.003;
+                        compressor.release.value = 0.25;
+                        compressor.knee.value = 12;
+
+                        outputGain = audioCtx.createGain();
+
+                        subBass.connect(bassShelf);
+                        bassShelf.connect(midCut);
+                        midCut.connect(presence);
+                        presence.connect(trebleShelf);
+                        trebleShelf.connect(compressor);
+                        compressor.connect(outputGain);
+                        outputGain.connect(audioCtx.destination);
+
+                        isInitialized = true;
+                        applyPreset(activePreset, true);
+                    } catch(e) {}
+                }
+
+                function smoothSet(param, targetVal, immediate) {
+                    if (!param) return;
+                    try {
+                        if (immediate || !audioCtx || typeof audioCtx.currentTime !== 'number') {
+                            param.value = targetVal;
+                        } else {
+                            param.setTargetAtTime(targetVal, audioCtx.currentTime, 0.05);
+                        }
+                    } catch(e) {
+                        try { param.value = targetVal; } catch(err){}
+                    }
+                }
+
+                function applyPreset(presetName, immediate) {
+                    activePreset = presetName;
+                    if (!isInitialized) return;
+                    var cfg = PRESET_PARAMS[presetName] || PRESET_PARAMS['NORMAL'];
+                    smoothSet(subBass.gain, cfg.subBass, immediate);
+                    smoothSet(bassShelf.gain, cfg.bassShelf, immediate);
+                    smoothSet(midCut.gain, cfg.midCut, immediate);
+                    smoothSet(presence.gain, cfg.presence, immediate);
+                    smoothSet(trebleShelf.gain, cfg.trebleShelf, immediate);
+                    smoothSet(outputGain.gain, cfg.gain, immediate);
+                    smoothSet(compressor.threshold, cfg.compThreshold, immediate);
+                    smoothSet(compressor.ratio, cfg.compRatio, immediate);
+                }
+
+                function resumeContext() {
+                    if (audioCtx && audioCtx.state === 'suspended') {
+                        audioCtx.resume().catch(function(){});
+                    }
+                }
+
+                function attachVideo(v) {
+                    if (!v) return;
+                    initContext();
+                    resumeContext();
+                    if (v.__dutaAudioHooked) return;
+                    v.__dutaAudioHooked = true;
+
+                    try {
+                        var source = audioCtx.createMediaElementSource(v);
+                        source.connect(subBass);
+                    } catch(e) {}
+
+                    v.addEventListener('play', resumeContext);
+                    v.addEventListener('playing', resumeContext);
+                    v.addEventListener('timeupdate', resumeContext, { once: true });
+                }
+
+                ['click', 'touchstart', 'pointerdown', 'keydown'].forEach(function(evt) {
+                    document.addEventListener(evt, resumeContext, { passive: true, capture: true });
+                });
+
+                return {
+                    init: initContext,
+                    setPreset: function(name) {
+                        initContext();
+                        resumeContext();
+                        applyPreset(name, false);
+                    },
+                    getPreset: function() {
+                        return activePreset;
+                    },
+                    attachVideo: attachVideo,
+                    resume: resumeContext
+                };
+            })();
+        }
+
+        // Instant observer for player class changes (e.g. ad-showing added/removed)
+        try {
+            if (!window.__dutaPlayerObserver) {
+                var pTarget = document.getElementById('movie_player') || document.querySelector('.html5-video-player') || document.body;
+                window.__dutaPlayerObserver = new MutationObserver(function() {
+                    processAdsAndPlayback();
+                });
+                window.__dutaPlayerObserver.observe(pTarget, { attributes: true, attributeFilter: ['class'], subtree: false });
+            }
+        } catch(e){}
+
         if (!window.__dutaWatchdogStarted) {
             window.__dutaWatchdogStarted = true;
-            setInterval(processAdsAndPlayback, 300);
+            setInterval(processAdsAndPlayback, 250);
         }
         processAdsAndPlayback();
     } catch(e) {}
@@ -675,6 +1165,50 @@ data class YouTubeCategory(
     val title: String,
     val url: String
 )
+
+enum class YouTubeAudioPreset(
+    val id: String,
+    val title: String,
+    val subtitle: String,
+    val icon: ImageVector
+) {
+    SONY_MEGA_BASS(
+        id = "SONY_MEGA_BASS",
+        title = "Sony Mega Bass",
+        subtitle = "Walkman dynamic punch & de-muddled sub-bass replica",
+        icon = Icons.Default.GraphicEq
+    ),
+    MUSIC_HIFI(
+        id = "MUSIC_HIFI",
+        title = "Music Hi-Fi",
+        subtitle = "Balanced studio curve with crisp high-end detail",
+        icon = Icons.Default.MusicNote
+    ),
+    BASS_BOOST_MAX(
+        id = "BASS_BOOST_MAX",
+        title = "Bass Boost (Max)",
+        subtitle = "Maximum low-end power with dynamic limiter",
+        icon = Icons.Default.Bolt
+    ),
+    VOCAL_CLARITY(
+        id = "VOCAL_CLARITY",
+        title = "Vocal Clarity",
+        subtitle = "Clear speech & podcasts with low-rumble filter",
+        icon = Icons.Default.Mic
+    ),
+    NORMAL(
+        id = "NORMAL",
+        title = "Normal (Flat)",
+        subtitle = "Unaltered studio passthrough (bypass)",
+        icon = Icons.Default.Tune
+    );
+
+    companion object {
+        fun fromId(id: String): YouTubeAudioPreset {
+            return entries.firstOrNull { it.id.equals(id, ignoreCase = true) } ?: SONY_MEGA_BASS
+        }
+    }
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -730,10 +1264,19 @@ fun YouTubeScreen(
     val isFullScreenActive = customView != null || isManualFullScreenLandscape
     val isMobileLandscapeEnabled by viewModel.isMobileLandscapeEnabled.collectAsStateWithLifecycle()
     val isShortsAutoScrollEnabled by viewModel.isShortsAutoScrollEnabled.collectAsStateWithLifecycle()
+    val youtubeAudioPreset by viewModel.youtubeAudioPreset.collectAsStateWithLifecycle()
+    var showAudioPresetDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(isShortsAutoScrollEnabled, webViewInstance) {
         webViewInstance?.evaluateJavascript(
             "if (window.setDutaAutoScrollEnabled) window.setDutaAutoScrollEnabled($isShortsAutoScrollEnabled);",
+            null
+        )
+    }
+
+    LaunchedEffect(youtubeAudioPreset, webViewInstance) {
+        webViewInstance?.evaluateJavascript(
+            "if (window.DutaAudioEngine) window.DutaAudioEngine.setPreset('$youtubeAudioPreset');",
             null
         )
     }
@@ -885,8 +1428,10 @@ fun YouTubeScreen(
 
             @JavascriptInterface
             fun onPlaybackState(isPlaying: Boolean, currentTime: Double, duration: Double) {
-                isVideoPlaying = isPlaying
-                viewModel.setYouTubePlaying(isPlaying)
+                if (isVideoPlaying != isPlaying) {
+                    isVideoPlaying = isPlaying
+                    viewModel.setYouTubePlaying(isPlaying)
+                }
             }
 
             @JavascriptInterface
@@ -940,7 +1485,11 @@ fun YouTubeScreen(
 
     // Back handling: Exit Black Screen -> Exit fullscreen -> Collapse search -> Go back in webView -> Pop screen
     BackHandler {
-        if (isBlackScreenMode) {
+        if (showAudioPresetDialog) {
+            showAudioPresetDialog = false
+        } else if (isMoreMenuExpanded) {
+            isMoreMenuExpanded = false
+        } else if (isBlackScreenMode) {
             isBlackScreenMode = false
         } else if (customView != null) {
             try { customViewCallback?.onCustomViewHidden() } catch (_: Exception) {}
@@ -1190,6 +1739,16 @@ fun YouTubeScreen(
 
                                         Spacer(modifier = Modifier.width(2.dp))
 
+                                        HeaderIconButton(
+                                            icon = Icons.Default.GraphicEq,
+                                            contentDescription = "Audio Equalizer",
+                                            isTV = isRealTV,
+                                            tint = if (youtubeAudioPreset != "NORMAL") Color(0xFFFF5252) else Color.White,
+                                            onClick = { showAudioPresetDialog = true }
+                                        )
+
+                                        Spacer(modifier = Modifier.width(2.dp))
+
                                         Box {
                                             HeaderIconButton(
                                                 icon = Icons.Default.MoreVert,
@@ -1205,6 +1764,36 @@ fun YouTubeScreen(
                                                     .background(Color(0xFF212121))
                                                     .border(1.dp, Color(0xFF383838), RoundedCornerShape(12.dp))
                                             ) {
+                                                DropdownMenuItem(
+                                                    text = {
+                                                        Row(
+                                                            modifier = Modifier.fillMaxWidth(),
+                                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                                            verticalAlignment = Alignment.CenterVertically
+                                                        ) {
+                                                            Text("Audio Equalizer", color = Color.White, fontSize = 14.sp)
+                                                            Spacer(modifier = Modifier.width(16.dp))
+                                                            Text(
+                                                                YouTubeAudioPreset.fromId(youtubeAudioPreset).title,
+                                                                color = Color(0xFFFF5252),
+                                                                fontWeight = FontWeight.Bold,
+                                                                fontSize = 12.sp
+                                                            )
+                                                        }
+                                                    },
+                                                    leadingIcon = {
+                                                        Icon(
+                                                            imageVector = Icons.Default.GraphicEq,
+                                                            contentDescription = null,
+                                                            tint = if (youtubeAudioPreset != "NORMAL") Color(0xFFFF5252) else Color.White
+                                                        )
+                                                    },
+                                                    onClick = {
+                                                        isMoreMenuExpanded = false
+                                                        showAudioPresetDialog = true
+                                                    }
+                                                )
+
                                                 DropdownMenuItem(
                                                     text = {
                                                         Row(
@@ -1404,6 +1993,7 @@ fun YouTubeScreen(
                             isRealTV = isRealTV,
                             jsBridge = jsBridge,
                             isAutoScrollSupplier = { viewModel.isShortsAutoScrollEnabled.value },
+                            audioPresetSupplier = { viewModel.youtubeAudioPreset.value },
                             onTitleChanged = { pageTitle = it },
                             onLoadingChanged = { isLoading = it },
                             onHistoryChanged = { back, forward ->
@@ -1427,11 +2017,6 @@ fun YouTubeScreen(
                     },
                     update = { wv ->
                         webViewInstance = wv
-                        wv.onResume()
-                        if (wv.url.isNullOrBlank() || wv.url == "about:blank") {
-                            wv.loadUrl(currentUrl)
-                        }
-                        wv.invalidate()
                     },
                     onRelease = { wv ->
                         wv.onPause()
@@ -1486,19 +2071,75 @@ fun YouTubeScreen(
                                         ViewGroup.LayoutParams.MATCH_PARENT,
                                         ViewGroup.LayoutParams.MATCH_PARENT
                                     )
+                                    isFocusable = true
+                                    isFocusableInTouchMode = true
+                                    setOnKeyListener { _, keyCode, event ->
+                                        if (event.action == KeyEvent.ACTION_DOWN) {
+                                            when (keyCode) {
+                                                KeyEvent.KEYCODE_DPAD_CENTER, KeyEvent.KEYCODE_ENTER, KeyEvent.KEYCODE_NUMPAD_ENTER,
+                                                KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE, KeyEvent.KEYCODE_HEADSETHOOK -> {
+                                                    webViewInstance?.evaluateJavascript(
+                                                        "(function(){ var v = document.querySelector('video'); if (v) { if (v.paused) v.play(); else v.pause(); } })();",
+                                                        null
+                                                    )
+                                                    true
+                                                }
+                                                KeyEvent.KEYCODE_MEDIA_PLAY -> {
+                                                    webViewInstance?.evaluateJavascript(
+                                                        "(function(){ var v = document.querySelector('video'); if (v && v.paused) v.play(); })();",
+                                                        null
+                                                    )
+                                                    true
+                                                }
+                                                KeyEvent.KEYCODE_MEDIA_PAUSE -> {
+                                                    webViewInstance?.evaluateJavascript(
+                                                        "(function(){ var v = document.querySelector('video'); if (v && !v.paused) v.pause(); })();",
+                                                        null
+                                                    )
+                                                    true
+                                                }
+                                                KeyEvent.KEYCODE_DPAD_RIGHT, KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
+                                                    webViewInstance?.evaluateJavascript(
+                                                        "(function(){ var v = document.querySelector('video'); if (v) v.currentTime += 10; })();",
+                                                        null
+                                                    )
+                                                    true
+                                                }
+                                                KeyEvent.KEYCODE_DPAD_LEFT, KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                                                    webViewInstance?.evaluateJavascript(
+                                                        "(function(){ var v = document.querySelector('video'); if (v) v.currentTime = Math.max(0, v.currentTime - 10); })();",
+                                                        null
+                                                    )
+                                                    true
+                                                }
+                                                in KeyEvent.KEYCODE_0..KeyEvent.KEYCODE_9 -> {
+                                                    val fraction = if (keyCode == KeyEvent.KEYCODE_0) 0.0 else (keyCode - KeyEvent.KEYCODE_0) * 0.1
+                                                    webViewInstance?.evaluateJavascript(
+                                                        "(function(){ var v = document.querySelector('video'); if (v && v.duration) v.currentTime = v.duration * $fraction; else if (v) v.currentTime = 0; })();",
+                                                        null
+                                                    )
+                                                    true
+                                                }
+                                                else -> false
+                                            }
+                                        } else false
+                                    }
                                 }
                             },
                             update = { fl ->
-                                fl.removeAllViews()
                                 customView?.let { cv ->
-                                    (cv.parent as? ViewGroup)?.removeView(cv)
-                                    fl.addView(
-                                        cv,
-                                        ViewGroup.LayoutParams(
-                                            ViewGroup.LayoutParams.MATCH_PARENT,
-                                            ViewGroup.LayoutParams.MATCH_PARENT
+                                    if (fl.indexOfChild(cv) == -1) {
+                                        fl.removeAllViews()
+                                        (cv.parent as? ViewGroup)?.removeView(cv)
+                                        fl.addView(
+                                            cv,
+                                            ViewGroup.LayoutParams(
+                                                ViewGroup.LayoutParams.MATCH_PARENT,
+                                                ViewGroup.LayoutParams.MATCH_PARENT
+                                            )
                                         )
-                                    )
+                                        fl.requestFocus()
+                                    }
                                 }
                             },
                             onRelease = { fl ->
@@ -1610,12 +2251,227 @@ fun YouTubeScreen(
                                 color = Color.DarkGray,
                                 fontSize = 12.sp
                             )
+                            Spacer(modifier = Modifier.height(10.dp))
+                            Surface(
+                                color = Color(0xFF1E1E1E),
+                                shape = RoundedCornerShape(20.dp),
+                                border = BorderStroke(1.dp, Color(0xFF333333))
+                            ) {
+                                Row(
+                                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 6.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Default.GraphicEq,
+                                        contentDescription = null,
+                                        tint = Color(0xFFFF5252),
+                                        modifier = Modifier.size(14.dp)
+                                    )
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text(
+                                        text = YouTubeAudioPreset.fromId(youtubeAudioPreset).title,
+                                        color = Color(0xFFCCCCCC),
+                                        fontSize = 11.sp,
+                                        fontWeight = FontWeight.Medium
+                                    )
+                                }
+                            }
                         }
                     }
                 }
             }
         }
     }
+
+    if (showAudioPresetDialog) {
+        YouTubeAudioPresetDialog(
+            currentPresetId = youtubeAudioPreset,
+            isTV = isRealTV,
+            onPresetSelect = { preset ->
+                viewModel.setYouTubeAudioPreset(preset.id)
+                webViewInstance?.evaluateJavascript(
+                    "if (window.DutaAudioEngine) window.DutaAudioEngine.setPreset('${preset.id}');",
+                    null
+                )
+                toastMessage = "Audio: ${preset.title}"
+            },
+            onDismiss = { showAudioPresetDialog = false }
+        )
+    }
+}
+
+@Composable
+fun YouTubeAudioPresetDialog(
+    currentPresetId: String,
+    isTV: Boolean,
+    onPresetSelect: (YouTubeAudioPreset) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val presets = remember { YouTubeAudioPreset.entries }
+    val listState = rememberLazyListState()
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(38.dp)
+                        .background(Color(0xFF2A2A2A), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.GraphicEq,
+                        contentDescription = null,
+                        tint = Color(0xFFFF5252),
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column {
+                    Text(
+                        text = "Audio Equalizer",
+                        color = Color.White,
+                        fontSize = if (isTV) 20.sp else 18.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        text = "Real-time Web Audio DSP Engine",
+                        color = Color(0xFFAAAAAA),
+                        fontSize = if (isTV) 13.sp else 12.sp
+                    )
+                }
+            }
+        },
+        text = {
+            LazyColumn(
+                state = listState,
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(vertical = 4.dp)
+            ) {
+                items(presets) { preset ->
+                    val isSelected = preset.id.equals(currentPresetId, ignoreCase = true)
+                    var isFocused by remember { mutableStateOf(false) }
+
+                    Surface(
+                        onClick = { onPresetSelect(preset) },
+                        shape = RoundedCornerShape(12.dp),
+                        color = when {
+                            isSelected -> Color(0xFF2D1E1E)
+                            isFocused -> Color(0xFF333333)
+                            else -> Color(0xFF222222)
+                        },
+                        border = BorderStroke(
+                            width = if (isSelected || isFocused) 1.5.dp else 1.dp,
+                            color = when {
+                                isFocused -> Color.White
+                                isSelected -> Color(0xFFFF5252)
+                                else -> Color(0xFF383838)
+                            }
+                        ),
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .onFocusChanged { isFocused = it.isFocused }
+                            .scale(if (isFocused) 1.02f else 1f)
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .background(
+                                        if (isSelected) Color(0x33FF5252) else Color(0xFF1E1E1E),
+                                        CircleShape
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    imageVector = preset.icon,
+                                    contentDescription = null,
+                                    tint = if (isSelected) Color(0xFFFF5252) else Color.LightGray,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(12.dp))
+
+                            Column(modifier = Modifier.weight(1f)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = preset.title,
+                                        color = if (isSelected) Color.White else Color(0xFFEEEEEE),
+                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                        fontSize = if (isTV) 16.sp else 15.sp
+                                    )
+                                    if (preset == YouTubeAudioPreset.SONY_MEGA_BASS) {
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            color = Color(0xFFFF5252),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = "SONY",
+                                                color = Color.White,
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Black,
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = preset.subtitle,
+                                    color = if (isSelected) Color(0xFFCCCCCC) else Color(0xFF888888),
+                                    fontSize = if (isTV) 13.sp else 12.sp,
+                                    lineHeight = 16.sp
+                                )
+                            }
+
+                            Spacer(modifier = Modifier.width(8.dp))
+
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = { onPresetSelect(preset) },
+                                colors = RadioButtonDefaults.colors(
+                                    selectedColor = Color(0xFFFF5252),
+                                    unselectedColor = Color(0xFF666666)
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = onDismiss,
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFF5252)),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+            ) {
+                Text(
+                    text = "Done",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = if (isTV) 16.sp else 15.sp
+                )
+            }
+        },
+        containerColor = Color(0xFF1E1E1E),
+        shape = RoundedCornerShape(16.dp)
+    )
 }
 
 @Composable
@@ -1774,19 +2630,46 @@ private fun YouTubePillChip(
     }
 }
 
-private fun createBlockedAdResponse(): WebResourceResponse {
+private fun createBlockedAdResponse(request: WebResourceRequest? = null): WebResourceResponse {
+    val origin = request?.requestHeaders?.let { headers ->
+        headers["Origin"] ?: headers["origin"]
+    } ?: "https://m.youtube.com"
+
+    val reqHeaders = request?.requestHeaders?.let { headers ->
+        headers["Access-Control-Request-Headers"] ?: headers["access-control-request-headers"]
+    } ?: "authorization, content-type, x-goog-visitor-id, x-youtube-client-name, x-youtube-client-version, range, x-origin"
+
+    val url = request?.url?.toString()?.lowercase() ?: ""
+    val isJson = url.contains("/youtubei/") || url.contains("ad_break") || url.endsWith(".json")
+    val isJs = url.endsWith(".js") || url.contains(".js?")
+
+    val mimeType = when {
+        isJson -> "application/json"
+        isJs -> "application/javascript"
+        else -> "text/plain"
+    }
+    val content = when {
+        isJson -> "{}".toByteArray(Charsets.UTF_8)
+        isJs -> "/* blocked */".toByteArray(Charsets.UTF_8)
+        else -> ByteArray(0)
+    }
+
+    val responseHeaders = mapOf(
+        "Access-Control-Allow-Origin" to origin,
+        "Access-Control-Allow-Credentials" to "true",
+        "Access-Control-Allow-Methods" to "GET, POST, OPTIONS, HEAD, PUT",
+        "Access-Control-Allow-Headers" to reqHeaders,
+        "Access-Control-Max-Age" to "86400",
+        "Cache-Control" to "no-cache, no-store, must-revalidate"
+    )
+
     return WebResourceResponse(
-        "text/plain",
+        mimeType,
         "UTF-8",
-        204,
-        "No Content",
-        mapOf(
-            "Access-Control-Allow-Origin" to "*",
-            "Access-Control-Allow-Methods" to "GET, POST, OPTIONS, HEAD",
-            "Access-Control-Allow-Headers" to "*",
-            "Access-Control-Max-Age" to "86400"
-        ),
-        ByteArrayInputStream(ByteArray(0))
+        200,
+        "OK",
+        responseHeaders,
+        ByteArrayInputStream(content)
     )
 }
 
@@ -1796,6 +2679,7 @@ private fun createYouTubeWebView(
     isRealTV: Boolean,
     jsBridge: Any,
     isAutoScrollSupplier: () -> Boolean = { false },
+    audioPresetSupplier: () -> String = { "SONY_MEGA_BASS" },
     onTitleChanged: (String) -> Unit,
     onLoadingChanged: (Boolean) -> Unit,
     onHistoryChanged: (Boolean, Boolean) -> Unit,
@@ -1818,7 +2702,6 @@ private fun createYouTubeWebView(
         settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
-            databaseEnabled = true
             allowFileAccess = true
             allowContentAccess = true
             useWideViewPort = true
@@ -1847,7 +2730,7 @@ private fun createYouTubeWebView(
                 .replace(Regex("Version/\\d+\\.\\d+\\s*"), "")
         }
 
-        setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        setLayerType(View.LAYER_TYPE_NONE, null)
 
         CookieManager.getInstance().let { cm ->
             cm.setAcceptCookie(true)
@@ -1856,6 +2739,16 @@ private fun createYouTubeWebView(
 
         isFocusable = true
         isFocusableInTouchMode = true
+
+        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
+            try {
+                WebViewCompat.addDocumentStartJavaScript(
+                    this,
+                    YOUTUBE_AD_NUKER_SCRIPT,
+                    setOf("https://*.youtube.com", "https://youtube.com")
+                )
+            } catch (_: Exception) {}
+        }
 
         // Register Duta bridge for metadata, SponsorBlock notifications, and PiP state
         addJavascriptInterface(jsBridge, "DutaYouTubeBridge")
@@ -1902,21 +2795,21 @@ private fun createYouTubeWebView(
                     }
                     keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || keyCode == KeyEvent.KEYCODE_HEADSETHOOK -> {
                         evaluateJavascript(
-                            "(function(){ var v = document.querySelector('video'); if (v) { if (v.paused) v.play(); else v.pause(); } })();",
+                            "(function(){ var p = document.getElementById('movie_player') || document.querySelector('.html5-video-player'); var v = document.querySelector('video'); if (p && typeof p.getPlayerState === 'function') { if (p.getPlayerState() === 1) p.pauseVideo(); else p.playVideo(); } else if (v) { if (v.paused) v.play(); else v.pause(); } })();",
                             null
                         )
                         return@setOnKeyListener true
                     }
                     keyCode == KeyEvent.KEYCODE_MEDIA_PLAY -> {
                         evaluateJavascript(
-                            "(function(){ var v = document.querySelector('video'); if (v && v.paused) v.play(); })();",
+                            "(function(){ var p = document.getElementById('movie_player') || document.querySelector('.html5-video-player'); var v = document.querySelector('video'); if (p && typeof p.playVideo === 'function') p.playVideo(); else if (v && v.paused) v.play(); })();",
                             null
                         )
                         return@setOnKeyListener true
                     }
                     keyCode == KeyEvent.KEYCODE_MEDIA_PAUSE -> {
                         evaluateJavascript(
-                            "(function(){ var v = document.querySelector('video'); if (v && !v.paused) v.pause(); })();",
+                            "(function(){ var p = document.getElementById('movie_player') || document.querySelector('.html5-video-player'); var v = document.querySelector('video'); if (p && typeof p.pauseVideo === 'function') p.pauseVideo(); else if (v && !v.paused) v.pause(); })();",
                             null
                         )
                         return@setOnKeyListener true
@@ -1937,6 +2830,20 @@ private fun createYouTubeWebView(
                         return@setOnKeyListener true
                     }
                     keyCode == KeyEvent.KEYCODE_MEDIA_REWIND -> {
+                        evaluateJavascript(
+                            "(function(){ var v = document.querySelector('video'); if (v) v.currentTime = Math.max(0, v.currentTime - 10); })();",
+                            null
+                        )
+                        return@setOnKeyListener true
+                    }
+                    !isShorts && keyCode == KeyEvent.KEYCODE_MEDIA_NEXT -> {
+                        evaluateJavascript(
+                            "(function(){ var v = document.querySelector('video'); if (v) v.currentTime += 10; })();",
+                            null
+                        )
+                        return@setOnKeyListener true
+                    }
+                    !isShorts && keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
                         evaluateJavascript(
                             "(function(){ var v = document.querySelector('video'); if (v) v.currentTime = Math.max(0, v.currentTime - 10); })();",
                             null
@@ -1972,23 +2879,26 @@ private fun createYouTubeWebView(
                 val url = request?.url?.toString() ?: return null
                 val low = url.lowercase()
 
-                // 1. Intercept and block ad endpoints (e.g. ad_break, /pagead/, /api/stats/ads)
+                // 1. NEVER intercept core streaming, video playback, or essential scripts
+                if (low.contains("googlevideo.com") || low.contains("/videoplayback") ||
+                    low.contains("/watch?") || low.contains("/shorts") || low.contains("base.js") ||
+                    low.contains("desktop_polymer.js") || low.contains("player.js")
+                ) {
+                    return super.shouldInterceptRequest(view, request)
+                }
+
+                // 2. Intercept and mock ad endpoints
                 for (adPath in BLOCKED_AD_PATHS) {
                     if (low.contains(adPath)) {
-                        return createBlockedAdResponse()
+                        return createBlockedAdResponse(request)
                     }
                 }
 
-                // 2. Block known ad network hosts
+                // 3. Block known ad network hosts
                 for (adHost in BLOCKED_AD_HOSTS) {
                     if (low.contains(adHost)) {
-                        return createBlockedAdResponse()
+                        return createBlockedAdResponse(request)
                     }
-                }
-
-                // 3. Never intercept core YouTube streaming or player metadata
-                if (low.contains("googlevideo.com") || low.contains("/youtubei/") || low.contains("/videoplayback")) {
-                    return super.shouldInterceptRequest(view, request)
                 }
 
                 return super.shouldInterceptRequest(view, request)
@@ -1997,6 +2907,7 @@ private fun createYouTubeWebView(
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 onLoadingChanged(true)
+                view?.evaluateJavascript(YOUTUBE_AD_NUKER_SCRIPT, null)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
@@ -2012,6 +2923,11 @@ private fun createYouTubeWebView(
                     "if (window.setDutaAutoScrollEnabled) window.setDutaAutoScrollEnabled($autoScroll);",
                     null
                 )
+                val audioPreset = audioPresetSupplier()
+                view?.evaluateJavascript(
+                    "if (window.DutaAudioEngine) window.DutaAudioEngine.setPreset('$audioPreset');",
+                    null
+                )
             }
 
             override fun doUpdateVisitedHistory(view: WebView?, url: String?, isReload: Boolean) {
@@ -2024,6 +2940,12 @@ private fun createYouTubeWebView(
                     "if (window.setDutaAutoScrollEnabled) window.setDutaAutoScrollEnabled($autoScroll);",
                     null
                 )
+                val audioPreset = audioPresetSupplier()
+                view?.evaluateJavascript(
+                    "if (window.DutaAudioEngine) window.DutaAudioEngine.setPreset('$audioPreset');",
+                    null
+                )
+                view?.evaluateJavascript("if (window.processDutaAds) window.processDutaAds();", null)
             }
         }
 

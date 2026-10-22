@@ -6,6 +6,7 @@ import com.duta.movie.data.local.InstalledProviderEntity
 import com.duta.movie.model.Episode
 import com.duta.movie.model.Video
 import com.duta.movie.model.VideoServer
+import com.duta.movie.util.VideoExtractor
 import com.duta.movie.provider.core.MediaProvider
 import com.duta.movie.provider.model.ProviderMediaType
 import kotlinx.coroutines.Dispatchers
@@ -59,8 +60,22 @@ class MovieboxProvider(
     private val shortTvCache = mutableListOf<Video>()
     private val shortTvSeenIds = mutableSetOf<String>()
     private var shortTvInitialized = false
+    private var shortTvLastCacheTime = 0L
     private val shortTvLock = Any()
     @Volatile private var nextVskitCatalogPage: Int = 4
+
+    private val VSKIT_COVER_DATE_REGEX = Regex("""/image/(19\d{2}|20\d{2})/(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])/""")
+
+    private fun extractVskitDate(coverUrl: String, item: JSONObject): String {
+        val relDate = item.optString("releaseDate", "").trim()
+        if (relDate.isNotBlank()) return relDate
+        val match = VSKIT_COVER_DATE_REGEX.find(coverUrl)
+        if (match != null) {
+            val (y, m, d) = match.destructured
+            return "$y-$m-$d"
+        }
+        return ""
+    }
 
     private fun getClientToken(): String {
         val e = System.currentTimeMillis() / 1000
@@ -273,7 +288,8 @@ class MovieboxProvider(
         val startIndex = (page - 1) * count
         val targetEndIndex = startIndex + count
 
-        val needsInit = synchronized(shortTvLock) { !shortTvInitialized || shortTvCache.isEmpty() }
+        val isStale = System.currentTimeMillis() - shortTvLastCacheTime > 15 * 60 * 1000L
+        val needsInit = synchronized(shortTvLock) { !shortTvInitialized || shortTvCache.isEmpty() || (page == 1 && isStale) }
         if (needsInit) {
             populateShortTvCache(token)
         }
@@ -283,13 +299,14 @@ class MovieboxProvider(
         var consecutiveEmptyFetches = 0
         while (synchronized(shortTvLock) { shortTvCache.size } < targetEndIndex && nextVskitCatalogPage <= 150 && consecutiveEmptyFetches < 2) {
             val pageToFetch = synchronized(shortTvLock) { nextVskitCatalogPage++ }
-            val moreItems = fetchVskitCatalog(pageToFetch, 50)
+            val moreItems = fetchVskitCatalog(pageToFetch, 50, sort = "latest")
             if (moreItems.isEmpty()) {
                 consecutiveEmptyFetches++
             } else {
                 consecutiveEmptyFetches = 0
+                val sortedMore = VideoExtractor.sortVideosByNewestRelease(moreItems)
                 synchronized(shortTvLock) {
-                    for (v in moreItems) {
+                    for (v in sortedMore) {
                         val sid = v.id.removePrefix("mb_")
                         if (shortTvSeenIds.add(sid)) {
                             shortTvCache.add(v)
@@ -310,41 +327,51 @@ class MovieboxProvider(
     }
 
     private suspend fun populateShortTvCache(token: String?) = coroutineScope {
-        val rankingDeferred = async(Dispatchers.IO) { fetchShortTvRanking(1, 50, token) }
+        // Fetch freshest catalog pages (with sort="latest") and curated tabs
+        val cat1Deferred = async(Dispatchers.IO) { fetchVskitCatalog(1, 50, sort = "latest") }
         val tabsDeferred = async(Dispatchers.IO) { fetchVskitTabs() }
+        val cat2Deferred = async(Dispatchers.IO) { fetchVskitCatalog(2, 50, sort = "latest") }
+        val cat3Deferred = async(Dispatchers.IO) { fetchVskitCatalog(3, 50, sort = "latest") }
         val rec1Deferred = async(Dispatchers.IO) { fetchVskitRecommend(1) }
-        val rec2Deferred = async(Dispatchers.IO) { fetchVskitRecommend(2) }
         val searchDeferred = async(Dispatchers.IO) { fetchVskitEveryoneSearch() }
-        val cat1Deferred = async(Dispatchers.IO) { fetchVskitCatalog(1, 50) }
-        val cat2Deferred = async(Dispatchers.IO) { fetchVskitCatalog(2, 50) }
-        val cat3Deferred = async(Dispatchers.IO) { fetchVskitCatalog(3, 50) }
+        val rankingDeferred = async(Dispatchers.IO) { fetchShortTvRanking(1, 50, token) }
 
         val allResults = listOf(
-            rankingDeferred.await(),
-            tabsDeferred.await(),
-            rec1Deferred.await(),
-            rec2Deferred.await(),
-            searchDeferred.await(),
             cat1Deferred.await(),
+            tabsDeferred.await(),
             cat2Deferred.await(),
-            cat3Deferred.await()
+            cat3Deferred.await(),
+            rec1Deferred.await(),
+            searchDeferred.await(),
+            rankingDeferred.await()
         )
+
+        val distinctCombined = mutableListOf<Video>()
+        val seen = mutableSetOf<String>()
+        for (subList in allResults) {
+            for (v in subList) {
+                val sid = v.id.removePrefix("mb_")
+                if (seen.add(sid)) {
+                    distinctCombined.add(v)
+                }
+            }
+        }
+
+        val sortedAll = VideoExtractor.sortVideosByNewestRelease(distinctCombined)
 
         synchronized(shortTvLock) {
             shortTvCache.clear()
             shortTvSeenIds.clear()
-            for (subList in allResults) {
-                for (v in subList) {
-                    val sid = v.id.removePrefix("mb_")
-                    if (shortTvSeenIds.add(sid)) {
-                        shortTvCache.add(v)
-                    }
-                }
+            for (v in sortedAll) {
+                val sid = v.id.removePrefix("mb_")
+                shortTvSeenIds.add(sid)
+                shortTvCache.add(v)
             }
             nextVskitCatalogPage = 4
             shortTvInitialized = true
+            shortTvLastCacheTime = System.currentTimeMillis()
         }
-        Log.i(TAG, "MovieBox Short TV catalog loaded: ${shortTvCache.size} pure micro-drama titles in cache")
+        Log.i(TAG, "MovieBox Short TV catalog loaded: ${shortTvCache.size} pure micro-drama titles in cache (newest updates first)")
     }
 
     private fun fetchShortTvRanking(page: Int, count: Int, token: String?): List<Video> {
@@ -382,7 +409,7 @@ class MovieboxProvider(
 
                         val cover = item.optJSONObject("cover")?.optString("url") ?: ""
                         val rating = item.optString("imdbRatingValue", "ShortTV")
-                        val releaseDate = item.optString("releaseDate", "")
+                        val releaseDate = extractVskitDate(cover, item)
 
                         list.add(
                             Video(
@@ -406,13 +433,14 @@ class MovieboxProvider(
         return list
     }
 
-    private fun fetchVskitCatalog(page: Int, count: Int): List<Video> {
+    private fun fetchVskitCatalog(page: Int, count: Int, sort: String = "latest"): List<Video> {
         val list = mutableListOf<Video>()
         try {
             val url = "$API_BASE/wefeed-h5api-bff/vskit/subject/list"
             val body = JSONObject().apply {
                 put("page", page)
                 put("perPage", count)
+                put("sort", sort)
             }.toString()
 
             val request = Request.Builder()
@@ -439,6 +467,7 @@ class MovieboxProvider(
                         if (seoKey.contains("/movie/") || seoKey.contains("/tv/") || seoKey.contains("/series/")) continue
 
                         val cover = item.optJSONObject("cover")?.optString("url") ?: ""
+                        val releaseDate = extractVskitDate(cover, item)
                         list.add(
                             Video(
                                 id = "mb_$sid",
@@ -446,7 +475,7 @@ class MovieboxProvider(
                                 thumbnailUrl = cover,
                                 videoUrl = "moviebox://$seoKey?id=$sid&type=7",
                                 duration = if (epCount > 0) "$epCount Eps" else "",
-                                date = "",
+                                date = releaseDate,
                                 quality = if (epCount > 0) "$epCount Eps" else "ShortTV",
                                 isSeries = true,
                                 isShortTv = true
@@ -491,6 +520,7 @@ class MovieboxProvider(
                             if (seoKey.contains("/movie/") || seoKey.contains("/tv/") || seoKey.contains("/series/")) continue
 
                             val cover = item.optJSONObject("cover")?.optString("url") ?: ""
+                            val releaseDate = extractVskitDate(cover, item)
                             list.add(
                                 Video(
                                     id = "mb_$sid",
@@ -498,7 +528,7 @@ class MovieboxProvider(
                                     thumbnailUrl = cover,
                                     videoUrl = "moviebox://$seoKey?id=$sid&type=7",
                                     duration = if (epCount > 0) "$epCount Eps" else "",
-                                    date = "",
+                                    date = releaseDate,
                                     quality = if (epCount > 0) "$epCount Eps" else "ShortTV",
                                     isSeries = true,
                                     isShortTv = true
@@ -541,6 +571,7 @@ class MovieboxProvider(
                         if (seoKey.contains("/movie/") || seoKey.contains("/tv/") || seoKey.contains("/series/")) continue
 
                         val cover = item.optJSONObject("cover")?.optString("url") ?: ""
+                        val releaseDate = extractVskitDate(cover, item)
                         list.add(
                             Video(
                                 id = "mb_$sid",
@@ -548,7 +579,7 @@ class MovieboxProvider(
                                 thumbnailUrl = cover,
                                 videoUrl = "moviebox://$seoKey?id=$sid&type=7",
                                 duration = if (epCount > 0) "$epCount Eps" else "",
-                                date = "",
+                                date = releaseDate,
                                 quality = if (epCount > 0) "$epCount Eps" else "ShortTV",
                                 isSeries = true,
                                 isShortTv = true
@@ -590,6 +621,7 @@ class MovieboxProvider(
                         if (seoKey.contains("/movie/") || seoKey.contains("/tv/") || seoKey.contains("/series/")) continue
 
                         val cover = item.optJSONObject("cover")?.optString("url") ?: ""
+                        val releaseDate = extractVskitDate(cover, item)
                         list.add(
                             Video(
                                 id = "mb_$sid",
@@ -597,7 +629,7 @@ class MovieboxProvider(
                                 thumbnailUrl = cover,
                                 videoUrl = "moviebox://$seoKey?id=$sid&type=7",
                                 duration = if (epCount > 0) "$epCount Eps" else "",
-                                date = "",
+                                date = releaseDate,
                                 quality = if (epCount > 0) "$epCount Eps" else "ShortTV",
                                 isSeries = true,
                                 isShortTv = true

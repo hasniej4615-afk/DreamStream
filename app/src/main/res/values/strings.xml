@@ -382,6 +382,13 @@ Tap to re-scout and refresh content</string>
     <string name="no_other_sources_found">No alternative sources found for this title</string>
     <string name="auto_healed_source">Auto-recovered %d alternative mirror(s)</string>
     <string name="added_multi_provider_alt_sources">Added multi-provider cross-search &amp; auto-healing: discover fresh mirrors from partner providers when mirrors expire or fail.</string>
+    <string name="changelog_v2_1_4">Changelog v2.1.4 Cloud 7</string>
+    <string name="v2_1_4_updates">v2.1.4 Updates:</string>
+    <string name="v2_1_4_highlight_1">YouTube Web Audio DSP Equalizer: Real-time audio filtering engine featuring the iconic Sony Mega Bass Walkman acoustic profile (+9.5dB sub-bass punch, -2.5dB midrange de-mud, +4.5dB treble air, with built-in dynamics compressor limiter).</string>
+    <string name="v2_1_4_highlight_2">Dedicated Music Presets: Instant A/B listening modes for Music Hi-Fi (balanced audiophile curve), Bass Boost Max, Vocal Clarity (speech &amp; podcasts), and Studio Normal passthrough.</string>
+    <string name="v2_1_4_highlight_3">TV-Optimized Remote Navigation: Equalizer dialog with high-contrast D-Pad focus rings, 10-foot enlarged typography, and remote-friendly selection.</string>
+    <string name="v2_1_4_highlight_4">Silent Background Cloud Sync: Automated cloud profile and watch history synchronization now runs silently in the background without toast popup interruptions.</string>
+    <string name="v2_1_4_highlight_5">Subtitle &amp; Translation Engine: Verified and hardened multi-language subtitle fetching and auto-translation pipeline.</string>
     <string name="changelog_v2_1_3">Changelog v2.1.3 Cloud 7</string>
     <string name="v2_1_3_updates">v2.1.3 Updates:</string>
     <string name="v2_1_3_highlight_1">Android TV D-Pad Navigation &amp; Smooth Category Scrolling: Fixed issue where D-Pad Right could not scroll category rows. Stabilized item keys and removed continuous index snap-back for fluid horizontal browsing.</string>
@@ -518,7 +525,7 @@ Tap to re-scout and refresh content</string>
 
     <string name="help_topic_profile_title">Profile, Username &amp; Data Backup</string>
     <string name="help_topic_profile_desc">Set your nickname, custom avatar photo, and export or restore your full app settings and library.</string>
-    <string name="help_topic_profile_content">• Custom Nickname &amp; Avatar: In Settings &gt; Profile &amp; Backup, customize your display username and pick a personal avatar photo directly from your device storage.\n• Complete Settings &amp; Library Backup: Tap \'Save Backup to File\' to export all app configurations, favorites, watch history, playback progress, search history, and subtitle sync offsets into a portable JSON backup file.\n• Save Anywhere on Device: Choose any destination directory, Downloads folder, external SD card, or USB flash drive to safely store your backup.\n• 1-Click Instant Restore: Switch devices or reinstall the app without losing your watch history or settings. Tap \'Restore from File\' and choose your JSON backup to recover everything in seconds.\n• Share Backup File: Use the Share button to send your backup file via WhatsApp, Telegram, Google Drive, or email with one tap.</string>
+    <string name="help_topic_profile_content">• Custom Nickname &amp; Avatar: In Settings &gt; Profile &amp; Backup, customize your display username and pick a personal avatar photo directly from your device storage.\n• Complete Settings &amp; Library Backup: Tap \'Save Backup to File\' to export all app configurations, favorites, watch history, playback progress, search history, and subtitle sync offsets into a portable JSON backup file.\n• Save Anywhere on Device: Choose any destination directory, Downloads folder, external SD card, or USB flash drive to safely store your backup.\n• 1-Click Instant Restore: Switch devices or reinstall the app without losing your watch history or settings. Tap \'Restore from File\' and choose your JSON backup to recover everything in seconds.\n• Share Backup File: Use the Share button to send your backup file via WhatsApp, Telegram, Google Drive, or email with one tap.\n• Silent Background Cloud Sync: Automated cloud profile, favorites, and watch history synchronization now runs silently in the background without toast popup interruptions, keeping all your devices synchronized smoothly.</string>
 
     <string name="help_topic_pakcik_title">Pakcik Rekomen (Community Recommendations)</string>
     <string name="help_topic_pakcik_desc">Live community recommendations, auto-sync across users, freshness period, and voting.</string>
@@ -527,6 +534,10 @@ Tap to re-scout and refresh content</string>
     <string name="help_topic_cast_title">Google Cast &amp; TV Streaming</string>
     <string name="help_topic_cast_desc">Wirelessly cast movies and series to Smart TVs, Chromecast, and Google TV devices.</string>
     <string name="help_topic_cast_content">• Wireless TV Casting: Tap the Google Cast button in the top navigation bar or inside the video player to connect to your Chromecast or Google TV.\n• Subtitle Passthrough Server: The app features an embedded local WebVTT subtitle streaming engine that converts and streams subtitles directly to your TV screen.\n• Stream Format Auto-Detection: Cast is optimized for direct MP4 and VIP cloud servers. If an external web mirror is incompatible with Cast, switch to an alternative server tab.\n• Phone &amp; Tablet Remote: Use your mobile device as a convenient remote control for play, pause, seeking, and volume adjustment while streaming on the big screen.\n• Resume on Disconnect: When disconnecting from your TV, playback automatically resumes locally on your phone or tablet right where you stopped.</string>
+
+    <string name="help_topic_youtube_title">YouTube Player &amp; Sony Mega Bass Equalizer</string>
+    <string name="help_topic_youtube_desc">Real-time Web Audio DSP Engine, Sony Walkman Mega Bass replica, music presets, TV remote controls, and background playback.</string>
+    <string name="help_topic_youtube_content">• Real-Time Web Audio DSP: Hardware-accelerated audio processing directly connected to the HTML5 video playback engine with zero latency.\n• Sony Mega Bass Walkman Replica: Authentically tuned to replicate classic Sony Walkman punch with +9.5dB sub-bass boost @ 60Hz, -2.5dB de-mud midrange cut @ 600Hz, +4.5dB treble sparkle @ 10kHz, and built-in dynamics compression to prevent digital clipping.\n• Dedicated Presets: Instant A/B listening modes including Music Hi-Fi (balanced audiophile curve), Bass Boost (Max), Vocal Clarity (speech &amp; podcasts), and Normal (Flat studio bypass).\n• Quick Header Equalizer: Tap the red-glowing Equalizer icon in the top navigation bar or select \'Audio Equalizer\' from the 3-dots More Options menu.\n• Android TV D-Pad Optimization: Full remote control support with high-contrast white focus borders (1.5dp), subtle card zoom (1.02x), and enlarged typography for 10-foot viewing.\n• OLED Black Screen Mode: Dim display entirely while keeping audio and EQ active for battery saving or nighttime music listening.\n• TV Remote Seeking &amp; Shorts: Use D-pad Left/Right for 10s seeking, numbers 0-9 to jump across the timeline, and D-pad Up/Down or Page Up/Down to browse YouTube Shorts.</string>
 
     <string name="help_topic_tv_title">Android TV Remote Controls</string>
     <string name="help_topic_tv_desc">Full guide for navigation, seeking, server switching, and audio controls using your remote control.</string>
@@ -704,4 +715,12 @@ Tap to re-scout and refresh content</string>
     <string name="search_custom_title_hint">Try searching with a custom title or open a local subtitle</string>
     <string name="no_subs_in_filter">No subtitles found in this language</string>
     <string name="switch_to_all_subs">Show All Languages (%d)</string>
+    <string name="category_all">All</string>
+    <string name="category_movies">Movies</string>
+    <string name="category_series">TV Series</string>
+    <string name="category_short_tv">Short TV</string>
+    <string name="category_live_tv">Live TV</string>
+    <string name="category_anime">Anime</string>
+    <string name="next_episode">Next Episode</string>
+    <string name="previous_episode">Previous Episode</string>
 </resources>

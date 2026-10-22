@@ -4434,13 +4434,51 @@ object VideoExtractor {
         return 0
     }
 
+    private val FULL_DATE_REGEX = Regex("""\b(19\d{2}|20\d{2})[-/](0[1-9]|1[0-2])[-/](0[1-9]|[12]\d|3[01])\b""")
+    private val VSKIT_COVER_DATE_REGEX = Regex("""/image/(19\d{2}|20\d{2})/(0[1-9]|1[0-2])/(0[1-9]|[12]\d|3[01])/""")
+
+    /**
+     * Extracts a numeric sort key in YYYYMMDD format (as Long) representing the release or update date.
+     * Higher numbers represent newer releases.
+     * Examples:
+     * - "2026-10-20" -> 20261020L
+     * - "2026-08-19" -> 20260819L
+     * - "2026" or title with (2026) -> 20260000L
+     * - unknown -> 0L
+     */
+    fun extractReleaseDateKey(title: String, date: String? = null, url: String? = null, coverUrl: String? = null): Long {
+        // 1. Check date field for YYYY-MM-DD or YYYY/MM/DD
+        if (!date.isNullOrBlank()) {
+            FULL_DATE_REGEX.find(date)?.let { m ->
+                val y = m.groupValues[1].toLongOrNull() ?: 0L
+                val mon = m.groupValues[2].toLongOrNull() ?: 0L
+                val d = m.groupValues[3].toLongOrNull() ?: 0L
+                if (y > 0) return y * 10000L + mon * 100L + d
+            }
+        }
+
+        // 2. Check coverUrl for Vskit / Moviebox date paths (/image/YYYY/MM/DD/)
+        if (!coverUrl.isNullOrBlank()) {
+            VSKIT_COVER_DATE_REGEX.find(coverUrl)?.let { m ->
+                val y = m.groupValues[1].toLongOrNull() ?: 0L
+                val mon = m.groupValues[2].toLongOrNull() ?: 0L
+                val d = m.groupValues[3].toLongOrNull() ?: 0L
+                if (y > 0) return y * 10000L + mon * 100L + d
+            }
+        }
+
+        // 3. Fallback to 4-digit year (extractReleaseYear * 10000L)
+        val year = extractReleaseYear(title, date, url)
+        return if (year > 0) year.toLong() * 10000L else 0L
+    }
+
     /**
      * Sorts movies so that the newest titles (e.g. 2026, 2025, 2024...) are placed in front.
      * Uses Kotlin's stable sort to preserve the upload freshness order within the same release year.
      */
     fun sortVideosByNewestRelease(videos: List<Video>): List<Video> {
         return videos.sortedWith(
-            compareByDescending<Video> { extractReleaseYear(it.title, it.date, it.videoUrl) }
+            compareByDescending<Video> { extractReleaseDateKey(it.title, it.date, it.videoUrl, it.thumbnailUrl) }
         )
     }
 

@@ -16,6 +16,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -36,6 +39,7 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.ui.zIndex
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.res.stringResource
 import com.duta.movie.R
 import com.duta.movie.audio.VoiceEnhancerManager
@@ -340,6 +344,7 @@ fun VideoPlayerScreen(
     var showResumeDialog by remember { mutableStateOf(false) }
     var showResolutionLog by remember { mutableStateOf(false) }
     var playerErrorMessage by remember { mutableStateOf<String?>(null) }
+    var currentPlaybackSpeed by rememberSaveable { mutableFloatStateOf(1.0f) }
     
     var pendingRotationResumePosition by remember { mutableStateOf(-1L) }
     var pendingRotationContentKey by remember { mutableStateOf<String?>(null) }
@@ -603,10 +608,9 @@ fun VideoPlayerScreen(
     LaunchedEffect(autoSyncNotice) {
         val notice = autoSyncNotice
         if (notice != null) {
-            if (notice.method.contains("Cadence") || notice.method.contains("FFSubSync") || notice.method.contains("Auto-Pilot")) {
+            if (notice.method.contains("Cadence") || notice.method.contains("FFSubSync") || notice.method.contains("Auto-Pilot") || notice.method.contains("VAD") || notice.method.contains("Stream Match") || notice.method.contains("Community")) {
                 vadAudioProcessor.stopListening()
             }
-            delay(3200)
             viewModel.dismissAutoSyncNotice()
         }
     }
@@ -698,6 +702,14 @@ fun VideoPlayerScreen(
                 trackBuilder.setMaxVideoSize(1280, 720)
             }
             trackSelectionParameters = trackBuilder.build()
+        }
+    }
+
+    LaunchedEffect(currentPlaybackSpeed, isVideoReady) {
+        if (isVideoReady) {
+            try {
+                exoPlayer.setPlaybackSpeed(currentPlaybackSpeed)
+            } catch (_: Exception) {}
         }
     }
 
@@ -2070,6 +2082,14 @@ fun VideoPlayerScreen(
             }
         },
         onNextEpisodeClick = { viewModel.resolveNextEpisode(activeVideoId) },
+        onPreviousEpisodeClick = { viewModel.resolvePreviousEpisode(activeVideoId) },
+        playbackSpeed = currentPlaybackSpeed,
+        onSpeedSelect = { speed ->
+            currentPlaybackSpeed = speed
+            try {
+                exoPlayer.setPlaybackSpeed(speed)
+            } catch (_: Exception) {}
+        },
         onRetryClick = { 
             playerErrorMessage = null
             if (isSeriesPlayback(video, activeServerUrl)) {
@@ -2783,9 +2803,7 @@ fun VideoPlayerScreen(
                                     val onSelectTargetLang: (String) -> Unit = { code ->
                                         showAiTranslateLanguageDialog = false
                                         if (subtitleCues.isNotEmpty()) {
-                                            viewModel.translateSelectedSubtitle(code) { success, msg ->
-                                                Toast.makeText(context, msg, Toast.LENGTH_SHORT).show()
-                                            }
+                                            viewModel.translateSelectedSubtitle(code)
                                         } else {
                                             val cand = subtitles.firstOrNull { 
                                                 !it.label.startsWith("[AI Translated]") && 
@@ -3532,21 +3550,11 @@ fun VideoPlayerScreen(
                                          keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_ENTER ||
                                          keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
                                         viewModel.applyVadOffset(firstDialogueCue.startTimeMs)
-                                        Toast.makeText(
-                                            context,
-                                            context.getString(R.string.subtitle_synced_toast, offsetStr),
-                                            Toast.LENGTH_SHORT
-                                        ).show()
                                         true
                                     } else false
                                 }
                                 .clickable {
                                     viewModel.applyVadOffset(firstDialogueCue.startTimeMs)
-                                    Toast.makeText(
-                                        context,
-                                        context.getString(R.string.subtitle_synced_toast, offsetStr),
-                                        Toast.LENGTH_SHORT
-                                    ).show()
                                 }
                                 .focusable()
                                 .scale(if (isVadFocused) 1.04f else 1f)
@@ -3608,12 +3616,6 @@ fun VideoPlayerScreen(
                                     onClick = {
                                         val newOffset = nearestCue.startTimeMs - currentPlaybackMs
                                         viewModel.setSubtitleOffset(newOffset)
-                                        val sign = if (newOffset >= 0) "+" else ""
-                                        Toast.makeText(
-                                            context,
-                                            context.getString(R.string.subtitle_synced_toast, "$sign${newOffset / 1000.0}s"),
-                                            Toast.LENGTH_SHORT
-                                        ).show()
                                     },
                                     colors = ButtonDefaults.buttonColors(
                                         containerColor = if (isSnapFocused) Color(0xFFFF1744) else Color(0xFFE50914)
@@ -3630,12 +3632,6 @@ fun VideoPlayerScreen(
                                                  keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
                                                 val newOffset = nearestCue.startTimeMs - currentPlaybackMs
                                                 viewModel.setSubtitleOffset(newOffset)
-                                                val sign = if (newOffset >= 0) "+" else ""
-                                                Toast.makeText(
-                                                    context,
-                                                    context.getString(R.string.subtitle_synced_toast, "$sign${newOffset / 1000.0}s"),
-                                                    Toast.LENGTH_SHORT
-                                                ).show()
                                                 true
                                             } else false
                                         }
@@ -3939,12 +3935,6 @@ fun VideoPlayerScreen(
                                 onClick = {
                                     val newOffset = firstDialogueCue.startTimeMs - currentPlaybackMs
                                     viewModel.setSubtitleOffset(newOffset)
-                                    val sign = if (newOffset >= 0) "+" else ""
-                                    Toast.makeText(
-                                        context,
-                                        context.getString(R.string.subtitle_synced_toast, "$sign${newOffset / 1000.0}s"),
-                                        Toast.LENGTH_SHORT
-                                    ).show()
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = if (isFirstDiagFocused) Color(0xFFE50914) else Color(0xFF333333)),
                                 shape = RoundedCornerShape(8.dp),
@@ -3959,12 +3949,6 @@ fun VideoPlayerScreen(
                                              keyEvent.nativeKeyEvent.keyCode == android.view.KeyEvent.KEYCODE_NUMPAD_ENTER)) {
                                             val newOffset = firstDialogueCue.startTimeMs - currentPlaybackMs
                                             viewModel.setSubtitleOffset(newOffset)
-                                            val sign = if (newOffset >= 0) "+" else ""
-                                            Toast.makeText(
-                                                context,
-                                                context.getString(R.string.subtitle_synced_toast, "$sign${newOffset / 1000.0}s"),
-                                                Toast.LENGTH_SHORT
-                                            ).show()
                                             true
                                         } else false
                                     }
@@ -4169,6 +4153,9 @@ fun VideoPlayerContent(
     onControlFocusChange: (Boolean) -> Unit,
     onQualitySelect: (VideoQualityTrack) -> Unit,
     onNextEpisodeClick: () -> Unit,
+    onPreviousEpisodeClick: (() -> Unit)? = null,
+    playbackSpeed: Float = 1.0f,
+    onSpeedSelect: ((Float) -> Unit)? = null,
     onEpisodeListClick: () -> Unit,
     onRetryClick: () -> Unit,
     onForceWebViewClick: () -> Unit,
@@ -4427,6 +4414,27 @@ fun VideoPlayerContent(
         onSeekFeedback(formatted)
     }
 
+    val isShortTvDrama = remember(video, extractedUrl, isTV) {
+        !isTV && (
+            video?.isShortTv == true ||
+            (extractedUrl != null && (
+                extractedUrl.contains("short-tv") || 
+                extractedUrl.contains("vskit") || 
+                extractedUrl.contains("dramabox") || 
+                extractedUrl.contains("type=5") || 
+                extractedUrl.contains("type=7")
+            ))
+        )
+    }
+    var verticalDragAccumulator by remember { mutableFloatStateOf(0f) }
+    var swipeFeedbackText by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(swipeFeedbackText) {
+        if (swipeFeedbackText != null) {
+            delay(1200)
+            swipeFeedbackText = null
+        }
+    }
+
     Box(modifier = Modifier
         .fillMaxSize()
         .background(Color.Black)
@@ -4552,7 +4560,33 @@ fun VideoPlayerContent(
                 val isRight = offset.x > size.width / 2
                 if (isRight) handleSeek(10000L) else handleSeek(-10000L)
             }, onTap = { onVisibilityToggle() })
-        }, contentAlignment = Alignment.Center) {
+        }
+        .then(
+            if (isShortTvDrama) {
+                Modifier.pointerInput(isShortTvDrama) {
+                    detectVerticalDragGestures(
+                        onDragStart = { verticalDragAccumulator = 0f },
+                        onDragEnd = {
+                            if (verticalDragAccumulator < -100f) {
+                                onNextEpisodeClick()
+                                swipeFeedbackText = context.getString(R.string.next_episode)
+                            } else if (verticalDragAccumulator > 100f) {
+                                onPreviousEpisodeClick?.invoke()
+                                swipeFeedbackText = context.getString(R.string.previous_episode)
+                            }
+                            verticalDragAccumulator = 0f
+                        },
+                        onDragCancel = { verticalDragAccumulator = 0f },
+                        onVerticalDrag = { change, dragAmount ->
+                            change.consume()
+                            verticalDragAccumulator += dragAmount
+                        }
+                    )
+                }
+            } else Modifier
+        ), contentAlignment = Alignment.Center) {
+
+
         
         if (extractedUrl != null && error == null && playerErrorMessage == null && isTransitionComplete) {
             val showWebView = useWebView && !isCasting && (extractedUrl?.startsWith("http") == true)
@@ -4864,9 +4898,43 @@ fun VideoPlayerContent(
                 isTV = isTV,
                 voiceEnhancerMode = voiceEnhancerMode,
                 onVoiceEnhancerSelect = onVoiceEnhancerSelect,
+                playbackSpeed = playbackSpeed,
+                onSpeedSelect = onSpeedSelect,
                 onChannelZapperClick = onChannelZapperClick,
                 liveEpgText = liveEpgText
             )
+        }
+
+        androidx.compose.animation.AnimatedVisibility(
+            visible = swipeFeedbackText != null,
+            enter = fadeIn() + scaleIn(),
+            exit = fadeOut() + scaleOut(),
+            modifier = Modifier.align(Alignment.Center).zIndex(500f)
+        ) {
+            Surface(
+                color = Color.Black.copy(alpha = 0.8f),
+                shape = RoundedCornerShape(12.dp),
+                border = BorderStroke(1.5.dp, Color(0xFFE50914))
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(
+                        imageVector = if (swipeFeedbackText?.contains("Next") == true) Icons.Default.ArrowUpward else Icons.Default.ArrowDownward,
+                        contentDescription = null,
+                        tint = Color(0xFFE50914),
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        text = swipeFeedbackText ?: "",
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 16.sp
+                    )
+                }
+            }
         }
 
         androidx.compose.animation.AnimatedVisibility(
@@ -5096,43 +5164,6 @@ fun VideoPlayerContent(
             }
         }
 
-        // 10-foot TV HUD Banner for Hybrid Auto-Pilot Subtitle Sync
-        AnimatedVisibility(
-            visible = autoSyncNotice != null,
-            enter = fadeIn() + slideInVertically { -40 },
-            exit = fadeOut() + slideOutVertically { -40 },
-            modifier = Modifier
-                .align(Alignment.TopCenter)
-                .padding(top = if (isTV) 28.dp else 16.dp)
-        ) {
-            autoSyncNotice?.let { notice ->
-                Surface(
-                    color = Color(0xEE141414),
-                    shape = RoundedCornerShape(24.dp),
-                    border = BorderStroke(1.dp, Color(0xFF00E676).copy(alpha = 0.8f)),
-                    shadowElevation = 8.dp
-                ) {
-                    Row(
-                        modifier = Modifier.padding(horizontal = if (isTV) 20.dp else 14.dp, vertical = if (isTV) 10.dp else 7.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Bolt,
-                            contentDescription = null,
-                            tint = Color(0xFF00E676),
-                            modifier = Modifier.size(if (isTV) 24.dp else 18.dp)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Text(
-                            text = stringResource(R.string.auto_synced_hud, notice.formattedOffset),
-                            color = Color.White,
-                            fontSize = if (isTV) 16.sp else 13.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-                }
-            }
-        }
         // ── Feature 4: Smart Skip Intro Pill (+85s) ──
         val currentPlaybackPos = rememberPlayerPosition(currentPlayer, true)
         val rawPlaybackDur = rememberPlayerDuration(currentPlayer, fallbackDurationMs, true)
