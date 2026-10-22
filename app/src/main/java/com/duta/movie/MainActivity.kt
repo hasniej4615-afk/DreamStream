@@ -338,6 +338,25 @@ class MainActivity : AppCompatActivity() {
                 ) { padding ->
                     CompositionLocalProvider(LocalPipMode provides isInPip) {
                         val contentFocusRequester = remember { FocusRequester() }
+
+                        LaunchedEffect(currentDestination) {
+                            if (currentDestination?.hasRoute<Destination.Home>() == true && isTVLayout) {
+                                if (videoViewModel.shouldRestoreFocusOnResume) {
+                                    try {
+                                        contentFocusRequester.requestFocus()
+                                    } catch (_: Exception) {}
+                                }
+                            }
+                        }
+                        val searchTabFocusRequester = remember { FocusRequester() }
+                        val homeTabFocusRequester = remember { FocusRequester() }
+                        val moviesTabFocusRequester = remember { FocusRequester() }
+                        val tvShowsTabFocusRequester = remember { FocusRequester() }
+                        val youtubeTabFocusRequester = remember { FocusRequester() }
+                        val myListTabFocusRequester = remember { FocusRequester() }
+                        val settingsTabFocusRequester = remember { FocusRequester() }
+                        val isSearchActive by videoViewModel.isSearchActive.collectAsStateWithLifecycle()
+
                         Row(modifier = Modifier
                             .fillMaxSize()
                             .padding(if (isRealTV) uiSafeAreaPadding.dp else 0.dp)
@@ -382,32 +401,37 @@ class MainActivity : AppCompatActivity() {
                                                     size = size
                                                 )
                                             }
+                                        }
+                                        .focusGroup()
+                                        .focusProperties {
+                                            // TV STABILITY: Intercept ALL focus entering sidebar container from content
+                                            enter = { direction ->
+                                                if (direction == FocusDirection.Left) {
+                                                    when {
+                                                        isSearchActive -> searchTabFocusRequester
+                                                        currentDestination?.hasRoute<Destination.Movies>() == true -> moviesTabFocusRequester
+                                                        currentDestination?.hasRoute<Destination.TVShows>() == true -> tvShowsTabFocusRequester
+                                                        currentDestination?.hasRoute<Destination.YouTube>() == true -> youtubeTabFocusRequester
+                                                        currentDestination?.hasRoute<Destination.MyList>() == true -> myListTabFocusRequester
+                                                        currentDestination?.hasRoute<Destination.Settings>() == true -> settingsTabFocusRequester
+                                                        else -> homeTabFocusRequester
+                                                    }
+                                                } else {
+                                                    FocusRequester.Cancel
+                                                }
+                                            }
+                                            exit = { direction ->
+                                                if (direction == FocusDirection.Right) {
+                                                    contentFocusRequester
+                                                } else {
+                                                    FocusRequester.Cancel
+                                                }
+                                            }
                                         },
                                     contentAlignment = Alignment.TopCenter
                                 ) {
                                     Column(
-                                        modifier = Modifier
-                                            .focusGroup()
-                                            .focusProperties {
-                                                // TV STABILITY: Sidebar drawer must ONLY receive focus when moving LEFT from content.
-                                                // Spurious fallback focus (e.g. during recomposition, data loading, or item recycling)
-                                                // and vertical 2D searches (UP/DOWN) must NEVER enter the sidebar!
-                                                enter = { direction ->
-                                                    if (direction == FocusDirection.Left) {
-                                                        FocusRequester.Default
-                                                    } else {
-                                                        FocusRequester.Cancel
-                                                    }
-                                                }
-                                                exit = { direction ->
-                                                    if (direction == FocusDirection.Right) {
-                                                        contentFocusRequester
-                                                    } else {
-                                                        FocusRequester.Cancel
-                                                    }
-                                                }
-                                            }
-                                            .fillMaxHeight(),
+                                        modifier = Modifier.fillMaxHeight(),
                                         verticalArrangement = Arrangement.spacedBy(10.dp),
                                         horizontalAlignment = Alignment.Start
                                     ) {
@@ -438,13 +462,14 @@ class MainActivity : AppCompatActivity() {
                                         }
 
                                         // Simplified TV Sidebar (OnStream Style)
-                                        val isSearchActive by videoViewModel.isSearchActive.collectAsStateWithLifecycle()
-                                        
                                         SidebarIcon(
                                             icon = Icons.Default.Search,
                                             label = stringResource(R.string.search),
                                             isSelected = isSearchActive,
                                             isExpanded = sidebarFocused,
+                                            modifier = Modifier
+                                                .focusRequester(searchTabFocusRequester)
+                                                .focusProperties { up = FocusRequester.Cancel },
                                             isRealTV = isRealTV,
                                             onClick = {
                                                 videoViewModel.setSearchActive(!isSearchActive)
@@ -456,11 +481,20 @@ class MainActivity : AppCompatActivity() {
 
                                         navItems.forEach { (route, icon, label) ->
                                             val selected = currentDestination?.hierarchy?.any { it.hasRoute(route::class) } == true
+                                            val itemFocusRequester = when (route) {
+                                                Destination.Home -> homeTabFocusRequester
+                                                Destination.Movies -> moviesTabFocusRequester
+                                                Destination.TVShows -> tvShowsTabFocusRequester
+                                                is Destination.YouTube -> youtubeTabFocusRequester
+                                                Destination.MyList -> myListTabFocusRequester
+                                                else -> null
+                                            }
                                             SidebarIcon(
                                                 icon = icon,
                                                 label = label,
                                                 isSelected = selected,
                                                 isExpanded = sidebarFocused,
+                                                modifier = if (itemFocusRequester != null) Modifier.focusRequester(itemFocusRequester) else Modifier,
                                                 isRealTV = isRealTV,
                                                 onClick = {
                                                     videoViewModel.setSearchActive(false)
@@ -482,6 +516,9 @@ class MainActivity : AppCompatActivity() {
                                             label = stringResource(R.string.settings),
                                             isSelected = currentDestination?.hasRoute<Destination.Settings>() == true,
                                             isExpanded = sidebarFocused,
+                                            modifier = Modifier
+                                                .focusRequester(settingsTabFocusRequester)
+                                                .focusProperties { down = FocusRequester.Cancel },
                                             isRealTV = isRealTV,
                                             onClick = { navController.navigate(Destination.Settings) }
                                         )
@@ -515,6 +552,17 @@ class MainActivity : AppCompatActivity() {
                                             if (direction == FocusDirection.Up || direction == FocusDirection.Down) {
                                                 // Vertical navigation inside NavHost must NEVER bleed into the sidebar
                                                 FocusRequester.Cancel
+                                            } else if (direction == FocusDirection.Left && isTVLayout) {
+                                                // When navigating left from ANY row in content, land directly on the active tab!
+                                                when {
+                                                    isSearchActive -> searchTabFocusRequester
+                                                    currentDestination?.hasRoute<Destination.Movies>() == true -> moviesTabFocusRequester
+                                                    currentDestination?.hasRoute<Destination.TVShows>() == true -> tvShowsTabFocusRequester
+                                                    currentDestination?.hasRoute<Destination.YouTube>() == true -> youtubeTabFocusRequester
+                                                    currentDestination?.hasRoute<Destination.MyList>() == true -> myListTabFocusRequester
+                                                    currentDestination?.hasRoute<Destination.Settings>() == true -> settingsTabFocusRequester
+                                                    else -> homeTabFocusRequester
+                                                }
                                             } else {
                                                 FocusRequester.Default
                                             }
@@ -652,6 +700,7 @@ fun SidebarIcon(
     label: String,
     isSelected: Boolean,
     isExpanded: Boolean,
+    modifier: Modifier = Modifier,
     isRealTV: Boolean = false,
     onClick: () -> Unit
 ) {
@@ -666,7 +715,7 @@ fun SidebarIcon(
     )
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .padding(horizontal = 12.dp)
             .height(60.dp)
             .fillMaxWidth()

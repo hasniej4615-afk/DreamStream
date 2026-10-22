@@ -329,11 +329,10 @@ fun VideoListScreen(
     LaunchedEffect(resumeTrigger) {
         if (resumeTrigger > 0 && isImmersiveMode && !isSearchActive && viewModel.shouldRestoreFocusOnResume) {
             val targetRow = viewModel.lastFocusedCategoryRowIndex
-            if (targetRow > 0) {
-                try {
-                    homeLazyListState.scrollToItem(targetRow)
-                } catch (_: Exception) {}
-            }
+            val listIndex = if (targetRow > 0) targetRow + 1 else 0
+            try {
+                homeLazyListState.scrollToItem(listIndex)
+            } catch (_: Exception) {}
         }
     }
 
@@ -346,11 +345,10 @@ fun VideoListScreen(
         if (isImmersiveMode && !isSearchActive) {
             if (viewModel.shouldRestoreFocusOnResume && (viewModel.pendingRestoreVideoId != null || viewModel.lastFocusedHomeVideoId != null)) {
                 val targetRow = viewModel.lastFocusedCategoryRowIndex
-                if (targetRow > 0) {
-                    try {
-                        homeLazyListState.scrollToItem(targetRow)
-                    } catch (_: Exception) {}
-                }
+                val listIndex = if (targetRow > 0) targetRow + 1 else 0
+                try {
+                    homeLazyListState.scrollToItem(listIndex)
+                } catch (_: Exception) {}
             } else if (!viewModel.shouldRestoreFocusOnResume) {
                 try {
                     homeLazyListState.scrollToItem(0)
@@ -916,6 +914,7 @@ fun VideoListScreen(
                                                  isRealTV = isImmersiveMode,
                                                  viewModel = viewModel,
                                                  rowIndex = actualRowIndex,
+                                                 isLastRow = (index == displayedCategories.size - 1),
                                                  onVideoFocus = { video -> 
                                                      focusedVideo = video 
                                                  },
@@ -1140,6 +1139,7 @@ fun HorizontalVideoRow(
     categoryPath: String? = null,
     firstItemFocusRequester: FocusRequester? = null,
     isPakcikRekomen: Boolean = false,
+    isLastRow: Boolean = false,
     showProgress: Boolean = false,
     startupSessionId: Long = 0L,
     modifier: Modifier = Modifier
@@ -1220,9 +1220,9 @@ fun HorizontalVideoRow(
                 isStartupAligned = true
                 viewModel?.markRowStartupInitialized(rowKey)
 
-                // TV MODE OPTIMIZATION: If this row currently holds focus or is the top category row on startup,
-                // keep the focus box anchored to the front item (index 0) so it doesn't drift into the middle.
-                if (isAnyTV && (hasFocus || (firstItemFocusRequester != null && viewModel?.hasUserBrowsed != true))) {
+                // TV MODE OPTIMIZATION: Initial focus anchoring only on startup before user browses.
+                // Never snatch focus if this row currently holds focus or user is actively browsing!
+                if (isAnyTV && !hasFocus && firstItemFocusRequester != null && viewModel?.hasUserBrowsed != true) {
                     kotlinx.coroutines.delay(50)
                     try {
                         (firstItemFocusRequester ?: rowFirstItemFocusRequester).requestFocus()
@@ -1253,8 +1253,9 @@ fun HorizontalVideoRow(
                         listState.scrollToItem(0)
                     } catch (_: Exception) {}
                 }
-                if (firstItemFocusRequester != null || shimmerHadFocus || hasFocus) {
-                    shimmerHadFocus = false
+                val wasShimmerFocused = shimmerHadFocus
+                shimmerHadFocus = false
+                if (!hasFocus && (wasShimmerFocused || (firstItemFocusRequester != null && viewModel?.hasUserBrowsed != true))) {
                     delay(50)
                     try {
                         (firstItemFocusRequester ?: rowFirstItemFocusRequester).requestFocus()
@@ -1307,15 +1308,28 @@ fun HorizontalVideoRow(
         modifier = modifier
             .focusGroup()
             .focusProperties {
-                enter = {
-                    if (viewModel?.shouldRestoreFocusOnResume == true && targetRestoreId != null) {
-                        FocusRequester.Default
-                    } else if (viewModel?.hasUserBrowsed == true && hasUserScrolled) {
-                        FocusRequester.Default
-                    } else if (viewModel?.hasUserBrowsed != true || !hasUserScrolled) {
-                        firstItemFocusRequester ?: rowFirstItemFocusRequester
-                    } else {
-                        FocusRequester.Default
+                enter = { direction ->
+                    when (direction) {
+                        FocusDirection.Up, FocusDirection.Down -> {
+                            // Preserve horizontal column position when navigating vertically between rows
+                            FocusRequester.Default
+                        }
+                        FocusDirection.Right -> {
+                            if (viewModel?.shouldRestoreFocusOnResume == true && targetRestoreId != null) {
+                                FocusRequester.Default
+                            } else {
+                                firstItemFocusRequester ?: rowFirstItemFocusRequester
+                            }
+                        }
+                        else -> {
+                            if (viewModel?.shouldRestoreFocusOnResume == true && targetRestoreId != null) {
+                                FocusRequester.Default
+                            } else if (viewModel?.hasUserBrowsed != true && !hasUserScrolled) {
+                                firstItemFocusRequester ?: rowFirstItemFocusRequester
+                            } else {
+                                FocusRequester.Default
+                            }
+                        }
                     }
                 }
                 exit = { direction ->
@@ -1368,11 +1382,6 @@ fun HorizontalVideoRow(
                         .width((if (isRealTV) 140 * thumbnailScale else if (isTV) 130 * thumbnailScale else 165f).dp)
                         .height((if (isRealTV) 210 * thumbnailScale else if (isTV) 195 * thumbnailScale else 245f).dp)
                         .then(if (shimmerRequester != null) Modifier.focusRequester(shimmerRequester) else Modifier)
-                        .focusProperties {
-                            if (rowIndex == 0 && isRealTV) {
-                                up = FocusRequester.Cancel
-                            }
-                        }
                         .onFocusChanged { 
                             isShimmerFocused = it.isFocused 
                             if (it.isFocused) shimmerHadFocus = true
@@ -1384,7 +1393,7 @@ fun HorizontalVideoRow(
                         )
                         .clip(RoundedCornerShape(12.dp))
                         .shimmerEffect()
-                        .focusable(enabled = (shimmerIndex == 0))
+                        .focusable(enabled = true)
                 )
             }
         } else {
@@ -1421,8 +1430,8 @@ fun HorizontalVideoRow(
                     LaunchedEffect(isTargetRestorationItem) {
                         if (isTargetRestorationItem) {
                             var focused = false
-                            for (attempt in 1..5) {
-                                delay(60L * attempt)
+                            for (attempt in 1..10) {
+                                delay(50L * attempt)
                                 try {
                                     itemFocusRequester.requestFocus()
                                     focused = true
@@ -1491,8 +1500,8 @@ fun HorizontalVideoRow(
                     modifier = Modifier
                         .then(if (effectiveFocusRequester != null) Modifier.focusRequester(effectiveFocusRequester) else Modifier)
                         .focusProperties {
-                            if (rowIndex == 0 && isRealTV) {
-                                up = FocusRequester.Cancel
+                            if (isLastRow && isRealTV) {
+                                down = FocusRequester.Cancel
                             }
                         }
                 ) {
@@ -2778,6 +2787,7 @@ fun SearchEmptyState(
 
 
 
+@OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun CategoryPillBar(
     pills: List<Pair<String, String>>,
@@ -2812,6 +2822,11 @@ fun CategoryPillBar(
                 modifier = Modifier
                     .scale(scale)
                     .onFocusChanged { isFocused = it.isFocused }
+                    .focusProperties {
+                        if (isTV) {
+                            up = FocusRequester.Cancel
+                        }
+                    }
                     .focusable()
                     .clickable { onPillSelected(id) }
             ) {
