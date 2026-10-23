@@ -79,6 +79,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.duta.movie.LocalPipMode
 import com.duta.movie.util.DeviceUtils
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import java.io.ByteArrayInputStream
 import java.net.URLEncoder
 
@@ -313,32 +314,58 @@ private const val YOUTUBE_AD_NUKER_SCRIPT_PART1 = """
                         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9) !important;
                     }
 
-                    /* Hide sticky preview/mini-player container when browsing feed or search so it never covers adjacent cards */
-                    ytm-app:not(:has(ytm-watch)) #player-container-id,
-                    ytm-app:not(:has(ytm-watch)) #player,
-                    body:not(:has(ytm-watch)) #player-container-id,
-                    body:not(:has(ytm-watch)) .player-container {
-                        display: none !important;
+                    /* Feed & Search: Move mini-player offscreen with zero size so it never blocks cards, without destroying the rendering surface */
+                    html.duta-tv-mode-feed #player-container-id,
+                    html.duta-tv-mode-feed #player.sticky-player,
+                    html.duta-tv-mode-search #player-container-id,
+                    html.duta-tv-mode-search #player.sticky-player {
+                        position: absolute !important;
+                        top: -9999px !important;
+                        left: -9999px !important;
+                        width: 1px !important;
+                        height: 1px !important;
+                        opacity: 0 !important;
+                        pointer-events: none !important;
                     }
 
-                    /* Authentic 16:9 TV Player for standard Watch videos (fills container properly without 9:16 squeeze) */
+                    /* Authentic 16:9 TV Player for standard Watch videos: ALWAYS VISIBLE, 100% width/height */
+                    html.duta-tv-mode-watch #player-container-id,
+                    html.duta-tv-mode-watch #player,
+                    html.duta-tv-mode-watch .player-container,
+                    html.duta-tv-mode-watch .html5-video-player,
+                    html.duta-tv-mode-watch .html5-video-container,
                     ytm-watch,
                     ytm-watch #player-container-id,
                     ytm-watch #player,
                     ytm-watch .html5-video-player {
+                        display: block !important;
+                        visibility: visible !important;
+                        opacity: 1 !important;
                         width: 100% !important;
                         height: 100% !important;
                         max-height: 100vh !important;
+                        position: relative !important;
+                        top: 0 !important;
+                        left: 0 !important;
+                        z-index: 10 !important;
                         background-color: #000000 !important;
                     }
+                    html.duta-tv-mode-watch .html5-video-container,
                     ytm-watch .html5-video-container {
                         width: 100% !important;
                         height: 100% !important;
                     }
-                    ytm-watch video,
-                    #player video,
-                    .html5-video-player:not(.shorts-video-player) video {
+                    html.duta-tv-mode-watch video,
+                    html.duta-tv-mode-watch .video-stream,
+                    html.duta-tv-mode-watch .html5-main-video,
+                    ytm-watch video {
+                        display: block !important;
+                        visibility: visible !important;
+                        opacity: 1 !important;
                         position: relative !important;
+                        top: 0 !important;
+                        left: 0 !important;
+                        right: 0 !important;
                         width: 100% !important;
                         height: 100% !important;
                         max-width: 100% !important;
@@ -347,6 +374,53 @@ private const val YOUTUBE_AD_NUKER_SCRIPT_PART1 = """
                         margin: 0 !important;
                         border-radius: 0 !important;
                         box-shadow: none !important;
+                        z-index: 11 !important;
+                        background-color: transparent !important;
+                    }
+
+                    /* Real YouTube TV Shorts: ALWAYS VISIBLE, centered 9:16 vertical player */
+                    html.duta-tv-mode-shorts #player-container-id,
+                    html.duta-tv-mode-shorts #player,
+                    html.duta-tv-mode-shorts .player-container,
+                    html.duta-tv-mode-shorts ytm-shorts,
+                    html.duta-tv-mode-shorts ytm-shorts-player-container,
+                    html.duta-tv-mode-shorts .shorts-player-container,
+                    html.duta-tv-mode-shorts #player-shorts-container {
+                        display: flex !important;
+                        visibility: visible !important;
+                        opacity: 1 !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                        width: 100% !important;
+                        height: 100% !important;
+                        background-color: #000000 !important;
+                        position: relative !important;
+                        top: 0 !important;
+                        left: 0 !important;
+                        z-index: 10 !important;
+                    }
+                    html.duta-tv-mode-shorts video,
+                    html.duta-tv-mode-shorts .video-stream,
+                    html.duta-tv-mode-shorts .html5-main-video,
+                    html.duta-tv-mode-shorts .shorts-video-player video {
+                        display: block !important;
+                        visibility: visible !important;
+                        opacity: 1 !important;
+                        position: relative !important;
+                        top: 0 !important;
+                        left: 0 !important;
+                        right: 0 !important;
+                        bottom: 0 !important;
+                        margin: 0 auto !important;
+                        max-width: calc(100vh * 9 / 16) !important;
+                        width: auto !important;
+                        height: 100% !important;
+                        max-height: 100vh !important;
+                        object-fit: contain !important;
+                        border-radius: 12px !important;
+                        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9) !important;
+                        z-index: 11 !important;
+                        background-color: transparent !important;
                     }
 
                     /* Subtitles & Captions: Centered over 9:16 video card */
@@ -987,8 +1061,80 @@ private const val YOUTUBE_AD_NUKER_SCRIPT_PART2 = """
             }
         }
 
+        function updateDutaTvPageMode() {
+            try {
+                var path = location.pathname;
+                var isWatch = path.indexOf('/watch') !== -1;
+                var isShorts = path.indexOf('/shorts') !== -1 || path.indexOf('/reel') !== -1;
+                var isSearch = path.indexOf('/results') !== -1;
+                var isFeed = !isWatch && !isShorts && !isSearch;
+
+                var root = document.documentElement;
+                if (root) {
+                    root.classList.toggle('duta-tv-mode-watch', isWatch);
+                    root.classList.toggle('duta-tv-mode-shorts', isShorts);
+                    root.classList.toggle('duta-tv-mode-search', isSearch);
+                    root.classList.toggle('duta-tv-mode-feed', isFeed);
+                }
+
+                var pc = document.getElementById('player-container-id');
+                var p = document.getElementById('player');
+                var v = document.querySelector('video');
+
+                if (isWatch || isShorts) {
+                    if (pc) {
+                        pc.style.removeProperty('display');
+                        pc.style.removeProperty('top');
+                        pc.style.removeProperty('left');
+                        pc.style.removeProperty('width');
+                        pc.style.removeProperty('height');
+                        pc.style.removeProperty('opacity');
+                        pc.style.removeProperty('pointer-events');
+                        pc.style.setProperty('display', 'block', 'important');
+                        pc.style.setProperty('visibility', 'visible', 'important');
+                        pc.style.setProperty('opacity', '1', 'important');
+                    }
+                    if (p) {
+                        p.style.removeProperty('display');
+                        p.style.removeProperty('top');
+                        p.style.removeProperty('left');
+                        p.style.setProperty('display', 'block', 'important');
+                        p.style.setProperty('visibility', 'visible', 'important');
+                    }
+                    if (v) {
+                        v.style.removeProperty('display');
+                        v.style.setProperty('display', 'block', 'important');
+                        v.style.setProperty('visibility', 'visible', 'important');
+                        v.style.setProperty('opacity', '1', 'important');
+                        v.style.setProperty('left', '0', 'important');
+                        v.style.setProperty('right', '0', 'important');
+                        if (v.paused && !isRegularVideoAdActive()) {
+                            try { v.play(); } catch(e){}
+                        }
+                    }
+                } else {
+                    if (pc && !pc.classList.contains('duta-playing')) {
+                        pc.style.removeProperty('display');
+                        pc.style.setProperty('position', 'absolute', 'important');
+                        pc.style.setProperty('top', '-9999px', 'important');
+                        pc.style.setProperty('left', '-9999px', 'important');
+                        pc.style.setProperty('width', '1px', 'important');
+                        pc.style.setProperty('height', '1px', 'important');
+                        pc.style.setProperty('opacity', '0', 'important');
+                        pc.style.setProperty('pointer-events', 'none', 'important');
+                    }
+                    var vFeed = document.querySelector('video');
+                    if (vFeed && !vFeed.paused) {
+                        try { vFeed.pause(); } catch(e){}
+                    }
+                }
+            } catch(e) {}
+        }
+        window.updateDutaTvPageMode = updateDutaTvPageMode;
+
         function processAdsAndPlayback() {
             try {
+                updateDutaTvPageMode();
                 ensureTvFocusableElements();
                 checkVideoMetadata();
 
@@ -1628,6 +1774,7 @@ fun YouTubeScreen(
     val isRealTV = remember { DeviceUtils.isTvDevice(context) }
     val isInPip = LocalPipMode.current
     val myList by viewModel.myList.collectAsStateWithLifecycle()
+    val coroutineScope = rememberCoroutineScope()
 
     val webViewFocusRequester = remember { FocusRequester() }
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
@@ -1716,6 +1863,11 @@ fun YouTubeScreen(
     var selectedCategoryTitle by remember { mutableStateOf("All") }
     val searchFocusRequester = remember { FocusRequester() }
     val initialChipFocusRequester = remember { FocusRequester() }
+    val searchButtonFocusRequester = remember { FocusRequester() }
+    val voiceButtonFocusRequester = remember { FocusRequester() }
+    val searchBackFocusRequester = remember { FocusRequester() }
+    val searchSubmitFocusRequester = remember { FocusRequester() }
+    val initialSuggestionFocusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     val focusManager = LocalFocusManager.current
 
@@ -1738,6 +1890,14 @@ fun YouTubeScreen(
             keyboardController?.hide()
             focusManager.clearFocus()
             isSearchActive = false
+            if (isRealTV) {
+                webViewInstance?.requestFocus()
+                coroutineScope.launch {
+                    delay(700)
+                    webViewInstance?.evaluateJavascript("if (window.dutaTvNav) window.dutaTvNav.focusFirst();", null)
+                    webViewFocusRequester.requestFocus()
+                }
+            }
         }
     }
 
@@ -1992,15 +2152,37 @@ fun YouTubeScreen(
                                         icon = Icons.AutoMirrored.Filled.ArrowBack,
                                         contentDescription = "Back",
                                         isTV = isRealTV,
+                                        modifier = Modifier
+                                            .focusRequester(searchBackFocusRequester)
+                                            .focusProperties {
+                                                right = searchFocusRequester
+                                                down = initialSuggestionFocusRequester
+                                            }
+                                            .onKeyEvent { keyEvent ->
+                                                if (keyEvent.type == KeyEventType.KeyDown) {
+                                                    if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                                                        initialSuggestionFocusRequester.requestFocus()
+                                                        return@onKeyEvent true
+                                                    } else if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_RIGHT) {
+                                                        searchFocusRequester.requestFocus()
+                                                        return@onKeyEvent true
+                                                    }
+                                                }
+                                                false
+                                            },
                                         onClick = {
                                             isSearchActive = false
                                             keyboardController?.hide()
                                             focusManager.clearFocus()
+                                            if (isRealTV) {
+                                                try { searchButtonFocusRequester.requestFocus() } catch (_: Exception) {}
+                                            }
                                         }
                                     )
 
                                     Spacer(modifier = Modifier.width(6.dp))
 
+                                    var isSearchInputFocused by remember { mutableStateOf(false) }
                                     Box(
                                         modifier = Modifier
                                             .weight(1f)
@@ -2008,8 +2190,8 @@ fun YouTubeScreen(
                                             .clip(RoundedCornerShape(24.dp))
                                             .background(Color(0xFF272727))
                                             .border(
-                                                width = 1.dp,
-                                                color = Color(0xFF3F3F3F),
+                                                width = if (isSearchInputFocused) 2.dp else 1.dp,
+                                                color = if (isSearchInputFocused) Color(0xFFFF0000) else Color(0xFF3F3F3F),
                                                 shape = RoundedCornerShape(24.dp)
                                             )
                                             .padding(horizontal = 12.dp),
@@ -2024,7 +2206,34 @@ fun YouTubeScreen(
                                                 onValueChange = { searchQuery = it },
                                                 modifier = Modifier
                                                     .weight(1f)
-                                                    .focusRequester(searchFocusRequester),
+                                                    .focusRequester(searchFocusRequester)
+                                                    .onFocusChanged { isSearchInputFocused = it.isFocused }
+                                                    .focusProperties {
+                                                        left = searchBackFocusRequester
+                                                        right = searchSubmitFocusRequester
+                                                        down = initialSuggestionFocusRequester
+                                                    }
+                                                    .onKeyEvent { keyEvent ->
+                                                        if (keyEvent.type == KeyEventType.KeyDown) {
+                                                            when (keyEvent.nativeKeyEvent.keyCode) {
+                                                                KeyEvent.KEYCODE_DPAD_DOWN -> {
+                                                                    initialSuggestionFocusRequester.requestFocus()
+                                                                    return@onKeyEvent true
+                                                                }
+                                                                KeyEvent.KEYCODE_DPAD_LEFT -> {
+                                                                    if (searchQuery.isEmpty()) {
+                                                                        searchBackFocusRequester.requestFocus()
+                                                                        return@onKeyEvent true
+                                                                    }
+                                                                }
+                                                                KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                                                                    searchSubmitFocusRequester.requestFocus()
+                                                                    return@onKeyEvent true
+                                                                }
+                                                            }
+                                                        }
+                                                        false
+                                                    },
                                                 singleLine = true,
                                                 textStyle = TextStyle(
                                                     color = Color.White,
@@ -2068,6 +2277,25 @@ fun YouTubeScreen(
                                         icon = Icons.Default.Search,
                                         contentDescription = "Search",
                                         isTV = isRealTV,
+                                        modifier = Modifier
+                                            .focusRequester(searchSubmitFocusRequester)
+                                            .focusProperties {
+                                                left = searchFocusRequester
+                                                right = voiceButtonFocusRequester
+                                                down = initialSuggestionFocusRequester
+                                            }
+                                            .onKeyEvent { keyEvent ->
+                                                if (keyEvent.type == KeyEventType.KeyDown) {
+                                                    if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                                                        searchFocusRequester.requestFocus()
+                                                        return@onKeyEvent true
+                                                    } else if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                                                        initialSuggestionFocusRequester.requestFocus()
+                                                        return@onKeyEvent true
+                                                    }
+                                                }
+                                                false
+                                            },
                                         tint = if (searchQuery.isNotBlank()) Color(0xFFFF0000) else Color.White,
                                         onClick = { executeSearch(searchQuery) }
                                     )
@@ -2153,12 +2381,50 @@ fun YouTubeScreen(
                                             icon = Icons.Default.Search,
                                             contentDescription = "Search",
                                             isTV = isRealTV,
+                                            modifier = Modifier
+                                                .focusRequester(searchButtonFocusRequester)
+                                                .focusProperties {
+                                                    down = initialChipFocusRequester
+                                                    right = voiceButtonFocusRequester
+                                                }
+                                                .onKeyEvent { keyEvent ->
+                                                    if (keyEvent.type == KeyEventType.KeyDown) {
+                                                        if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                                                            initialChipFocusRequester.requestFocus()
+                                                            return@onKeyEvent true
+                                                        } else if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                                                            onNavigateToSidebar()
+                                                            return@onKeyEvent true
+                                                        }
+                                                    }
+                                                    false
+                                                },
                                             onClick = { isSearchActive = true }
                                         )
 
                                         Spacer(modifier = Modifier.width(2.dp))
 
-                                        VoiceSearchButton(isTV = isRealTV) {
+                                        VoiceSearchButton(
+                                            isTV = isRealTV,
+                                            modifier = Modifier
+                                                .focusRequester(voiceButtonFocusRequester)
+                                                .focusProperties {
+                                                    left = searchButtonFocusRequester
+                                                    down = initialChipFocusRequester
+                                                }
+                                                .onKeyEvent { keyEvent ->
+                                                    if (keyEvent.type == KeyEventType.KeyDown) {
+                                                        if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT) {
+                                                            searchButtonFocusRequester.requestFocus()
+                                                            return@onKeyEvent true
+                                                        } else if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                                                            initialChipFocusRequester.requestFocus()
+                                                            return@onKeyEvent true
+                                                        }
+                                                    }
+                                                    false
+                                                }
+                                        ) {
                                             try {
                                                 val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
                                                     putExtra(
@@ -2390,19 +2656,23 @@ fun YouTubeScreen(
                                         title = "🔍 $term",
                                         isSelected = false,
                                         isTV = isRealTV,
-                                        modifier = Modifier
+                                        modifier = (if (index == 0) Modifier.focusRequester(initialSuggestionFocusRequester) else Modifier)
                                             .focusProperties {
+                                                up = searchFocusRequester
                                                 down = webViewFocusRequester
                                             }
                                             .onKeyEvent { keyEvent ->
                                                 if (keyEvent.type == KeyEventType.KeyDown) {
-                                                    if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                                                    if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                                                        searchFocusRequester.requestFocus()
+                                                        return@onKeyEvent true
+                                                    } else if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
                                                         webViewInstance?.requestFocus()
                                                         webViewInstance?.evaluateJavascript("if (window.dutaTvNav) window.dutaTvNav.focusFirst();", null)
                                                         webViewFocusRequester.requestFocus()
                                                         return@onKeyEvent true
                                                     } else if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && index == 0 && isRealTV) {
-                                                        onNavigateToSidebar()
+                                                        searchBackFocusRequester.requestFocus()
                                                         return@onKeyEvent true
                                                     }
                                                 }
@@ -2422,11 +2692,15 @@ fun YouTubeScreen(
                                         isTV = isRealTV,
                                         modifier = (if (index == 0) Modifier.focusRequester(initialChipFocusRequester) else Modifier)
                                             .focusProperties {
+                                                up = searchButtonFocusRequester
                                                 down = webViewFocusRequester
                                             }
                                             .onKeyEvent { keyEvent ->
                                                 if (keyEvent.type == KeyEventType.KeyDown) {
-                                                    if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                                                    if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_UP) {
+                                                        searchButtonFocusRequester.requestFocus()
+                                                        return@onKeyEvent true
+                                                    } else if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
                                                         webViewInstance?.requestFocus()
                                                         webViewInstance?.evaluateJavascript("if (window.dutaTvNav) window.dutaTvNav.focusFirst();", null)
                                                         webViewFocusRequester.requestFocus()
@@ -2961,6 +3235,7 @@ private fun HeaderIconButton(
     icon: ImageVector,
     contentDescription: String,
     isTV: Boolean,
+    modifier: Modifier = Modifier,
     enabled: Boolean = true,
     tint: Color = Color.White,
     onClick: () -> Unit
@@ -2968,7 +3243,7 @@ private fun HeaderIconButton(
     var isFocused by remember { mutableStateOf(false) }
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(if (isTV) 42.dp else 40.dp)
             .clip(CircleShape)
             .background(
@@ -3036,12 +3311,13 @@ private fun HeaderChipButton(
 @Composable
 private fun VoiceSearchButton(
     isTV: Boolean,
+    modifier: Modifier = Modifier,
     onClick: () -> Unit
 ) {
     var isFocused by remember { mutableStateOf(false) }
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .size(if (isTV) 42.dp else 40.dp)
             .clip(CircleShape)
             .background(
@@ -3457,7 +3733,7 @@ private fun createYouTubeWebView(
                     "if (window.DutaAudioEngine) window.DutaAudioEngine.setPreset('$audioPreset');",
                     null
                 )
-                view?.evaluateJavascript("if (window.processDutaAds) window.processDutaAds();", null)
+                view?.evaluateJavascript("if (window.updateDutaTvPageMode) window.updateDutaTvPageMode(); if (window.processDutaAds) window.processDutaAds();", null)
             }
         }
 
