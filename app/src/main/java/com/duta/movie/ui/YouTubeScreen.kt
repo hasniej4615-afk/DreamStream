@@ -183,8 +183,18 @@ private const val YOUTUBE_AD_NUKER_SCRIPT_PART1 = """
 
                 /* Real YouTube TV 3-4 Column Grid for Feed & Search */
                 @media screen and (min-width: 600px) {
+                    /* Eliminate duplicate/empty header placeholder */
+                    .rich-grid-renderer-header,
+                    .rich-grid-sticky-header {
+                        display: none !important;
+                    }
+                    ytm-rich-grid-renderer {
+                        display: block !important;
+                        padding: 0 !important;
+                        margin: 0 !important;
+                        width: 100% !important;
+                    }
                     ytm-section-list-renderer,
-                    ytm-rich-grid-renderer,
                     .rich-grid-renderer-contents,
                     .section-list-renderer-contents,
                     lazy-list {
@@ -193,6 +203,28 @@ private const val YOUTUBE_AD_NUKER_SCRIPT_PART1 = """
                         gap: 16px !important;
                         padding: 12px 16px 80px 16px !important;
                         box-sizing: border-box !important;
+                        width: 100% !important;
+                    }
+
+                    /* Suppress empty/ad container slots in grid so they never leave blank gaps */
+                    ytm-rich-item-renderer:has(ad-slot-renderer),
+                    ytm-rich-item-renderer:has(ytm-promoted-video-renderer),
+                    ytm-rich-item-renderer:has(ytm-promoted-sparkles-web-renderer),
+                    ytm-rich-item-renderer:has(ytm-compact-promoted-video-renderer),
+                    ytm-rich-item-renderer:empty {
+                        display: none !important;
+                    }
+
+                    /* Multi-column shelves (Shorts shelf, community posts) span full width */
+                    ytm-rich-section-renderer {
+                        grid-column: 1 / -1 !important;
+                        width: 100% !important;
+                        margin: 12px 0 !important;
+                    }
+                    ytm-reel-shelf-renderer,
+                    ytm-shorts-carousel {
+                        width: 100% !important;
+                        display: block !important;
                     }
 
                     ytm-video-with-context-renderer,
@@ -260,14 +292,12 @@ private const val YOUTUBE_AD_NUKER_SCRIPT_PART1 = """
                         position: relative !important;
                     }
 
-                    /* Keep entire vertical 9:16 video visible: NEVER CROP TOP OR BOTTOM */
+                    /* Keep entire vertical 9:16 video visible ONLY for Shorts: NEVER CROP TOP OR BOTTOM */
                     ytm-shorts video,
                     ytm-shorts-player-container video,
                     ytm-reel-item-renderer video,
                     ytm-shorts-carousel-video-renderer video,
-                    .shorts-player-container video,
-                    video.video-stream,
-                    .video-stream.html5-main-video {
+                    .shorts-player-container video {
                         position: relative !important;
                         left: 0 !important;
                         right: 0 !important;
@@ -281,6 +311,42 @@ private const val YOUTUBE_AD_NUKER_SCRIPT_PART1 = """
                         object-fit: contain !important;
                         border-radius: 14px !important;
                         box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9) !important;
+                    }
+
+                    /* Hide sticky preview/mini-player container when browsing feed or search so it never covers adjacent cards */
+                    ytm-app:not(:has(ytm-watch)) #player-container-id,
+                    ytm-app:not(:has(ytm-watch)) #player,
+                    body:not(:has(ytm-watch)) #player-container-id,
+                    body:not(:has(ytm-watch)) .player-container {
+                        display: none !important;
+                    }
+
+                    /* Authentic 16:9 TV Player for standard Watch videos (fills container properly without 9:16 squeeze) */
+                    ytm-watch,
+                    ytm-watch #player-container-id,
+                    ytm-watch #player,
+                    ytm-watch .html5-video-player {
+                        width: 100% !important;
+                        height: 100% !important;
+                        max-height: 100vh !important;
+                        background-color: #000000 !important;
+                    }
+                    ytm-watch .html5-video-container {
+                        width: 100% !important;
+                        height: 100% !important;
+                    }
+                    ytm-watch video,
+                    #player video,
+                    .html5-video-player:not(.shorts-video-player) video {
+                        position: relative !important;
+                        width: 100% !important;
+                        height: 100% !important;
+                        max-width: 100% !important;
+                        max-height: 100% !important;
+                        object-fit: contain !important;
+                        margin: 0 !important;
+                        border-radius: 0 !important;
+                        box-shadow: none !important;
                     }
 
                     /* Subtitles & Captions: Centered over 9:16 video card */
@@ -1046,6 +1112,13 @@ private const val YOUTUBE_AD_NUKER_SCRIPT_PART2 = """
                         }
                         if (video && video.paused && !adCurrentlyActive) {
                             try { video.play(); } catch(e){}
+                        }
+                        var unmuteBtn = document.querySelector('.ytp-unmute-inner, .ytp-unmute, [aria-label*="unmute" i], [aria-label*="suara" i]');
+                        if (unmuteBtn && (unmuteBtn.offsetParent !== null || unmuteBtn.getClientRects().length > 0)) {
+                            try { unmuteBtn.click(); } catch(e){}
+                        }
+                        if (video && video.muted && !window.__dutaMutedByAd) {
+                            video.muted = false;
                         }
                         if (video && !video.paused) {
                             window.__lastAutoPlayedUrl = location.href;
@@ -1877,10 +1950,12 @@ fun YouTubeScreen(
             .background(Color(0xFF0F0F0F))
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
-            // ── AUTHENTIC YOUTUBE HEADER & FILTER BAR (Hidden in PiP & Fullscreen Landscape) ──
+            // ── AUTHENTIC YOUTUBE HEADER & FILTER BAR (Hidden in PiP & Fullscreen Landscape, and in TV Shorts & Watch) ──
             val isShorts = remember(currentUrl) { currentUrl.contains("/shorts") || currentUrl.contains("/reel") }
-            LaunchedEffect(isShorts) {
-                if (isShorts && isRealTV) {
+            val isWatch = remember(currentUrl) { currentUrl.contains("/watch") }
+            val hideHeaderOnTV = isRealTV && (isShorts || isWatch)
+            LaunchedEffect(isShorts, isWatch) {
+                if (hideHeaderOnTV) {
                     kotlinx.coroutines.delay(200)
                     webViewInstance?.requestFocus()
                     try {
@@ -1888,7 +1963,7 @@ fun YouTubeScreen(
                     } catch (_: Exception) {}
                 }
             }
-            if (customView == null && !isInPip && !isBlackScreenMode && !isManualFullScreenLandscape && (!isShorts || !isRealTV)) {
+            if (customView == null && !isInPip && !isBlackScreenMode && !isManualFullScreenLandscape && !hideHeaderOnTV) {
                 Surface(
                     color = Color(0xFF0F0F0F),
                     modifier = Modifier
