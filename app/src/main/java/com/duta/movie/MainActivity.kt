@@ -609,7 +609,12 @@ class MainActivity : AppCompatActivity() {
                                     YouTubeScreen(
                                         initialUrl = dest.initialUrl,
                                         viewModel = videoViewModel,
-                                        onBackClick = { navController.popBackStack() }
+                                        onBackClick = { navController.popBackStack() },
+                                        onNavigateToSidebar = {
+                                            if (isTVLayout) {
+                                                youtubeTabFocusRequester.requestFocus()
+                                            }
+                                        }
                                     )
                                 }
                                 composable<Destination.MyList> {

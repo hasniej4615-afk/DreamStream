@@ -56,6 +56,10 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import android.os.Handler
+import android.os.Looper
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.input.key.*
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -109,7 +113,7 @@ private val BLOCKED_AD_PATHS = listOf(
  * Safely removes ad banners, auto-skips video ads, and integrates with Duta bridge
  * without interfering with YouTube's core video decryption or media pipeline.
  */
-private const val YOUTUBE_AD_NUKER_SCRIPT = """
+private const val YOUTUBE_AD_NUKER_SCRIPT_PART1 = """
 (function() {
     try {
         // 1. Inject CSS for ad suppression, TV focus styling, and YouTube dark mode
@@ -117,11 +121,23 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
             var style = document.createElement('style');
             style.id = 'duta-yt-style';
             style.textContent = `
-                /* Hide YouTube Web mobile top header so our native Compose header acts as authentic UI */
+                /* Hide YouTube Web mobile top header & duplicate bottom bar */
                 ytm-mobile-topbar-renderer,
                 header.mobile-topbar-header,
                 .mobile-topbar-header,
-                #header-bar {
+                #header-bar,
+                ytm-pivot-bar-renderer,
+                .pivot-bar,
+                ytm-pivot-bar-item-renderer,
+                ytm-feed-filter-chip-bar-renderer,
+                .feed-filter-chip-bar-renderer,
+                ytm-shorts-header-renderer,
+                .shorts-header-renderer,
+                ytm-open-app-button-renderer,
+                .mobile-topbar-header-sign-in-button,
+                ytm-mealbar-promo-renderer,
+                ytm-upsell-dialog-renderer,
+                .upsell-dialog-renderer {
                     display: none !important;
                 }
 
@@ -135,12 +151,6 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 ytm-promoted-sparkles-web-renderer,
                 ytm-promoted-sparkles-text-search-web-renderer,
                 ytm-statement-banner-renderer,
-                ytm-mealbar-promo-renderer,
-                ytm-upsell-dialog-renderer,
-                .upsell-dialog-renderer,
-                ytm-open-app-button-renderer,
-                .mobile-topbar-header-sign-in-button,
-                .ad-container, #player-ads, .player-ads,
                 ytm-compact-promoted-video-renderer,
                 ytm-promoted-video-renderer,
                 ytm-in-feed-ad-layout-renderer,
@@ -158,22 +168,10 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 html, body, #app {
                     background-color: #0F0F0F !important;
                     color: #FFFFFF !important;
+                    overflow-x: hidden !important;
                 }
 
-                /* TV D-Pad Focus Outline for remote navigation */
-                *:focus, [tabindex]:focus, a:focus, button:focus,
-                ytm-video-with-context-renderer:focus,
-                ytm-compact-video-renderer:focus,
-                ytm-reel-item-renderer:focus,
-                ytm-shorts-carousel-video-renderer:focus,
-                ytm-item-section-renderer:focus {
-                    outline: 3px solid #FF0000 !important;
-                    outline-offset: 3px !important;
-                    box-shadow: 0 0 20px rgba(255, 0, 0, 0.85) !important;
-                    border-radius: 12px !important;
-                }
-
-                /* Keep video player unaffected by focus outlines or transforms and enforce authentic dark background */
+                /* Keep video player unaffected by focus outlines or transforms */
                 video:focus, #movie_player:focus, .html5-video-player:focus, .html5-main-video:focus {
                     outline: none !important;
                     box-shadow: none !important;
@@ -182,9 +180,173 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 .html5-video-player, .html5-video-container {
                     background-color: #0F0F0F !important;
                 }
+
+                /* Real YouTube TV 3-4 Column Grid for Feed & Search */
+                @media screen and (min-width: 600px) {
+                    ytm-section-list-renderer,
+                    ytm-rich-grid-renderer,
+                    .rich-grid-renderer-contents,
+                    .section-list-renderer-contents,
+                    lazy-list {
+                        display: grid !important;
+                        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)) !important;
+                        gap: 16px !important;
+                        padding: 12px 16px 80px 16px !important;
+                        box-sizing: border-box !important;
+                    }
+
+                    ytm-video-with-context-renderer,
+                    ytm-compact-video-renderer,
+                    ytm-rich-item-renderer {
+                        display: flex !important;
+                        flex-direction: column !important;
+                        margin: 0 !important;
+                        padding: 8px !important;
+                        background-color: #1A1A1A !important;
+                        border-radius: 12px !important;
+                        transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), box-shadow 0.2s ease, outline 0.15s ease !important;
+                        box-sizing: border-box !important;
+                        cursor: pointer !important;
+                        position: relative !important;
+                    }
+
+                    /* Thumbnail styling */
+                    ytm-media-item .media-item-thumbnail-container,
+                    .video-thumbnail-container-compact,
+                    .video-thumbnail-container-large,
+                    .video-thumbnail-container-vertical {
+                        border-radius: 10px !important;
+                        overflow: hidden !important;
+                        width: 100% !important;
+                        aspect-ratio: 16 / 9 !important;
+                        background-color: #212121 !important;
+                    }
+
+                    /* TV D-Pad Focused Highlight */
+                    .duta-tv-focused,
+                    ytm-video-with-context-renderer.duta-tv-focused,
+                    ytm-compact-video-renderer.duta-tv-focused,
+                    ytm-rich-item-renderer.duta-tv-focused,
+                    ytm-reel-item-renderer.duta-tv-focused,
+                    ytm-shorts-carousel-video-renderer.duta-tv-focused {
+                        outline: 3px solid #FF0000 !important;
+                        outline-offset: 3px !important;
+                        box-shadow: 0 0 24px rgba(255, 0, 0, 0.75), 0 8px 20px rgba(0,0,0,0.85) !important;
+                        transform: scale(1.05) !important;
+                        z-index: 10 !important;
+                        background-color: #262626 !important;
+                    }
+
+                    /* Real YouTube TV Shorts Experience */
+                    ytm-shorts,
+                    ytm-shorts-carousel,
+                    .shorts-carousel-container {
+                        background-color: #0F0F0F !important;
+                        height: 100vh !important;
+                        width: 100% !important;
+                        overflow: hidden !important;
+                    }
+
+                    ytm-shorts-player-container,
+                    ytm-reel-item-renderer,
+                    ytm-shorts-carousel-video-renderer,
+                    .shorts-player-container {
+                        display: flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                        width: 100% !important;
+                        height: 100% !important;
+                        background-color: #0F0F0F !important;
+                        position: relative !important;
+                    }
+
+                    /* Keep entire vertical 9:16 video visible: NEVER CROP TOP OR BOTTOM */
+                    ytm-shorts video,
+                    ytm-shorts-player-container video,
+                    ytm-reel-item-renderer video,
+                    ytm-shorts-carousel-video-renderer video,
+                    .shorts-player-container video,
+                    video.video-stream,
+                    .video-stream.html5-main-video {
+                        position: relative !important;
+                        left: 0 !important;
+                        right: 0 !important;
+                        top: 0 !important;
+                        bottom: 0 !important;
+                        margin: 0 auto !important;
+                        max-width: calc(100vh * 9 / 16) !important;
+                        width: auto !important;
+                        height: 100% !important;
+                        max-height: 100vh !important;
+                        object-fit: contain !important;
+                        border-radius: 14px !important;
+                        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.9) !important;
+                    }
+
+                    /* Subtitles & Captions: Centered over 9:16 video card */
+                    #ytp-caption-window-container,
+                    .ytp-caption-window-container {
+                        position: absolute !important;
+                        top: 0 !important;
+                        left: 50% !important;
+                        transform: translateX(-50%) !important;
+                        width: min(calc(100vh * 9 / 16), 100vw) !important;
+                        height: 100% !important;
+                        pointer-events: none !important;
+                    }
+                    .caption-window {
+                        left: 50% !important;
+                        transform: translateX(-50%) !important;
+                    }
+
+                    /* Overlay & Metadata: Centered and anchored around the 9:16 video card */
+                    yt-reel-player-overlay-view-model {
+                        pointer-events: none !important;
+                    }
+                    .ytReelPlayerOverlayViewModelMetadataContainer {
+                        pointer-events: auto !important;
+                        max-width: calc(100vh * 9 / 16 + 180px) !important;
+                        margin: 0 auto !important;
+                        box-sizing: border-box !important;
+                    }
+                    .ytReelPlayerOverlayViewModelMetadataContainerMetapanel {
+                        max-width: calc(100vh * 9 / 16 - 60px) !important;
+                        text-shadow: 0 1px 4px rgba(0, 0, 0, 0.85) !important;
+                    }
+
+                    /* Channel info and title: anchored at bottom of 9:16 card */
+                    .shorts-video-metadata-container,
+                    ytm-shorts-video-metadata-renderer,
+                    .reel-player-overlay-actions,
+                    .ytm-shorts-video-metadata-renderer {
+                        position: absolute !important;
+                        left: 50% !important;
+                        transform: translateX(-50%) !important;
+                        width: min(calc(100vh * 9 / 16 - 32px), 520px) !important;
+                        bottom: 24px !important;
+                        z-index: 25 !important;
+                    }
+
+                    /* Action buttons: anchored directly right of the video card */
+                    .shorts-player-action-buttons,
+                    ytm-shorts-action-button-renderer,
+                    .reel-player-action-buttons {
+                        position: absolute !important;
+                        left: calc(50% + (100vh * 9 / 32) + 20px) !important;
+                        right: auto !important;
+                        bottom: 48px !important;
+                        z-index: 25 !important;
+                        display: flex !important;
+                        flex-direction: column !important;
+                        gap: 16px !important;
+                    }
+                }
             `;
             (document.head || document.documentElement).appendChild(style);
         }
+"""
+
+private const val YOUTUBE_AD_NUKER_SCRIPT_PART2 = """
 
         // ── SMOOTH POSTER OVERLAY ENGINE (ELIMINATES ALL BLACK SCREEN VOIDS) ──
         function updatePosterOverlay(forceShow, nextVid) {
@@ -1106,6 +1268,7 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
 
                 function attachVideo(v) {
                     if (!v) return;
+                    if (activePreset === 'NORMAL' || window.__dutaIsTV) return;
                     initContext();
                     resumeContext();
                     if (v.__dutaAudioHooked) return;
@@ -1128,9 +1291,17 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
                 return {
                     init: initContext,
                     setPreset: function(name) {
+                        activePreset = name;
+                        if (activePreset === 'NORMAL' || window.__dutaIsTV) {
+                            return;
+                        }
                         initContext();
                         resumeContext();
                         applyPreset(name, false);
+                        var v = document.querySelector('video');
+                        if (v && !v.__dutaAudioHooked) {
+                            attachVideo(v);
+                        }
                     },
                     getPreset: function() {
                         return activePreset;
@@ -1157,9 +1328,170 @@ private const val YOUTUBE_AD_NUKER_SCRIPT = """
             setInterval(processAdsAndPlayback, 250);
         }
         processAdsAndPlayback();
-    } catch(e) {}
+
+        // ── 5. REAL YOUTUBE FOR TV SPATIAL NAVIGATION ENGINE (dutaTvNav) ──
+        if (!window.dutaTvNav) {
+            window.dutaTvNav = (function() {
+                var currentIndex = 0;
+
+                function getItems() {
+                    var isWatch = location.href.indexOf('/watch') !== -1;
+                    var selector = isWatch
+                        ? 'ytm-video-with-context-renderer, ytm-compact-video-renderer, ytm-item-section-renderer ytm-video-with-context-renderer, a.compact-media-item-image'
+                        : 'ytm-video-with-context-renderer, ytm-compact-video-renderer, ytm-rich-item-renderer, ytm-reel-item-renderer, ytm-shorts-carousel-video-renderer';
+                    
+                    var all = Array.prototype.slice.call(document.querySelectorAll(selector));
+                    return all.filter(function(el) {
+                        var rect = el.getBoundingClientRect();
+                        return rect.width > 20 && rect.height > 20 && el.offsetParent !== null;
+                    });
+                }
+
+                function clearAllFocus() {
+                    var prev = document.querySelectorAll('.duta-tv-focused');
+                    for (var i = 0; i < prev.length; i++) {
+                        prev[i].classList.remove('duta-tv-focused');
+                    }
+                }
+
+                function focusItem(index) {
+                    var items = getItems();
+                    if (items.length === 0) return;
+                    if (index < 0) index = 0;
+                    if (index >= items.length) index = items.length - 1;
+                    currentIndex = index;
+
+                    clearAllFocus();
+                    var target = items[currentIndex];
+                    if (target) {
+                        target.classList.add('duta-tv-focused');
+                        target.setAttribute('tabindex', '0');
+                        try { target.focus({ preventScroll: true }); } catch(e){}
+                        target.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'nearest' });
+                    }
+                }
+
+                function getColumnsCount() {
+                    var items = getItems();
+                    if (items.length <= 1) return 1;
+                    var firstTop = items[0].getBoundingClientRect().top;
+                    var cols = 0;
+                    for (var i = 0; i < items.length && i < 10; i++) {
+                        var top = items[i].getBoundingClientRect().top;
+                        if (Math.abs(top - firstTop) < 30) {
+                            cols++;
+                        } else {
+                            break;
+                        }
+                    }
+                    return Math.max(1, cols);
+                }
+
+                function navigate(direction) {
+                    var items = getItems();
+                    if (items.length === 0) {
+                        if (direction === 'UP') {
+                            if (window.DutaYouTubeBridge && window.DutaYouTubeBridge.onFocusHeader) {
+                                window.DutaYouTubeBridge.onFocusHeader();
+                            }
+                        } else if (direction === 'LEFT') {
+                            if (window.DutaYouTubeBridge && window.DutaYouTubeBridge.onFocusSidebar) {
+                                window.DutaYouTubeBridge.onFocusSidebar();
+                            }
+                        }
+                        return;
+                    }
+
+                    var cols = getColumnsCount();
+                    var step = Math.max(1, cols);
+
+                    switch (direction) {
+                        case 'DOWN':
+                            if (currentIndex + step < items.length) {
+                                focusItem(currentIndex + step);
+                            } else if (currentIndex < items.length - 1) {
+                                focusItem(currentIndex + 1);
+                            } else {
+                                window.scrollBy({ top: 400, behavior: 'smooth' });
+                                setTimeout(function() {
+                                    var newItems = getItems();
+                                    if (newItems.length > items.length) {
+                                        focusItem(items.length);
+                                    }
+                                }, 300);
+                            }
+                            break;
+
+                        case 'UP':
+                            if (currentIndex - step >= 0) {
+                                focusItem(currentIndex - step);
+                            } else if (currentIndex > 0) {
+                                focusItem(0);
+                            } else {
+                                clearAllFocus();
+                                window.scrollTo({ top: 0, behavior: 'smooth' });
+                                if (window.DutaYouTubeBridge && window.DutaYouTubeBridge.onFocusHeader) {
+                                    window.DutaYouTubeBridge.onFocusHeader();
+                                }
+                            }
+                            break;
+
+                        case 'LEFT':
+                            if (currentIndex % cols === 0 || currentIndex === 0) {
+                                if (window.DutaYouTubeBridge && window.DutaYouTubeBridge.onFocusSidebar) {
+                                    window.DutaYouTubeBridge.onFocusSidebar();
+                                }
+                            } else if (currentIndex > 0) {
+                                focusItem(currentIndex - 1);
+                            }
+                            break;
+
+                        case 'RIGHT':
+                            if (currentIndex + 1 < items.length) {
+                                focusItem(currentIndex + 1);
+                            }
+                            break;
+
+                        case 'SELECT':
+                            var target = items[currentIndex];
+                            if (target) {
+                                var link = target.querySelector('a[href*="/watch"], a[href*="/shorts"], a');
+                                if (link && link.href) {
+                                    try {
+                                        var evt = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+                                        link.dispatchEvent(evt);
+                                    } catch(e){}
+                                    location.href = link.href;
+                                } else if (target.getAttribute('href')) {
+                                    location.href = target.getAttribute('href');
+                                } else {
+                                    try {
+                                        var evt2 = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+                                        target.dispatchEvent(evt2);
+                                    } catch(e){}
+                                    target.click();
+                                }
+                            }
+                            break;
+                    }
+                }
+
+                function focusFirst() {
+                    currentIndex = 0;
+                    focusItem(0);
+                }
+
+                return {
+                    navigate: navigate,
+                    focusFirst: focusFirst,
+                    focusItem: focusItem
+                };
+            })();
+        }    } catch(e) {}
 })();
 """
+
+private val YOUTUBE_AD_NUKER_SCRIPT: String get() = YOUTUBE_AD_NUKER_SCRIPT_PART1 + "\n" + YOUTUBE_AD_NUKER_SCRIPT_PART2
 
 data class YouTubeCategory(
     val title: String,
@@ -1205,7 +1537,7 @@ enum class YouTubeAudioPreset(
 
     companion object {
         fun fromId(id: String): YouTubeAudioPreset {
-            return entries.firstOrNull { it.id.equals(id, ignoreCase = true) } ?: SONY_MEGA_BASS
+            return entries.firstOrNull { it.id.equals(id, ignoreCase = true) } ?: NORMAL
         }
     }
 }
@@ -1216,13 +1548,15 @@ fun YouTubeScreen(
     initialUrl: String? = null,
     viewModel: VideoViewModel,
     modifier: Modifier = Modifier,
-    onBackClick: () -> Unit = {}
+    onBackClick: () -> Unit = {},
+    onNavigateToSidebar: () -> Unit = {}
 ) {
     val context = LocalContext.current
     val isRealTV = remember { DeviceUtils.isTvDevice(context) }
     val isInPip = LocalPipMode.current
     val myList by viewModel.myList.collectAsStateWithLifecycle()
 
+    val webViewFocusRequester = remember { FocusRequester() }
     var webViewInstance by remember { mutableStateOf<WebView?>(null) }
     val startUrl = remember { initialUrl ?: YOUTUBE_BASE_URL }
     var currentUrl by remember { mutableStateOf(startUrl) }
@@ -1438,6 +1772,24 @@ fun YouTubeScreen(
             fun onSponsorSkipped(category: String, seconds: Int) {
                 // Silently skip sponsor in background
             }
+
+            @JavascriptInterface
+            fun onFocusHeader() {
+                Handler(Looper.getMainLooper()).post {
+                    try {
+                        initialChipFocusRequester.requestFocus()
+                    } catch (_: Exception) {}
+                }
+            }
+
+            @JavascriptInterface
+            fun onFocusSidebar() {
+                Handler(Looper.getMainLooper()).post {
+                    try {
+                        onNavigateToSidebar()
+                    } catch (_: Exception) {}
+                }
+            }
         }
     }
 
@@ -1526,7 +1878,17 @@ fun YouTubeScreen(
     ) {
         Column(modifier = Modifier.fillMaxSize()) {
             // ── AUTHENTIC YOUTUBE HEADER & FILTER BAR (Hidden in PiP & Fullscreen Landscape) ──
-            if (customView == null && !isInPip && !isBlackScreenMode && !isManualFullScreenLandscape) {
+            val isShorts = remember(currentUrl) { currentUrl.contains("/shorts") || currentUrl.contains("/reel") }
+            LaunchedEffect(isShorts) {
+                if (isShorts && isRealTV) {
+                    kotlinx.coroutines.delay(200)
+                    webViewInstance?.requestFocus()
+                    try {
+                        webViewFocusRequester.requestFocus()
+                    } catch (_: Exception) {}
+                }
+            }
+            if (customView == null && !isInPip && !isBlackScreenMode && !isManualFullScreenLandscape && (!isShorts || !isRealTV)) {
                 Surface(
                     color = Color(0xFF0F0F0F),
                     modifier = Modifier
@@ -1948,11 +2310,29 @@ fun YouTubeScreen(
                             horizontalArrangement = Arrangement.spacedBy(8.dp)
                         ) {
                             if (isSearchActive) {
-                                items(searchSuggestions) { term ->
+                                itemsIndexed(searchSuggestions) { index, term ->
                                     YouTubePillChip(
                                         title = "🔍 $term",
                                         isSelected = false,
                                         isTV = isRealTV,
+                                        modifier = Modifier
+                                            .focusProperties {
+                                                down = webViewFocusRequester
+                                            }
+                                            .onKeyEvent { keyEvent ->
+                                                if (keyEvent.type == KeyEventType.KeyDown) {
+                                                    if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                                                        webViewInstance?.requestFocus()
+                                                        webViewInstance?.evaluateJavascript("if (window.dutaTvNav) window.dutaTvNav.focusFirst();", null)
+                                                        webViewFocusRequester.requestFocus()
+                                                        return@onKeyEvent true
+                                                    } else if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && index == 0 && isRealTV) {
+                                                        onNavigateToSidebar()
+                                                        return@onKeyEvent true
+                                                    }
+                                                }
+                                                false
+                                            },
                                         onClick = {
                                             executeSearch(term)
                                         }
@@ -1965,11 +2345,34 @@ fun YouTubeScreen(
                                         title = cat.title,
                                         isSelected = isSelected,
                                         isTV = isRealTV,
-                                        modifier = if (index == 0) Modifier.focusRequester(initialChipFocusRequester) else Modifier,
+                                        modifier = (if (index == 0) Modifier.focusRequester(initialChipFocusRequester) else Modifier)
+                                            .focusProperties {
+                                                down = webViewFocusRequester
+                                            }
+                                            .onKeyEvent { keyEvent ->
+                                                if (keyEvent.type == KeyEventType.KeyDown) {
+                                                    if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_DOWN) {
+                                                        webViewInstance?.requestFocus()
+                                                        webViewInstance?.evaluateJavascript("if (window.dutaTvNav) window.dutaTvNav.focusFirst();", null)
+                                                        webViewFocusRequester.requestFocus()
+                                                        return@onKeyEvent true
+                                                    } else if (keyEvent.nativeKeyEvent.keyCode == KeyEvent.KEYCODE_DPAD_LEFT && index == 0 && isRealTV) {
+                                                        onNavigateToSidebar()
+                                                        return@onKeyEvent true
+                                                    }
+                                                }
+                                                false
+                                            },
                                         onClick = {
                                             selectedCategoryTitle = cat.title
                                             currentUrl = cat.url
                                             webViewInstance?.loadUrl(cat.url)
+                                            if (cat.title == "Shorts" && isRealTV) {
+                                                webViewInstance?.requestFocus()
+                                                try {
+                                                    webViewFocusRequester.requestFocus()
+                                                } catch (_: Exception) {}
+                                            }
                                         }
                                     )
                                 }
@@ -1986,12 +2389,16 @@ fun YouTubeScreen(
                     .fillMaxWidth()
             ) {
                 AndroidView(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .focusRequester(webViewFocusRequester)
+                        .focusable(),
                     factory = { ctx ->
                         createYouTubeWebView(
                             context = ctx,
                             isRealTV = isRealTV,
                             jsBridge = jsBridge,
+                            onNavigateToSidebar = onNavigateToSidebar,
                             isAutoScrollSupplier = { viewModel.isShortsAutoScrollEnabled.value },
                             audioPresetSupplier = { viewModel.youtubeAudioPreset.value },
                             onTitleChanged = { pageTitle = it },
@@ -2600,18 +3007,17 @@ private fun YouTubePillChip(
     Surface(
         onClick = onClick,
         modifier = modifier
+            .onFocusChanged { isFocused = it.isFocused }
             .scale(if (isFocused) 1.08f else 1.0f)
-            .clip(RoundedCornerShape(8.dp))
             .border(
                 width = if (isFocused) 2.dp else 0.dp,
                 color = if (isFocused) Color(0xFFFF0000) else Color.Transparent,
                 shape = RoundedCornerShape(8.dp)
             )
-            .focusable()
-            .onFocusChanged { isFocused = it.isFocused },
+            .clip(RoundedCornerShape(8.dp)),
         color = when {
-            isSelected -> Color(0xFFFFFFFF)
             isFocused -> Color(0xFF383838)
+            isSelected -> Color(0xFFFFFFFF)
             else -> Color(0xFF272727)
         },
         shape = RoundedCornerShape(8.dp)
@@ -2678,8 +3084,9 @@ private fun createYouTubeWebView(
     context: Context,
     isRealTV: Boolean,
     jsBridge: Any,
+    onNavigateToSidebar: () -> Unit = {},
     isAutoScrollSupplier: () -> Boolean = { false },
-    audioPresetSupplier: () -> String = { "SONY_MEGA_BASS" },
+    audioPresetSupplier: () -> String = { "NORMAL" },
     onTitleChanged: (String) -> Unit,
     onLoadingChanged: (Boolean) -> Unit,
     onHistoryChanged: (Boolean, Boolean) -> Unit,
@@ -2744,7 +3151,7 @@ private fun createYouTubeWebView(
             try {
                 WebViewCompat.addDocumentStartJavaScript(
                     this,
-                    YOUTUBE_AD_NUKER_SCRIPT,
+                    "window.__dutaIsTV = " + isRealTV + ";\n" + YOUTUBE_AD_NUKER_SCRIPT,
                     setOf("https://*.youtube.com", "https://youtube.com")
                 )
             } catch (_: Exception) {}
@@ -2753,15 +3160,19 @@ private fun createYouTubeWebView(
         // Register Duta bridge for metadata, SponsorBlock notifications, and PiP state
         addJavascriptInterface(jsBridge, "DutaYouTubeBridge")
 
-        // TV Remote key events dispatcher (Shorts navigation, media controls & remote number seeking)
+        // TV Remote key events dispatcher (Shorts navigation, media controls, TV grid & spatial nav)
         setOnKeyListener { _, keyCode, event ->
             if (event.action == KeyEvent.ACTION_DOWN) {
-                val isShorts = url?.contains("/shorts") == true || url?.contains("/reel") == true
+                val current = url ?: ""
+                val isShorts = current.contains("/shorts") || current.contains("/reel")
+                val isWatch = current.contains("/watch")
+
                 when {
                     keyCode == KeyEvent.KEYCODE_SEARCH -> {
                         onOpenSearch()
                         return@setOnKeyListener true
                     }
+                    // ── SHORTS REMOTE NAVIGATION ──
                     isShorts && (keyCode == KeyEvent.KEYCODE_DPAD_DOWN || keyCode == KeyEvent.KEYCODE_PAGE_DOWN ||
                             keyCode == KeyEvent.KEYCODE_MEDIA_NEXT || keyCode == KeyEvent.KEYCODE_CHANNEL_DOWN) -> {
                         evaluateJavascript("if (window.advanceToNextShort) window.advanceToNextShort();", null)
@@ -2787,19 +3198,71 @@ private fun createYouTubeWebView(
                         return@setOnKeyListener true
                     }
                     isShorts && keyCode == KeyEvent.KEYCODE_DPAD_LEFT -> {
-                        evaluateJavascript(
-                            "(function(){ var v = document.querySelector('video'); if (v) v.currentTime = Math.max(0, v.currentTime - 5); })();",
-                            null
-                        )
+                        onNavigateToSidebar()
                         return@setOnKeyListener true
                     }
-                    keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || keyCode == KeyEvent.KEYCODE_HEADSETHOOK -> {
+
+                    // ── WATCH PAGE REMOTE CONTROLS ──
+                    isWatch && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER ||
+                            keyCode == KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE || keyCode == KeyEvent.KEYCODE_HEADSETHOOK) -> {
                         evaluateJavascript(
                             "(function(){ var p = document.getElementById('movie_player') || document.querySelector('.html5-video-player'); var v = document.querySelector('video'); if (p && typeof p.getPlayerState === 'function') { if (p.getPlayerState() === 1) p.pauseVideo(); else p.playVideo(); } else if (v) { if (v.paused) v.play(); else v.pause(); } })();",
                             null
                         )
                         return@setOnKeyListener true
                     }
+                    isWatch && (keyCode == KeyEvent.KEYCODE_DPAD_RIGHT || keyCode == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD) -> {
+                        evaluateJavascript(
+                            "(function(){ var v = document.querySelector('video'); if (v) v.currentTime += 10; })();",
+                            null
+                        )
+                        return@setOnKeyListener true
+                    }
+                    isWatch && (keyCode == KeyEvent.KEYCODE_DPAD_LEFT || keyCode == KeyEvent.KEYCODE_MEDIA_REWIND) -> {
+                        evaluateJavascript(
+                            "(function(){ var v = document.querySelector('video'); if (v) v.currentTime = Math.max(0, v.currentTime - 10); })();",
+                            null
+                        )
+                        return@setOnKeyListener true
+                    }
+                    isWatch && keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        evaluateJavascript(
+                            "if (window.dutaTvNav) window.dutaTvNav.navigate('DOWN'); else window.scrollBy({ top: 300, behavior: 'smooth' });",
+                            null
+                        )
+                        return@setOnKeyListener true
+                    }
+                    isWatch && keyCode == KeyEvent.KEYCODE_DPAD_UP -> {
+                        evaluateJavascript(
+                            "if (window.dutaTvNav) window.dutaTvNav.navigate('UP'); else window.scrollBy({ top: -300, behavior: 'smooth' });",
+                            null
+                        )
+                        return@setOnKeyListener true
+                    }
+
+                    // ── BROWSE FEED & SEARCH TV SPATIAL NAVIGATION ──
+                    isRealTV && keyCode == KeyEvent.KEYCODE_DPAD_DOWN -> {
+                        evaluateJavascript("if (window.dutaTvNav) window.dutaTvNav.navigate('DOWN');", null)
+                        return@setOnKeyListener true
+                    }
+                    isRealTV && keyCode == KeyEvent.KEYCODE_DPAD_UP -> {
+                        evaluateJavascript("if (window.dutaTvNav) window.dutaTvNav.navigate('UP');", null)
+                        return@setOnKeyListener true
+                    }
+                    isRealTV && keyCode == KeyEvent.KEYCODE_DPAD_LEFT -> {
+                        evaluateJavascript("if (window.dutaTvNav) window.dutaTvNav.navigate('LEFT');", null)
+                        return@setOnKeyListener true
+                    }
+                    isRealTV && keyCode == KeyEvent.KEYCODE_DPAD_RIGHT -> {
+                        evaluateJavascript("if (window.dutaTvNav) window.dutaTvNav.navigate('RIGHT');", null)
+                        return@setOnKeyListener true
+                    }
+                    isRealTV && (keyCode == KeyEvent.KEYCODE_DPAD_CENTER || keyCode == KeyEvent.KEYCODE_ENTER || keyCode == KeyEvent.KEYCODE_NUMPAD_ENTER) -> {
+                        evaluateJavascript("if (window.dutaTvNav) window.dutaTvNav.navigate('SELECT');", null)
+                        return@setOnKeyListener true
+                    }
+
+                    // Standard Media & Number Seek
                     keyCode == KeyEvent.KEYCODE_MEDIA_PLAY -> {
                         evaluateJavascript(
                             "(function(){ var p = document.getElementById('movie_player') || document.querySelector('.html5-video-player'); var v = document.querySelector('video'); if (p && typeof p.playVideo === 'function') p.playVideo(); else if (v && v.paused) v.play(); })();",
@@ -2818,34 +3281,6 @@ private fun createYouTubeWebView(
                         val fraction = if (keyCode == KeyEvent.KEYCODE_0) 0.0 else (keyCode - KeyEvent.KEYCODE_0) * 0.1
                         evaluateJavascript(
                             "(function(){ var v = document.querySelector('video'); if (v && v.duration) v.currentTime = v.duration * $fraction; else if (v) v.currentTime = 0; })();",
-                            null
-                        )
-                        return@setOnKeyListener true
-                    }
-                    keyCode == KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> {
-                        evaluateJavascript(
-                            "(function(){ var v = document.querySelector('video'); if (v) v.currentTime += 10; })();",
-                            null
-                        )
-                        return@setOnKeyListener true
-                    }
-                    keyCode == KeyEvent.KEYCODE_MEDIA_REWIND -> {
-                        evaluateJavascript(
-                            "(function(){ var v = document.querySelector('video'); if (v) v.currentTime = Math.max(0, v.currentTime - 10); })();",
-                            null
-                        )
-                        return@setOnKeyListener true
-                    }
-                    !isShorts && keyCode == KeyEvent.KEYCODE_MEDIA_NEXT -> {
-                        evaluateJavascript(
-                            "(function(){ var v = document.querySelector('video'); if (v) v.currentTime += 10; })();",
-                            null
-                        )
-                        return@setOnKeyListener true
-                    }
-                    !isShorts && keyCode == KeyEvent.KEYCODE_MEDIA_PREVIOUS -> {
-                        evaluateJavascript(
-                            "(function(){ var v = document.querySelector('video'); if (v) v.currentTime = Math.max(0, v.currentTime - 10); })();",
                             null
                         )
                         return@setOnKeyListener true
@@ -2907,12 +3342,14 @@ private fun createYouTubeWebView(
             override fun onPageStarted(view: WebView?, url: String?, favicon: Bitmap?) {
                 super.onPageStarted(view, url, favicon)
                 onLoadingChanged(true)
+                view?.evaluateJavascript("window.__dutaIsTV = $isRealTV;", null)
                 view?.evaluateJavascript(YOUTUBE_AD_NUKER_SCRIPT, null)
             }
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
                 onLoadingChanged(false)
+                view?.evaluateJavascript("window.__dutaIsTV = $isRealTV;", null)
                 onHistoryChanged(view?.canGoBack() == true, view?.canGoForward() == true)
                 if (!url.isNullOrBlank()) {
                     onUrlChanged(url)
